@@ -1,0 +1,75 @@
+Build a production-grade, highly secure employee activity monitoring and productivity analytics platform. The system follows a tiered management hierarchy and utilizes low-level native agents for deep system integration, stealth monitoring, and remote hardware control.
+1. TECH STACK
+Backend (Orchestration Layer)
+Framework: FastAPI (Async)
+Database: PostgreSQL (SQLAlchemy + Alembic)
+Auth: JWT with Role-Based Access Control (RBAC)
+Encryption: AES-256 for data at rest; TLS 1.3 for transit.
+Communication: WebSocket for real-time remote commands (Shutdown/Camera).
+Frontend (Management Portal)
+Framework: React + Tailwind CSS
+State/Data: React Query + Axios
+Visualization: Recharts (Heatmaps, Timeline, Leaderboards)
+Native Agents (The "Nodes")
+Windows: C++ / Win32 API or Rust (for low-level system hooks).
+macOS: Swift / Cocoa (for native performance and permissions).
+Zero Dependencies: Must be compiled to a standalone executable/installer (MSI/PKG) with no runtime requirements (no Python/Node on target).
+2. ADVANCED HIERARCHY & ROLE-BASED AUTH
+Implement a three-tier permission system:
+Super-User: Full platform access. Manages multiple Admins. Can view all data across all departments.
+Admin: Manages specific teams/nodes. Can set monitoring frequencies, trigger remote shutdowns, and access stealth camera feeds.
+Team Member: The monitored node. Can only see their own dashboard if enabled by an Admin.
+3. CORE BUSINESS LOGIC & ENGINES
+A. Productivity Engine
+Classifies productive, unproductive, neutral, undefined.
+Formula: Productivity Score = (Productive Time / Active Time) * 100.
+Automatic discovery: If a new process is detected, create an "undefined" entry for Admin classification.
+B. Tamper & Fake Entry Detection
+Pattern Analysis: Analyze mouse movement vectors (speed, curvature, frequency) and keyboard keystroke rhythm (inter-key latency) to detect "mouse jigglers" or automated scripts.
+Anomalous Activity Flagging: Mark sessions as "suspect" if input patterns are too rhythmic or lack human entropy.
+C. Remote Command & Configuration Engine
+Node Control: All parameters (capture frequency, idle thresholds, stealth mode) are managed via the Server. Nodes "heartbeat" to pull new configs.
+Persistent Shutdown: If an Admin issues a "Lockdown/Shutdown" command, the node performs a system power-off. If the system is powered back on, the agent (running as a system service) must immediately shut it down again until the Admin clears the command.
+4. DATABASE DESIGN (EXTENDED)
+USERS: id, username, email, password_hash, role (super/admin/member), managed_by_id (hierarchy link).
+DEVICES (Nodes): id, uuid (unique hardware ID), system_name, os_type, last_seen, is_locked (for persistent shutdown), data_frequency (minutes), screenshot_interval_range (e.g., 1-5).
+ACTIVITY_LOGS: id, device_id, process_name, window_title, timestamp_start, timestamp_end, duration, idle_time, mouse_score, kb_score (for fake detection).
+MEDIA: id, device_id, type (screenshot/camera), file_path (encrypted), captured_at.
+DAILY_SUMMARIES: Aggregated totals for productive/unproductive/idle time per user per day.
+5. NATIVE AGENT REQUIREMENTS (WINDOWS & MAC)
+Stealth & Persistence
+Background Operation: Runs as a System Service (Windows) or Launch Daemon (macOS).
+Stealth Capture:
+Screenshots: Captured at random intervals (1-5 min) as defined by Admin.
+Stealth Camera: Remote trigger to capture frame/stream without activating the hardware LED (where possible) or showing any UI notification.
+Data Handling:
+Encryption: All local data (logs/images) must be encrypted before transmission.
+Compression: Use Zstd or Gzip to reduce payload size.
+Batching: Data is cached locally and synced to the server every 5 minutes to minimize network noise.
+6. API ENDPOINTS
+Auth & Admin
+POST /api/auth/login
+GET /api/admin/nodes (List all unique nodes under hierarchy)
+PATCH /api/admin/nodes/{id}/config (Update frequency, shutdown status)
+GET /api/admin/nodes/{id}/camera (Trigger stealth capture)
+Node Sync (Encrypted/Compressed)
+POST /api/sync/heartbeat (Node reports status and pulls is_locked flag)
+POST /api/sync/activity (Batch upload of encrypted logs/media)
+Reports
+GET /api/reports/member/self (Member view - conditional access)
+GET /api/reports/admin/leaderboard (Productivity rankings)
+7. UI/UX REQUIREMENTS
+Admin Command Center:
+Real-time grid of nodes.
+"Remote Actions" menu: [Shutdown], [Lock System], [Capture Camera], [Update Sync Frequency].
+Notification bell for "Fake Activity Detected" or "Device Offline".
+Productivity Analytics:
+Interactive Recharts for Daily/Weekly trends.
+App usage donut charts.
+Timeline View:
+Visual scrollable timeline showing app switches, idle gaps, and screenshot thumbnails.
+8. SECURITY & PERFORMANCE
+Unique Hardware Binding: Each node is identified by a hardware-hash (CPU/Board ID) to prevent spoofing.
+End-to-End Encryption: Agent encrypts payload with a device-specific key; Server decrypts using the stored node-secret.
+Rate Limiting: Strict limits on sync endpoints to prevent DDoS from nodes.
+Installer: Native C++ (Windows) and Swift (macOS) project structure to generate standalone binaries.
