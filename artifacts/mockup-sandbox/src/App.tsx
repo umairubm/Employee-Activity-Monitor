@@ -1,146 +1,82 @@
-import { useEffect, useState, type ComponentType } from "react";
+import * as React from "react";
+import { AppProvider, useAppStore } from "./store";
+import { Sidebar, type Page } from "./components/Sidebar";
+import Dashboard from "./components/pages/Dashboard";
+import Timeline from "./components/pages/Timeline";
+import Screenshots from "./components/pages/Screenshots";
+import Devices from "./components/pages/Devices";
+import Settings from "./components/pages/Settings";
 
-import { modules as discoveredModules } from "./.generated/mockup-components";
-
-type ModuleMap = Record<string, () => Promise<Record<string, unknown>>>;
-
-function _resolveComponent(
-  mod: Record<string, unknown>,
-  name: string,
-): ComponentType | undefined {
-  const fns = Object.values(mod).filter(
-    (v) => typeof v === "function",
-  ) as ComponentType[];
+function LoadingScreen() {
   return (
-    (mod.default as ComponentType) ||
-    (mod.Preview as ComponentType) ||
-    (mod[name] as ComponentType) ||
-    fns[fns.length - 1]
-  );
-}
-
-function PreviewRenderer({
-  componentPath,
-  modules,
-}: {
-  componentPath: string;
-  modules: ModuleMap;
-}) {
-  const [Component, setComponent] = useState<ComponentType | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    setComponent(null);
-    setError(null);
-
-    async function loadComponent(): Promise<void> {
-      const key = `./components/mockups/${componentPath}.tsx`;
-      const loader = modules[key];
-      if (!loader) {
-        setError(`No component found at ${componentPath}.tsx`);
-        return;
-      }
-
-      try {
-        const mod = await loader();
-        if (cancelled) {
-          return;
-        }
-        const name = componentPath.split("/").pop()!;
-        const comp = _resolveComponent(mod, name);
-        if (!comp) {
-          setError(
-            `No exported React component found in ${componentPath}.tsx\n\nMake sure the file has at least one exported function component.`,
-          );
-          return;
-        }
-        setComponent(() => comp);
-      } catch (e) {
-        if (cancelled) {
-          return;
-        }
-
-        const message = e instanceof Error ? e.message : String(e);
-        setError(`Failed to load preview.\n${message}`);
-      }
-    }
-
-    void loadComponent();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [componentPath, modules]);
-
-  if (error) {
-    return (
-      <pre style={{ color: "red", padding: "2rem", fontFamily: "system-ui" }}>
-        {error}
-      </pre>
-    );
-  }
-
-  if (!Component) return null;
-
-  return <Component />;
-}
-
-function getBasePath(): string {
-  return import.meta.env.BASE_URL.replace(/\/$/, "");
-}
-
-function getPreviewExamplePath(): string {
-  const basePath = getBasePath();
-  return `${basePath}/preview/ComponentName`;
-}
-
-function Gallery() {
-  return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-8">
-      <div className="text-center max-w-md">
-        <h1 className="text-2xl font-semibold text-gray-900 mb-3">
-          Component Preview Server
-        </h1>
-        <p className="text-gray-500 mb-4">
-          This server renders individual components for the workspace canvas.
-        </p>
-        <p className="text-sm text-gray-400">
-          Access component previews at{" "}
-          <code className="bg-gray-100 px-1.5 py-0.5 rounded text-gray-600">
-            {getPreviewExamplePath()}
-          </code>
-        </p>
+    <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+      <div className="text-center space-y-4">
+        <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto" />
+        <p className="text-slate-400 text-sm">Connecting to local server…</p>
       </div>
     </div>
   );
 }
 
-function getPreviewPath(): string | null {
-  const basePath = getBasePath();
-  const { pathname } = window.location;
-  const local =
-    basePath && pathname.startsWith(basePath)
-      ? pathname.slice(basePath.length) || "/"
-      : pathname;
-  const match = local.match(/^\/preview\/(.+)$/);
-  return match ? match[1] : null;
+function ErrorScreen({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6">
+      <div className="text-center space-y-4 max-w-md">
+        <div className="w-12 h-12 bg-red-500/20 rounded-full flex items-center justify-center mx-auto">
+          <span className="text-red-400 text-2xl">⚠</span>
+        </div>
+        <h2 className="text-white font-semibold text-lg">Cannot reach local server</h2>
+        <p className="text-slate-400 text-sm">{message}</p>
+        <div className="bg-slate-800 rounded-lg p-4 text-left text-xs font-mono text-slate-300 space-y-1">
+          <p className="text-slate-500"># Open a new terminal and run:</p>
+          <p className="text-indigo-400">cd D:\Employee_monitor\artifacts\api-server</p>
+          <p className="text-emerald-400">$env:PORT="5000"; node ./local-server.mjs</p>
+        </div>
+        <button
+          onClick={onRetry}
+          className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm px-5 py-2.5 rounded-lg font-medium transition-colors"
+        >
+          Retry Connection
+        </button>
+      </div>
+    </div>
+  );
 }
 
-function App() {
-  const previewPath = getPreviewPath();
+function AppShell() {
+  const [currentPage, setCurrentPage] = React.useState<Page>("dashboard");
+  const { loading, error, refresh } = useAppStore();
 
-  if (previewPath) {
-    return (
-      <PreviewRenderer
-        componentPath={previewPath}
-        modules={discoveredModules}
-      />
-    );
-  }
+  if (loading) return <LoadingScreen />;
+  if (error) return <ErrorScreen message={error} onRetry={refresh} />;
 
-  return <Gallery />;
+  const renderPage = () => {
+    switch (currentPage) {
+      case "dashboard": return <Dashboard onNavigate={setCurrentPage} />;
+      case "timeline": return <Timeline />;
+      case "screenshots": return <Screenshots />;
+      case "devices": return <Devices onNavigate={setCurrentPage} />;
+      case "settings": return <Settings />;
+      default: return <Dashboard onNavigate={setCurrentPage} />;
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
+      <Sidebar currentPage={currentPage} onNavigate={setCurrentPage} />
+      <main className="ml-64 min-h-screen">
+        <div className="p-6 max-w-[1400px]">
+          {renderPage()}
+        </div>
+      </main>
+    </div>
+  );
 }
 
-export default App;
+export default function App() {
+  return (
+    <AppProvider>
+      <AppShell />
+    </AppProvider>
+  );
+}

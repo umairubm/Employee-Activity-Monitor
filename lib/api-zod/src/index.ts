@@ -1,2 +1,4 @@
-export * from "./generated/api";
-export * from "./generated/types";
+import * as schemas from "./generated/api";
+import * as types from "./generated/types";
+
+export { schemas, types };

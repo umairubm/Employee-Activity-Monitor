@@ -47,3 +47,6 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Local development database (JSON file store)
+artifacts/api-server/data/

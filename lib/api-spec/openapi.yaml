@@ -1,36 +1,175 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: API specification for Employee Activity Monitor
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: sync
+    description: Node synchronization operations
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/HealthStatus"
+                type: object
+                properties:
+                  status:
+                    type: string
+  /sync/heartbeat:
+    post:
+      operationId: heartbeat
+      tags: [sync]
+      summary: Node reports status and pulls configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HeartbeatRequest"
+      responses:
+        "200":
+          description: Successful heartbeat
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HeartbeatResponse"
+  /sync/activity:
+    post:
+      operationId: syncActivity
+      tags: [sync]
+      summary: Batch upload of activity logs and media
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SyncActivityRequest"
+      responses:
+        "200":
+          description: Sync successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+  /activity:
+    get:
+      operationId: getActivityLogs
+      tags: [activity]
+      summary: Get activity logs
+      responses:
+        "200":
+          description: List of activity logs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ActivityLogItem"
+  /activity/timeline:
+    get:
+      operationId: getTimeline
+      tags: [activity]
+      summary: Get timeline view
+      responses:
+        "200":
+          description: Timeline events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ActivityLogItem"
+
 components:
   schemas:
-    HealthStatus:
+    HeartbeatRequest:
       type: object
       properties:
-        status:
+        deviceId:
+          type: string
+          format: uuid
+        systemName:
+          type: string
+        osType:
+          type: string
+          enum: [windows, macos]
+      required:
+        - deviceId
+    HeartbeatResponse:
+      type: object
+      properties:
+        isLocked:
+          type: boolean
+        dataFrequencyMinutes:
+          type: integer
+        screenshotIntervalRange:
           type: string
       required:
-        - status
-
+        - isLocked
+    SyncActivityRequest:
+      type: object
+      properties:
+        deviceId:
+          type: string
+          format: uuid
+        logs:
+          type: array
+          items:
+            $ref: "#/components/schemas/ActivityLogItem"
+        screenshots:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScreenshotItem"
+      required:
+        - deviceId
+    ActivityLogItem:
+      type: object
+      properties:
+        processName:
+          type: string
+        windowTitle:
+          type: string
+        startedAt:
+          type: string
+          format: date-time
+        endedAt:
+          type: string
+          format: date-time
+        durationSeconds:
+          type: integer
+        idleSeconds:
+          type: integer
+      required:
+        - processName
+        - startedAt
+        - endedAt
+        - durationSeconds
+    ScreenshotItem:
+      type: object
+      properties:
+        capturedAt:
+          type: string
+          format: date-time
+        base64Data:
+          type: string
+          description: Base64 encoded screenshot image data
+        fileSizeBytes:
+          type: integer
+      required:
+        - capturedAt
+        - base64Data

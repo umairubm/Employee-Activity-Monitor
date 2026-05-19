@@ -4,9 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "export NODE_ENV=development && pnpm run build && pnpm run start",
+    "dev": "pnpm run build && pnpm run start",
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
+    "local": "node ./local-server.mjs",
+    "build:exe": "esbuild local-server.mjs --bundle --platform=node --format=cjs --outfile=dist/local-server.cjs --external:sqlite3 && esbuild tracker-client.mjs --bundle --platform=node --format=cjs --outfile=dist/tracker-client.cjs && npx pkg dist/local-server.cjs --targets node18-win-x64 --output bin/tracker-service.exe && npx pkg dist/tracker-client.cjs --targets node18-win-x64 --output bin/tracker-client.exe",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
@@ -17,7 +19,8 @@
     "drizzle-orm": "catalog:",
     "express": "^5",
     "pino": "^9",
-    "pino-http": "^10"
+    "pino-http": "^10",
+    "sqlite3": "^6.0.1"
   },
   "devDependencies": {
     "@types/cookie-parser": "^1.4.10",
