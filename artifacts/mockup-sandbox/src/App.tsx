@@ -5,6 +5,7 @@ import Dashboard from "./components/pages/Dashboard";
 import Timeline from "./components/pages/Timeline";
 import Screenshots from "./components/pages/Screenshots";
 import Devices from "./components/pages/Devices";
+import Attendance from "./components/pages/Attendance";
 import Settings from "./components/pages/Settings";
 
 function LoadingScreen() {
@@ -54,6 +55,7 @@ function AppShell() {
     switch (currentPage) {
       case "dashboard": return <Dashboard onNavigate={setCurrentPage} />;
       case "timeline": return <Timeline />;
+      case "attendance": return <Attendance />;
       case "screenshots": return <Screenshots />;
       case "devices": return <Devices onNavigate={setCurrentPage} />;
       case "settings": return <Settings />;

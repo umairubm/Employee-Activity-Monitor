@@ -4,6 +4,7 @@ import {
   Clock,
   Camera,
   Monitor,
+  Calendar,
   Shield,
   Settings,
   Bell,
@@ -15,7 +16,7 @@ import {
 } from "lucide-react";
 import { useAppStore } from "../store";
 
-export type Page = "dashboard" | "timeline" | "screenshots" | "devices" | "settings";
+export type Page = "dashboard" | "timeline" | "screenshots" | "devices" | "attendance" | "settings";
 
 interface SidebarProps {
   currentPage: Page;
@@ -25,6 +26,7 @@ interface SidebarProps {
 const navItems: { id: Page; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "timeline", label: "Timeline", icon: Clock },
+  { id: "attendance", label: "Attendance", icon: Calendar },
   { id: "screenshots", label: "Screenshots", icon: Camera },
   { id: "devices", label: "Devices", icon: Monitor },
   { id: "settings", label: "Settings", icon: Settings },

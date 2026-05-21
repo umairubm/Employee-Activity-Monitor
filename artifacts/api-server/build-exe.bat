@@ -5,7 +5,7 @@ echo ========================================================
 echo.
 
 echo [1/4] Bundling local-server ES module into CommonJS...
-call npx esbuild local-server.mjs --bundle --platform=node --format=cjs --outfile=dist/local-server.cjs
+call npx esbuild local-server.mjs --bundle --platform=node --format=cjs --outfile=dist/local-server.cjs --external:sqlite3 --external:sharp
 if %errorlevel% neq 0 (
     echo.
     echo [ERROR] Server bundling failed.

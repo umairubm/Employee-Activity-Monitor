@@ -5,21 +5,52 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { useAppStore } from "../../store";
+import type { Screenshot } from "../../store";
+import { screenshotsApi } from "../../lib/api";
+
+
+const getImageType = (dataUrl: string | undefined) => {
+  const match = dataUrl?.match(/^data:image\/([a-zA-Z0-9]+);/);
+  return match ? match[1].toUpperCase() : "JPEG";
+};
 
 export default function Screenshots() {
-  const { screenshots, devices, selectedDeviceId, selectDevice, toggleFlag } = useAppStore();
+  const { devices } = useAppStore();
+  const [screenshots, setScreenshots] = React.useState<Screenshot[]>([]);
   const [search, setSearch] = React.useState("");
   const [deviceFilter, setDeviceFilter] = React.useState<string>("all");
+  const [groupFilter, setGroupFilter] = React.useState<string>("all");
   const [showFlaggedOnly, setShowFlaggedOnly] = React.useState(false);
   const [lightbox, setLightbox] = React.useState<string | null>(null);
 
+  React.useEffect(() => {
+    screenshotsApi.list().then(setScreenshots).catch(console.error);
+  }, []);
+
+  const toggleFlag = async (screenshotId: string) => {
+    try {
+      const updated = await screenshotsApi.flag(screenshotId);
+      setScreenshots((prev) => prev.map((s) => (s.id === screenshotId ? updated : s)));
+    } catch {
+      setScreenshots((prev) =>
+        prev.map((s) => (s.id === screenshotId ? { ...s, flagged: !s.flagged } : s))
+      );
+    }
+  };
+
+  const allGroups = React.useMemo(() => Array.from(new Set(devices.map(d => d.deviceGroup || "Unassigned"))).sort(), [devices]);
+
   const filtered = screenshots.filter((s) => {
+    const parentDevice = devices.find((d) => d.id === s.deviceId);
+    const parentGroup = parentDevice?.deviceGroup || "Unassigned";
+
     const matchSearch =
       s.deviceName.toLowerCase().includes(search.toLowerCase()) ||
       s.userName.toLowerCase().includes(search.toLowerCase());
     const matchDevice = deviceFilter === "all" || s.deviceId === deviceFilter;
+    const matchGroup = groupFilter === "all" || parentGroup === groupFilter;
     const matchFlagged = !showFlaggedOnly || s.flagged;
-    return matchSearch && matchDevice && matchFlagged;
+    return matchSearch && matchDevice && matchGroup && matchFlagged;
   });
 
   const flaggedCount = screenshots.filter((s) => s.flagged).length;
@@ -65,6 +96,16 @@ export default function Screenshots() {
             <option value="all">All Devices</option>
             {devices.map((d) => (
               <option key={d.id} value={d.id}>{d.name}</option>
+            ))}
+          </select>
+          <select
+            className="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 dark:border-slate-700 text-slate-700 dark:text-slate-300"
+            value={groupFilter}
+            onChange={(e) => setGroupFilter(e.target.value)}
+          >
+            <option value="all">All Groups</option>
+            {allGroups.map((g) => (
+              <option key={g} value={g}>{g}</option>
             ))}
           </select>
           <button
@@ -139,10 +180,25 @@ export default function Screenshots() {
               <CardContent className="p-3 bg-white dark:bg-slate-800">
                 <div className="flex items-center justify-between">
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{shot.deviceName}</p>
-                    <p className="text-xs text-slate-500 truncate">{shot.userName} · {shot.capturedAt}</p>
+                    <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{shot.deviceName}</p>
+                    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mt-0.5">
+                      <p className="text-[11px] font-medium text-slate-500 truncate">{shot.userName}</p>
+                      <span className="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-700" />
+                      <p className="text-[10px] font-bold text-slate-400">
+                        {new Date(shot.capturedAt).toLocaleDateString()}
+                      </p>
+                      <span className="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-700" />
+                      <p className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400">
+                        {new Date(shot.capturedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true })}
+                      </p>
+                    </div>
                   </div>
-                  <span className="text-xs text-slate-400 flex-shrink-0 ml-2">{shot.fileSizeKb} KB</span>
+                  <span className="text-xs text-slate-400 flex-shrink-0 ml-2 text-right">
+                    <span className="font-medium bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded mr-1">
+                      {getImageType(shot.thumbnail)}
+                    </span>
+                    {shot.fileSizeKb} KB
+                  </span>
                 </div>
               </CardContent>
             </Card>
@@ -163,7 +219,7 @@ export default function Screenshots() {
             <div className="flex items-center justify-between p-4 border-b border-slate-100 dark:border-slate-800">
               <div>
                 <h3 className="font-semibold text-slate-900 dark:text-white">{lightboxShot.deviceName}</h3>
-                <p className="text-xs text-slate-500">{lightboxShot.userName} · {lightboxShot.capturedAt}</p>
+                <p className="text-xs text-slate-500">{lightboxShot.userName} · {new Date(lightboxShot.capturedAt).toLocaleString()}</p>
               </div>
               <div className="flex items-center gap-2">
                 {lightboxShot.flagged && (
@@ -183,7 +239,12 @@ export default function Screenshots() {
               className="w-full object-contain max-h-[60vh]"
             />
             <div className="p-4 flex justify-between items-center">
-              <span className="text-xs text-slate-500">{lightboxShot.fileSizeKb} KB</span>
+              <span className="text-xs text-slate-500 flex items-center">
+                <span className="font-medium bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded mr-2">
+                  {getImageType(lightboxShot.thumbnail)}
+                </span>
+                {lightboxShot.fileSizeKb} KB
+              </span>
               <div className="flex gap-2">
                 <Button
                   size="sm"

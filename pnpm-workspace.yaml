@@ -71,6 +71,7 @@ minimumReleaseAgeExclude:
 onlyBuiltDependencies:
   - '@swc/core'
   - better-sqlite3
+  - sqlite3
   - esbuild
   - msw
   - unrs-resolver

@@ -1,4 +1,6 @@
 import * as React from "react";
+import { apiFetch, devicesApi } from "./lib/api";
+
 
 export type DeviceStatus = "online" | "idle" | "offline";
 export type OsType = "windows" | "macos";
@@ -16,6 +18,7 @@ export interface Device {
   automationDetected: boolean;
   totalHoursToday: number;
   activeApp: string;
+  deviceGroup: string;
 }
 
 export interface ActivityLog {
@@ -40,68 +43,48 @@ export interface Screenshot {
   flagged: boolean;
 }
 
-const API_BASE = "http://localhost:5000/api";
-
-async function apiFetch<T>(path: string, opts?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...opts,
-  });
-  if (!res.ok) throw new Error(`API error ${res.status}: ${path}`);
-  return res.json() as Promise<T>;
-}
-
-// ─── Store ────────────────────────────────────────────────────────────────────
 
 interface AppState {
   devices: Device[];
-  logs: ActivityLog[];
-  screenshots: Screenshot[];
   selectedDeviceId: string | null;
   loading: boolean;
   error: string | null;
   // Actions
-  refresh: () => void;
+  refresh: (silent?: boolean) => void;
   lockDevice: (id: string) => void;
   unlockDevice: (id: string) => void;
   selectDevice: (id: string | null) => void;
-  toggleFlag: (screenshotId: string) => void;
+  setDeviceGroup: (id: string, groupName: string) => void;
 }
 
 const AppContext = React.createContext<AppState | null>(null);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [devices, setDevices] = React.useState<Device[]>([]);
-  const [logs, setLogs] = React.useState<ActivityLog[]>([]);
-  const [screenshots, setScreenshots] = React.useState<Screenshot[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
 
-  const fetchAll = React.useCallback(async () => {
-    setLoading(true);
+  const fetchAll = React.useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     setError(null);
     try {
-      const [devs, acts, shots] = await Promise.all([
+      const [devs] = await Promise.all([
         apiFetch<Device[]>("/devices"),
-        apiFetch<ActivityLog[]>("/activity"),
-        apiFetch<Screenshot[]>("/screenshots"),
       ]);
       setDevices(devs);
-      setLogs(acts);
-      setScreenshots(shots);
       if (!selectedDeviceId && devs.length > 0) setSelectedDeviceId(devs[0].id);
     } catch (e: any) {
       setError(e.message || "Failed to connect to local server");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
-  }, []);
+  }, [selectedDeviceId]);
 
   React.useEffect(() => {
     void fetchAll();
     // Auto-refresh every 15 seconds
-    const timer = setInterval(() => void fetchAll(), 15000);
+    const timer = setInterval(() => void fetchAll(true), 15000);
     return () => clearInterval(timer);
   }, [fetchAll]);
 
@@ -116,32 +99,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const unlockDevice = async (id: string) => {
     try {
-      const updated = await apiFetch<Device>(`/devices/${id}/unlock`, { method: "PATCH" });
+      const updated = await devicesApi.unlock(id);
       setDevices((prev) => prev.map((d) => (d.id === id ? updated : d)));
     } catch {
       setDevices((prev) => prev.map((d) => (d.id === id ? { ...d, isLocked: false } : d)));
     }
   };
 
-  const toggleFlag = async (screenshotId: string) => {
+  const setDeviceGroup = async (id: string, groupName: string) => {
     try {
-      const updated = await apiFetch<Screenshot>(`/screenshots/${screenshotId}/flag`, { method: "PATCH" });
-      setScreenshots((prev) => prev.map((s) => (s.id === screenshotId ? updated : s)));
+      const updated = await devicesApi.setGroup(id, groupName);
+      setDevices((prev) => prev.map((d) => (d.id === id ? updated : d)));
     } catch {
-      setScreenshots((prev) =>
-        prev.map((s) => (s.id === screenshotId ? { ...s, flagged: !s.flagged } : s))
-      );
+      setDevices((prev) => prev.map((d) => (d.id === id ? { ...d, deviceGroup: groupName } : d)));
     }
   };
 
   return (
     <AppContext.Provider
       value={{
-        devices, logs, screenshots, selectedDeviceId, loading, error,
+        devices, selectedDeviceId, loading, error,
         refresh: fetchAll,
         lockDevice, unlockDevice,
         selectDevice: setSelectedDeviceId,
-        toggleFlag,
+        setDeviceGroup,
       }}
     >
       {children}

@@ -41,6 +41,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { activityApi } from "../../lib/api";
 
 // Mock Data
 const productivityData = [
@@ -110,8 +111,7 @@ export function Preview() {
   const [loading, setLoading] = React.useState(true);
 
   React.useEffect(() => {
-    fetch("http://localhost:5000/api/activity")
-      .then(res => res.json())
+    activityApi.list()
       .then(data => {
         setLogs(data);
         setLoading(false);

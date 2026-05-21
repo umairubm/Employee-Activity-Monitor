@@ -13,17 +13,75 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { useAppStore } from "../../store";
+import type { ActivityLog } from "../../store";
+import { activityApi } from "../../lib/api";
 import type { Page } from "../Sidebar";
 
+
+const getAppTitle = (processName: string, windowTitle: string) => {
+  const processLower = processName.toLowerCase();
+  
+  if (processLower !== "powershell" && processLower !== "cmd" && processLower !== "wt") {
+    return processName.replace(/\.exe$/i, "");
+  }
+
+  const title = windowTitle.trim();
+  if (!title) return "Shell";
+
+  if (title.includes("Google Chrome") || title.includes("Chrome")) return "Google Chrome";
+  if (title.includes("Antigravity")) return "Antigravity";
+  if (title.includes("Visual Studio Code") || title.includes("VS Code") || title.includes("vscode")) return "VS Code";
+  if (title.includes("Cursor")) return "Cursor";
+  if (title.includes("Slack")) return "Slack";
+  if (title.includes("Discord")) return "Discord";
+  if (title.includes("Spotify")) return "Spotify";
+  if (title.includes("Notepad")) return "Notepad";
+  if (title.includes("Teams")) return "Microsoft Teams";
+  if (title.includes("Excel")) return "Microsoft Excel";
+  if (title.includes("Word")) return "Microsoft Word";
+
+  const delimiters = [" - ", " — ", " | "];
+  for (const delim of delimiters) {
+    if (title.includes(delim)) {
+      const parts = title.split(delim).map(p => p.trim());
+      const lastPart = parts[parts.length - 1];
+      const isFile = lastPart.includes(".") || lastPart.toLowerCase().endsWith("toml") || lastPart.toLowerCase().endsWith("tsx") || lastPart.toLowerCase().endsWith("ts");
+      if (!isFile && lastPart.length > 2) {
+        return lastPart;
+      }
+      for (let i = parts.length - 2; i >= 0; i--) {
+        const part = parts[i];
+        const isFilePart = part.includes(".") || part.toLowerCase().endsWith("toml") || part.toLowerCase().endsWith("tsx") || part.toLowerCase().endsWith("ts");
+        if (!isFilePart && part.length > 2) {
+          return part;
+        }
+      }
+    }
+  }
+
+  return "Shell";
+};
 
 interface DashboardProps {
   onNavigate: (page: Page) => void;
 }
 
 export default function Dashboard({ onNavigate }: DashboardProps) {
-  const { devices, logs, lockDevice, unlockDevice, selectDevice, refresh } = useAppStore();
+  const { devices, lockDevice, unlockDevice, selectDevice, refresh } = useAppStore();
+  const [logs, setLogs] = React.useState<ActivityLog[]>([]);
   const [searchTerm, setSearchTerm] = React.useState("");
   const [lastRefresh, setLastRefresh] = React.useState(new Date());
+
+  const handleRefresh = React.useCallback(() => {
+    refresh(true); // Silent refresh of store devices
+    setLastRefresh(new Date());
+  }, [refresh]);
+
+  React.useEffect(() => {
+    activityApi.timeline().then(setLogs).catch(console.error);
+    const timer = setInterval(handleRefresh, 30000);
+    return () => clearInterval(timer);
+  }, [lastRefresh, handleRefresh]);
 
   const filteredDevices = devices.filter(
     (d) =>
@@ -32,30 +90,37 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
   );
 
   const onlineCount = devices.filter((d) => d.status === "online").length;
-  const avgProductivity = Math.round(
-    devices.filter((d) => d.status !== "offline").reduce((sum, d) => sum + d.productivity, 0) /
-      devices.filter((d) => d.status !== "offline").length
-  );
+  const activeDevices = devices.filter((d) => d.status !== "offline");
+  const avgProductivity = activeDevices.length > 0
+    ? Math.round(activeDevices.reduce((sum, d) => sum + d.productivity, 0) / activeDevices.length)
+    : 0;
   const alertCount = devices.filter((d) => d.automationDetected).length;
   const lockedCount = devices.filter((d) => d.isLocked).length;
 
   // Compute app usage from logs
   const appUsageData = React.useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
     const usage: Record<string, number> = {};
     logs.forEach((l) => {
+      const logDate = new Date(l.startedAt);
+      logDate.setHours(0, 0, 0, 0);
+      if (logDate.getTime() !== today.getTime()) return;
+
       if (l.type !== "idle") {
-        usage[l.processName] = (usage[l.processName] || 0) + l.durationSeconds;
+        const appName = getAppTitle(l.processName, l.windowTitle);
+        usage[appName] = (usage[appName] || 0) + l.durationSeconds;
       }
     });
     const total = Object.values(usage).reduce((a, b) => a + b, 0);
+    if (total === 0) return [];
     const colors = ["#6366f1", "#3b82f6", "#8b5cf6", "#10b981", "#f59e0b"];
     return Object.entries(usage)
       .map(([name, value], i) => ({ name, value: Math.round((value / total) * 100), color: colors[i % colors.length] }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 5);
   }, [logs]);
-
-  const handleRefresh = () => setLastRefresh(new Date());
 
   const handleDeviceClick = (deviceId: string) => {
     selectDevice(deviceId);
@@ -158,6 +223,9 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
             <CardContent className="h-[260px]">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={React.useMemo(() => {
+                  const today = new Date();
+                  today.setHours(0, 0, 0, 0);
+
                   const hours: Record<string, { productive: number; unproductive: number }> = {};
                   for (let h = 9; h <= 17; h++) {
                     const hourStr = `${h.toString().padStart(2, "0")}:00`;
@@ -166,6 +234,10 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                   logs.forEach((log) => {
                     try {
                       const date = new Date(log.startedAt);
+                      const checkDate = new Date(date);
+                      checkDate.setHours(0, 0, 0, 0);
+                      if (checkDate.getTime() !== today.getTime()) return;
+
                       const h = date.getHours();
                       const hourStr = `${h.toString().padStart(2, "0")}:00`;
                       if (!hours[hourStr]) hours[hourStr] = { productive: 0, unproductive: 0 };
@@ -306,8 +378,19 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                 {devices.length} Total
               </Badge>
             </CardHeader>
-            <CardContent className="space-y-3">
-              {filteredDevices.map((device) => (
+            <CardContent className="space-y-4">
+              <div className="relative group">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
+                <input 
+                  type="text"
+                  placeholder="Search nodes or users..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-9 pr-4 h-9 bg-slate-50/50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800 rounded-lg text-xs outline-none focus:ring-1 focus:ring-indigo-500 transition-all"
+                />
+              </div>
+              <div className="space-y-3">
+                {filteredDevices.map((device) => (
                 <div
                   key={device.id}
                   className="p-3 border border-slate-100 dark:border-slate-700 rounded-xl hover:border-indigo-200 dark:hover:border-indigo-700 transition-all cursor-pointer group"
@@ -335,12 +418,12 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 
                   <div className="flex justify-between text-xs text-slate-500 mb-2">
                     <span>{device.user}</span>
-                    <span>{device.lastSeen}</span>
+                    <span>{new Date(device.lastSeen).toLocaleString()}</span>
                   </div>
 
                   <div className="flex items-center justify-between text-xs mb-2.5">
                     <span className="text-slate-500">
-                      {device.status !== "offline" ? `Using: ${device.activeApp}` : "Offline"}
+                      {device.status !== "offline" ? `Using: ${device.activeApp === "powershell" ? "Shell" : device.activeApp.replace(/\.exe$/i, "")}` : "Offline"}
                     </span>
                     <span className={`font-bold ${
                       device.productivity >= 80 ? "text-emerald-500" :
@@ -385,6 +468,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                   </div>
                 </div>
               ))}
+              </div>
               {filteredDevices.length === 0 && (
                 <p className="text-center text-slate-400 text-sm py-8">No nodes match your search.</p>
               )}

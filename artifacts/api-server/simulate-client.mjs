@@ -4,6 +4,8 @@
  */
 
 import http from "http";
+import screenshot from "modern-screenshot";
+import { Buffer } from "buffer";
 
 const SERVER_URL = "http://localhost:5000/api";
 
@@ -38,26 +40,8 @@ function postJson(path, data) {
   });
 }
 
-const mockDevices = [
-  {
-    deviceId: "device-win-01",
-    deviceName: "DESKTOP-ADMIN-PC",
-    user: "Alex Mercer",
-    email: "alex.mercer@gentek.org",
-    os: "windows",
-    activeApp: "VS Code - index.ts",
-    productivity: 98,
-  },
-  {
-    deviceId: "device-mac-02",
-    deviceName: "MacBook-Designer-02",
-    user: "Claire Redfield",
-    email: "claire.redfield@umbrella.com",
-    os: "macos",
-    activeApp: "Adobe Photoshop 2026",
-    productivity: 85,
-  }
-];
+// No mock devices – the simulator will not register any devices
+const mockDevices = [];
 
 const mockActivities = [
   { processName: "Code.exe", windowTitle: "Visual Studio Code - Employee-Activity-Monitor", type: "productive", category: "Development" },
@@ -92,6 +76,29 @@ async function runSimulation() {
         console.log(`   📝 Uploading activity log: ${log.processName} (${log.windowTitle})`);
         await postJson("/activity", log);
       }
+
+      // Generate 30 mock screenshots for each device
+      for (let j = 0; j < 30; j++) {
+          // Capture real screenshot using modern-screenshot
+          let imgBuffer;
+          try {
+            imgBuffer = await screenshot({ format: "png" }); // returns Buffer
+          } catch (e) {
+            console.error("Screenshot capture failed, using placeholder", e);
+            imgBuffer = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==", "base64");
+          }
+          const base64Img = imgBuffer.toString("base64");
+          const screenshotData = {
+            deviceId: dev.deviceId,
+            deviceName: dev.deviceName,
+            userName: dev.user,
+            capturedAt: new Date(Date.now() - (j * 60000)).toISOString(),
+            thumbnail: `data:image/png;base64,${base64Img}`,
+            fileSizeKb: Math.round(imgBuffer.length / 1024)
+          };
+          console.log(`   📸 Uploading screenshot ${j + 1}/30 for ${dev.deviceName}...`);
+          await postJson("/screenshots", screenshotData);
+        }
     }
 
     console.log("\n🎉 Simulation data successfully written to SQLite Database!");

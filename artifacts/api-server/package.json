@@ -9,6 +9,7 @@
     "start": "node --enable-source-maps ./dist/index.mjs",
     "local": "node ./local-server.mjs",
     "build:exe": "esbuild local-server.mjs --bundle --platform=node --format=cjs --outfile=dist/local-server.cjs --external:sqlite3 && esbuild tracker-client.mjs --bundle --platform=node --format=cjs --outfile=dist/tracker-client.cjs && npx pkg dist/local-server.cjs --targets node18-win-x64 --output bin/tracker-service.exe && npx pkg dist/tracker-client.cjs --targets node18-win-x64 --output bin/tracker-client.exe",
+    "build:mac": "esbuild tracker-client.mjs --bundle --platform=node --format=cjs --outfile=dist/tracker-client.cjs && npx pkg dist/tracker-client.cjs --targets node18-macos-arm64 --output bin/tracker-mac-arm64",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
@@ -20,6 +21,7 @@
     "express": "^5",
     "pino": "^9",
     "pino-http": "^10",
+    "sharp": "^0.34.5",
     "sqlite3": "^6.0.1"
   },
   "devDependencies": {
