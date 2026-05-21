@@ -55,6 +55,7 @@ interface AppState {
   unlockDevice: (id: string) => void;
   selectDevice: (id: string | null) => void;
   setDeviceGroup: (id: string, groupName: string) => void;
+  renameGroup: (oldName: string, newName: string) => void;
 }
 
 const AppContext = React.createContext<AppState | null>(null);
@@ -115,6 +116,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const renameGroup = async (oldName: string, newName: string) => {
+    try {
+      const result: any = await devicesApi.renameGroup(oldName, newName);
+      if (result.devices) {
+        setDevices(result.devices);
+      } else {
+        setDevices((prev) => prev.map((d) => (d.deviceGroup === oldName ? { ...d, deviceGroup: newName } : d)));
+      }
+    } catch (e) {
+      console.error("Failed to rename group:", e);
+      // Fallback local update
+      setDevices((prev) => prev.map((d) => (d.deviceGroup === oldName ? { ...d, deviceGroup: newName } : d)));
+    }
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -123,6 +139,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         lockDevice, unlockDevice,
         selectDevice: setSelectedDeviceId,
         setDeviceGroup,
+        renameGroup,
       }}
     >
       {children}

@@ -18,7 +18,7 @@ interface DevicesProps {
 }
 
 export default function Devices({ onNavigate }: DevicesProps) {
-  const { devices, lockDevice, unlockDevice, selectDevice, setDeviceGroup } = useAppStore();
+  const { devices, lockDevice, unlockDevice, selectDevice, setDeviceGroup, renameGroup } = useAppStore();
   const [search, setSearch] = React.useState("");
   const [statusFilter, setStatusFilter] = React.useState<"all" | "online" | "idle" | "offline">("all");
   const [groupFilter, setGroupFilter] = React.useState<string>("all");
@@ -83,9 +83,9 @@ export default function Devices({ onNavigate }: DevicesProps) {
                 </button>
               ))}
             </div>
-            <div className="ml-auto w-full md:w-[200px]">
+            <div className="ml-auto w-full md:w-auto flex gap-2">
               <select 
-                className="w-full h-9 rounded-md border border-slate-200 bg-white px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-indigo-500 dark:border-slate-800 dark:bg-slate-950 dark:focus-visible:ring-indigo-400"
+                className="w-full md:w-[200px] h-9 rounded-md border border-slate-200 bg-white px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-indigo-500 dark:border-slate-800 dark:bg-slate-950 dark:focus-visible:ring-indigo-400"
                 value={groupFilter}
                 onChange={(e) => setGroupFilter(e.target.value)}
               >
@@ -94,6 +94,22 @@ export default function Devices({ onNavigate }: DevicesProps) {
                   <option key={g} value={g}>{g}</option>
                 ))}
               </select>
+              {groupFilter !== "all" && (
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="h-9 px-3"
+                  onClick={() => {
+                    const newName = window.prompt(`Rename group "${groupFilter}" to:`, groupFilter);
+                    if (newName && newName.trim() !== "" && newName !== groupFilter) {
+                      renameGroup(groupFilter, newName.trim());
+                      setGroupFilter(newName.trim());
+                    }
+                  }}
+                >
+                  Edit
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>

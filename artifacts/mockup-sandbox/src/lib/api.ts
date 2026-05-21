@@ -52,6 +52,10 @@ export const devicesApi = {
     method: "PATCH", 
     body: JSON.stringify({ deviceGroup: groupName }) 
   }),
+  renameGroup: (oldName: string, newName: string) => apiFetch<any>(`/groups/rename`, {
+    method: "PATCH",
+    body: JSON.stringify({ oldName, newName })
+  }),
 };
 
 // ─── Activity Logs ────────────────────────────────────────────

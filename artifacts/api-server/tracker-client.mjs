@@ -11,16 +11,17 @@ import readline from "readline";
 import fs from "fs";
 import path from "path";
 
-const SERVER_URL = "http://localhost:5000/api";
 const IS_WIN = process.platform === "win32";
 const IS_MAC = process.platform === "darwin";
+
+const SERVER_URL = "http://192.168.150.13:5000/api";
 
 // ── Global Config State (dynamically controlled from backend Settings) ────────
 const configState = {
   screenshotMin: 5,  // in minutes
   screenshotMax: 15, // in minutes
   idleThreshold: 2,  // in minutes
-  syncInterval: 5,   // in minutes
+  syncInterval: 0.166, // in minutes (initial 10s for fast registration)
 };
 
 // ── State Management ──────────────────────────────────────────────────────────
@@ -29,6 +30,7 @@ const clientState = {
   deviceName: os.hostname(),
   user: os.userInfo().username || "Employee",
   email: `${os.userInfo().username || "employee"}@company.local`,
+  isRegistered: false, // false until first successful heartbeat response
   os: process.platform === "win32" ? "windows" : (process.platform === "darwin" ? "macos" : process.platform),
   activeApp: "System",
   windowTitle: "Desktop",
@@ -58,7 +60,7 @@ const offlineQueue = {
     activities: [],
     heartbeats: []
   },
-  
+
   load() {
     try {
       if (fs.existsSync(OFFLINE_DB_FILE)) {
@@ -69,7 +71,7 @@ const offlineQueue = {
       console.warn("⚠️ Could not load offline queue, starting fresh.");
     }
   },
-  
+
   save() {
     try {
       fs.writeFileSync(OFFLINE_DB_FILE, JSON.stringify(this.data, null, 2));
@@ -77,22 +79,22 @@ const offlineQueue = {
       console.error("❌ Failed to save offline queue:", e.message);
     }
   },
-  
+
   addActivity(log) {
     this.data.activities.push(log);
     this.save();
   },
-  
+
   addHeartbeat(hb) {
     this.data.heartbeats.push(hb);
     this.save();
   },
-  
+
   async flush() {
     if (this.data.activities.length === 0 && this.data.heartbeats.length === 0) return;
-    
+
     console.log(`🔄 Attempting to sync offline data (${this.data.activities.length} logs, ${this.data.heartbeats.length} heartbeats)...`);
-    
+
     try {
       // Sync heartbeats first
       while (this.data.heartbeats.length > 0) {
@@ -100,14 +102,14 @@ const offlineQueue = {
         await postJson("/sync/heartbeat", hb, true); // true = bypassQueue
         this.data.heartbeats.shift();
       }
-      
+
       // Sync activities
       while (this.data.activities.length > 0) {
         const log = this.data.activities[0];
         await postJson("/activity", log, true); // true = bypassQueue
         this.data.activities.shift();
       }
-      
+
       this.save();
       console.log("✅ Offline data synchronized successfully!");
     } catch (err) {
@@ -125,7 +127,7 @@ let screenshotTimer = null;
 // ── Helper: Classify App Productivity ──────────────────────────────────────────
 function getAppClassification(appName) {
   const name = (appName || "System").toLowerCase();
-  
+
   const productiveApps = [
     "code", "idea64", "pycharm", "webstorm", "clion", "studio", "vscode", // IDEs
     "chrome", "firefox", "msedge", "brave", "opera", "safari", // Web browsers for research/development
@@ -181,7 +183,7 @@ function postJson(path, data, bypassQueue = false) {
       if (!bypassQueue) {
         if (path === "/sync/heartbeat") offlineQueue.addHeartbeat(data);
         if (path === "/activity") offlineQueue.addActivity(data);
-        
+
         if (!clientState.isNodeOfflineSince) {
           clientState.isNodeOfflineSince = Date.now();
           console.warn("📉 Server unreachable. Switching to OFFLINE mode (caching data locally)...");
@@ -189,7 +191,7 @@ function postJson(path, data, bypassQueue = false) {
       }
       reject(err);
     });
-    
+
     req.write(body);
     req.end();
   });
@@ -227,11 +229,11 @@ function getJson(path) {
 // ── Helper: Update Dynamic Configuration State ───────────────────────────────
 function updateConfig(s) {
   if (!s) return;
-  
+
   const oldSyncInt = configState.syncInterval;
   const oldSShotMin = configState.screenshotMin;
   const oldSShotMax = configState.screenshotMax;
-  
+
   // Handle Units (sec vs min)
   const normSShotMin = (s.screenshotUnit === "sec") ? Number(s.screenshotMin) / 60 : Number(s.screenshotMin);
   const normSShotMax = (s.screenshotUnit === "sec") ? Number(s.screenshotMax) / 60 : Number(s.screenshotMax);
@@ -240,7 +242,7 @@ function updateConfig(s) {
 
   configState.screenshotMin = normSShotMin || 5;
   configState.screenshotMax = normSShotMax || 15;
-  configState.idleThreshold = normIdleThr || 1; 
+  configState.idleThreshold = normIdleThr || 1;
   configState.syncInterval = normSyncInt || 5;
 
   // Restart Sync Timer if interval changed
@@ -278,7 +280,7 @@ function runPowerShell(command) {
 async function captureAndSendScreenshotMac() {
   console.log("📸 Capturing screenshot (macOS)...");
   const tmpImg = path.join(os.tmpdir(), `tracker_cap_${Date.now()}.jpg`);
-  
+
   try {
     // Native macOS screencapture command
     await new Promise((resolve, reject) => {
@@ -292,7 +294,7 @@ async function captureAndSendScreenshotMac() {
 
     const imgBuffer = fs.readFileSync(tmpImg);
     const dataUrl = `data:image/jpeg;base64,${imgBuffer.toString('base64')}`;
-    
+
     fs.unlinkSync(tmpImg);
 
     const payload = {
@@ -389,7 +391,7 @@ function startPersistentTelemetryStreamWin() {
           const dx = x - clientState.lastMouseX;
           const dy = y - clientState.lastMouseY;
           const dist = Math.floor(Math.sqrt(dx * dx + dy * dy));
-          
+
           if (dist > 0) {
             clientState.mouseDistancePx += dist;
             clientState.keyboardActivityScore += Math.min(5, Math.ceil(dist / 50));
@@ -443,19 +445,19 @@ function startPersistentTelemetryStreamMac() {
       const data = JSON.parse(line.trim());
       clientState.activeApp = data.process || "System";
       clientState.windowTitle = data.title || "Desktop";
-      
+
       // On Mac, we get idle seconds directly from ioreg
       if (typeof data.idle === "number") {
         clientState.idleSecondsCounter = data.idle;
         clientState.isCurrentlyIdle = data.idle >= (configState.idleThreshold * 60);
-        
+
         // Mock some activity metrics for consistency with dashboard
         if (data.idle === 0) {
-           clientState.mouseDistancePx += 10;
-           clientState.keyboardActivityScore += 1;
+          clientState.mouseDistancePx += 10;
+          clientState.keyboardActivityScore += 1;
         }
       }
-    } catch (err) {}
+    } catch (err) { }
   });
 
   macProcess.on("close", () => {
@@ -472,7 +474,7 @@ async function captureAndSendScreenshot() {
 
 async function captureAndSendScreenshotWin() {
   console.log("📸 Capturing screenshot (Windows)...");
-  
+
   const tmpImg = path.join(os.tmpdir(), "tracker_cap.jpg");
   const cscPath = "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe";
   const exePath = path.join(os.tmpdir(), "tracker_screenshot.exe");
@@ -512,7 +514,7 @@ class Program {
 }`;
     const csPath = path.join(os.tmpdir(), "tracker_screenshot.cs");
     fs.writeFileSync(csPath, csCode);
-    
+
     try {
       await new Promise((resolve, reject) => {
         exec(`"${cscPath}" /nologo /r:System.Drawing.dll,System.Windows.Forms.dll /out:"${exePath}" "${csPath}"`, { windowsHide: true }, (err) => {
@@ -534,12 +536,12 @@ class Program {
         else resolve();
       });
     });
-    
+
     if (fs.existsSync(tmpImg)) {
       const imgBuffer = fs.readFileSync(tmpImg);
       const base64Data = imgBuffer.toString("base64");
       const dataUrl = `data:image/jpeg;base64,${base64Data}`;
-      
+
       const payload = {
         deviceId: clientState.deviceId,
         deviceName: clientState.deviceName,
@@ -552,7 +554,7 @@ class Program {
       console.log(`📤 Sending screenshot (${payload.fileSizeKb} KB)...`);
       await postJson("/screenshots", payload);
       console.log("✅ Screenshot sent successfully!");
-      
+
       // Cleanup
       fs.unlinkSync(tmpImg);
     }
@@ -571,8 +573,8 @@ async function syncTelemetry() {
 
     // Classify productivity based on active process
     const classification = getAppClassification(clientState.activeApp);
-    const productivityScore = clientState.isCurrentlyIdle 
-      ? 0 
+    const productivityScore = clientState.isCurrentlyIdle
+      ? 0
       : (classification.type === "productive" ? 100 : (classification.type === "unproductive" ? 20 : 60));
 
     // 1. Send Heartbeat and fetch active settings from server
@@ -585,20 +587,28 @@ async function syncTelemetry() {
       activeApp: clientState.activeApp,
       productivity: productivityScore
     };
-    
+
     console.log("📡 Sending heartbeat...");
     const response = await postJson("/sync/heartbeat", heartbeatPayload);
 
-    if (response && response.serverTime) {
-      const serverMs = new Date(response.serverTime).getTime();
-      const localMs = Date.now();
-      clientState.serverClockOffset = serverMs - localMs;
-      console.log(`🕒 Clock sync applied. Offset: ${clientState.serverClockOffset}ms`);
-    }
+    if (response) {
+      // Mark as registered on first successful response
+      if (!clientState.isRegistered) {
+        clientState.isRegistered = true;
+        console.log("✅ Device registered with server. Switching to normal sync interval.");
+      }
 
-    // Dynamic configuration sync from response
-    if (response && response.settings) {
-      updateConfig(response.settings);
+      if (response.serverTime) {
+        const serverMs = new Date(response.serverTime).getTime();
+        const localMs = Date.now();
+        clientState.serverClockOffset = serverMs - localMs;
+        console.log(`🕒 Clock sync applied. Offset: ${clientState.serverClockOffset}ms`);
+      }
+
+      // Dynamic configuration sync from response
+      if (response.settings) {
+        updateConfig(response.settings);
+      }
     }
 
     // 2. Send Activity Log
@@ -614,11 +624,11 @@ async function syncTelemetry() {
 
     console.log(`📝 Sending activity log: [${currentLog.category}] Process: ${currentLog.processName} (${elapsedSeconds}s)`);
     await postJson("/activity", currentLog);
-    
+
     // Reset temporary activity variables
     clientState.mouseDistancePx = 0;
     clientState.keyboardActivityScore = 0;
-    
+
   } catch (err) {
     console.error("❌ Sync failure:", err.message);
   }
@@ -643,10 +653,19 @@ async function runSyncCycle() {
   if (clientState.isNodeOfflineSince) {
     await offlineQueue.flush();
   }
-  
+
   await syncTelemetry();
-  // Lowered minimum from 10s to 2s
-  const nextSyncMs = Math.max(2000, configState.syncInterval * 60 * 1000);
+
+  let nextSyncMs;
+  if (!clientState.isRegistered) {
+    // Fast-poll every 10s until we get a successful response
+    nextSyncMs = 10 * 1000;
+    console.log("⏳ Not yet registered. Retrying in 10 seconds...");
+  } else {
+    // Use server-configured interval (minimum 30s)
+    nextSyncMs = Math.max(30 * 1000, configState.syncInterval * 60 * 1000);
+  }
+
   syncTimer = setTimeout(runSyncCycle, nextSyncMs);
 }
 
@@ -656,13 +675,13 @@ async function runScreenshotCycle() {
   } else {
     console.log("⏸️ System is idle. Skipping screenshot.");
   }
-  
+
   // Pick random minutes between screenshotMin and screenshotMax
   const min = configState.screenshotMin;
   const max = configState.screenshotMax;
   const randMinutes = Math.random() * (max - min) + min;
   const nextScreenshotMs = Math.floor(randMinutes * 60 * 1000);
-  
+
   console.log(`⏱️ Next screenshot scheduled randomly in ${randMinutes.toFixed(1)} minutes.`);
   screenshotTimer = setTimeout(runScreenshotCycle, nextScreenshotMs);
 }
@@ -670,6 +689,7 @@ async function runScreenshotCycle() {
 // ── Core Tracking Loop ────────────────────────────────────────────────────────
 async function startTracking() {
   console.log("🚀 Active Tracker Client started successfully!");
+
   console.log(`🖥️ Tracking machine: ${clientState.deviceName} (User: ${clientState.user})`);
   console.log(`🔗 API Server targeted: ${SERVER_URL}`);
 
@@ -688,7 +708,7 @@ async function startTracking() {
   setTimeout(async () => {
     await syncTelemetry();
   }, 1000);
-  
+
   // Periodically fetch and apply updated settings from backend every 15 minutes
   setInterval(fetchAndApplySettings, 15 * 60 * 1000);
 
