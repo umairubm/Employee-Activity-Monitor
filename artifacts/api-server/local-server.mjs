@@ -547,17 +547,40 @@ const server = http.createServer(async (req, res) => {
     // ── GET /api/screenshots ────────────────────────────────────────────────
     if (method === "GET" && segments[0] === "screenshots" && !segments[1]) {
       const deviceId = url.searchParams.get("deviceId");
+      const pageParam = url.searchParams.get("page");
+      const limitParam = url.searchParams.get("limit");
+      const usePagination = pageParam !== null && limitParam !== null;
+      const page = usePagination ? Math.max(1, parseInt(pageParam)) : 0;
+      const limit = usePagination ? Math.max(1, Math.min(200, parseInt(limitParam))) : 0;
+
       let rows;
-      if (deviceId) {
-        rows = await dbQuery.all("SELECT * FROM screenshots WHERE deviceId = ? ORDER BY capturedAt DESC", [deviceId]);
+      if (usePagination) {
+        // Count total
+        const countSql = deviceId
+          ? "SELECT COUNT(*) as total FROM screenshots WHERE deviceId = ?"
+          : "SELECT COUNT(*) as total FROM screenshots";
+        const countRow = await dbQuery.get(countSql, deviceId ? [deviceId] : []);
+        const total = countRow ? countRow.total : 0;
+        const totalPages = Math.ceil(total / limit);
+        const offset = (page - 1) * limit;
+
+        if (deviceId) {
+          rows = await dbQuery.all("SELECT * FROM screenshots WHERE deviceId = ? ORDER BY capturedAt DESC LIMIT ? OFFSET ?", [deviceId, limit, offset]);
+        } else {
+          rows = await dbQuery.all("SELECT * FROM screenshots ORDER BY capturedAt DESC LIMIT ? OFFSET ?", [limit, offset]);
+        }
+        const screenshots = rows.map(s => ({ ...s, flagged: Boolean(s.flagged) }));
+        return json(res, { data: screenshots, total, page, limit, totalPages });
       } else {
-        rows = await dbQuery.all("SELECT * FROM screenshots ORDER BY capturedAt DESC");
+        // Legacy: return flat array (no pagination)
+        if (deviceId) {
+          rows = await dbQuery.all("SELECT * FROM screenshots WHERE deviceId = ? ORDER BY capturedAt DESC", [deviceId]);
+        } else {
+          rows = await dbQuery.all("SELECT * FROM screenshots ORDER BY capturedAt DESC");
+        }
+        const screenshots = rows.map(s => ({ ...s, flagged: Boolean(s.flagged) }));
+        return json(res, screenshots);
       }
-      const screenshots = rows.map(s => ({
-        ...s,
-        flagged: Boolean(s.flagged)
-      }));
-      return json(res, screenshots);
     }
 
     // ── PATCH /api/screenshots/:id/flag ────────────────────────────────────

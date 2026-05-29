@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Camera, Flag, Download, Eye, X, Search, AlertTriangle, ChevronLeft, ChevronRight, RotateCcw, Shield } from "lucide-react";
+import { Camera, Flag, Download, Eye, X, Search, AlertTriangle, ChevronLeft, ChevronRight, RotateCcw, Shield, ChevronsLeft, ChevronsRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -8,11 +8,56 @@ import { useAppStore } from "../../store";
 import type { Screenshot } from "../../store";
 import { screenshotsApi } from "../../lib/api";
 
+const ITEMS_PER_PAGE = 100;
 
 const getImageType = (dataUrl: string | undefined) => {
   const match = dataUrl?.match(/^data:image\/([a-zA-Z0-9]+);/);
   return match ? match[1].toUpperCase() : "JPEG";
 };
+
+// ── Lazy Image Component ──────────────────────────────────────────────────────
+// Uses IntersectionObserver to only load the actual image when it scrolls into view.
+// Shows a subtle shimmer placeholder until visible, then fades in the real image.
+function LazyImage({ src, alt, className }: { src: string; alt: string; className?: string }) {
+  const imgRef = React.useRef<HTMLDivElement>(null);
+  const [isVisible, setIsVisible] = React.useState(false);
+  const [isLoaded, setIsLoaded] = React.useState(false);
+
+  React.useEffect(() => {
+    const el = imgRef.current;
+    if (!el) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsVisible(true);
+          observer.unobserve(el);
+        }
+      },
+      { rootMargin: "200px" } // Start loading 200px before it enters viewport
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <div ref={imgRef} className="relative w-full h-full">
+      {/* Shimmer placeholder */}
+      {!isLoaded && (
+        <div className="absolute inset-0 bg-gradient-to-r from-slate-200 via-slate-100 to-slate-200 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800 animate-pulse" />
+      )}
+      {isVisible && (
+        <img
+          src={src}
+          alt={alt}
+          loading="lazy"
+          onLoad={() => setIsLoaded(true)}
+          className={`${className || ""} transition-opacity duration-500 ${isLoaded ? "opacity-100" : "opacity-0"}`}
+        />
+      )}
+    </div>
+  );
+}
 
 export default function Screenshots() {
   const { devices } = useAppStore();
@@ -24,22 +69,53 @@ export default function Screenshots() {
   const [lightbox, setLightbox] = React.useState<string | null>(null);
 
   const [loading, setLoading] = React.useState(false);
-  
-  const fetchScreenshots = React.useCallback(async () => {
+  const [currentPage, setCurrentPage] = React.useState(1);
+  const [serverTotalPages, setServerTotalPages] = React.useState<number | null>(null);
+  const [serverTotalItems, setServerTotalItems] = React.useState<number | null>(null);
+
+  const fetchScreenshots = React.useCallback(async (page = 1) => {
     setLoading(true);
     try {
-      const data = await screenshotsApi.list();
-      setScreenshots(data);
+      const result = await screenshotsApi.list({
+        page,
+        limit: ITEMS_PER_PAGE,
+        deviceId: deviceFilter !== "all" ? deviceFilter : undefined,
+      });
+
+      // Handle paginated envelope response
+      if (result && result.data && Array.isArray(result.data)) {
+        setScreenshots(result.data);
+        setServerTotalPages(result.totalPages || 1);
+        setServerTotalItems(result.total || result.data.length);
+        setCurrentPage(result.page || page);
+      } else if (Array.isArray(result)) {
+        // Legacy flat array fallback
+        setScreenshots(result);
+        setServerTotalPages(null);
+        setServerTotalItems(null);
+        if (page === 1) setCurrentPage(1);
+      }
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [deviceFilter]);
 
   React.useEffect(() => {
-    fetchScreenshots();
-  }, [fetchScreenshots]);
+    fetchScreenshots(1);
+    setCurrentPage(1);
+  }, [deviceFilter]);
+
+  // When page changes, re-fetch or paginate locally
+  const goToPage = (page: number, currentTotalPages: number) => {
+    if (page < 1 || page > currentTotalPages || page === currentPage) return;
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    setCurrentPage(page);
+    if (serverTotalPages !== null) {
+      fetchScreenshots(page);
+    }
+  };
 
   const toggleFlag = async (screenshotId: string) => {
     try {
@@ -54,6 +130,7 @@ export default function Screenshots() {
 
   const allGroups = React.useMemo(() => Array.from(new Set(devices.map(d => d.deviceGroup || "Unassigned"))).sort(), [devices]);
 
+  // Client-side filtering on current page data
   const filtered = screenshots.filter((s) => {
     const parentDevice = devices.find((d) => d.id === s.deviceId);
     const parentGroup = parentDevice?.deviceGroup || "Unassigned";
@@ -61,24 +138,35 @@ export default function Screenshots() {
     const matchSearch =
       s.deviceName.toLowerCase().includes(search.toLowerCase()) ||
       s.userName.toLowerCase().includes(search.toLowerCase());
-    const matchDevice = deviceFilter === "all" || s.deviceId === deviceFilter;
     const matchGroup = groupFilter === "all" || parentGroup === groupFilter;
     const matchFlagged = !showFlaggedOnly || s.flagged;
-    return matchSearch && matchDevice && matchGroup && matchFlagged;
+    return matchSearch && matchGroup && matchFlagged;
   });
+
+  // Ensure currentPage doesn't exceed newly computed totalPages if filter shrinks
+  const totalPages = serverTotalPages !== null ? serverTotalPages : Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
+  const totalItems = serverTotalItems !== null ? serverTotalItems : filtered.length;
+
+  React.useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(1);
+  }, [totalPages, currentPage]);
+
+  const displayedFiltered = serverTotalPages !== null 
+    ? filtered 
+    : filtered.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
 
   const flaggedCount = screenshots.filter((s) => s.flagged).length;
   const lightboxShot = lightbox ? screenshots.find((s) => s.id === lightbox) : null;
 
   const handleKeyDown = (e: KeyboardEvent) => {
-    const currentIndex = filtered.findIndex((s) => s.id === lightbox);
+    const currentIndex = displayedFiltered.findIndex((s) => s.id === lightbox);
     if (currentIndex !== -1) {
       if (e.key === "ArrowRight") {
-        const nextIndex = (currentIndex + 1) % filtered.length;
-        setLightbox(filtered[nextIndex].id);
+        const nextIndex = (currentIndex + 1) % displayedFiltered.length;
+        setLightbox(displayedFiltered[nextIndex].id);
       } else if (e.key === "ArrowLeft") {
-        const prevIndex = (currentIndex - 1 + filtered.length) % filtered.length;
-        setLightbox(filtered[prevIndex].id);
+        const prevIndex = (currentIndex - 1 + displayedFiltered.length) % displayedFiltered.length;
+        setLightbox(displayedFiltered[prevIndex].id);
       } else if (e.key === "Escape") {
         setLightbox(null);
       }
@@ -90,19 +178,39 @@ export default function Screenshots() {
       window.addEventListener("keydown", handleKeyDown);
     }
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [lightbox, filtered]);
+  }, [lightbox, displayedFiltered]);
 
   const navigate = (dir: "prev" | "next") => {
-    const currentIndex = filtered.findIndex((s) => s.id === lightbox);
+    const currentIndex = displayedFiltered.findIndex((s) => s.id === lightbox);
     if (currentIndex === -1) return;
     if (dir === "next") {
-      const nextIndex = (currentIndex + 1) % filtered.length;
-      setLightbox(filtered[nextIndex].id);
+      const nextIndex = (currentIndex + 1) % displayedFiltered.length;
+      setLightbox(displayedFiltered[nextIndex].id);
     } else {
-      const prevIndex = (currentIndex - 1 + filtered.length) % filtered.length;
-      setLightbox(filtered[prevIndex].id);
+      const prevIndex = (currentIndex - 1 + displayedFiltered.length) % displayedFiltered.length;
+      setLightbox(displayedFiltered[prevIndex].id);
     }
   };
+
+  // Generate page numbers to show (smart windowing)
+  const getPageNumbers = () => {
+    const pages: (number | "...")[] = [];
+    if (totalPages <= 7) {
+      for (let i = 1; i <= totalPages; i++) pages.push(i);
+    } else {
+      pages.push(1);
+      if (currentPage > 3) pages.push("...");
+      for (let i = Math.max(2, currentPage - 1); i <= Math.min(totalPages - 1, currentPage + 1); i++) {
+        pages.push(i);
+      }
+      if (currentPage < totalPages - 2) pages.push("...");
+      pages.push(totalPages);
+    }
+    return pages;
+  };
+
+  const startItem = (currentPage - 1) * ITEMS_PER_PAGE + 1;
+  const endItem = Math.min(currentPage * ITEMS_PER_PAGE, totalItems);
 
   return (
     <div className="space-y-6">
@@ -113,7 +221,7 @@ export default function Screenshots() {
             Screenshots
           </h1>
           <p className="text-slate-500 text-sm">
-            {screenshots.length} captures · {flaggedCount} flagged
+            {totalItems} total captures · Page {currentPage} of {totalPages}
           </p>
         </div>
         {flaggedCount > 0 && (
@@ -157,7 +265,7 @@ export default function Screenshots() {
             ))}
           </select>
           <button
-            onClick={fetchScreenshots}
+            onClick={() => fetchScreenshots(currentPage)}
             disabled={loading}
             className={`flex items-center gap-2 text-sm px-3 py-2 rounded-lg font-medium transition-all bg-slate-100 text-slate-600 hover:bg-slate-200 ${loading ? 'opacity-50' : ''}`}
           >
@@ -176,7 +284,7 @@ export default function Screenshots() {
             Flagged Only
           </button>
           <span className="text-xs text-slate-400 ml-auto">
-            {filtered.length} of {screenshots.length} shown
+            {displayedFiltered.length} of {totalItems} shown (page {currentPage})
           </span>
         </CardContent>
       </Card>
@@ -189,14 +297,14 @@ export default function Screenshots() {
           </div>
           <p className="text-slate-500 font-medium animate-pulse">Loading secure captures...</p>
         </div>
-      ) : filtered.length === 0 ? (
+      ) : displayedFiltered.length === 0 ? (
         <div className="text-center py-16 text-slate-400">
           <Camera className="h-10 w-10 mx-auto mb-3 opacity-30" />
           <p>No screenshots match your filter.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {filtered.map((shot) => (
+          {displayedFiltered.map((shot) => (
             <Card
               key={shot.id}
               className={`border-none shadow-sm overflow-hidden group cursor-pointer transition-all hover:shadow-lg hover:-translate-y-0.5 ${
@@ -204,10 +312,10 @@ export default function Screenshots() {
               }`}
               onClick={() => setLightbox(shot.id)}
             >
-              {/* Thumbnail */}
+              {/* Thumbnail with lazy loading */}
               <div className="relative overflow-hidden aspect-video bg-slate-900">
-                <img
-                  src={shot.thumbnail}
+                <LazyImage
+                  src={shot.thumbnail || ""}
                   alt={`Screenshot by ${shot.userName}`}
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 />
@@ -266,6 +374,82 @@ export default function Screenshots() {
               </CardContent>
             </Card>
           ))}
+        </div>
+      )}
+
+      {/* ── Pagination Controls ───────────────────────────────────────────────── */}
+      {totalPages > 1 && !loading && (
+        <div className="sticky bottom-0 z-10 flex flex-col sm:flex-row items-center justify-between gap-4 py-4 mt-auto bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800">
+          {/* Item range indicator */}
+          <p className="text-xs font-medium text-slate-400">
+            Showing <span className="text-slate-600 dark:text-slate-300 font-bold">{startItem}–{endItem}</span> of{" "}
+            <span className="text-slate-600 dark:text-slate-300 font-bold">{totalItems}</span> captures
+          </p>
+
+          {/* Page buttons */}
+          <div className="flex items-center gap-1">
+            {/* First page */}
+            <button
+              onClick={() => goToPage(1, totalPages)}
+              disabled={currentPage === 1}
+              className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+              title="First page"
+            >
+              <ChevronsLeft className="h-4 w-4" />
+            </button>
+            {/* Previous */}
+            <button
+              onClick={() => goToPage(currentPage - 1, totalPages)}
+              disabled={currentPage === 1}
+              className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+              title="Previous page"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+
+            {/* Page numbers */}
+            {getPageNumbers().map((page, i) =>
+              page === "..." ? (
+                <span key={`ellipsis-${i}`} className="px-2 text-slate-400 text-sm select-none">…</span>
+              ) : (
+                <button
+                  key={page}
+                  onClick={() => goToPage(page as number, totalPages)}
+                  className={`min-w-[36px] h-9 rounded-lg text-sm font-bold transition-all ${
+                    page === currentPage
+                      ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20"
+                      : "text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white"
+                  }`}
+                >
+                  {page}
+                </button>
+              )
+            )}
+
+            {/* Next */}
+            <button
+              onClick={() => goToPage(currentPage + 1, totalPages)}
+              disabled={currentPage === totalPages}
+              className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+              title="Next page"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+            {/* Last page */}
+            <button
+              onClick={() => goToPage(totalPages, totalPages)}
+              disabled={currentPage === totalPages}
+              className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+              title="Last page"
+            >
+              <ChevronsRight className="h-4 w-4" />
+            </button>
+          </div>
+
+          {/* Per-page info */}
+          <p className="text-xs text-slate-400">
+            <span className="font-bold text-indigo-500">{ITEMS_PER_PAGE}</span> per page
+          </p>
         </div>
       )}
 

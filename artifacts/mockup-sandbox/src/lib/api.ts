@@ -74,7 +74,14 @@ export const activityApi = {
 // ─── Screenshots ─────────────────────────────────────────────
 
 export const screenshotsApi = {
-  list: () => apiFetch<any[]>("/screenshots"),
+  list: (params?: { page?: number; limit?: number; deviceId?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.page) qs.append("page", String(params.page));
+    if (params?.limit) qs.append("limit", String(params.limit));
+    if (params?.deviceId) qs.append("deviceId", params.deviceId);
+    const q = qs.toString();
+    return apiFetch<any>(`/screenshots${q ? `?${q}` : ""}`);
+  },
   flag: (id: string) => apiFetch<any>(`/screenshots/${id}/flag`, { method: "PATCH" }),
 };
 
