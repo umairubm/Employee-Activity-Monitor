@@ -567,9 +567,17 @@ class Program {
 async function syncTelemetry() {
   try {
     const now = Date.now();
-    const elapsedSeconds = Math.max(1, Math.floor((now - clientState.lastSyncTime) / 1000));
+    let elapsedSeconds = Math.max(1, Math.floor((now - clientState.lastSyncTime) / 1000));
     const lastSyncTime = clientState.lastSyncTime;
     clientState.lastSyncTime = now;
+
+    // Preventive fix: If the device went to sleep (event loop paused), elapsed seconds will be massive.
+    // We cap it to the expected sync interval plus a 1-minute buffer to prevent logging hours of sleep as "active" work. 
+    const expectedMaxElapsed = (configState.syncInterval * 60) + 60; 
+    if (elapsedSeconds > expectedMaxElapsed) {
+      console.log(`⚠️ Massive time jump detected (${elapsedSeconds}s). Likely device sleep/hibernation. Capping active duration.`);
+      elapsedSeconds = Math.round(expectedMaxElapsed); 
+    }
 
     // Classify productivity based on active process
     const classification = getAppClassification(clientState.activeApp);

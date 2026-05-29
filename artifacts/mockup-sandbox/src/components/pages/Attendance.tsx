@@ -19,6 +19,7 @@ interface AttendanceRecord {
   required: number;
 }
 
+
 interface AttendanceSettings {
   startTime: string;
   halfDayStartThreshold: string;
@@ -49,7 +50,7 @@ export default function Attendance() {
   const [settingsGroupFilter, setSettingsGroupFilter] = React.useState<string>("all");
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
   const [groupFilter, setGroupFilter] = React.useState<string>("all");
-  
+
   const allGroups = React.useMemo(() => Array.from(new Set(devices.map(d => d.deviceGroup || "Unassigned"))).sort(), [devices]);
 
   const fetchAttendance = React.useCallback(async () => {
@@ -66,18 +67,18 @@ export default function Attendance() {
 
   const filteredRecords = React.useMemo(() => {
     if (!Array.isArray(records)) return [];
-    
+
     return records.filter(r => {
       const q = searchQuery.toLowerCase();
-      const matchSearch = !searchQuery || 
-        (r.name?.toLowerCase().includes(q)) || 
+      const matchSearch = !searchQuery ||
+        (r.name?.toLowerCase().includes(q)) ||
         (r.user?.toLowerCase().includes(q)) ||
         (r.deviceId?.toLowerCase().includes(q));
-      
+
       const parentDevice = devices.find((d: any) => d.id === r.deviceId);
       const parentGroup = parentDevice?.deviceGroup || "Unassigned";
       const matchGroup = groupFilter === "all" || parentGroup === groupFilter;
-      
+
       return matchSearch && matchGroup;
     });
   }, [records, searchQuery, groupFilter, devices]);
@@ -105,12 +106,12 @@ export default function Attendance() {
   const handleSaveSettings = async () => {
     try {
       const targets = selectedIds.length > 0 ? selectedIds : [selectedDeviceForSettings];
-      
+
       setLoading(true);
       await Promise.all(targets.map(id =>
         attendanceApi.saveSettings({ deviceId: id, ...settings as any })
       ));
-      
+
       // Optimistically update UI statuses for affected devices using the new settings
       setRecords(prev => {
         return prev.map(r => targets.includes(r.deviceId) ? (computeStatusForRecord(r, settings) as any) : r);
@@ -146,7 +147,7 @@ export default function Attendance() {
   };
 
   const toggleSelect = (id: string) => {
-    setSelectedIds(prev => 
+    setSelectedIds(prev =>
       prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
     );
   };
@@ -207,13 +208,13 @@ export default function Attendance() {
     const now = new Date();
     const isToday = date === now.toISOString().split("T")[0];
     const currentTimeStr = now.toTimeString().split(' ')[0].substring(0, 5); // "HH:MM"
-    
+
     // Only count as departure if they stopped BEFORE the threshold AND the current time IS AFTER the threshold
     // OR if it's a previous day.
-    const hasCheckedOutEarly = isToday 
+    const hasCheckedOutEarly = isToday
       ? (lastTime < (sets.halfDayOffStart || "12:00") && currentTimeStr > (sets.halfDayOffStart || "12:00"))
       : (lastTime < (sets.halfDayOffStart || "12:00"));
-    
+
     if (status === "Present" && (rec.totalHours || 0) < required) {
       // If it's a previous day or they checked out before the threshold, they get Half Day
       if (!isToday || hasCheckedOutEarly) {
@@ -238,6 +239,7 @@ export default function Attendance() {
           <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">Attendance Report</h1>
           <p className="text-slate-500 text-sm">Monitor employee working hours and presence thresholds</p>
         </div>
+
         <div className="flex items-center gap-3">
           {selectedIds.length > 0 && (
             <Badge variant="secondary" className="bg-indigo-50 text-indigo-700 border-indigo-100 flex items-center gap-1">
@@ -248,7 +250,7 @@ export default function Attendance() {
             </Badge>
           )}
           <div className="flex items-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-1 px-2 shadow-sm">
-            <button 
+            <button
               onClick={() => {
                 const prev = new Date(date);
                 prev.setDate(prev.getDate() - 1);
@@ -258,13 +260,13 @@ export default function Attendance() {
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
-            <Input 
-              type="date" 
-              value={date} 
+            <Input
+              type="date"
+              value={date}
               onChange={(e) => setDate(e.target.value)}
               className="border-none shadow-none focus-visible:ring-0 w-36 bg-transparent h-8 text-xs font-semibold"
             />
-            <button 
+            <button
               onClick={() => {
                 const next = new Date(date);
                 next.setDate(next.getDate() + 1);
@@ -277,7 +279,7 @@ export default function Attendance() {
           </div>
           <div className="relative group">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
-            <input 
+            <input
               type="text"
               placeholder="Search employee..."
               value={searchQuery}
@@ -295,9 +297,9 @@ export default function Attendance() {
               <option key={g} value={g}>{g}</option>
             ))}
           </select>
-          <Button 
-            variant="outline" 
-            size="sm" 
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => setShowSettings(!showSettings)}
             className={`h-9 shadow-sm ${showSettings ? "bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-900/20" : ""}`}
           >
@@ -305,6 +307,27 @@ export default function Attendance() {
             Config Thresholds
           </Button>
         </div>
+      </div>
+
+      {/* Modern Legend */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {[
+          { icon: <CheckCircle className="h-4 w-4" />, title: "Regular Presence", desc: "Met daily hours and shift start thresholds.", color: "emerald" },
+          { icon: <AlertCircle className="h-4 w-4" />, title: "Half Day Triggers", desc: "Late start, early exit, or insufficient hours.", color: "amber" },
+          { icon: <XCircle className="h-4 w-4" />, title: "Absentia", desc: "No tracker data received for this date.", color: "red" }
+        ].map((item, i) => (
+          <Card key={i} className={`bg-${item.color}-50/50 dark:bg-${item.color}-500/5 border-${item.color}-100 dark:border-${item.color}-500/10 shadow-sm border-2`}>
+            <CardContent className="pt-5 flex items-start gap-4">
+              <div className={`p-2.5 bg-${item.color}-500 text-white rounded-xl shadow-lg shadow-${item.color}-500/20`}>
+                {item.icon}
+              </div>
+              <div className="space-y-1">
+                <p className={`text-xs font-black text-${item.color}-700 dark:text-${item.color}-400 uppercase tracking-widest`}>{item.title}</p>
+                <p className={`text-[11px] font-medium text-${item.color}-600/80 leading-relaxed`}>{item.desc}</p>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
       {showSettings && (
@@ -324,9 +347,9 @@ export default function Attendance() {
                   </CardDescription>
                 </div>
               </div>
-              <Button 
-                variant="ghost" 
-                size="sm" 
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => setShowSettings(false)}
                 className="h-8 w-8 p-0 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg"
               >
@@ -341,7 +364,7 @@ export default function Attendance() {
                   <div className="flex gap-2">
                     <div className="relative group flex-1">
                       <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
-                      <Input 
+                      <Input
                         placeholder="Search nodes or employees..."
                         value={deviceSearch}
                         onChange={(e) => setDeviceSearch(e.target.value)}
@@ -360,7 +383,7 @@ export default function Attendance() {
                     </select>
                   </div>
                   <div className="h-28 overflow-y-auto border border-slate-100 dark:border-slate-800 rounded-lg p-2 bg-slate-50/30 dark:bg-black/5 space-y-1 custom-scrollbar">
-                    <div 
+                    <div
                       onClick={() => {
                         setSelectedIds([]);
                         setSelectedDeviceForSettings("global");
@@ -377,7 +400,7 @@ export default function Attendance() {
                       const matchGroup = settingsGroupFilter === "all" || (d.deviceGroup || "Unassigned") === settingsGroupFilter;
                       return matchSearch && matchGroup;
                     }).map((d: any) => (
-                      <div 
+                      <div
                         key={d.id}
                         onClick={() => toggleSelect(d.id)}
                         className={`flex items-center gap-2 p-1.5 rounded-md cursor-pointer transition-colors ${selectedIds.includes(d.id) ? "bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300" : "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400"}`}
@@ -405,7 +428,7 @@ export default function Attendance() {
                         {selectedIds.map(id => (
                           <div key={id} className="flex items-center gap-1.5 pl-2.5 pr-1 py-1 bg-indigo-50 dark:bg-indigo-900/40 rounded-full border border-indigo-100 dark:border-indigo-800 shadow-sm animate-in zoom-in-95 duration-200">
                             <span className="text-[10px] font-bold text-indigo-700 dark:text-indigo-300">{getDeviceNameOnly(id)}</span>
-                            <button 
+                            <button
                               onClick={(e) => { e.stopPropagation(); toggleSelect(id); }}
                               className="p-0.5 hover:bg-white dark:hover:bg-slate-800 rounded-full text-indigo-400 hover:text-red-500 transition-colors"
                             >
@@ -413,15 +436,15 @@ export default function Attendance() {
                             </button>
                           </div>
                         ))}
-                         <div className="w-full mt-2 pt-2 border-t border-slate-50 dark:border-slate-800/50 flex justify-between items-center">
-                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{selectedIds.length} Nodes selected</p>
-                            <button 
-                              onClick={() => setSelectedIds([])}
-                              className="text-[9px] font-black text-rose-500 hover:text-rose-700 uppercase tracking-widest py-1.5 px-2"
-                            >
-                              Clear Selection
-                            </button>
-                         </div>
+                        <div className="w-full mt-2 pt-2 border-t border-slate-50 dark:border-slate-800/50 flex justify-between items-center">
+                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{selectedIds.length} Nodes selected</p>
+                          <button
+                            onClick={() => setSelectedIds([])}
+                            className="text-[9px] font-black text-rose-500 hover:text-rose-700 uppercase tracking-widest py-1.5 px-2"
+                          >
+                            Clear Selection
+                          </button>
+                        </div>
                       </>
                     )}
                   </div>
@@ -438,11 +461,11 @@ export default function Attendance() {
                 <div className="space-y-4">
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400">Regular Shift Start</label>
-                    <Input type="time" value={settings.startTime} onChange={(e) => setSettings({...settings, startTime: e.target.value})} className="bg-slate-50/50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700" />
+                    <Input type="time" value={settings.startTime} onChange={(e) => setSettings({ ...settings, startTime: e.target.value })} className="bg-slate-50/50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700" />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400">Late Start (Half-Day)</label>
-                    <Input type="time" value={settings.halfDayStartThreshold} onChange={(e) => setSettings({...settings, halfDayStartThreshold: e.target.value})} className="bg-slate-50/50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700" />
+                    <Input type="time" value={settings.halfDayStartThreshold} onChange={(e) => setSettings({ ...settings, halfDayStartThreshold: e.target.value })} className="bg-slate-50/50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700" />
                     <p className="text-[9px] text-slate-400 italic">Marked as half-day if check-in after this time</p>
                   </div>
                 </div>
@@ -455,7 +478,7 @@ export default function Attendance() {
                 <div className="space-y-4">
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400">Half-Day End Threshold</label>
-                    <Input type="time" value={settings.halfDayOffStart} onChange={(e) => setSettings({...settings, halfDayOffStart: e.target.value})} className="bg-slate-50/50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700" />
+                    <Input type="time" value={settings.halfDayOffStart} onChange={(e) => setSettings({ ...settings, halfDayOffStart: e.target.value })} className="bg-slate-50/50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700" />
                     <p className="text-[9px] text-slate-400 italic">Marked as half-day if check-out before this time</p>
                   </div>
                 </div>
@@ -469,25 +492,25 @@ export default function Attendance() {
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400">Mon-Thu (Required)</label>
                     <div className="relative">
-                      <Input type="number" step="0.1" value={settings.requiredHoursNormal} onChange={(e) => setSettings({...settings, requiredHoursNormal: parseFloat(e.target.value)})} className="bg-slate-50/50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 pr-10" />
+                      <Input type="number" step="0.1" value={settings.requiredHoursNormal} onChange={(e) => setSettings({ ...settings, requiredHoursNormal: parseFloat(e.target.value) })} className="bg-slate-50/50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 pr-10" />
                       <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[9px] font-black text-slate-400">HRS</span>
                     </div>
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400">Friday (Required)</label>
                     <div className="relative">
-                      <Input type="number" step="0.1" value={settings.requiredHoursFriday} onChange={(e) => setSettings({...settings, requiredHoursFriday: parseFloat(e.target.value)})} className="bg-slate-50/50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 pr-10" />
+                      <Input type="number" step="0.1" value={settings.requiredHoursFriday} onChange={(e) => setSettings({ ...settings, requiredHoursFriday: parseFloat(e.target.value) })} className="bg-slate-50/50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 pr-10" />
                       <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[9px] font-black text-slate-400">HRS</span>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
-            
+
             <div className="pt-6 border-t border-slate-100 dark:border-slate-800/50 flex flex-col sm:flex-row items-center justify-between gap-4">
-              <Button 
-                variant="ghost" 
-                size="sm" 
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={handleResetToGlobal}
                 className="text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all"
               >
@@ -517,8 +540,8 @@ export default function Attendance() {
               <thead>
                 <tr className="bg-slate-50/50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800">
                   <th className="px-6 py-4 w-10">
-                    <input 
-                      type="checkbox" 
+                    <input
+                      type="checkbox"
                       className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                       checked={filteredRecords.length > 0 && selectedIds.length === filteredRecords.length}
                       onChange={toggleSelectAll}
@@ -534,12 +557,12 @@ export default function Attendance() {
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {loading && filteredRecords.length === 0 ? (
-                   [...Array(3)].map((_, i) => (
-                     <tr key={i} className="animate-pulse">
-                       <td className="px-6 py-4"></td>
-                       <td colSpan={6} className="px-6 py-8 bg-slate-50/20 dark:bg-slate-800/10"></td>
-                     </tr>
-                   ))
+                  [...Array(3)].map((_, i) => (
+                    <tr key={i} className="animate-pulse">
+                      <td className="px-6 py-4"></td>
+                      <td colSpan={6} className="px-6 py-8 bg-slate-50/20 dark:bg-slate-800/10"></td>
+                    </tr>
+                  ))
                 ) : !Array.isArray(records) ? (
                   <tr>
                     <td colSpan={7} className="px-6 py-12 text-center text-red-500 font-medium">
@@ -560,8 +583,8 @@ export default function Attendance() {
                   filteredRecords.map((rec) => (
                     <tr key={rec.deviceId} className={`${selectedIds.includes(rec.deviceId) ? "bg-indigo-50/40 dark:bg-indigo-900/10" : "hover:bg-slate-50/50 dark:hover:bg-slate-800/30"} transition-colors group`}>
                       <td className="px-6 py-4">
-                        <input 
-                          type="checkbox" 
+                        <input
+                          type="checkbox"
                           className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                           checked={selectedIds.includes(rec.deviceId)}
                           onChange={() => toggleSelect(rec.deviceId)}
@@ -596,8 +619,8 @@ export default function Attendance() {
                             {rec.totalHours}h
                           </div>
                           <div className="w-16 h-1 bg-slate-100 dark:bg-slate-800 rounded-full mt-1.5 overflow-hidden ring-1 ring-slate-200/50 dark:ring-slate-700/50">
-                            <div 
-                              className={`h-full rounded-full transition-all duration-500 ${rec.totalHours >= rec.required ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]" : "bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.4)]"}`} 
+                            <div
+                              className={`h-full rounded-full transition-all duration-500 ${rec.totalHours >= rec.required ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]" : "bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.4)]"}`}
                               style={{ width: `${Math.min((rec.totalHours / rec.required) * 100, 100)}%` }}
                             />
                           </div>
@@ -616,26 +639,7 @@ export default function Attendance() {
         </CardContent>
       </Card>
 
-      {/* Modern Legend */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {[
-          { icon: <CheckCircle className="h-4 w-4" />, title: "Regular Presence", desc: "Met daily hours and shift start thresholds.", color: "emerald" },
-          { icon: <AlertCircle className="h-4 w-4" />, title: "Half Day Triggers", desc: "Late start, early exit, or insufficient hours.", color: "amber" },
-          { icon: <XCircle className="h-4 w-4" />, title: "Absentia", desc: "No tracker data received for this date.", color: "red" }
-        ].map((item, i) => (
-          <Card key={i} className={`bg-${item.color}-50/50 dark:bg-${item.color}-500/5 border-${item.color}-100 dark:border-${item.color}-500/10 shadow-sm border-2`}>
-            <CardContent className="pt-5 flex items-start gap-4">
-              <div className={`p-2.5 bg-${item.color}-500 text-white rounded-xl shadow-lg shadow-${item.color}-500/20`}>
-                {item.icon}
-              </div>
-              <div className="space-y-1">
-                <p className={`text-xs font-black text-${item.color}-700 dark:text-${item.color}-400 uppercase tracking-widest`}>{item.title}</p>
-                <p className={`text-[11px] font-medium text-${item.color}-600/80 leading-relaxed`}>{item.desc}</p>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+
     </div>
   );
 }

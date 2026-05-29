@@ -45,7 +45,7 @@ async function apiFetch<T>(path: string, opts?: RequestInit): Promise<T> {
 // ─── Devices ─────────────────────────────────────────────────
 
 export const devicesApi = {
-  list: () => apiFetch<any[]>("/devices"),
+  list: (date?: string) => apiFetch<any[]>(`/devices${date ? `?date=${date}` : ""}`),
   lock: (id: string) => apiFetch<any>(`/devices/${id}/lock`, { method: "PATCH" }),
   unlock: (id: string) => apiFetch<any>(`/devices/${id}/unlock`, { method: "PATCH" }),
   setGroup: (id: string, groupName: string) => apiFetch<any>(`/devices/${id}/group`, { 
@@ -62,7 +62,13 @@ export const devicesApi = {
 
 export const activityApi = {
   list: (limit = 100) => apiFetch<any[]>(`/activity?limit=${limit}`),
-  timeline: (deviceId?: string) => apiFetch<any[]>(`/activity/timeline${deviceId ? `?deviceId=${deviceId}` : ""}`),
+  timeline: (deviceId?: string, date?: string) => {
+    const params = new URLSearchParams();
+    if (deviceId) params.append("deviceId", deviceId);
+    if (date) params.append("date", date);
+    const qs = params.toString();
+    return apiFetch<any[]>(`/activity/timeline${qs ? `?${qs}` : ""}`);
+  },
 };
 
 // ─── Screenshots ─────────────────────────────────────────────

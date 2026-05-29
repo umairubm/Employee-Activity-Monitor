@@ -171,7 +171,7 @@ const VisualTimeline = ({
   const slots = React.useMemo(() => getTimelineSlots(deviceLogs), [deviceLogs]);
 
   return (
-    <div className="relative w-full h-7 bg-slate-100 dark:bg-slate-800 rounded overflow-hidden border border-slate-200 dark:border-slate-700 flex gap-[0.5px] p-[1px]">
+    <div className="relative w-full h-10 bg-slate-100 dark:bg-slate-800 rounded-md overflow-hidden border border-slate-200 dark:border-slate-700 flex gap-[1px] p-[2px]">
       {slots.map((slot) => {
         let colorClass = "bg-transparent hover:bg-slate-200/40 dark:hover:bg-slate-700/40";
         if (slot.status === "productive") colorClass = "bg-emerald-500 hover:bg-emerald-600";
@@ -189,8 +189,8 @@ const VisualTimeline = ({
         return (
           <div
             key={slot.index}
-            className={`flex-1 h-full cursor-pointer transition-all duration-75 rounded-sm ${colorClass} ${
-              isSelected ? "ring-2 ring-indigo-600 dark:ring-indigo-400 ring-inset scale-y-110 z-10 opacity-100" : ""
+            className={`flex-1 h-full cursor-pointer transition-all duration-75 rounded-[1px] ${colorClass} ${
+              isSelected ? "ring-2 ring-indigo-600 dark:ring-indigo-400 ring-inset scale-y-125 z-20 opacity-100 shadow-xl" : "hover:scale-y-110"
             }`}
             title={title}
             onClick={(e) => {
@@ -232,7 +232,7 @@ const TimelineTicks = () => {
     { label: "10 PM", hour: 22 },
   ];
   return (
-    <div className="relative w-full h-4 text-[9px] text-slate-400 font-bold mt-0.5">
+    <div className="relative w-full h-5 text-[10px] text-slate-500 font-extrabold mt-1.5 opacity-80 uppercase tracking-tighter">
       {ticks.map((t) => {
         const pct = (t.hour / 24) * 100;
         return (
@@ -333,13 +333,35 @@ export default function Timeline() {
       };
     }
 
-    const productivitySeconds = logsForDevice
-      .filter((l) => l.type === "productive")
-      .reduce((sum, l) => sum + l.durationSeconds, 0);
+    // Merge intervals to prevent duplicate/overlapping logs from artificially inflating time
+    const mergeIntervals = (logsToMerge: ActivityLog[]) => {
+      const intervals = logsToMerge
+        .map(l => ({
+          start: new Date(l.startedAt).getTime(),
+          end: new Date(l.startedAt).getTime() + l.durationSeconds * 1000
+        }))
+        .sort((a, b) => a.start - b.start);
 
-    const activeSeconds = logsForDevice
-      .filter((l) => l.type !== "idle")
-      .reduce((sum, l) => sum + l.durationSeconds, 0);
+      let totalSecs = 0;
+      if (intervals.length > 0) {
+        let currentStart = intervals[0].start;
+        let currentEnd = intervals[0].end;
+        for (let i = 1; i < intervals.length; i++) {
+          if (intervals[i].start <= currentEnd) {
+            currentEnd = Math.max(currentEnd, intervals[i].end);
+          } else {
+            totalSecs += (currentEnd - currentStart) / 1000;
+            currentStart = intervals[i].start;
+            currentEnd = intervals[i].end;
+          }
+        }
+        totalSecs += (currentEnd - currentStart) / 1000;
+      }
+      return totalSecs;
+    };
+
+    const activeSeconds = Math.round(mergeIntervals(logsForDevice.filter((l) => l.type !== "idle")));
+    const totalTrackedSeconds = Math.round(mergeIntervals(logsForDevice));
 
     const sorted = [...logsForDevice].sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime());
     const formatTime = (dStr: string) => {
@@ -351,8 +373,6 @@ export default function Timeline() {
     const lastLog = sorted[sorted.length - 1];
     const endTimeDate = new Date(new Date(lastLog.startedAt).getTime() + lastLog.durationSeconds * 1000);
 
-    const totalSeconds = (endTimeDate.getTime() - new Date(startLog.startedAt).getTime()) / 1000;
-
     const formatDur = (s: number) => {
       const hours = Math.floor(s / 3600);
       const mins = Math.floor((s % 3600) / 60);
@@ -361,7 +381,7 @@ export default function Timeline() {
 
     return {
       activeTime: formatDur(activeSeconds),
-      totalTime: formatDur(totalSeconds),
+      totalTime: formatDur(totalTrackedSeconds),
       startTime: formatTime(startLog.startedAt),
       endTime: formatTime(endTimeDate.toISOString()),
       logs: logsForDevice,

@@ -47,6 +47,7 @@ export interface Screenshot {
 interface AppState {
   devices: Device[];
   selectedDeviceId: string | null;
+  selectedDate: string;
   loading: boolean;
   error: string | null;
   // Actions
@@ -56,6 +57,7 @@ interface AppState {
   selectDevice: (id: string | null) => void;
   setDeviceGroup: (id: string, groupName: string) => void;
   renameGroup: (oldName: string, newName: string) => void;
+  setSelectedDate: (date: string) => void;
 }
 
 const AppContext = React.createContext<AppState | null>(null);
@@ -63,6 +65,7 @@ const AppContext = React.createContext<AppState | null>(null);
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [devices, setDevices] = React.useState<Device[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = React.useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = React.useState<string>(new Date().toLocaleDateString('en-CA'));
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -71,7 +74,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setError(null);
     try {
       const [devs] = await Promise.all([
-        apiFetch<Device[]>("/devices"),
+        devicesApi.list(selectedDate),
       ]);
       setDevices(devs);
       if (!selectedDeviceId && devs.length > 0) setSelectedDeviceId(devs[0].id);
@@ -80,7 +83,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [selectedDeviceId]);
+  }, [selectedDeviceId, selectedDate]);
 
   React.useEffect(() => {
     void fetchAll();
@@ -134,12 +137,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   return (
     <AppContext.Provider
       value={{
-        devices, selectedDeviceId, loading, error,
+        devices, selectedDeviceId, selectedDate, loading, error,
         refresh: fetchAll,
         lockDevice, unlockDevice,
         selectDevice: setSelectedDeviceId,
         setDeviceGroup,
         renameGroup,
+        setSelectedDate,
       }}
     >
       {children}

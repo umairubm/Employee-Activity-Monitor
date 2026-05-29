@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Camera, Flag, Download, Eye, X, Search, AlertTriangle } from "lucide-react";
+import { Camera, Flag, Download, Eye, X, Search, AlertTriangle, ChevronLeft, ChevronRight, RotateCcw, Shield } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -23,9 +23,23 @@ export default function Screenshots() {
   const [showFlaggedOnly, setShowFlaggedOnly] = React.useState(false);
   const [lightbox, setLightbox] = React.useState<string | null>(null);
 
-  React.useEffect(() => {
-    screenshotsApi.list().then(setScreenshots).catch(console.error);
+  const [loading, setLoading] = React.useState(false);
+  
+  const fetchScreenshots = React.useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await screenshotsApi.list();
+      setScreenshots(data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  React.useEffect(() => {
+    fetchScreenshots();
+  }, [fetchScreenshots]);
 
   const toggleFlag = async (screenshotId: string) => {
     try {
@@ -55,6 +69,40 @@ export default function Screenshots() {
 
   const flaggedCount = screenshots.filter((s) => s.flagged).length;
   const lightboxShot = lightbox ? screenshots.find((s) => s.id === lightbox) : null;
+
+  const handleKeyDown = (e: KeyboardEvent) => {
+    const currentIndex = filtered.findIndex((s) => s.id === lightbox);
+    if (currentIndex !== -1) {
+      if (e.key === "ArrowRight") {
+        const nextIndex = (currentIndex + 1) % filtered.length;
+        setLightbox(filtered[nextIndex].id);
+      } else if (e.key === "ArrowLeft") {
+        const prevIndex = (currentIndex - 1 + filtered.length) % filtered.length;
+        setLightbox(filtered[prevIndex].id);
+      } else if (e.key === "Escape") {
+        setLightbox(null);
+      }
+    }
+  };
+
+  React.useEffect(() => {
+    if (lightbox) {
+      window.addEventListener("keydown", handleKeyDown);
+    }
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [lightbox, filtered]);
+
+  const navigate = (dir: "prev" | "next") => {
+    const currentIndex = filtered.findIndex((s) => s.id === lightbox);
+    if (currentIndex === -1) return;
+    if (dir === "next") {
+      const nextIndex = (currentIndex + 1) % filtered.length;
+      setLightbox(filtered[nextIndex].id);
+    } else {
+      const prevIndex = (currentIndex - 1 + filtered.length) % filtered.length;
+      setLightbox(filtered[prevIndex].id);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -109,6 +157,14 @@ export default function Screenshots() {
             ))}
           </select>
           <button
+            onClick={fetchScreenshots}
+            disabled={loading}
+            className={`flex items-center gap-2 text-sm px-3 py-2 rounded-lg font-medium transition-all bg-slate-100 text-slate-600 hover:bg-slate-200 ${loading ? 'opacity-50' : ''}`}
+          >
+            <RotateCcw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+          <button
             onClick={() => setShowFlaggedOnly(!showFlaggedOnly)}
             className={`flex items-center gap-2 text-sm px-3 py-2 rounded-lg font-medium transition-all ${
               showFlaggedOnly
@@ -126,7 +182,14 @@ export default function Screenshots() {
       </Card>
 
       {/* Grid */}
-      {filtered.length === 0 ? (
+      {loading ? (
+        <div className="flex flex-col items-center justify-center py-32 space-y-5">
+          <div className="w-20 h-20 bg-indigo-600 rounded-2xl flex items-center justify-center animate-pulse shadow-xl shadow-indigo-600/20">
+            <Shield className="h-10 w-10 text-white" strokeWidth={2.5} />
+          </div>
+          <p className="text-slate-500 font-medium animate-pulse">Loading secure captures...</p>
+        </div>
+      ) : filtered.length === 0 ? (
         <div className="text-center py-16 text-slate-400">
           <Camera className="h-10 w-10 mx-auto mb-3 opacity-30" />
           <p>No screenshots match your filter.</p>
@@ -209,11 +272,28 @@ export default function Screenshots() {
       {/* Lightbox */}
       {lightboxShot && (
         <div
-          className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
+          className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
           onClick={() => setLightbox(null)}
         >
+          {/* Navigation Buttons */}
+          <button 
+            className="absolute left-4 md:left-10 top-1/2 -translate-y-1/2 bg-white/20 hover:bg-white/40 p-4 rounded-full text-white transition-all z-50 backdrop-blur-md shadow-2xl border border-white/20 group"
+            onClick={(e) => { e.stopPropagation(); navigate("prev"); }}
+            title="Previous (Left Arrow)"
+          >
+            <ChevronLeft className="h-8 w-8 group-hover:-translate-x-1 transition-transform" />
+          </button>
+          
+          <button 
+            className="absolute right-4 md:right-10 top-1/2 -translate-y-1/2 bg-white/20 hover:bg-white/40 p-4 rounded-full text-white transition-all z-50 backdrop-blur-md shadow-2xl border border-white/20 group"
+            onClick={(e) => { e.stopPropagation(); navigate("next"); }}
+            title="Next (Right Arrow)"
+          >
+            <ChevronRight className="h-8 w-8 group-hover:translate-x-1 transition-transform" />
+          </button>
+
           <div
-            className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-3xl w-full overflow-hidden"
+            className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-4xl w-full overflow-hidden relative"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between p-4 border-b border-slate-100 dark:border-slate-800">
@@ -226,24 +306,27 @@ export default function Screenshots() {
                   <Badge className="bg-red-100 text-red-700 border-red-200 text-xs">Flagged</Badge>
                 )}
                 <button
-                  className="text-slate-400 hover:text-slate-700 transition-colors"
+                  className="p-2 text-slate-400 hover:text-slate-700 transition-colors"
                   onClick={() => setLightbox(null)}
                 >
                   <X className="h-5 w-5" />
                 </button>
               </div>
             </div>
-            <img
-              src={lightboxShot.thumbnail}
-              alt="Screenshot"
-              className="w-full object-contain max-h-[60vh]"
-            />
-            <div className="p-4 flex justify-between items-center">
+            <div className="bg-slate-950 flex items-center justify-center min-h-[300px]">
+              <img
+                src={lightboxShot.thumbnail}
+                alt="Screenshot"
+                className="w-full object-contain max-h-[75vh]"
+              />
+            </div>
+            <div className="p-4 flex justify-between items-center bg-slate-50 dark:bg-slate-900/50">
               <span className="text-xs text-slate-500 flex items-center">
                 <span className="font-medium bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded mr-2">
                   {getImageType(lightboxShot.thumbnail)}
                 </span>
                 {lightboxShot.fileSizeKb} KB
+                <span className="ml-4 opacity-50">Keyboard: ← Prev | Next →</span>
               </span>
               <div className="flex gap-2">
                 <Button

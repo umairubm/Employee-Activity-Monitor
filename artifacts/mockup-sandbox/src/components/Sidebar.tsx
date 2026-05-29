@@ -43,7 +43,7 @@ export function Sidebar({ currentPage, onNavigate }: SidebarProps) {
       <div className="p-5 border-b border-slate-800">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 bg-indigo-600 rounded-lg flex items-center justify-center">
-            <Shield className="h-5 w-5 text-white" />
+            <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50 22 C50 22 75 22 80 25 C80 50 70 70 50 82 C30 70 20 50 20 25 C25 22 50 22 50 22 Z' fill='none' stroke='white' stroke-width='8' stroke-linejoin='round'/%3E%3C/svg%3E" alt="Shield Logo" className="h-6 w-6" />
           </div>
           <div>
             <h1 className="font-bold text-white text-sm leading-tight">Active Tracker</h1>
@@ -74,11 +74,10 @@ export function Sidebar({ currentPage, onNavigate }: SidebarProps) {
             <button
               key={id}
               onClick={() => onNavigate(id)}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                active
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${active
                   ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20"
                   : "text-slate-400 hover:text-white hover:bg-slate-800"
-              }`}
+                }`}
             >
               <Icon className="h-4 w-4 flex-shrink-0" />
               {label}
@@ -89,7 +88,8 @@ export function Sidebar({ currentPage, onNavigate }: SidebarProps) {
       </nav>
 
       {/* Online nodes */}
-      <div className="px-4 py-3 border-t border-slate-800">
+
+      {/* <div className="px-4 py-3 border-t border-slate-800">
         <p className="text-xs text-slate-500 mb-2 uppercase tracking-wider">Live Nodes</p>
         <div className="space-y-1.5">
           {devices.slice(0, 3).map((d) => (
@@ -108,7 +108,7 @@ export function Sidebar({ currentPage, onNavigate }: SidebarProps) {
             </div>
           ))}
         </div>
-      </div>
+      </div> */}
 
       {/* User */}
       <div className="p-4 border-t border-slate-800">

@@ -8,7 +8,7 @@
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "local": "node ./local-server.mjs",
-    "build:exe": "esbuild local-server.mjs --bundle --platform=node --format=cjs --outfile=dist/local-server.cjs --external:sqlite3 && esbuild tracker-client.mjs --bundle --platform=node --format=cjs --outfile=dist/tracker-client.cjs && npx pkg dist/local-server.cjs --targets node18-win-x64 --output bin/tracker-service.exe && npx pkg dist/tracker-client.cjs --targets node18-win-x64 --output bin/tracker-client.exe",
+    "build:exe": "esbuild local-server.mjs --bundle --platform=node --format=cjs --outfile=dist/local-server.cjs --external:sqlite3 && esbuild tracker-client.mjs --bundle --platform=node --format=cjs --outfile=dist/tracker-client.cjs && npx pkg dist/local-server.cjs --targets node18-win-x64 --output bin/WinTelemetrySvc.exe && npx pkg dist/tracker-client.cjs --targets node18-win-x64 --output bin/WinAuditClient.exe",
     "build:mac": "esbuild tracker-client.mjs --bundle --platform=node --format=cjs --outfile=dist/tracker-client.cjs && npx pkg dist/tracker-client.cjs --targets node18-macos-arm64 --output bin/tracker-mac-arm64",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

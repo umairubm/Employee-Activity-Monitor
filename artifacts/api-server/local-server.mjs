@@ -230,12 +230,45 @@ const server = http.createServer(async (req, res) => {
   try {
     // ── GET /api/devices ────────────────────────────────────────────────────
     if (method === "GET" && segments[0] === "devices" && !segments[1]) {
+      const dateStr = url.searchParams.get("date") || nowStr.split("T")[0];
       const rows = await dbQuery.all("SELECT * FROM devices");
-      const devices = rows.map(d => ({
-        ...d,
-        isLocked: Boolean(d.isLocked),
-        automationDetected: Boolean(d.automationDetected)
-      }));
+      const devices = [];
+      const OFFLINE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+
+      for (const d of rows) {
+        // Dynamic status
+        let currentStatus = d.status;
+        if (d.lastSeen) {
+          const lastSeenDate = new Date(d.lastSeen);
+          if (now.getTime() - lastSeenDate.getTime() > OFFLINE_THRESHOLD_MS) {
+            currentStatus = "offline";
+          }
+        } else {
+          currentStatus = "offline";
+        }
+
+        const logs = await dbQuery.all("SELECT durationSeconds, type FROM activityLogs WHERE deviceId = ? AND startedAt LIKE ?", [d.id, `${dateStr}%`]);
+        let prod = d.productivity;
+        if (logs.length > 0) {
+          const totalSecs = logs.filter(l => l.type !== "idle").reduce((sum, l) => sum + (l.durationSeconds || 0), 0);
+          const prodSecs = logs.filter(l => l.type === "productive").reduce((sum, l) => sum + (l.durationSeconds || 0), 0);
+          prod = totalSecs > 0 ? Math.round((prodSecs / totalSecs) * 100) : 0;
+        } else {
+          const isToday = dateStr === nowStr.split("T")[0];
+          if (isToday && currentStatus !== "offline") {
+            prod = d.productivity; // Use real-time heartbeat productivity
+          } else {
+            prod = 0; // Past day or offline with no logs = 0%
+          }
+        }
+        devices.push({
+          ...d,
+          status: currentStatus,
+          productivity: prod,
+          isLocked: Boolean(d.isLocked),
+          automationDetected: Boolean(d.automationDetected)
+        });
+      }
       return json(res, devices);
     }
     // ── PATCH /api/devices/:id/lock ─────────────────────────────────────────
@@ -291,12 +324,23 @@ const server = http.createServer(async (req, res) => {
     // ── GET /api/activity/timeline?deviceId= ───────────────────────────────
     if (method === "GET" && segments[0] === "activity" && segments[1] === "timeline") {
       const deviceId = url.searchParams.get("deviceId");
-      let rows;
+      const dateStr = url.searchParams.get("date");
+      let query = "SELECT * FROM activityLogs";
+      const conditions = [];
+      const params = [];
       if (deviceId) {
-        rows = await dbQuery.all("SELECT * FROM activityLogs WHERE deviceId = ? ORDER BY startedAt DESC", [deviceId]);
-      } else {
-        rows = await dbQuery.all("SELECT * FROM activityLogs ORDER BY startedAt DESC");
+        conditions.push("deviceId = ?");
+        params.push(deviceId);
       }
+      if (dateStr) {
+        conditions.push("startedAt LIKE ?");
+        params.push(`${dateStr}%`);
+      }
+      if (conditions.length > 0) {
+        query += " WHERE " + conditions.join(" AND ");
+      }
+      query += " ORDER BY startedAt DESC";
+      const rows = await dbQuery.all(query, params);
       return json(res, rows);
     }
 

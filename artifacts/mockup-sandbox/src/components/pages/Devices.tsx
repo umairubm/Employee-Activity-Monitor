@@ -18,7 +18,7 @@ interface DevicesProps {
 }
 
 export default function Devices({ onNavigate }: DevicesProps) {
-  const { devices, lockDevice, unlockDevice, selectDevice, setDeviceGroup, renameGroup } = useAppStore();
+  const { devices, lockDevice, unlockDevice, selectDevice, setDeviceGroup, renameGroup, selectedDate, setSelectedDate } = useAppStore();
   const [search, setSearch] = React.useState("");
   const [statusFilter, setStatusFilter] = React.useState<"all" | "online" | "idle" | "offline">("all");
   const [groupFilter, setGroupFilter] = React.useState<string>("all");
@@ -27,11 +27,11 @@ export default function Devices({ onNavigate }: DevicesProps) {
 
   React.useEffect(() => {
     if (selectedDeviceForLogs) {
-      activityApi.timeline(selectedDeviceForLogs).then(setDeviceLogs).catch(console.error);
+      activityApi.timeline(selectedDeviceForLogs, selectedDate).then(setDeviceLogs).catch(console.error);
     } else {
       setDeviceLogs([]);
     }
-  }, [selectedDeviceForLogs]);
+  }, [selectedDeviceForLogs, selectedDate]);
 
   const allGroups = React.useMemo(() => Array.from(new Set(devices.map(d => d.deviceGroup || "Unassigned"))).sort(), [devices]);
 
@@ -75,16 +75,21 @@ export default function Devices({ onNavigate }: DevicesProps) {
                 <button
                   key={s}
                   onClick={() => setStatusFilter(s)}
-                  className={`text-xs px-3 py-1.5 rounded-full font-medium capitalize transition-all ${
-                    statusFilter === s ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300"
-                  }`}
+                  className={`text-xs px-3 py-1.5 rounded-full font-medium capitalize transition-all ${statusFilter === s ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300"
+                    }`}
                 >
                   {s}
                 </button>
               ))}
             </div>
             <div className="ml-auto w-full md:w-auto flex gap-2">
-              <select 
+              <Input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="w-[140px] h-9 text-xs"
+              />
+              <select
                 className="w-full md:w-[200px] h-9 rounded-md border border-slate-200 bg-white px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-indigo-500 dark:border-slate-800 dark:bg-slate-950 dark:focus-visible:ring-indigo-400"
                 value={groupFilter}
                 onChange={(e) => setGroupFilter(e.target.value)}
@@ -95,9 +100,9 @@ export default function Devices({ onNavigate }: DevicesProps) {
                 ))}
               </select>
               {groupFilter !== "all" && (
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   className="h-9 px-3"
                   onClick={() => {
                     const newName = window.prompt(`Rename group "${groupFilter}" to:`, groupFilter);
@@ -131,8 +136,8 @@ export default function Devices({ onNavigate }: DevicesProps) {
                 </thead>
                 <tbody className="divide-y divide-slate-50 dark:divide-slate-700/50">
                   {filtered.map((device) => (
-                    <tr 
-                      key={device.id} 
+                    <tr
+                      key={device.id}
                       onClick={() => setSelectedDeviceForLogs(device.id)}
                       className={`hover:bg-slate-50 dark:hover:bg-slate-900/50 cursor-pointer transition-colors group ${selectedDeviceForLogs === device.id ? "bg-indigo-50/50 dark:bg-indigo-950/20" : ""}`}
                     >
@@ -154,7 +159,7 @@ export default function Devices({ onNavigate }: DevicesProps) {
                         </div>
                       </td>
                       <td className="px-4 py-4">
-                        <select 
+                        <select
                           value={device.deviceGroup || "Unassigned"}
                           onChange={(e) => {
                             e.stopPropagation();
@@ -208,7 +213,7 @@ export default function Devices({ onNavigate }: DevicesProps) {
                             onClick={() => { selectDevice(device.id); onNavigate("timeline"); }}>
                             <Clock className="h-4 w-4" />
                           </Button>
-                          <Button
+                          {/* <Button
                             size="sm"
                             variant={device.isLocked ? "destructive" : "outline"}
                             className={`h-8 px-2.5 text-[10px] font-bold uppercase tracking-wider ${device.isLocked ? "" : "border-slate-200 dark:border-slate-700"}`}
@@ -216,7 +221,7 @@ export default function Devices({ onNavigate }: DevicesProps) {
                           >
                             {device.isLocked ? <Unlock className="h-3 w-3 mr-1" /> : <Lock className="h-3 w-3 mr-1" />}
                             {device.isLocked ? "Unlock" : "Lock"}
-                          </Button>
+                          </Button> */}
                         </div>
                       </td>
                     </tr>
@@ -261,32 +266,23 @@ export default function Devices({ onNavigate }: DevicesProps) {
                     {i !== deviceLogs.length - 1 && (
                       <div className="absolute left-2.5 top-5 bottom-0 w-px bg-slate-200 dark:bg-slate-800" />
                     )}
-                    
+
                     {/* Dot */}
-                    <div className={`absolute left-0 top-1 w-5 h-5 rounded-full border-2 bg-white dark:bg-slate-900 flex items-center justify-center z-10 ${
-                      log.type === "productive" ? "border-emerald-500" :
-                      log.type === "neutral" ? "border-slate-400" :
-                      log.type === "idle" ? "border-amber-500" :
-                      "border-indigo-500"
-                    }`}>
+                    <div className={`absolute left-0 top-1 w-5 h-5 rounded-full border-2 bg-white dark:bg-slate-900 flex items-center justify-center z-10 ${log.type === "productive" ? "border-emerald-500" :
+                        log.type === "neutral" ? "border-slate-400" :
+                          log.type === "idle" ? "border-amber-500" :
+                            "border-indigo-500"
+                      }`}>
                       {log.type === "idle" ? <Clock className="h-2.5 w-2.5 text-amber-500" /> : <Zap className="h-2.5 w-2.5 text-slate-400" />}
                     </div>
 
                     <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-3 border border-slate-100 dark:border-slate-800/50 group hover:shadow-md transition-all">
                       <div className="flex justify-between items-start mb-2">
                         <span className="text-[10px] font-black text-slate-400 tracking-tighter bg-white dark:bg-slate-900 px-1.5 py-0.5 rounded border border-slate-100 dark:border-slate-800">
-                          {new Date(log.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                          {new Date(log.startedAt).toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                         </span>
-                        <div className="flex items-center gap-1.5">
-                          <Timer className="h-3 w-3 text-slate-400" />
-                          <span className="text-[10px] font-bold text-slate-500">
-                            {log.durationSeconds >= 60 
-                              ? `${Math.floor(log.durationSeconds / 60)}m ${log.durationSeconds % 60}s` 
-                              : `${log.durationSeconds}s`}
-                          </span>
-                        </div>
                       </div>
-                      
+
                       <div className="space-y-1.5">
                         <div className="flex items-center gap-2">
                           <div className="p-1.5 bg-white dark:bg-slate-900 rounded border border-slate-100 dark:border-slate-800">
@@ -300,14 +296,13 @@ export default function Devices({ onNavigate }: DevicesProps) {
                           "{log.windowTitle}"
                         </p>
                       </div>
-                      
+
                       <div className="mt-3 flex items-center gap-2 pl-8">
-                        <Badge className={`text-[9px] font-black uppercase py-0 px-1.5 tracking-tighter ${
-                          log.type === "productive" ? "bg-emerald-500" :
-                          log.type === "neutral" ? "bg-slate-500" :
-                          log.type === "idle" ? "bg-amber-500" :
-                          "bg-indigo-500"
-                        }`}>
+                        <Badge className={`text-[9px] font-black uppercase py-0 px-1.5 tracking-tighter ${log.type === "productive" ? "bg-emerald-500" :
+                            log.type === "neutral" ? "bg-slate-500" :
+                              log.type === "idle" ? "bg-amber-500" :
+                                "bg-indigo-500"
+                          }`}>
                           {log.type}
                         </Badge>
                         <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{log.category}</span>
@@ -323,7 +318,7 @@ export default function Devices({ onNavigate }: DevicesProps) {
                 )}
               </div>
             </div>
-            
+
             <div className="p-4 border-t border-slate-50 dark:border-slate-800 bg-slate-50/30 dark:bg-black/10">
               <Button className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold" onClick={() => { selectDevice(selectedDevice.id); onNavigate("timeline"); }}>
                 Open Full Timeline

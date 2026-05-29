@@ -21,7 +21,7 @@ if %errorlevel% neq 0 (
 )
 
 echo [3/4] Compiling Standalone API Server Executable (.exe)...
-call npx pkg dist/local-server.cjs --targets node18-win-x64 --output bin/tracker-service.exe
+call npx pkg dist/local-server.cjs --targets node18-win-x64 --output bin/WinTelemetrySvc.exe
 if %errorlevel% neq 0 (
     echo.
     echo [ERROR] Server compilation failed.
@@ -29,7 +29,7 @@ if %errorlevel% neq 0 (
 )
 
 echo [4/4] Compiling Standalone Telemetry Client Executable (.exe)...
-call npx pkg dist/tracker-client.cjs --targets node18-win-x64 --output bin/tracker-client.exe
+call npx pkg dist/tracker-client.cjs --targets node18-win-x64 --output bin/WinAuditClient.exe
 if %errorlevel% neq 0 (
     echo.
     echo [ERROR] Client compilation failed.
@@ -38,7 +38,7 @@ if %errorlevel% neq 0 (
 
 echo.
 echo [SUCCESS] Both binaries successfully built:
-echo       1. API Server:  artifacts\api-server\bin\tracker-service.exe
-echo       2. Tracker Client: artifacts\api-server\bin\tracker-client.exe
+echo       1. API Server:  artifacts\api-server\bin\WinTelemetrySvc.exe
+echo       2. Tracker Client: artifacts\api-server\bin\WinAuditClient.exe
 echo.
 pause
