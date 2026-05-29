@@ -247,7 +247,12 @@ const server = http.createServer(async (req, res) => {
           currentStatus = "offline";
         }
 
-        const logs = await dbQuery.all("SELECT durationSeconds, type FROM activityLogs WHERE deviceId = ? AND startedAt LIKE ?", [d.id, `${dateStr}%`]);
+        const rawLogs = await dbQuery.all("SELECT durationSeconds, type, startedAt FROM activityLogs WHERE deviceId = ? AND startedAt LIKE ?", [d.id, `${dateStr}%`]);
+        // Deduplicate
+        const logsMap = {};
+        for(const lg of rawLogs) logsMap[lg.startedAt] = lg;
+        const logs = Object.values(logsMap);
+
         let prod = d.productivity;
         if (logs.length > 0) {
           const totalSecs = logs.filter(l => l.type !== "idle").reduce((sum, l) => sum + (l.durationSeconds || 0), 0);
@@ -341,7 +346,13 @@ const server = http.createServer(async (req, res) => {
       }
       query += " ORDER BY startedAt DESC";
       const rows = await dbQuery.all(query, params);
-      return json(res, rows);
+
+      // Deduplicate
+      const uniqueLogsMap = {};
+      for(let l of rows) uniqueLogsMap[l.startedAt] = l;
+      const uniqueRows = Object.values(uniqueLogsMap);
+      
+      return json(res, uniqueRows);
     }
 
     // ── POST /api/activity ──────────────────────────────────────────────────
@@ -603,14 +614,20 @@ const server = http.createServer(async (req, res) => {
         // Find activity for this device on this date
         // Exclude idle and unproductive time from the active hours calculation
         const logs = await dbQuery.all("SELECT * FROM activityLogs WHERE deviceId = ? AND startedAt LIKE ?", [device.id, `${dateStr}%`]);
-        const activeLogs = logs.filter(l => l.type !== 'idle' && l.type !== 'unproductive');
+        
+        // Deduplicate
+        const uniqueLogsMap = {};
+        for(let l of logs) uniqueLogsMap[l.startedAt] = l;
+        const uniqueLogs = Object.values(uniqueLogsMap);
 
-        if (logs.length === 0) {
+        const activeLogs = uniqueLogs.filter(l => l.type !== 'idle' && l.type !== 'unproductive');
+
+        if (uniqueLogs.length === 0) {
           report.push({ deviceId: device.id, name: device.name, user: device.user, status: "Absent", totalHours: 0, firstSeen: "-", lastSeen: "-" });
           continue;
         }
 
-        const sortedLogs = logs.sort((a, b) => new Date(a.startedAt) - new Date(b.startedAt));
+        const sortedLogs = uniqueLogs.sort((a, b) => new Date(a.startedAt) - new Date(b.startedAt));
         const firstLog = sortedLogs[0];
         const lastLog = sortedLogs[sortedLogs.length - 1];
 
@@ -618,6 +635,15 @@ const server = http.createServer(async (req, res) => {
         const lastTime = new Date(lastLog.startedAt).toTimeString().slice(0, 5);
 
         let totalSeconds = activeLogs.reduce((acc, l) => acc + (l.durationSeconds || 0), 0);
+
+        // Cap to real elapsed time (in case device slept and bypassed the check, or duplicates slipped past)
+        const elapsedMs = new Date(lastLog.startedAt) - new Date(firstLog.startedAt);
+        const maxRealSeconds = Math.max(0, elapsedMs / 1000) + (lastLog.durationSeconds || 0);
+        
+        if (totalSeconds > maxRealSeconds) {
+          totalSeconds = maxRealSeconds;
+        }
+
         const totalHours = parseFloat((totalSeconds / 3600).toFixed(2));
 
         let status = "Present";

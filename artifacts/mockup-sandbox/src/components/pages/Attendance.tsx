@@ -53,6 +53,26 @@ export default function Attendance() {
 
   const allGroups = React.useMemo(() => Array.from(new Set(devices.map(d => d.deviceGroup || "Unassigned"))).sort(), [devices]);
 
+
+
+  // Add this helper function
+  const calculateHours = (firstSeen: string, lastSeen: string): number => {
+    if (!firstSeen || firstSeen === "-" || !lastSeen || lastSeen === "-") return 0;
+
+    const [firstHour, firstMin] = firstSeen.split(":").map(Number);
+    const [lastHour, lastMin] = lastSeen.split(":").map(Number);
+
+    let hours = lastHour - firstHour;
+    let minutes = lastMin - firstMin;
+
+    if (minutes < 0) {
+      hours -= 1;
+      minutes += 60;
+    }
+
+    return hours + minutes / 60;
+  };
+
   const fetchAttendance = React.useCallback(async () => {
     setLoading(true);
     try {
@@ -614,18 +634,23 @@ export default function Attendance() {
                         <span className="text-xs font-mono font-bold text-slate-600 dark:text-slate-400">{rec.lastSeen}</span>
                       </td>
                       <td className="px-6 py-4 text-center">
-                        <div className="flex flex-col items-center">
-                          <div className="text-sm font-black text-slate-900 dark:text-white">
-                            {rec.totalHours}h
-                          </div>
-                          <div className="w-16 h-1 bg-slate-100 dark:bg-slate-800 rounded-full mt-1.5 overflow-hidden ring-1 ring-slate-200/50 dark:ring-slate-700/50">
-                            <div
-                              className={`h-full rounded-full transition-all duration-500 ${rec.totalHours >= rec.required ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]" : "bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.4)]"}`}
-                              style={{ width: `${Math.min((rec.totalHours / rec.required) * 100, 100)}%` }}
-                            />
-                          </div>
-                          <p className="text-[9px] font-bold text-slate-400 mt-1 uppercase tracking-tighter">of {rec.required}h target</p>
-                        </div>
+                        {(() => {
+                          const calculatedHours = calculateHours(rec.firstSeen, rec.lastSeen);
+                          return (
+                            <div className="flex flex-col items-center">
+                              <div className="text-sm font-black text-slate-900 dark:text-white">
+                                {calculatedHours.toFixed(1)}h
+                              </div>
+                              <div className="w-16 h-1 bg-slate-100 dark:bg-slate-800 rounded-full mt-1.5 overflow-hidden ring-1 ring-slate-200/50 dark:ring-slate-700/50">
+                                <div
+                                  className={`h-full rounded-full transition-all duration-500 ${calculatedHours >= rec.required ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]" : "bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.4)]"}`}
+                                  style={{ width: `${Math.min((calculatedHours / rec.required) * 100, 100)}%` }}
+                                />
+                              </div>
+                              <p className="text-[9px] font-bold text-slate-400 mt-1 uppercase tracking-tighter">of {rec.required}h target</p>
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td className="px-6 py-4">
                         <p className="text-xs text-slate-500 italic max-w-[200px] leading-relaxed line-clamp-2">{rec.reason || "Policy fully compliant"}</p>
