@@ -2,15 +2,31 @@ openapi: 3.1.0
 info:
   title: Api
   version: 0.1.0
-  description: API specification for Employee Activity Monitor
+  description: API specification for Workforce Analytics & IT Management
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Admin authentication
+  - name: devices
+    description: Device management and IT commands
+  - name: activity
+    description: Activity logs
+  - name: screenshots
+    description: Screenshot gallery
+  - name: reports
+    description: Dashboard reports
+  - name: categories
+    description: App productivity classification
+  - name: tokens
+    description: Enrollment tokens
+  - name: users
+    description: User directory
   - name: sync
-    description: Node synchronization operations
+    description: Device agent synchronization
 paths:
   /healthz:
     get:
@@ -27,6 +43,322 @@ paths:
                 properties:
                   status:
                     type: string
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Exchange credentials for a session cookie
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthUser"
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Revoke the current session
+      responses:
+        "200":
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                required: [ok]
+  /auth/me:
+    get:
+      operationId: getCurrentUser
+      tags: [auth]
+      summary: Return the current authenticated user
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthUser"
+
+  /devices:
+    get:
+      operationId: listDevices
+      tags: [devices]
+      summary: List enrolled devices
+      responses:
+        "200":
+          description: Devices
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DeviceItem"
+  /devices/{id}:
+    get:
+      operationId: getDevice
+      tags: [devices]
+      summary: Get a device
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Device
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceItem"
+  /devices/{id}/commands:
+    get:
+      operationId: getDeviceCommands
+      tags: [devices]
+      summary: Get command history for a device
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Commands
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DeviceCommandItem"
+    post:
+      operationId: issueDeviceCommand
+      tags: [devices]
+      summary: Issue an authorized IT command
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IssueCommandRequest"
+      responses:
+        "201":
+          description: Command issued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceCommandItem"
+
+  /activity:
+    get:
+      operationId: getActivityLogs
+      tags: [activity]
+      summary: Get activity logs
+      parameters:
+        - name: deviceId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: userId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Activity logs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ActivityLogRecord"
+  /activity/timeline:
+    get:
+      operationId: getTimeline
+      tags: [activity]
+      summary: Get timeline view
+      parameters:
+        - name: deviceId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Timeline events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ActivityLogRecord"
+
+  /screenshots:
+    get:
+      operationId: listScreenshots
+      tags: [screenshots]
+      summary: List screenshot metadata
+      parameters:
+        - name: deviceId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Screenshots
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ScreenshotListItem"
+
+  /reports/summary:
+    get:
+      operationId: getSummary
+      tags: [reports]
+      summary: Dashboard overview KPIs
+      responses:
+        "200":
+          description: Summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SummaryResponse"
+  /reports/leaderboard:
+    get:
+      operationId: getLeaderboard
+      tags: [reports]
+      summary: Per-device productivity today
+      responses:
+        "200":
+          description: Leaderboard
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LeaderboardItem"
+
+  /categories:
+    get:
+      operationId: listCategories
+      tags: [categories]
+      summary: List app classification rules
+      responses:
+        "200":
+          description: Categories
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CategoryItem"
+  /categories/{id}:
+    patch:
+      operationId: updateCategory
+      tags: [categories]
+      summary: Classify or rename an app category
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCategoryRequest"
+      responses:
+        "200":
+          description: Updated category
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CategoryItem"
+
+  /tokens:
+    get:
+      operationId: listTokens
+      tags: [tokens]
+      summary: List enrollment tokens
+      responses:
+        "200":
+          description: Tokens
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EnrollmentTokenItem"
+    post:
+      operationId: createToken
+      tags: [tokens]
+      summary: Mint a new enrollment token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTokenRequest"
+      responses:
+        "201":
+          description: Token created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnrollmentTokenItem"
+  /tokens/{id}/revoke:
+    post:
+      operationId: revokeToken
+      tags: [tokens]
+      summary: Revoke an enrollment token
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Token revoked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnrollmentTokenItem"
+
+  /users:
+    get:
+      operationId: listUsers
+      tags: [users]
+      summary: List users
+      responses:
+        "200":
+          description: Users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AuthUser"
+
   /sync/heartbeat:
     post:
       operationId: heartbeat
@@ -66,37 +398,334 @@ paths:
                 properties:
                   status:
                     type: string
-  /activity:
-    get:
-      operationId: getActivityLogs
-      tags: [activity]
-      summary: Get activity logs
-      responses:
-        "200":
-          description: List of activity logs
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/ActivityLogItem"
-  /activity/timeline:
-    get:
-      operationId: getTimeline
-      tags: [activity]
-      summary: Get timeline view
-      responses:
-        "200":
-          description: Timeline events
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/ActivityLogItem"
 
 components:
+  parameters:
+    IdParam:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
   schemas:
+    LoginRequest:
+      type: object
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+      required: [username, password]
+    AuthUser:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+          enum: [super_user, admin, team_member]
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, username, email, role, createdAt]
+    DeviceItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        hardwareHash:
+          type: string
+        systemName:
+          type: string
+        osType:
+          type: string
+          enum: [windows, macos, linux]
+        agentVersion:
+          type: [string, "null"]
+        assignedUserId:
+          type: [string, "null"]
+          format: uuid
+        consentAcknowledgedAt:
+          type: [string, "null"]
+          format: date-time
+        consentName:
+          type: [string, "null"]
+        enrolledAt:
+          type: [string, "null"]
+          format: date-time
+        lastSeenAt:
+          type: [string, "null"]
+          format: date-time
+        isLocked:
+          type: boolean
+        screenshotMinMinutes:
+          type: integer
+        screenshotMaxMinutes:
+          type: integer
+        idleThresholdSeconds:
+          type: integer
+        syncIntervalSeconds:
+          type: integer
+        monitoringEnabled:
+          type: boolean
+        online:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - hardwareHash
+        - systemName
+        - osType
+        - isLocked
+        - screenshotMinMinutes
+        - screenshotMaxMinutes
+        - idleThresholdSeconds
+        - syncIntervalSeconds
+        - monitoringEnabled
+        - online
+        - createdAt
+        - updatedAt
+    DeviceCommandItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        deviceId:
+          type: string
+          format: uuid
+        issuedById:
+          type: [string, "null"]
+          format: uuid
+        commandType:
+          type: string
+          enum: [lock_screen, logout_user, update_config]
+        payload:
+          type: [string, "null"]
+        status:
+          type: string
+          enum: [pending, acknowledged, completed, failed, cancelled]
+        reason:
+          type: [string, "null"]
+        issuedAt:
+          type: string
+          format: date-time
+        acknowledgedAt:
+          type: [string, "null"]
+          format: date-time
+        completedAt:
+          type: [string, "null"]
+          format: date-time
+      required: [id, deviceId, commandType, status, issuedAt]
+    IssueCommandRequest:
+      type: object
+      properties:
+        commandType:
+          type: string
+          enum: [lock_screen, logout_user]
+        reason:
+          type: string
+      required: [commandType]
+    ActivityLogRecord:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        deviceId:
+          type: string
+          format: uuid
+        userId:
+          type: [string, "null"]
+          format: uuid
+        processName:
+          type: string
+        windowTitle:
+          type: [string, "null"]
+        categoryId:
+          type: [string, "null"]
+          format: uuid
+        startedAt:
+          type: string
+          format: date-time
+        endedAt:
+          type: string
+          format: date-time
+        durationSeconds:
+          type: integer
+        idleSeconds:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - deviceId
+        - processName
+        - startedAt
+        - endedAt
+        - durationSeconds
+        - idleSeconds
+        - createdAt
+    ScreenshotListItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        deviceId:
+          type: string
+          format: uuid
+        userId:
+          type: [string, "null"]
+          format: uuid
+        fileSizeBytes:
+          type: integer
+        capturedAt:
+          type: string
+          format: date-time
+        imageUrl:
+          type: string
+      required: [id, deviceId, fileSizeBytes, capturedAt, imageUrl]
+    SummaryResponse:
+      type: object
+      properties:
+        devices:
+          type: object
+          properties:
+            total:
+              type: integer
+            online:
+              type: integer
+          required: [total, online]
+        usersCount:
+          type: integer
+        screenshotsToday:
+          type: integer
+        pendingCommands:
+          type: integer
+        activityToday:
+          type: object
+          properties:
+            productiveSeconds:
+              type: integer
+            unproductiveSeconds:
+              type: integer
+            neutralSeconds:
+              type: integer
+            undefinedSeconds:
+              type: integer
+            totalSeconds:
+              type: integer
+          required:
+            - productiveSeconds
+            - unproductiveSeconds
+            - neutralSeconds
+            - undefinedSeconds
+            - totalSeconds
+      required:
+        - devices
+        - usersCount
+        - screenshotsToday
+        - pendingCommands
+        - activityToday
+    LeaderboardItem:
+      type: object
+      properties:
+        deviceId:
+          type: string
+          format: uuid
+        systemName:
+          type: string
+        productiveSeconds:
+          type: integer
+        totalSeconds:
+          type: integer
+        score:
+          type: integer
+      required: [deviceId, systemName, productiveSeconds, totalSeconds, score]
+    CategoryItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        pattern:
+          type: string
+        displayName:
+          type: string
+        classification:
+          type: string
+          enum: [productive, unproductive, neutral, undefined]
+        createdById:
+          type: [string, "null"]
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, pattern, displayName, classification, createdAt, updatedAt]
+    UpdateCategoryRequest:
+      type: object
+      properties:
+        classification:
+          type: string
+          enum: [productive, unproductive, neutral, undefined]
+        displayName:
+          type: string
+    EnrollmentTokenItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        token:
+          type: string
+        label:
+          type: [string, "null"]
+        createdById:
+          type: [string, "null"]
+          format: uuid
+        assignedUserId:
+          type: [string, "null"]
+          format: uuid
+        maxUses:
+          type: integer
+        useCount:
+          type: integer
+        expiresAt:
+          type: [string, "null"]
+          format: date-time
+        revokedAt:
+          type: [string, "null"]
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, token, maxUses, useCount, createdAt]
+    CreateTokenRequest:
+      type: object
+      properties:
+        label:
+          type: string
+        maxUses:
+          type: integer
+        expiresDays:
+          type: integer
     HeartbeatRequest:
       type: object
       properties:

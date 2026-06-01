@@ -1,1 +1,1 @@
-- [Single-use enrollment token claiming](enrollment-token-race.md) — claim one-time/quota tokens via one conditional UPDATE+RETURNING, never select-then-increment (race).
+- [Admin API authorization posture](admin-surface-authz.md) — whole admin API + dashboard is role-gated to admin/super_user (reads too), because the token list returns plaintext credentials.
