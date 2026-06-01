@@ -1,5 +1,6 @@
 export * from "./users";
 export * from "./devices";
+export * from "./enrollmentTokens";
 export * from "./appCategories";
 export * from "./activityLogs";
 export * from "./screenshots";

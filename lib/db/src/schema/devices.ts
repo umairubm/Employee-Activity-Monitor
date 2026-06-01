@@ -23,7 +23,12 @@ export const devicesTable = pgTable("devices", {
   assignedUserId: uuid("assigned_user_id").references(() => usersTable.id, {
     onDelete: "set null",
   }),
-  enrollmentSecret: text("enrollment_secret").notNull(),
+  secretHash: text("secret_hash").notNull(),
+  consentAcknowledgedAt: timestamp("consent_acknowledged_at", {
+    withTimezone: true,
+  }),
+  consentName: text("consent_name"),
+  enrolledAt: timestamp("enrolled_at", { withTimezone: true }),
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
   isLocked: boolean("is_locked").notNull().default(false),
   screenshotMinMinutes: integer("screenshot_min_minutes").notNull().default(5),
@@ -51,6 +56,27 @@ export const insertDeviceSchema = createInsertSchema(devicesTable).omit({
   createdAt: true,
   updatedAt: true,
 });
+
+export const publicDeviceColumns = {
+  id: devicesTable.id,
+  hardwareHash: devicesTable.hardwareHash,
+  systemName: devicesTable.systemName,
+  osType: devicesTable.osType,
+  agentVersion: devicesTable.agentVersion,
+  assignedUserId: devicesTable.assignedUserId,
+  consentAcknowledgedAt: devicesTable.consentAcknowledgedAt,
+  consentName: devicesTable.consentName,
+  enrolledAt: devicesTable.enrolledAt,
+  lastSeenAt: devicesTable.lastSeenAt,
+  isLocked: devicesTable.isLocked,
+  screenshotMinMinutes: devicesTable.screenshotMinMinutes,
+  screenshotMaxMinutes: devicesTable.screenshotMaxMinutes,
+  idleThresholdSeconds: devicesTable.idleThresholdSeconds,
+  syncIntervalSeconds: devicesTable.syncIntervalSeconds,
+  monitoringEnabled: devicesTable.monitoringEnabled,
+  createdAt: devicesTable.createdAt,
+  updatedAt: devicesTable.updatedAt,
+};
 
 export type InsertDevice = z.infer<typeof insertDeviceSchema>;
 export type Device = typeof devicesTable.$inferSelect;

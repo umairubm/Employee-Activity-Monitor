@@ -1,0 +1,1 @@
+- [Single-use enrollment token claiming](enrollment-token-race.md) — claim one-time/quota tokens via one conditional UPDATE+RETURNING, never select-then-increment (race).
