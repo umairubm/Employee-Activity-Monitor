@@ -6,3 +6,9 @@ id = "9LhNGqueKYAx7HGI9MUQk"
 uri = "file://docs/API.md"
 type = "text"
 title = "Workforce Analytics — API Endpoint Documentation"
+
+[[outputs]]
+id = "UGTtMZXbOrnxyt2ZOWMlD"
+uri = "file://exports/Workforce-Analytics-API-Documentation.pdf"
+type = "pdf"
+title = "Workforce Analytics — API Endpoint Documentation (PDF)"
