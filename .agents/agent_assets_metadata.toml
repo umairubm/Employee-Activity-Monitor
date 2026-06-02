@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "9LhNGqueKYAx7HGI9MUQk"
+uri = "file://docs/API.md"
+type = "text"
+title = "Workforce Analytics — API Endpoint Documentation"
