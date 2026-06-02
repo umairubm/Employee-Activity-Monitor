@@ -1,1 +1,2 @@
 - [Admin API authorization posture](admin-surface-authz.md) — whole admin API + dashboard is role-gated to admin/super_user (reads too), because the token list returns plaintext credentials.
+- [Two desktop agents in lockstep](desktop-agents.md) — Python `agent/` + Node `agent-node/` both MUST use the same secure sync contract (enroll token + device secret + consent, presigned screenshot upload); never add a public/unauthenticated sync endpoint.
