@@ -161,7 +161,10 @@ describe("POST /sync/enroll", () => {
 
 describe("POST /sync/enroll (re-enrollment of a known machine)", () => {
   it("reuses the same device row and rotates the secret for a known hardwareHash", async () => {
-    const token = await createEnrollmentToken({ maxUses: 2 });
+    // A single-use token: the first enrollment exhausts it, yet the same
+    // machine must still be able to re-enroll without burning a (non-existent)
+    // additional use.
+    const token = await createEnrollmentToken({ maxUses: 1 });
     createdTokenIds.push(token.id);
 
     // First enrollment establishes the device row + its original secret.
@@ -172,6 +175,13 @@ describe("POST /sync/enroll (re-enrollment of a known machine)", () => {
     expect(first.status).toBe(201);
     const deviceId = trackDevice(first.body.deviceId);
     const firstSecret = first.body.deviceSecret as string;
+
+    // The first (and only) token use was claimed.
+    const [tkAfterFirst] = await db
+      .select()
+      .from(enrollmentTokensTable)
+      .where(eq(enrollmentTokensTable.id, token.id));
+    expect(tkAfterFirst.useCount).toBe(1);
 
     const [before] = await db
       .select()
@@ -188,6 +198,13 @@ describe("POST /sync/enroll (re-enrollment of a known machine)", () => {
       });
     expect(second.status).toBe(201);
     const secondSecret = second.body.deviceSecret as string;
+
+    // Re-enrollment of a known machine must NOT consume another token use.
+    const [tkAfterSecond] = await db
+      .select()
+      .from(enrollmentTokensTable)
+      .where(eq(enrollmentTokensTable.id, token.id));
+    expect(tkAfterSecond.useCount).toBe(1);
 
     // Same device row is returned, not a new one.
     expect(second.body.deviceId).toBe(deviceId);

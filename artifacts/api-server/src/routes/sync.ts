@@ -55,34 +55,31 @@ router.post("/enroll", async (req: Request, res: Response): Promise<void> => {
   const secretHash = hashSecret(secret);
 
   const device = await db.transaction(async (tx): Promise<Device | null> => {
-    // Atomically claim one use of the token. The WHERE clause only matches a
-    // token that is still valid, so concurrent enrollments cannot both succeed
-    // — this closes the check-then-increment race on max-uses.
-    const [token] = await tx
-      .update(enrollmentTokensTable)
-      .set({ useCount: sql`${enrollmentTokensTable.useCount} + 1` })
-      .where(
-        and(
-          eq(enrollmentTokensTable.token, body.token),
-          isNull(enrollmentTokensTable.revokedAt),
-          or(
-            isNull(enrollmentTokensTable.expiresAt),
-            gt(enrollmentTokensTable.expiresAt, now),
-          ),
-          lt(enrollmentTokensTable.useCount, enrollmentTokensTable.maxUses),
-        ),
-      )
-      .returning();
-
-    if (!token) return null; // invalid/exhausted -> 403 below; nothing committed
-
     const [existing] = await tx
       .select()
       .from(devicesTable)
       .where(eq(devicesTable.hardwareHash, body.hardwareHash));
 
     if (existing) {
-      // Re-enrollment of a known machine: rotate the secret, refresh consent.
+      // Re-enrollment of a known machine. Validate the token is still usable
+      // but DO NOT consume a use — an already-enrolled device shouldn't burn a
+      // token-use (and so shouldn't be blocked by max-uses being exhausted).
+      const [token] = await tx
+        .select()
+        .from(enrollmentTokensTable)
+        .where(
+          and(
+            eq(enrollmentTokensTable.token, body.token),
+            isNull(enrollmentTokensTable.revokedAt),
+            or(
+              isNull(enrollmentTokensTable.expiresAt),
+              gt(enrollmentTokensTable.expiresAt, now),
+            ),
+          ),
+        );
+
+      if (!token) return null; // invalid/expired/revoked -> 403 below
+
       const [updated] = await tx
         .update(devicesTable)
         .set({
@@ -100,6 +97,28 @@ router.post("/enroll", async (req: Request, res: Response): Promise<void> => {
         .returning();
       return updated;
     }
+
+    // First-time enrollment: atomically claim one use of the token. The WHERE
+    // clause only matches a token that is still valid, so concurrent new
+    // enrollments cannot both succeed — this closes the check-then-increment
+    // race on max-uses.
+    const [token] = await tx
+      .update(enrollmentTokensTable)
+      .set({ useCount: sql`${enrollmentTokensTable.useCount} + 1` })
+      .where(
+        and(
+          eq(enrollmentTokensTable.token, body.token),
+          isNull(enrollmentTokensTable.revokedAt),
+          or(
+            isNull(enrollmentTokensTable.expiresAt),
+            gt(enrollmentTokensTable.expiresAt, now),
+          ),
+          lt(enrollmentTokensTable.useCount, enrollmentTokensTable.maxUses),
+        ),
+      )
+      .returning();
+
+    if (!token) return null; // invalid/exhausted -> 403 below; nothing committed
 
     const [created] = await tx
       .insert(devicesTable)
