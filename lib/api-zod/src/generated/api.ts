@@ -286,6 +286,13 @@ export const FlagScreenshotResponse = zod.object({
 /**
  * @summary Dashboard overview KPIs
  */
+export const GetSummaryQueryParams = zod.object({
+  group: zod.coerce
+    .string()
+    .optional()
+    .describe("Restrict aggregation to devices in this group"),
+});
+
 export const GetSummaryResponse = zod.object({
   devices: zod.object({
     total: zod.number(),
@@ -306,6 +313,13 @@ export const GetSummaryResponse = zod.object({
 /**
  * @summary Per-device productivity today
  */
+export const GetLeaderboardQueryParams = zod.object({
+  group: zod.coerce
+    .string()
+    .optional()
+    .describe("Restrict aggregation to devices in this group"),
+});
+
 export const GetLeaderboardResponseItem = zod.object({
   deviceId: zod.string().uuid(),
   systemName: zod.string(),

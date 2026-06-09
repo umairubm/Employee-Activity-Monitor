@@ -8,7 +8,7 @@ import {
   activityLogsTable,
   appCategoriesTable,
 } from "@workspace/db";
-import { and, count, eq, gt, gte, sql } from "drizzle-orm";
+import { and, count, eq, gt, gte, inArray, sql } from "drizzle-orm";
 
 const router: IRouter = Router();
 
@@ -19,27 +19,69 @@ function startOfToday(): Date {
 }
 
 // GET /api/reports/summary - dashboard overview KPIs
-router.get("/summary", async (_req, res) => {
+router.get("/summary", async (req, res) => {
   try {
+    const { group } = req.query as Record<string, string | undefined>;
     const todayStart = startOfToday();
     const onlineSince = new Date(Date.now() - 5 * 60 * 1000);
 
+    const deviceIdsInGroup = group
+      ? db
+          .select({ id: devicesTable.id })
+          .from(devicesTable)
+          .where(eq(devicesTable.deviceGroup, group))
+      : null;
+
+    const deviceGroupFilter = group
+      ? eq(devicesTable.deviceGroup, group)
+      : undefined;
+    const screenshotGroupFilter = deviceIdsInGroup
+      ? inArray(screenshotsTable.deviceId, deviceIdsInGroup)
+      : undefined;
+    const commandGroupFilter = deviceIdsInGroup
+      ? inArray(deviceCommandsTable.deviceId, deviceIdsInGroup)
+      : undefined;
+    const activityGroupFilter = deviceIdsInGroup
+      ? inArray(activityLogsTable.deviceId, deviceIdsInGroup)
+      : undefined;
+
     const [[devices], [online], [users], [shots], [pending]] =
       await Promise.all([
-        db.select({ value: count() }).from(devicesTable),
         db
           .select({ value: count() })
           .from(devicesTable)
-          .where(gt(devicesTable.lastSeenAt, onlineSince)),
+          .where(deviceGroupFilter),
+        db
+          .select({ value: count() })
+          .from(devicesTable)
+          .where(
+            deviceGroupFilter
+              ? and(gt(devicesTable.lastSeenAt, onlineSince), deviceGroupFilter)
+              : gt(devicesTable.lastSeenAt, onlineSince),
+          ),
         db.select({ value: count() }).from(usersTable),
         db
           .select({ value: count() })
           .from(screenshotsTable)
-          .where(gte(screenshotsTable.capturedAt, todayStart)),
+          .where(
+            screenshotGroupFilter
+              ? and(
+                  gte(screenshotsTable.capturedAt, todayStart),
+                  screenshotGroupFilter,
+                )
+              : gte(screenshotsTable.capturedAt, todayStart),
+          ),
         db
           .select({ value: count() })
           .from(deviceCommandsTable)
-          .where(eq(deviceCommandsTable.status, "pending")),
+          .where(
+            commandGroupFilter
+              ? and(
+                  eq(deviceCommandsTable.status, "pending"),
+                  commandGroupFilter,
+                )
+              : eq(deviceCommandsTable.status, "pending"),
+          ),
       ]);
 
     const breakdownRows = await db
@@ -52,7 +94,11 @@ router.get("/summary", async (_req, res) => {
         appCategoriesTable,
         eq(activityLogsTable.categoryId, appCategoriesTable.id),
       )
-      .where(gte(activityLogsTable.startedAt, todayStart))
+      .where(
+        activityGroupFilter
+          ? and(gte(activityLogsTable.startedAt, todayStart), activityGroupFilter)
+          : gte(activityLogsTable.startedAt, todayStart),
+      )
       .groupBy(sql`coalesce(${appCategoriesTable.classification}, 'undefined')`);
 
     const activityToday = {
@@ -87,8 +133,9 @@ router.get("/summary", async (_req, res) => {
 });
 
 // GET /api/reports/leaderboard - per-device productivity today
-router.get("/leaderboard", async (_req, res) => {
+router.get("/leaderboard", async (req, res) => {
   try {
+    const { group } = req.query as Record<string, string | undefined>;
     const todayStart = startOfToday();
 
     const rows = await db
@@ -107,7 +154,14 @@ router.get("/leaderboard", async (_req, res) => {
         appCategoriesTable,
         eq(activityLogsTable.categoryId, appCategoriesTable.id),
       )
-      .where(gte(activityLogsTable.startedAt, todayStart))
+      .where(
+        group
+          ? and(
+              gte(activityLogsTable.startedAt, todayStart),
+              eq(devicesTable.deviceGroup, group),
+            )
+          : gte(activityLogsTable.startedAt, todayStart),
+      )
       .groupBy(activityLogsTable.deviceId, devicesTable.systemName);
 
     const leaderboard = rows

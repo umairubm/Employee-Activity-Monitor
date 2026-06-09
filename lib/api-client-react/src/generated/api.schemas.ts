@@ -429,6 +429,20 @@ export type FlagScreenshot200 = {
   flagged: boolean;
 };
 
+export type GetSummaryParams = {
+  /**
+   * Restrict aggregation to devices in this group
+   */
+  group?: string;
+};
+
+export type GetLeaderboardParams = {
+  /**
+   * Restrict aggregation to devices in this group
+   */
+  group?: string;
+};
+
 export type GetAttendanceReportParams = {
   /**
    * Day in YYYY-MM-DD format; defaults to today

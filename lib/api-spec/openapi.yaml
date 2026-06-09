@@ -330,6 +330,13 @@ paths:
       operationId: getSummary
       tags: [reports]
       summary: Dashboard overview KPIs
+      parameters:
+        - name: group
+          in: query
+          required: false
+          description: Restrict aggregation to devices in this group
+          schema:
+            type: string
       responses:
         "200":
           description: Summary
@@ -342,6 +349,13 @@ paths:
       operationId: getLeaderboard
       tags: [reports]
       summary: Per-device productivity today
+      parameters:
+        - name: group
+          in: query
+          required: false
+          description: Restrict aggregation to devices in this group
+          schema:
+            type: string
       responses:
         "200":
           description: Leaderboard
