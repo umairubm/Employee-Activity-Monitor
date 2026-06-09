@@ -127,9 +127,13 @@ export const GetDeviceCommandsResponseItem = zod.object({
     "cancelled",
   ]),
   reason: zod.string().nullish(),
+  cancelReason: zod.string().nullish(),
+  cancelledById: zod.string().uuid().nullish(),
+  cancelledByUsername: zod.string().nullish(),
   issuedAt: zod.coerce.date(),
   acknowledgedAt: zod.coerce.date().nullish(),
   completedAt: zod.coerce.date().nullish(),
+  cancelledAt: zod.coerce.date().nullish(),
 });
 export const GetDeviceCommandsResponse = zod.array(
   GetDeviceCommandsResponseItem,
@@ -155,6 +159,10 @@ export const CancelDeviceCommandParams = zod.object({
   commandId: zod.coerce.string().uuid(),
 });
 
+export const CancelDeviceCommandBody = zod.object({
+  reason: zod.string().optional(),
+});
+
 export const CancelDeviceCommandResponse = zod.object({
   id: zod.string().uuid(),
   deviceId: zod.string().uuid(),
@@ -170,9 +178,13 @@ export const CancelDeviceCommandResponse = zod.object({
     "cancelled",
   ]),
   reason: zod.string().nullish(),
+  cancelReason: zod.string().nullish(),
+  cancelledById: zod.string().uuid().nullish(),
+  cancelledByUsername: zod.string().nullish(),
   issuedAt: zod.coerce.date(),
   acknowledgedAt: zod.coerce.date().nullish(),
   completedAt: zod.coerce.date().nullish(),
+  cancelledAt: zod.coerce.date().nullish(),
 });
 
 /**

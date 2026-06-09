@@ -25,6 +25,7 @@ import type {
   AttendanceSettingsItem,
   AttendanceSettingsUpdate,
   AuthUser,
+  CancelCommandRequest,
   CategoryItem,
   CreateTokenRequest,
   DeleteAttendanceOverride200,
@@ -727,6 +728,7 @@ export const getCancelDeviceCommandUrl = (id: string, commandId: string) => {
 export const cancelDeviceCommand = async (
   id: string,
   commandId: string,
+  cancelCommandRequest?: CancelCommandRequest,
   options?: RequestInit,
 ): Promise<DeviceCommandItem> => {
   return customFetch<DeviceCommandItem>(
@@ -734,6 +736,8 @@ export const cancelDeviceCommand = async (
     {
       ...options,
       method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(cancelCommandRequest),
     },
   );
 };
@@ -745,14 +749,14 @@ export const getCancelDeviceCommandMutationOptions = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof cancelDeviceCommand>>,
     TError,
-    { id: string; commandId: string },
+    { id: string; commandId: string; data: BodyType<CancelCommandRequest> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof cancelDeviceCommand>>,
   TError,
-  { id: string; commandId: string },
+  { id: string; commandId: string; data: BodyType<CancelCommandRequest> },
   TContext
 > => {
   const mutationKey = ["cancelDeviceCommand"];
@@ -766,11 +770,11 @@ export const getCancelDeviceCommandMutationOptions = <
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof cancelDeviceCommand>>,
-    { id: string; commandId: string }
+    { id: string; commandId: string; data: BodyType<CancelCommandRequest> }
   > = (props) => {
-    const { id, commandId } = props ?? {};
+    const { id, commandId, data } = props ?? {};
 
-    return cancelDeviceCommand(id, commandId, requestOptions);
+    return cancelDeviceCommand(id, commandId, data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -779,7 +783,7 @@ export const getCancelDeviceCommandMutationOptions = <
 export type CancelDeviceCommandMutationResult = NonNullable<
   Awaited<ReturnType<typeof cancelDeviceCommand>>
 >;
-
+export type CancelDeviceCommandMutationBody = BodyType<CancelCommandRequest>;
 export type CancelDeviceCommandMutationError = ErrorType<unknown>;
 
 /**
@@ -792,14 +796,14 @@ export const useCancelDeviceCommand = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof cancelDeviceCommand>>,
     TError,
-    { id: string; commandId: string },
+    { id: string; commandId: string; data: BodyType<CancelCommandRequest> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
   Awaited<ReturnType<typeof cancelDeviceCommand>>,
   TError,
-  { id: string; commandId: string },
+  { id: string; commandId: string; data: BodyType<CancelCommandRequest> },
   TContext
 > => {
   return useMutation(getCancelDeviceCommandMutationOptions(options));

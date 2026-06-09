@@ -109,11 +109,23 @@ export interface DeviceCommandItem {
   status: DeviceCommandItemStatus;
   /** @nullable */
   reason?: string | null;
+  /** @nullable */
+  cancelReason?: string | null;
+  /** @nullable */
+  cancelledById?: string | null;
+  /** @nullable */
+  cancelledByUsername?: string | null;
   issuedAt: string;
   /** @nullable */
   acknowledgedAt?: string | null;
   /** @nullable */
   completedAt?: string | null;
+  /** @nullable */
+  cancelledAt?: string | null;
+}
+
+export interface CancelCommandRequest {
+  reason?: string;
 }
 
 export type IssueCommandRequestCommandType =

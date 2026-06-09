@@ -169,6 +169,12 @@ paths:
           schema:
             type: string
             format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CancelCommandRequest"
       responses:
         "200":
           description: Cancelled command
@@ -851,6 +857,13 @@ components:
           enum: [pending, acknowledged, completed, failed, cancelled]
         reason:
           type: [string, "null"]
+        cancelReason:
+          type: [string, "null"]
+        cancelledById:
+          type: [string, "null"]
+          format: uuid
+        cancelledByUsername:
+          type: [string, "null"]
         issuedAt:
           type: string
           format: date-time
@@ -860,7 +873,15 @@ components:
         completedAt:
           type: [string, "null"]
           format: date-time
+        cancelledAt:
+          type: [string, "null"]
+          format: date-time
       required: [id, deviceId, commandType, status, issuedAt]
+    CancelCommandRequest:
+      type: object
+      properties:
+        reason:
+          type: string
     IssueCommandRequest:
       type: object
       properties:

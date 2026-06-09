@@ -36,15 +36,20 @@ export const deviceCommandsTable = pgTable(
     issuedById: uuid("issued_by_id").references(() => usersTable.id, {
       onDelete: "set null",
     }),
+    cancelledById: uuid("cancelled_by_id").references(() => usersTable.id, {
+      onDelete: "set null",
+    }),
     commandType: commandTypeEnum("command_type").notNull(),
     payload: text("payload"),
     status: commandStatusEnum("status").notNull().default("pending"),
     reason: text("reason"),
+    cancelReason: text("cancel_reason"),
     issuedAt: timestamp("issued_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
     acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
     completedAt: timestamp("completed_at", { withTimezone: true }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
   },
   (table) => ({
     devicePendingIdx: index("device_commands_device_status_idx").on(
@@ -65,6 +70,10 @@ export const deviceCommandsRelations = relations(
       fields: [deviceCommandsTable.issuedById],
       references: [usersTable.id],
     }),
+    cancelledBy: one(usersTable, {
+      fields: [deviceCommandsTable.cancelledById],
+      references: [usersTable.id],
+    }),
   }),
 );
 
@@ -75,6 +84,7 @@ export const insertDeviceCommandSchema = createInsertSchema(
   issuedAt: true,
   acknowledgedAt: true,
   completedAt: true,
+  cancelledAt: true,
 });
 
 export type InsertDeviceCommand = z.infer<typeof insertDeviceCommandSchema>;

@@ -322,6 +322,50 @@ describe("PATCH /devices/:id/commands/:commandId/cancel", () => {
     expect(res.body.status).toBe("cancelled");
   });
 
+  it("records the cancel reason and the cancelling admin's id + timestamp", async () => {
+    const device = await newDevice();
+    const command = await createDeviceCommand(device.id, {
+      issuedById: adminUserId,
+    });
+
+    const res = await request(adminApp)
+      .patch(`/devices/${device.id}/commands/${command.id}/cancel`)
+      .send({ reason: "issued by mistake" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("cancelled");
+
+    const [row] = await db
+      .select()
+      .from(deviceCommandsTable)
+      .where(eq(deviceCommandsTable.id, command.id));
+    expect(row.status).toBe("cancelled");
+    expect(row.cancelReason).toBe("issued by mistake");
+    expect(row.cancelledById).toBe(adminUserId);
+    expect(row.cancelledAt).toBeInstanceOf(Date);
+  });
+
+  it("cancels without a reason (cancel reason stays null) but still records the canceller", async () => {
+    const device = await newDevice();
+    const command = await createDeviceCommand(device.id, {
+      issuedById: adminUserId,
+    });
+
+    const res = await request(adminApp).patch(
+      `/devices/${device.id}/commands/${command.id}/cancel`,
+    );
+
+    expect(res.status).toBe(200);
+
+    const [row] = await db
+      .select()
+      .from(deviceCommandsTable)
+      .where(eq(deviceCommandsTable.id, command.id));
+    expect(row.cancelReason).toBeNull();
+    expect(row.cancelledById).toBe(adminUserId);
+    expect(row.cancelledAt).toBeInstanceOf(Date);
+  });
+
   it("rejects cancelling an already-acknowledged command (409) and leaves it untouched", async () => {
     const device = await newDevice();
     const command = await createDeviceCommand(device.id, {
@@ -523,5 +567,43 @@ describe("GET /devices/:id/commands (audit view)", () => {
     expect(res.body).toHaveLength(1);
     expect(res.body[0].issuedById).toBeNull();
     expect(res.body[0].issuedByUsername).toBeNull();
+  });
+
+  it("surfaces the cancellation reason and canceller username for a cancelled command", async () => {
+    const device = await newDevice();
+    const command = await createDeviceCommand(device.id, {
+      issuedById: adminUserId,
+    });
+
+    await request(adminApp)
+      .patch(`/devices/${device.id}/commands/${command.id}/cancel`)
+      .send({ reason: "false alarm" });
+
+    const res = await request(adminApp).get(`/devices/${device.id}/commands`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    const item = res.body[0];
+    expect(item.status).toBe("cancelled");
+    expect(item.cancelReason).toBe("false alarm");
+    expect(item.cancelledById).toBe(adminUserId);
+    expect(typeof item.cancelledByUsername).toBe("string");
+    expect(item.cancelledByUsername.length).toBeGreaterThan(0);
+    expect(item.cancelledAt).toBeTruthy();
+  });
+
+  it("leaves cancellation fields null for commands that were never cancelled", async () => {
+    const device = await newDevice();
+    await createDeviceCommand(device.id, { issuedById: adminUserId });
+
+    const res = await request(adminApp).get(`/devices/${device.id}/commands`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    const item = res.body[0];
+    expect(item.cancelReason).toBeNull();
+    expect(item.cancelledById).toBeNull();
+    expect(item.cancelledByUsername).toBeNull();
+    expect(item.cancelledAt).toBeNull();
   });
 });

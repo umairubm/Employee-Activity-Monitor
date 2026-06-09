@@ -24,6 +24,7 @@ export * from "./attendanceSettingsItem";
 export * from "./attendanceSettingsUpdate";
 export * from "./authUser";
 export * from "./authUserRole";
+export * from "./cancelCommandRequest";
 export * from "./categoryItem";
 export * from "./categoryItemClassification";
 export * from "./createTokenRequest";

@@ -31,6 +31,10 @@ export default function DeviceDetail({ id }: { id: string }) {
   const [commandType, setCommandType] = useState<'lock_screen' | 'logout_user' | null>(null);
   const [commandReason, setCommandReason] = useState("");
 
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [cancelCommandId, setCancelCommandId] = useState<string | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
+
   if (isDeviceLoading || isCommandsLoading) {
     return (
       <div className="space-y-6 animate-pulse">
@@ -70,9 +74,19 @@ export default function DeviceDetail({ id }: { id: string }) {
     setCommandDialogOpen(true);
   };
 
-  const handleCancelCommand = (commandId: string) => {
-    cancelCommand.mutate({ id, commandId }, {
+  const openCancelDialog = (commandId: string) => {
+    setCancelCommandId(commandId);
+    setCancelReason("");
+    setCancelDialogOpen(true);
+  };
+
+  const handleCancelCommand = () => {
+    if (!cancelCommandId) return;
+    cancelCommand.mutate({ id, commandId: cancelCommandId, data: { reason: cancelReason || undefined } }, {
       onSuccess: () => {
+        setCancelDialogOpen(false);
+        setCancelCommandId(null);
+        setCancelReason("");
         queryClient.invalidateQueries({ queryKey: getGetDeviceCommandsQueryKey(id) });
         toast({ title: "Command cancelled" });
       },
@@ -138,6 +152,36 @@ export default function DeviceDetail({ id }: { id: string }) {
               disabled={issueCommand.isPending}
             >
               {issueCommand.isPending ? "Issuing..." : "Confirm Action"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cancel Command</DialogTitle>
+            <DialogDescription>
+              This will cancel the still-pending command before the device picks it up. You can record why it was called off for the audit trail.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Label htmlFor="cancel-reason" className="mb-2 block">Reason (Optional)</Label>
+            <Input
+              id="cancel-reason"
+              placeholder="e.g. Issued by mistake"
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCancelDialogOpen(false)}>Keep Command</Button>
+            <Button
+              variant="destructive"
+              onClick={handleCancelCommand}
+              disabled={cancelCommand.isPending}
+            >
+              {cancelCommand.isPending ? "Cancelling..." : "Cancel Command"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -253,10 +297,21 @@ export default function DeviceDetail({ id }: { id: string }) {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
-                        {cmd.issuedByUsername || "Unknown"}
+                        <div>{cmd.issuedByUsername || "Unknown"}</div>
+                        {cmd.status === 'cancelled' && (
+                          <div className="text-xs text-destructive/80">
+                            Cancelled by {cmd.cancelledByUsername || "Unknown"}
+                            {cmd.cancelledAt ? ` · ${format(new Date(cmd.cancelledAt), "MMM d, HH:mm")}` : ""}
+                          </div>
+                        )}
                       </TableCell>
-                      <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">
-                        {cmd.reason || "-"}
+                      <TableCell className="text-sm text-muted-foreground max-w-[200px]">
+                        <div className="truncate">{cmd.reason || "-"}</div>
+                        {cmd.status === 'cancelled' && cmd.cancelReason && (
+                          <div className="text-xs text-destructive/80 truncate" title={cmd.cancelReason}>
+                            Cancelled: {cmd.cancelReason}
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
                         {format(new Date(cmd.issuedAt), "MMM d, HH:mm")}
@@ -270,7 +325,7 @@ export default function DeviceDetail({ id }: { id: string }) {
                             variant="ghost"
                             size="sm"
                             className="gap-1.5 text-muted-foreground hover:text-destructive"
-                            onClick={() => handleCancelCommand(cmd.id)}
+                            onClick={() => openCancelDialog(cmd.id)}
                             disabled={cancelCommand.isPending}
                           >
                             <Ban className="h-3.5 w-3.5" />

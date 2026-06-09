@@ -8,6 +8,7 @@ import {
   publicDeviceColumns,
 } from "@workspace/db";
 import { and, desc, eq } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { requireRole, type AuthedRequest } from "../middlewares/userAuth";
 
 const groupNameSchema = z
@@ -63,6 +64,7 @@ router.get("/:id", async (req, res) => {
 // GET /api/devices/:id/commands - command history for a device
 router.get("/:id/commands", async (req, res) => {
   try {
+    const cancelledByUsers = alias(usersTable, "cancelled_by_users");
     const rows = await db
       .select({
         id: deviceCommandsTable.id,
@@ -73,12 +75,20 @@ router.get("/:id/commands", async (req, res) => {
         payload: deviceCommandsTable.payload,
         status: deviceCommandsTable.status,
         reason: deviceCommandsTable.reason,
+        cancelReason: deviceCommandsTable.cancelReason,
+        cancelledById: deviceCommandsTable.cancelledById,
+        cancelledByUsername: cancelledByUsers.username,
+        cancelledAt: deviceCommandsTable.cancelledAt,
         issuedAt: deviceCommandsTable.issuedAt,
         acknowledgedAt: deviceCommandsTable.acknowledgedAt,
         completedAt: deviceCommandsTable.completedAt,
       })
       .from(deviceCommandsTable)
       .leftJoin(usersTable, eq(deviceCommandsTable.issuedById, usersTable.id))
+      .leftJoin(
+        cancelledByUsers,
+        eq(deviceCommandsTable.cancelledById, cancelledByUsers.id),
+      )
       .where(eq(deviceCommandsTable.deviceId, String(req.params.id)))
       .orderBy(desc(deviceCommandsTable.issuedAt))
       .limit(50);
@@ -132,12 +142,22 @@ router.post(
   },
 );
 
+const cancelCommandSchema = z.object({
+  reason: z.string().max(500).optional(),
+});
+
 // PATCH /api/devices/:id/commands/:commandId/cancel - cancel a pending command
 router.patch(
   "/:id/commands/:commandId/cancel",
   requireRole("admin", "super_user"),
   async (req, res) => {
     try {
+      const parsed = cancelCommandSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        res.status(400).json({ error: "Invalid cancel request" });
+        return;
+      }
+
       const deviceId = String(req.params.id);
       const commandId = String(req.params.commandId);
 
@@ -145,7 +165,12 @@ router.patch(
       // cancelled, so a device acknowledging concurrently can't be clobbered.
       const [cancelled] = await db
         .update(deviceCommandsTable)
-        .set({ status: "cancelled" })
+        .set({
+          status: "cancelled",
+          cancelledById: (req as AuthedRequest).user.id,
+          cancelledAt: new Date(),
+          cancelReason: parsed.data.reason ?? null,
+        })
         .where(
           and(
             eq(deviceCommandsTable.id, commandId),

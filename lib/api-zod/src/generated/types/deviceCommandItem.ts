@@ -21,9 +21,17 @@ export interface DeviceCommandItem {
   status: DeviceCommandItemStatus;
   /** @nullable */
   reason?: string | null;
+  /** @nullable */
+  cancelReason?: string | null;
+  /** @nullable */
+  cancelledById?: string | null;
+  /** @nullable */
+  cancelledByUsername?: string | null;
   issuedAt: Date;
   /** @nullable */
   acknowledgedAt?: Date | null;
   /** @nullable */
   completedAt?: Date | null;
+  /** @nullable */
+  cancelledAt?: Date | null;
 }
