@@ -8,11 +8,13 @@ import {
   screenshotsTable,
   attendanceSettingsTable,
   enrollmentTokensTable,
+  deviceCommandsTable,
   usersTable,
   sessionsTable,
   type Device,
   type Screenshot,
   type EnrollmentToken,
+  type DeviceCommand,
   type User,
   type UserRole,
 } from "@workspace/db";
@@ -147,6 +149,24 @@ export async function createEnrollmentToken(
     })
     .returning();
   return token;
+}
+
+/** Insert a device command (defaults: pending lock_screen); returns the row. */
+export async function createDeviceCommand(
+  deviceId: string,
+  overrides: Partial<typeof deviceCommandsTable.$inferInsert> = {},
+): Promise<DeviceCommand> {
+  const [command] = await db
+    .insert(deviceCommandsTable)
+    .values({
+      deviceId,
+      commandType: "lock_screen",
+      status: "pending",
+      reason: "test command",
+      ...overrides,
+    })
+    .returning();
+  return command;
 }
 
 /**

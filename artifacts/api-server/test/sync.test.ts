@@ -8,11 +8,13 @@ import {
   enrollmentTokensTable,
   activityLogsTable,
   screenshotsTable,
+  deviceCommandsTable,
   pool,
 } from "@workspace/db";
 import {
   createDevice,
   createDeviceWithSecret,
+  createDeviceCommand,
   createEnrollmentToken,
   makeSyncApp,
 } from "./helpers";
@@ -407,5 +409,190 @@ describe("screenshot upload uses the presigned-URL + storageKey path", () => {
         fileSizeBytes: 10,
       });
     expect(res.status).toBe(400);
+  });
+});
+
+describe("IT command dispatch via heartbeat", () => {
+  it("returns this device's pending commands and not other devices' commands", async () => {
+    const { device, secret } = await createDeviceWithSecret();
+    trackDevice(device.id);
+    const other = await createDeviceWithSecret();
+    trackDevice(other.device.id);
+
+    const lock = await createDeviceCommand(device.id, {
+      commandType: "lock_screen",
+      payload: "now",
+      reason: "policy violation",
+    });
+    const logout = await createDeviceCommand(device.id, {
+      commandType: "logout_user",
+    });
+    // A command for another device must never leak into this heartbeat.
+    await createDeviceCommand(other.device.id, { commandType: "lock_screen" });
+
+    const res = await request(app)
+      .post("/sync/heartbeat")
+      .set("x-device-id", device.id)
+      .set("x-device-secret", secret)
+      .send({});
+
+    expect(res.status).toBe(200);
+    const ids = (res.body.commands as Array<{ id: string }>).map((c) => c.id);
+    expect(ids).toHaveLength(2);
+    expect(ids).toContain(lock.id);
+    expect(ids).toContain(logout.id);
+
+    const lockCmd = (
+      res.body.commands as Array<{
+        id: string;
+        commandType: string;
+        payload: string | null;
+        reason: string | null;
+      }>
+    ).find((c) => c.id === lock.id);
+    expect(lockCmd).toMatchObject({
+      commandType: "lock_screen",
+      payload: "now",
+      reason: "policy violation",
+    });
+  });
+
+  it("excludes commands that are not pending", async () => {
+    const { device, secret } = await createDeviceWithSecret();
+    trackDevice(device.id);
+
+    const pending = await createDeviceCommand(device.id);
+    // Already-acknowledged / completed / failed work must not be re-dispatched.
+    await createDeviceCommand(device.id, { status: "acknowledged" });
+    await createDeviceCommand(device.id, { status: "completed" });
+    await createDeviceCommand(device.id, { status: "failed" });
+
+    const res = await request(app)
+      .post("/sync/heartbeat")
+      .set("x-device-id", device.id)
+      .set("x-device-secret", secret)
+      .send({});
+
+    expect(res.status).toBe(200);
+    const ids = (res.body.commands as Array<{ id: string }>).map((c) => c.id);
+    expect(ids).toEqual([pending.id]);
+  });
+});
+
+describe("POST /sync/commands/ack", () => {
+  it("moves a command pending -> acknowledged and stamps acknowledgedAt", async () => {
+    const { device, secret } = await createDeviceWithSecret();
+    trackDevice(device.id);
+    const command = await createDeviceCommand(device.id);
+
+    const res = await request(app)
+      .post("/sync/commands/ack")
+      .set("x-device-id", device.id)
+      .set("x-device-secret", secret)
+      .send({ commandId: command.id, status: "acknowledged" });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ id: command.id, status: "acknowledged" });
+
+    const [row] = await db
+      .select()
+      .from(deviceCommandsTable)
+      .where(eq(deviceCommandsTable.id, command.id));
+    expect(row.status).toBe("acknowledged");
+    expect(row.acknowledgedAt).not.toBeNull();
+    // Terminal timestamp is only set once the command reaches a terminal state.
+    expect(row.completedAt).toBeNull();
+  });
+
+  it("moves an acknowledged command -> completed and stamps completedAt", async () => {
+    const { device, secret } = await createDeviceWithSecret();
+    trackDevice(device.id);
+    const acknowledgedAt = new Date(Date.now() - 60_000);
+    const command = await createDeviceCommand(device.id, {
+      status: "acknowledged",
+      acknowledgedAt,
+    });
+
+    const res = await request(app)
+      .post("/sync/commands/ack")
+      .set("x-device-id", device.id)
+      .set("x-device-secret", secret)
+      .send({ commandId: command.id, status: "completed" });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ id: command.id, status: "completed" });
+
+    const [row] = await db
+      .select()
+      .from(deviceCommandsTable)
+      .where(eq(deviceCommandsTable.id, command.id));
+    expect(row.status).toBe("completed");
+    expect(row.completedAt).not.toBeNull();
+    // The earlier acknowledgement timestamp is preserved.
+    expect(row.acknowledgedAt?.getTime()).toBe(acknowledgedAt.getTime());
+  });
+
+  it("moves a command -> failed and stamps completedAt", async () => {
+    const { device, secret } = await createDeviceWithSecret();
+    trackDevice(device.id);
+    const command = await createDeviceCommand(device.id, {
+      commandType: "logout_user",
+    });
+
+    const res = await request(app)
+      .post("/sync/commands/ack")
+      .set("x-device-id", device.id)
+      .set("x-device-secret", secret)
+      .send({ commandId: command.id, status: "failed" });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ id: command.id, status: "failed" });
+
+    const [row] = await db
+      .select()
+      .from(deviceCommandsTable)
+      .where(eq(deviceCommandsTable.id, command.id));
+    expect(row.status).toBe("failed");
+    expect(row.completedAt).not.toBeNull();
+  });
+
+  it("returns 404 and changes nothing when acking another device's command", async () => {
+    const { device, secret } = await createDeviceWithSecret();
+    trackDevice(device.id);
+    const victim = await createDeviceWithSecret();
+    trackDevice(victim.device.id);
+
+    // A command that belongs to the victim device, not the caller.
+    const command = await createDeviceCommand(victim.device.id);
+
+    const res = await request(app)
+      .post("/sync/commands/ack")
+      .set("x-device-id", device.id)
+      .set("x-device-secret", secret)
+      .send({ commandId: command.id, status: "completed" });
+
+    expect(res.status).toBe(404);
+
+    // The victim's command is untouched: still pending, no timestamps stamped.
+    const [row] = await db
+      .select()
+      .from(deviceCommandsTable)
+      .where(eq(deviceCommandsTable.id, command.id));
+    expect(row.status).toBe("pending");
+    expect(row.acknowledgedAt).toBeNull();
+    expect(row.completedAt).toBeNull();
+  });
+
+  it("returns 404 for a command id that does not exist", async () => {
+    const { device, secret } = await createDeviceWithSecret();
+    trackDevice(device.id);
+
+    const res = await request(app)
+      .post("/sync/commands/ack")
+      .set("x-device-id", device.id)
+      .set("x-device-secret", secret)
+      .send({ commandId: randomUUID(), status: "completed" });
+
+    expect(res.status).toBe(404);
   });
 });
