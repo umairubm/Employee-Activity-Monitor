@@ -222,6 +222,103 @@ export const SetDeviceGroupResponse = zod.object({
 });
 
 /**
+ * @summary Apply agent configuration to all devices
+ */
+export const applyDeviceConfigToAllBodyScreenshotMinMinutesMax = 1440;
+
+export const applyDeviceConfigToAllBodyScreenshotMaxMinutesMax = 1440;
+
+export const applyDeviceConfigToAllBodyIdleThresholdSecondsMin = 10;
+export const applyDeviceConfigToAllBodyIdleThresholdSecondsMax = 7200;
+
+export const applyDeviceConfigToAllBodySyncIntervalSecondsMin = 10;
+export const applyDeviceConfigToAllBodySyncIntervalSecondsMax = 3600;
+
+export const ApplyDeviceConfigToAllBody = zod.object({
+  monitoringEnabled: zod.boolean(),
+  screenshotMinMinutes: zod
+    .number()
+    .min(1)
+    .max(applyDeviceConfigToAllBodyScreenshotMinMinutesMax),
+  screenshotMaxMinutes: zod
+    .number()
+    .min(1)
+    .max(applyDeviceConfigToAllBodyScreenshotMaxMinutesMax),
+  idleThresholdSeconds: zod
+    .number()
+    .min(applyDeviceConfigToAllBodyIdleThresholdSecondsMin)
+    .max(applyDeviceConfigToAllBodyIdleThresholdSecondsMax),
+  syncIntervalSeconds: zod
+    .number()
+    .min(applyDeviceConfigToAllBodySyncIntervalSecondsMin)
+    .max(applyDeviceConfigToAllBodySyncIntervalSecondsMax),
+});
+
+export const ApplyDeviceConfigToAllResponse = zod.object({
+  updated: zod.number(),
+});
+
+/**
+ * @summary Update a device's agent configuration
+ */
+export const UpdateDeviceConfigParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
+
+export const updateDeviceConfigBodyScreenshotMinMinutesMax = 1440;
+
+export const updateDeviceConfigBodyScreenshotMaxMinutesMax = 1440;
+
+export const updateDeviceConfigBodyIdleThresholdSecondsMin = 10;
+export const updateDeviceConfigBodyIdleThresholdSecondsMax = 7200;
+
+export const updateDeviceConfigBodySyncIntervalSecondsMin = 10;
+export const updateDeviceConfigBodySyncIntervalSecondsMax = 3600;
+
+export const UpdateDeviceConfigBody = zod.object({
+  monitoringEnabled: zod.boolean(),
+  screenshotMinMinutes: zod
+    .number()
+    .min(1)
+    .max(updateDeviceConfigBodyScreenshotMinMinutesMax),
+  screenshotMaxMinutes: zod
+    .number()
+    .min(1)
+    .max(updateDeviceConfigBodyScreenshotMaxMinutesMax),
+  idleThresholdSeconds: zod
+    .number()
+    .min(updateDeviceConfigBodyIdleThresholdSecondsMin)
+    .max(updateDeviceConfigBodyIdleThresholdSecondsMax),
+  syncIntervalSeconds: zod
+    .number()
+    .min(updateDeviceConfigBodySyncIntervalSecondsMin)
+    .max(updateDeviceConfigBodySyncIntervalSecondsMax),
+});
+
+export const UpdateDeviceConfigResponse = zod.object({
+  id: zod.string().uuid(),
+  hardwareHash: zod.string(),
+  systemName: zod.string(),
+  osType: zod.enum(["windows", "macos", "linux"]),
+  agentVersion: zod.string().nullish(),
+  assignedUserId: zod.string().uuid().nullish(),
+  consentAcknowledgedAt: zod.coerce.date().nullish(),
+  consentName: zod.string().nullish(),
+  enrolledAt: zod.coerce.date().nullish(),
+  lastSeenAt: zod.coerce.date().nullish(),
+  isLocked: zod.boolean(),
+  screenshotMinMinutes: zod.number(),
+  screenshotMaxMinutes: zod.number(),
+  idleThresholdSeconds: zod.number(),
+  syncIntervalSeconds: zod.number(),
+  monitoringEnabled: zod.boolean(),
+  deviceGroup: zod.string(),
+  online: zod.boolean(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
  * @summary Rename a device group across all devices
  */
 

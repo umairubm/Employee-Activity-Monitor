@@ -25,11 +25,13 @@ import type {
   AttendanceSettingsItem,
   AttendanceSettingsUpdate,
   AuthUser,
+  BulkUpdateResult,
   CancelCommandRequest,
   CategoryItem,
   CreateTokenRequest,
   DeleteAttendanceOverride200,
   DeviceCommandItem,
+  DeviceConfigInput,
   DeviceGroupInput,
   DeviceItem,
   EnrollmentTokenItem,
@@ -894,6 +896,179 @@ export const useSetDeviceGroup = <
   TContext
 > => {
   return useMutation(getSetDeviceGroupMutationOptions(options));
+};
+
+/**
+ * @summary Apply agent configuration to all devices
+ */
+export const getApplyDeviceConfigToAllUrl = () => {
+  return `/api/devices/config`;
+};
+
+export const applyDeviceConfigToAll = async (
+  deviceConfigInput: DeviceConfigInput,
+  options?: RequestInit,
+): Promise<BulkUpdateResult> => {
+  return customFetch<BulkUpdateResult>(getApplyDeviceConfigToAllUrl(), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(deviceConfigInput),
+  });
+};
+
+export const getApplyDeviceConfigToAllMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof applyDeviceConfigToAll>>,
+    TError,
+    { data: BodyType<DeviceConfigInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof applyDeviceConfigToAll>>,
+  TError,
+  { data: BodyType<DeviceConfigInput> },
+  TContext
+> => {
+  const mutationKey = ["applyDeviceConfigToAll"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof applyDeviceConfigToAll>>,
+    { data: BodyType<DeviceConfigInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return applyDeviceConfigToAll(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ApplyDeviceConfigToAllMutationResult = NonNullable<
+  Awaited<ReturnType<typeof applyDeviceConfigToAll>>
+>;
+export type ApplyDeviceConfigToAllMutationBody = BodyType<DeviceConfigInput>;
+export type ApplyDeviceConfigToAllMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Apply agent configuration to all devices
+ */
+export const useApplyDeviceConfigToAll = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof applyDeviceConfigToAll>>,
+    TError,
+    { data: BodyType<DeviceConfigInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof applyDeviceConfigToAll>>,
+  TError,
+  { data: BodyType<DeviceConfigInput> },
+  TContext
+> => {
+  return useMutation(getApplyDeviceConfigToAllMutationOptions(options));
+};
+
+/**
+ * @summary Update a device's agent configuration
+ */
+export const getUpdateDeviceConfigUrl = (id: string) => {
+  return `/api/devices/${id}/config`;
+};
+
+export const updateDeviceConfig = async (
+  id: string,
+  deviceConfigInput: DeviceConfigInput,
+  options?: RequestInit,
+): Promise<DeviceItem> => {
+  return customFetch<DeviceItem>(getUpdateDeviceConfigUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(deviceConfigInput),
+  });
+};
+
+export const getUpdateDeviceConfigMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateDeviceConfig>>,
+    TError,
+    { id: string; data: BodyType<DeviceConfigInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateDeviceConfig>>,
+  TError,
+  { id: string; data: BodyType<DeviceConfigInput> },
+  TContext
+> => {
+  const mutationKey = ["updateDeviceConfig"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateDeviceConfig>>,
+    { id: string; data: BodyType<DeviceConfigInput> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateDeviceConfig(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateDeviceConfigMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateDeviceConfig>>
+>;
+export type UpdateDeviceConfigMutationBody = BodyType<DeviceConfigInput>;
+export type UpdateDeviceConfigMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Update a device's agent configuration
+ */
+export const useUpdateDeviceConfig = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateDeviceConfig>>,
+    TError,
+    { id: string; data: BodyType<DeviceConfigInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateDeviceConfig>>,
+  TError,
+  { id: string; data: BodyType<DeviceConfigInput> },
+  TContext
+> => {
+  return useMutation(getUpdateDeviceConfigMutationOptions(options));
 };
 
 /**

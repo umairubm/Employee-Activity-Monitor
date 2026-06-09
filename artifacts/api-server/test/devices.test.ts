@@ -96,3 +96,97 @@ describe("POST /devices/groups/rename", () => {
     expect(res.body.renamed).toBe(0);
   });
 });
+
+const validConfig = {
+  monitoringEnabled: false,
+  screenshotMinMinutes: 3,
+  screenshotMaxMinutes: 9,
+  idleThresholdSeconds: 90,
+  syncIntervalSeconds: 60,
+};
+
+describe("PATCH /devices/:id/config", () => {
+  it("updates a single device's agent configuration", async () => {
+    const device = await newDevice();
+    const res = await request(app)
+      .patch(`/devices/${device.id}/config`)
+      .send(validConfig);
+
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe(device.id);
+    expect(res.body).toMatchObject(validConfig);
+
+    // Persisted, not just echoed.
+    const detail = await request(app).get(`/devices/${device.id}`);
+    expect(detail.body).toMatchObject(validConfig);
+  });
+
+  it("rejects a min interval greater than the max", async () => {
+    const device = await newDevice();
+    const res = await request(app)
+      .patch(`/devices/${device.id}/config`)
+      .send({ ...validConfig, screenshotMinMinutes: 20, screenshotMaxMinutes: 5 });
+
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects out-of-range values", async () => {
+    const device = await newDevice();
+    const res = await request(app)
+      .patch(`/devices/${device.id}/config`)
+      .send({ ...validConfig, syncIntervalSeconds: 1 });
+
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 404 for an unknown device", async () => {
+    const res = await request(app)
+      .patch(`/devices/${randomUUID()}/config`)
+      .send(validConfig);
+
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 403 when the caller is not an admin", async () => {
+    const memberApp = makeApp({ role: "team_member" });
+    const device = await newDevice();
+    const res = await request(memberApp)
+      .patch(`/devices/${device.id}/config`)
+      .send(validConfig);
+
+    expect(res.status).toBe(403);
+  });
+});
+
+describe("PATCH /devices/config (apply to all)", () => {
+  it("applies the configuration to every device and reports the count", async () => {
+    const a = await newDevice();
+    const b = await newDevice();
+
+    const res = await request(app).patch("/devices/config").send(validConfig);
+
+    expect(res.status).toBe(200);
+    expect(typeof res.body.updated).toBe("number");
+    expect(res.body.updated).toBeGreaterThanOrEqual(2);
+
+    for (const id of [a.id, b.id]) {
+      const detail = await request(app).get(`/devices/${id}`);
+      expect(detail.body).toMatchObject(validConfig);
+    }
+  });
+
+  it("rejects an invalid configuration", async () => {
+    const res = await request(app)
+      .patch("/devices/config")
+      .send({ ...validConfig, screenshotMinMinutes: 100, screenshotMaxMinutes: 1 });
+
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 403 when the caller is not an admin", async () => {
+    const memberApp = makeApp({ role: "team_member" });
+    const res = await request(memberApp).patch("/devices/config").send(validConfig);
+
+    expect(res.status).toBe(403);
+  });
+});

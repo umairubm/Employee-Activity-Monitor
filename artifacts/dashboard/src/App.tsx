@@ -17,6 +17,7 @@ import Screenshots from "@/pages/Screenshots";
 import Attendance from "@/pages/Attendance";
 import Categories from "@/pages/Categories";
 import Tokens from "@/pages/Tokens";
+import Settings from "@/pages/Settings";
 import NotFound from "@/pages/not-found";
 
 const ADMIN_ROLES = ["super_user", "admin"];
@@ -101,6 +102,9 @@ function Router() {
       </Route>
       <Route path="/tokens">
         {(params) => <ProtectedRoute component={Tokens} />}
+      </Route>
+      <Route path="/settings">
+        {(params) => <ProtectedRoute component={Settings} />}
       </Route>
       <Route component={NotFound} />
     </Switch>

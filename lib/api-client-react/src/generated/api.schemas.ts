@@ -69,6 +69,34 @@ export interface DeviceGroupInput {
   deviceGroup: string;
 }
 
+export interface DeviceConfigInput {
+  monitoringEnabled: boolean;
+  /**
+   * @minimum 1
+   * @maximum 1440
+   */
+  screenshotMinMinutes: number;
+  /**
+   * @minimum 1
+   * @maximum 1440
+   */
+  screenshotMaxMinutes: number;
+  /**
+   * @minimum 10
+   * @maximum 7200
+   */
+  idleThresholdSeconds: number;
+  /**
+   * @minimum 10
+   * @maximum 3600
+   */
+  syncIntervalSeconds: number;
+}
+
+export interface BulkUpdateResult {
+  updated: number;
+}
+
 export interface GroupRenameInput {
   /** @minLength 1 */
   from: string;
