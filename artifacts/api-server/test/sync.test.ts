@@ -1,0 +1,338 @@
+import { afterAll, describe, expect, it } from "vitest";
+import { randomUUID } from "crypto";
+import request from "supertest";
+import { eq, inArray } from "drizzle-orm";
+import {
+  db,
+  devicesTable,
+  enrollmentTokensTable,
+  activityLogsTable,
+  screenshotsTable,
+  pool,
+} from "@workspace/db";
+import {
+  createDevice,
+  createDeviceWithSecret,
+  createEnrollmentToken,
+  makeSyncApp,
+} from "./helpers";
+
+const app = makeSyncApp();
+const createdDeviceIds: string[] = [];
+const createdTokenIds: string[] = [];
+
+function trackDevice(id: string): string {
+  createdDeviceIds.push(id);
+  return id;
+}
+
+afterAll(async () => {
+  if (createdDeviceIds.length) {
+    // Activity logs + screenshots cascade-delete with their device.
+    await db
+      .delete(devicesTable)
+      .where(inArray(devicesTable.id, createdDeviceIds));
+  }
+  if (createdTokenIds.length) {
+    await db
+      .delete(enrollmentTokensTable)
+      .where(inArray(enrollmentTokensTable.id, createdTokenIds));
+  }
+  await pool.end();
+});
+
+/** A minimal, valid enrollment body for a brand-new machine. */
+function enrollBody(token: string) {
+  return {
+    token,
+    hardwareHash: `hw-${randomUUID()}`,
+    systemName: "Test PC",
+    osType: "linux" as const,
+    agentVersion: "1.0.0",
+    consentAcknowledged: true as const,
+    consentName: "Jane Operator",
+  };
+}
+
+describe("POST /sync/enroll", () => {
+  it("issues a device + one-time secret and records consent for a valid token", async () => {
+    const token = await createEnrollmentToken();
+    createdTokenIds.push(token.id);
+
+    const res = await request(app).post("/sync/enroll").send(enrollBody(token.token));
+
+    expect(res.status).toBe(201);
+    expect(res.body.deviceId).toBeTruthy();
+    // The plaintext secret is high-entropy and returned exactly once here.
+    expect(typeof res.body.deviceSecret).toBe("string");
+    expect(res.body.deviceSecret).toMatch(/^[0-9a-f]{64}$/);
+    expect(res.body.config).toMatchObject({ monitoringEnabled: true });
+
+    const deviceId = trackDevice(res.body.deviceId);
+
+    // The secret is persisted only as a hash, never in plaintext.
+    const [row] = await db
+      .select()
+      .from(devicesTable)
+      .where(eq(devicesTable.id, deviceId));
+    expect(row.secretHash).not.toBe(res.body.deviceSecret);
+    expect(row.consentAcknowledgedAt).not.toBeNull();
+    expect(row.consentName).toBe("Jane Operator");
+
+    // The token use was claimed.
+    const [tk] = await db
+      .select()
+      .from(enrollmentTokensTable)
+      .where(eq(enrollmentTokensTable.id, token.id));
+    expect(tk.useCount).toBe(1);
+  });
+
+  it("rejects an unknown token with 403 and creates no device", async () => {
+    const before = await db.select().from(devicesTable);
+    const res = await request(app)
+      .post("/sync/enroll")
+      .send(enrollBody(`missing-${randomUUID()}`));
+
+    expect(res.status).toBe(403);
+    const after = await db.select().from(devicesTable);
+    expect(after.length).toBe(before.length);
+  });
+
+  it("rejects an expired token with 403", async () => {
+    const token = await createEnrollmentToken({
+      expiresAt: new Date(Date.now() - 60_000),
+    });
+    createdTokenIds.push(token.id);
+
+    const res = await request(app).post("/sync/enroll").send(enrollBody(token.token));
+    expect(res.status).toBe(403);
+  });
+
+  it("rejects a revoked token with 403", async () => {
+    const token = await createEnrollmentToken({ revokedAt: new Date() });
+    createdTokenIds.push(token.id);
+
+    const res = await request(app).post("/sync/enroll").send(enrollBody(token.token));
+    expect(res.status).toBe(403);
+  });
+
+  it("rejects an over-used token with 403", async () => {
+    const token = await createEnrollmentToken({ maxUses: 1, useCount: 1 });
+    createdTokenIds.push(token.id);
+
+    const res = await request(app).post("/sync/enroll").send(enrollBody(token.token));
+    expect(res.status).toBe(403);
+  });
+
+  it("rejects enrollment without an explicit consent acknowledgement (400)", async () => {
+    const token = await createEnrollmentToken();
+    createdTokenIds.push(token.id);
+
+    const body = enrollBody(token.token);
+    const res = await request(app)
+      .post("/sync/enroll")
+      .send({ ...body, consentAcknowledged: false });
+
+    expect(res.status).toBe(400);
+    // The token use must not be claimed by a rejected enrollment.
+    const [tk] = await db
+      .select()
+      .from(enrollmentTokensTable)
+      .where(eq(enrollmentTokensTable.id, token.id));
+    expect(tk.useCount).toBe(0);
+  });
+
+  it("only allows the token to be used up to maxUses across enrollments", async () => {
+    const token = await createEnrollmentToken({ maxUses: 1 });
+    createdTokenIds.push(token.id);
+
+    const first = await request(app).post("/sync/enroll").send(enrollBody(token.token));
+    expect(first.status).toBe(201);
+    trackDevice(first.body.deviceId);
+
+    const second = await request(app)
+      .post("/sync/enroll")
+      .send(enrollBody(token.token));
+    expect(second.status).toBe(403);
+  });
+});
+
+describe("device authentication on /sync (deviceAuth)", () => {
+  it("rejects sync calls with no credentials (401)", async () => {
+    const res = await request(app).post("/sync/heartbeat").send({});
+    expect(res.status).toBe(401);
+  });
+
+  it("rejects a malformed device id (401)", async () => {
+    const res = await request(app)
+      .post("/sync/heartbeat")
+      .set("x-device-id", "not-a-uuid")
+      .set("x-device-secret", "whatever")
+      .send({});
+    expect(res.status).toBe(401);
+  });
+
+  it("rejects a valid device id with the wrong secret (401)", async () => {
+    const { device } = await createDeviceWithSecret();
+    trackDevice(device.id);
+
+    const res = await request(app)
+      .post("/sync/heartbeat")
+      .set("x-device-id", device.id)
+      .set("x-device-secret", "0".repeat(64))
+      .send({});
+    expect(res.status).toBe(401);
+  });
+
+  it("rejects an unknown device id with a well-formed secret (401)", async () => {
+    const res = await request(app)
+      .post("/sync/heartbeat")
+      .set("x-device-id", randomUUID())
+      .set("x-device-secret", "0".repeat(64))
+      .send({});
+    expect(res.status).toBe(401);
+  });
+
+  it("accepts a heartbeat with valid credentials and recorded consent", async () => {
+    const { device, secret } = await createDeviceWithSecret();
+    trackDevice(device.id);
+
+    const res = await request(app)
+      .post("/sync/heartbeat")
+      .set("x-device-id", device.id)
+      .set("x-device-secret", secret)
+      .send({});
+    expect(res.status).toBe(200);
+    expect(res.body.config).toMatchObject({ monitoringEnabled: true });
+  });
+});
+
+describe("server-side consent enforcement", () => {
+  it("rejects activity from a credentialed device that has not consented (403)", async () => {
+    const { device, secret } = await createDeviceWithSecret({ consent: false });
+    trackDevice(device.id);
+
+    const res = await request(app)
+      .post("/sync/activity")
+      .set("x-device-id", device.id)
+      .set("x-device-secret", secret)
+      .send({
+        logs: [
+          {
+            processName: "code",
+            windowTitle: "editor",
+            startedAt: new Date().toISOString(),
+            endedAt: new Date().toISOString(),
+            durationSeconds: 60,
+          },
+        ],
+      });
+    expect(res.status).toBe(403);
+
+    // Nothing was written for the unconsented device.
+    const rows = await db
+      .select()
+      .from(activityLogsTable)
+      .where(eq(activityLogsTable.deviceId, device.id));
+    expect(rows.length).toBe(0);
+  });
+
+  it("rejects screenshot metadata from an unconsented device (403)", async () => {
+    const { device, secret } = await createDeviceWithSecret({ consent: false });
+    trackDevice(device.id);
+
+    const res = await request(app)
+      .post("/sync/screenshots")
+      .set("x-device-id", device.id)
+      .set("x-device-secret", secret)
+      .send({
+        storageKey: `/objects/uploads/${randomUUID()}`,
+        capturedAt: new Date().toISOString(),
+        fileSizeBytes: 1000,
+      });
+    expect(res.status).toBe(403);
+  });
+
+  it("accepts activity once consent is recorded (201)", async () => {
+    const { device, secret } = await createDeviceWithSecret({ consent: true });
+    trackDevice(device.id);
+
+    const res = await request(app)
+      .post("/sync/activity")
+      .set("x-device-id", device.id)
+      .set("x-device-secret", secret)
+      .send({
+        logs: [
+          {
+            processName: "code",
+            windowTitle: "editor",
+            startedAt: new Date().toISOString(),
+            endedAt: new Date().toISOString(),
+            durationSeconds: 60,
+          },
+        ],
+      });
+    expect(res.status).toBe(201);
+    expect(res.body.accepted).toBe(1);
+  });
+});
+
+describe("screenshot upload uses the presigned-URL + storageKey path", () => {
+  it("returns a presigned upload URL and a normalized storage key", async () => {
+    const { device, secret } = await createDeviceWithSecret();
+    trackDevice(device.id);
+
+    const res = await request(app)
+      .post("/sync/screenshots/request-url")
+      .set("x-device-id", device.id)
+      .set("x-device-secret", secret)
+      .send({});
+    expect(res.status).toBe(200);
+    expect(typeof res.body.uploadURL).toBe("string");
+    expect(res.body.uploadURL).toMatch(/^https?:\/\//);
+    // The agent reports back this key; the API never receives image bytes.
+    expect(res.body.storageKey).toMatch(/^\/objects\/uploads\/[0-9a-fA-F-]{36}$/);
+  });
+
+  it("records only metadata for a well-formed storage key (201, no bytes)", async () => {
+    const { device, secret } = await createDeviceWithSecret();
+    trackDevice(device.id);
+
+    const storageKey = `/objects/uploads/${randomUUID()}`;
+    const res = await request(app)
+      .post("/sync/screenshots")
+      .set("x-device-id", device.id)
+      .set("x-device-secret", secret)
+      .send({
+        storageKey,
+        capturedAt: new Date().toISOString(),
+        fileSizeBytes: 2048,
+      });
+    expect(res.status).toBe(201);
+    expect(res.body.id).toBeTruthy();
+
+    const [shot] = await db
+      .select()
+      .from(screenshotsTable)
+      .where(eq(screenshotsTable.id, res.body.id));
+    expect(shot.deviceId).toBe(device.id);
+    expect(shot.storageKey).toBe(storageKey);
+    expect(shot.fileSizeBytes).toBe(2048);
+  });
+
+  it("rejects an arbitrary storage key not issued by request-url (400)", async () => {
+    const { device, secret } = await createDeviceWithSecret();
+    trackDevice(device.id);
+
+    const res = await request(app)
+      .post("/sync/screenshots")
+      .set("x-device-id", device.id)
+      .set("x-device-secret", secret)
+      .send({
+        storageKey: "/etc/passwd",
+        capturedAt: new Date().toISOString(),
+        fileSizeBytes: 10,
+      });
+    expect(res.status).toBe(400);
+  });
+});

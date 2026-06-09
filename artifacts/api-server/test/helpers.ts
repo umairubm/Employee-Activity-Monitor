@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import express, { type Express } from "express";
+import express, { type Express, type Request } from "express";
 import { isNull } from "drizzle-orm";
 import {
   db,
@@ -7,16 +7,19 @@ import {
   activityLogsTable,
   screenshotsTable,
   attendanceSettingsTable,
+  enrollmentTokensTable,
   usersTable,
   sessionsTable,
   type Device,
   type Screenshot,
+  type EnrollmentToken,
   type User,
   type UserRole,
 } from "@workspace/db";
 import devicesRouter from "../src/routes/devices";
 import attendanceRouter from "../src/routes/attendance";
 import screenshotsRouter from "../src/routes/screenshots";
+import syncRouter from "../src/routes/sync";
 import { hashPassword } from "../src/lib/passwords";
 import { generateSecret, hashSecret } from "../src/lib/secrets";
 import { SESSION_COOKIE } from "../src/lib/session";
@@ -104,6 +107,67 @@ export async function createScreenshot(
     })
     .returning();
   return shot;
+}
+
+/**
+ * Build an Express app mounting the agent-facing sync router with the REAL
+ * `deviceAuth` middleware (no stubbing) — these tests exercise the device
+ * credential + consent gate itself. `sync.ts` calls `req.log.info`, so a no-op
+ * logger is injected to stand in for the pino-http logger used in production.
+ */
+export function makeSyncApp(): Express {
+  const app = express();
+  app.use(express.json());
+  app.use(express.urlencoded({ extended: true }));
+  app.use((req, _res, next) => {
+    const noop = () => {};
+    (req as Request & { log: unknown }).log = {
+      info: noop,
+      warn: noop,
+      error: noop,
+      debug: noop,
+    };
+    next();
+  });
+  app.use("/sync", syncRouter);
+  return app;
+}
+
+/** Insert an enrollment token with a unique value; returns the created row. */
+export async function createEnrollmentToken(
+  overrides: Partial<typeof enrollmentTokensTable.$inferInsert> = {},
+): Promise<EnrollmentToken> {
+  const [token] = await db
+    .insert(enrollmentTokensTable)
+    .values({
+      token: `test-token-${randomUUID()}`,
+      label: "test enrollment token",
+      maxUses: 1,
+      ...overrides,
+    })
+    .returning();
+  return token;
+}
+
+/**
+ * Seed a device with a known plaintext secret (stored only as its hash) so tests
+ * can authenticate as that device. Consent is recorded by default; pass
+ * `consent: false` to seed a credentialed-but-unconsented device.
+ */
+export async function createDeviceWithSecret(
+  opts: {
+    consent?: boolean;
+  } & Partial<typeof devicesTable.$inferInsert> = {},
+): Promise<{ device: Device; secret: string }> {
+  const { consent = true, ...overrides } = opts;
+  const secret = generateSecret();
+  const device = await createDevice({
+    secretHash: hashSecret(secret),
+    consentAcknowledgedAt: consent ? new Date() : null,
+    consentName: consent ? "Consenting User" : null,
+    ...overrides,
+  });
+  return { device, secret };
 }
 
 /** Force the single global attendance-settings row to known values. */
