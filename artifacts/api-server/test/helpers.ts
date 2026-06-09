@@ -5,6 +5,7 @@ import {
   db,
   devicesTable,
   activityLogsTable,
+  appCategoriesTable,
   screenshotsTable,
   attendanceSettingsTable,
   enrollmentTokensTable,
@@ -17,9 +18,12 @@ import {
   type DeviceCommand,
   type User,
   type UserRole,
+  type AppCategory,
+  type ProductivityClass,
 } from "@workspace/db";
 import devicesRouter from "../src/routes/devices";
 import attendanceRouter from "../src/routes/attendance";
+import reportsRouter from "../src/routes/reports";
 import screenshotsRouter from "../src/routes/screenshots";
 import syncRouter from "../src/routes/sync";
 import { hashPassword } from "../src/lib/passwords";
@@ -46,8 +50,27 @@ export function makeApp(
   });
   app.use("/devices", devicesRouter);
   app.use("/attendance", attendanceRouter);
+  app.use("/reports", reportsRouter);
   app.use("/screenshots", screenshotsRouter);
   return app;
+}
+
+/** Insert an app-category with a unique pattern and given classification. */
+export async function createCategory(
+  classification: ProductivityClass,
+  overrides: Partial<typeof appCategoriesTable.$inferInsert> = {},
+): Promise<AppCategory> {
+  const tag = randomUUID();
+  const [category] = await db
+    .insert(appCategoriesTable)
+    .values({
+      pattern: `test-pattern-${tag}`,
+      displayName: `test-cat-${tag}`,
+      classification,
+      ...overrides,
+    })
+    .returning();
+  return category;
 }
 
 /** Insert a device with unique identifiers; returns the created row. */
@@ -79,6 +102,7 @@ export async function seedActivity(
   dateStr: string,
   workedSeconds: number,
   idleSeconds = 0,
+  categoryId: string | null = null,
 ): Promise<void> {
   const start = new Date(`${dateStr}T10:00:00`);
   const end = new Date(start.getTime() + workedSeconds * 1000);
@@ -86,6 +110,7 @@ export async function seedActivity(
     deviceId,
     processName: "test-process",
     windowTitle: "test window",
+    categoryId,
     startedAt: start,
     endedAt: end,
     durationSeconds: workedSeconds,
