@@ -11,7 +11,13 @@ import {
   pool,
 } from "@workspace/db";
 import realApp from "../src/app";
-import { createDevice, createUser, makeApp } from "./helpers";
+import {
+  createDevice,
+  createDeviceCommand,
+  createUser,
+  makeApp,
+  makeSessionCookie,
+} from "./helpers";
 
 /**
  * Admin side of the IT command pipeline: the endpoint admins call to *create* a
@@ -186,5 +192,87 @@ describe("POST /devices/:id/commands", () => {
 
     expect(res.status).toBe(400);
     expect(await commandCount(device.id)).toBe(0);
+  });
+});
+
+describe("GET /devices/:id/commands", () => {
+  it("returns only the target device's commands, newest first", async () => {
+    const device = await newDevice();
+    const other = await newDevice();
+
+    // Seed three commands for the target device at distinct, increasing times
+    // so "newest first" ordering is deterministic (issued_at otherwise defaults
+    // to now() and could collide within the same millisecond).
+    const base = Date.now();
+    const oldest = await createDeviceCommand(device.id, {
+      commandType: "lock_screen",
+      issuedAt: new Date(base - 3000),
+    });
+    const middle = await createDeviceCommand(device.id, {
+      commandType: "logout_user",
+      issuedAt: new Date(base - 2000),
+    });
+    const newest = await createDeviceCommand(device.id, {
+      commandType: "lock_screen",
+      issuedAt: new Date(base - 1000),
+    });
+
+    // A command on a different device that must never leak into the results.
+    const foreign = await createDeviceCommand(other.id, {
+      commandType: "lock_screen",
+      issuedAt: new Date(base - 1500),
+    });
+
+    const res = await request(adminApp).get(`/devices/${device.id}/commands`);
+
+    expect(res.status).toBe(200);
+    const ids = res.body.map((c: { id: string }) => c.id);
+    expect(ids).toEqual([newest.id, middle.id, oldest.id]);
+    expect(ids).not.toContain(foreign.id);
+    expect(
+      res.body.every(
+        (c: { deviceId: string }) => c.deviceId === device.id,
+      ),
+    ).toBe(true);
+  });
+
+  it("returns an empty list for an unknown device", async () => {
+    const ghostId = randomUUID();
+    const res = await request(adminApp).get(`/devices/${ghostId}/commands`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+  });
+
+  it("returns an empty list for a device that has no commands", async () => {
+    const device = await newDevice();
+    const res = await request(adminApp).get(`/devices/${device.id}/commands`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+  });
+
+  it("rejects a non-admin caller (403)", async () => {
+    // The GET handler has no per-route guard; authorization comes from the
+    // admin gate on the /devices mount, so drive the REAL app with a valid
+    // non-admin session cookie to exercise it.
+    const device = await newDevice();
+    const member = await newUser({ role: "team_member" });
+    const cookie = await makeSessionCookie(member.user.id);
+
+    const res = await request(realApp)
+      .get(`/api/devices/${device.id}/commands`)
+      .set("Cookie", cookie);
+
+    expect(res.status).toBe(403);
+  });
+
+  it("rejects an unauthenticated caller (401)", async () => {
+    const device = await newDevice();
+    const res = await request(realApp).get(
+      `/api/devices/${device.id}/commands`,
+    );
+
+    expect(res.status).toBe(401);
   });
 });
