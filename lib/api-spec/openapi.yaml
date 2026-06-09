@@ -999,6 +999,27 @@ components:
         - absentDays
         - totalWorkedSeconds
         - avgWorkedSeconds
+    AttendanceRangeDay:
+      type: object
+      properties:
+        day:
+          type: string
+          description: Day in YYYY-MM-DD format
+        workedSeconds:
+          type: integer
+          description: Total worked seconds across all devices that day
+        presentDevices:
+          type: integer
+        halfDayDevices:
+          type: integer
+        absentDevices:
+          type: integer
+      required:
+        - day
+        - workedSeconds
+        - presentDevices
+        - halfDayDevices
+        - absentDevices
     AttendanceRangeReport:
       type: object
       properties:
@@ -1012,7 +1033,11 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AttendanceRangeRow"
-      required: [from, to, days, devices]
+        daily:
+          type: array
+          items:
+            $ref: "#/components/schemas/AttendanceRangeDay"
+      required: [from, to, days, devices, daily]
     EnrollmentTokenItem:
       type: object
       properties:

@@ -400,6 +400,17 @@ export const GetAttendanceRangeReportResponse = zod.object({
       avgWorkedSeconds: zod.number(),
     }),
   ),
+  daily: zod.array(
+    zod.object({
+      day: zod.string().describe("Day in YYYY-MM-DD format"),
+      workedSeconds: zod
+        .number()
+        .describe("Total worked seconds across all devices that day"),
+      presentDevices: zod.number(),
+      halfDayDevices: zod.number(),
+      absentDevices: zod.number(),
+    }),
+  ),
 });
 
 /**

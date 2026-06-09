@@ -5,6 +5,7 @@
  * API specification for Workforce Analytics & IT Management
  * OpenAPI spec version: 0.1.0
  */
+import type { AttendanceRangeDay } from "./attendanceRangeDay";
 import type { AttendanceRangeRow } from "./attendanceRangeRow";
 
 export interface AttendanceRangeReport {
@@ -12,4 +13,5 @@ export interface AttendanceRangeReport {
   to: string;
   days: number;
   devices: AttendanceRangeRow[];
+  daily: AttendanceRangeDay[];
 }

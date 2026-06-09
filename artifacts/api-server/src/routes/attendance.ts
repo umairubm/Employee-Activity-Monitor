@@ -228,7 +228,28 @@ router.get("/range", async (req, res) => {
       };
     });
 
-    res.json({ from, to, days: dayList.length, devices: rows });
+    const daily = dayList.map((day) => {
+      const requiredHours =
+        requiredByDay.get(day) ?? settings.requiredHoursNormal;
+      let workedSeconds = 0;
+      let presentDevices = 0;
+      let halfDayDevices = 0;
+      let absentDevices = 0;
+
+      for (const device of devices) {
+        const ws = workedByDevice.get(device.id)?.get(day) ?? 0;
+        workedSeconds += ws;
+        const workedHours = ws / 3600;
+        if (workedHours >= requiredHours) presentDevices += 1;
+        else if (workedHours >= settings.halfDayThresholdHours)
+          halfDayDevices += 1;
+        else absentDevices += 1;
+      }
+
+      return { day, workedSeconds, presentDevices, halfDayDevices, absentDevices };
+    });
+
+    res.json({ from, to, days: dayList.length, devices: rows, daily });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }

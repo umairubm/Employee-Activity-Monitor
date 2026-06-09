@@ -8,6 +8,7 @@
 
 export * from "./activityLogItem";
 export * from "./activityLogRecord";
+export * from "./attendanceRangeDay";
 export * from "./attendanceRangeReport";
 export * from "./attendanceRangeRow";
 export * from "./attendanceReport";

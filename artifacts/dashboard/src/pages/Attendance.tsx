@@ -17,7 +17,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { CalendarCheck, CalendarRange, Settings2, Clock, Download } from "lucide-react";
+import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent, type ChartConfig } from "@/components/ui/chart";
+import { CartesianGrid, XAxis, YAxis, Line, ComposedChart, Bar } from "recharts";
+import { CalendarCheck, CalendarRange, Settings2, Clock, Download, TrendingUp } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 
@@ -43,6 +45,11 @@ const STATUS_STYLE: Record<string, string> = {
   half_day: "bg-amber-500/15 text-amber-700 border-amber-500/20",
   absent: "bg-muted text-muted-foreground",
 };
+
+const CHART_CONFIG = {
+  workedHours: { label: "Worked hours", color: "hsl(var(--chart-1))" },
+  present: { label: "Devices present", color: "hsl(var(--chart-2))" },
+} satisfies ChartConfig;
 
 function downloadCsv(filename: string, rows: (string | number)[][]) {
   const escape = (v: string | number) => {
@@ -189,6 +196,18 @@ function RangeView() {
     return t;
   }, [report]);
 
+  const chartData = useMemo(
+    () =>
+      (report?.daily ?? []).map((d) => ({
+        day: d.day,
+        label: format(new Date(`${d.day}T00:00:00`), "MMM d"),
+        workedHours: Number((d.workedSeconds / 3600).toFixed(2)),
+        present: d.presentDevices,
+        absent: d.absentDevices,
+      })),
+    [report],
+  );
+
   const exportCsv = () => {
     if (!report) return;
     const header = [
@@ -269,6 +288,40 @@ function RangeView() {
           </p>
         </CardContent></Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <TrendingUp className="h-5 w-5 text-muted-foreground" />
+            Daily trend
+          </CardTitle>
+          <CardDescription>Total worked hours per day (bars) and devices present per day (line) across the selected range.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {!valid ? (
+            <div className="h-72 flex items-center justify-center text-muted-foreground">Choose a valid date range.</div>
+          ) : isLoading ? (
+            <div className="h-72 flex items-center justify-center text-muted-foreground">Loading...</div>
+          ) : isError ? (
+            <div className="h-72 flex items-center justify-center text-destructive">{(error as Error)?.message ?? "Failed to load report."}</div>
+          ) : chartData.length === 0 ? (
+            <div className="h-72 flex items-center justify-center text-muted-foreground">No data in this range.</div>
+          ) : (
+            <ChartContainer config={CHART_CONFIG} className="aspect-auto h-72 w-full">
+              <ComposedChart data={chartData} margin={{ left: 4, right: 4, top: 8 }}>
+                <CartesianGrid vertical={false} />
+                <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} minTickGap={16} />
+                <YAxis yAxisId="left" tickLine={false} axisLine={false} tickMargin={8} width={36} />
+                <YAxis yAxisId="right" orientation="right" tickLine={false} axisLine={false} tickMargin={8} width={28} allowDecimals={false} />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <ChartLegend content={<ChartLegendContent />} />
+                <Bar yAxisId="left" dataKey="workedHours" fill="var(--color-workedHours)" radius={[4, 4, 0, 0]} />
+                <Line yAxisId="right" type="monotone" dataKey="present" stroke="var(--color-present)" strokeWidth={2} dot={false} />
+              </ComposedChart>
+            </ChartContainer>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

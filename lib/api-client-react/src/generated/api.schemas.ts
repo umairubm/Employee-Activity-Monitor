@@ -284,11 +284,22 @@ export interface AttendanceRangeRow {
   avgWorkedSeconds: number;
 }
 
+export interface AttendanceRangeDay {
+  /** Day in YYYY-MM-DD format */
+  day: string;
+  /** Total worked seconds across all devices that day */
+  workedSeconds: number;
+  presentDevices: number;
+  halfDayDevices: number;
+  absentDevices: number;
+}
+
 export interface AttendanceRangeReport {
   from: string;
   to: string;
   days: number;
   devices: AttendanceRangeRow[];
+  daily: AttendanceRangeDay[];
 }
 
 export interface EnrollmentTokenItem {
