@@ -343,6 +343,11 @@ export interface AttendanceRangeReport {
   daily: AttendanceRangeDay[];
 }
 
+export interface EnrolledDeviceRef {
+  id: string;
+  systemName: string;
+}
+
 export interface EnrollmentTokenItem {
   id: string;
   token: string;
@@ -359,6 +364,7 @@ export interface EnrollmentTokenItem {
   /** @nullable */
   revokedAt?: string | null;
   createdAt: string;
+  enrolledDevices: EnrolledDeviceRef[];
 }
 
 export interface CreateTokenRequest {

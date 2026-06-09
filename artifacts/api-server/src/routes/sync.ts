@@ -90,6 +90,7 @@ router.post("/enroll", async (req: Request, res: Response): Promise<void> => {
           consentAcknowledgedAt: now,
           consentName: body.consentName,
           enrolledAt: existing.enrolledAt ?? now,
+          enrolledViaTokenId: token.id,
           assignedUserId: token.assignedUserId ?? existing.assignedUserId,
           updatedAt: now,
         })
@@ -131,6 +132,7 @@ router.post("/enroll", async (req: Request, res: Response): Promise<void> => {
         consentAcknowledgedAt: now,
         consentName: body.consentName,
         enrolledAt: now,
+        enrolledViaTokenId: token.id,
         assignedUserId: token.assignedUserId ?? null,
       })
       .returning();

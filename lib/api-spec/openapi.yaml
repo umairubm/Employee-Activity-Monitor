@@ -1210,7 +1210,20 @@ components:
         createdAt:
           type: string
           format: date-time
-      required: [id, token, maxUses, useCount, createdAt]
+        enrolledDevices:
+          type: array
+          items:
+            $ref: "#/components/schemas/EnrolledDeviceRef"
+      required: [id, token, maxUses, useCount, createdAt, enrolledDevices]
+    EnrolledDeviceRef:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        systemName:
+          type: string
+      required: [id, systemName]
     CreateTokenRequest:
       type: object
       properties:

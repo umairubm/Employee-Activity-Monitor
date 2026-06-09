@@ -25,6 +25,7 @@ import devicesRouter from "../src/routes/devices";
 import attendanceRouter from "../src/routes/attendance";
 import reportsRouter from "../src/routes/reports";
 import screenshotsRouter from "../src/routes/screenshots";
+import tokensRouter from "../src/routes/tokens";
 import syncRouter from "../src/routes/sync";
 import { hashPassword } from "../src/lib/passwords";
 import { generateSecret, hashSecret } from "../src/lib/secrets";
@@ -52,6 +53,7 @@ export function makeApp(
   app.use("/attendance", attendanceRouter);
   app.use("/reports", reportsRouter);
   app.use("/screenshots", screenshotsRouter);
+  app.use("/tokens", tokensRouter);
   return app;
 }
 

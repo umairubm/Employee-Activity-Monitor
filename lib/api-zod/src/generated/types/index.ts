@@ -29,6 +29,7 @@ export * from "./deviceCommandItemStatus";
 export * from "./deviceGroupInput";
 export * from "./deviceItem";
 export * from "./deviceItemOsType";
+export * from "./enrolledDeviceRef";
 export * from "./enrollmentTokenItem";
 export * from "./flagScreenshot200";
 export * from "./getActivityLogsParams";

@@ -558,6 +558,12 @@ export const ListTokensResponseItem = zod.object({
   expiresAt: zod.coerce.date().nullish(),
   revokedAt: zod.coerce.date().nullish(),
   createdAt: zod.coerce.date(),
+  enrolledDevices: zod.array(
+    zod.object({
+      id: zod.string().uuid(),
+      systemName: zod.string(),
+    }),
+  ),
 });
 export const ListTokensResponse = zod.array(ListTokensResponseItem);
 
@@ -588,6 +594,12 @@ export const RevokeTokenResponse = zod.object({
   expiresAt: zod.coerce.date().nullish(),
   revokedAt: zod.coerce.date().nullish(),
   createdAt: zod.coerce.date(),
+  enrolledDevices: zod.array(
+    zod.object({
+      id: zod.string().uuid(),
+      systemName: zod.string(),
+    }),
+  ),
 });
 
 /**

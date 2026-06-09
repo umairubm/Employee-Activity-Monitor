@@ -1,20 +1,61 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod/v4";
-import { db, enrollmentTokensTable } from "@workspace/db";
-import { desc, eq } from "drizzle-orm";
+import { db, enrollmentTokensTable, devicesTable } from "@workspace/db";
+import { desc, eq, inArray } from "drizzle-orm";
 import { generateEnrollmentToken } from "../lib/secrets";
 import { requireRole, type AuthedRequest } from "../middlewares/userAuth";
 
 const router: IRouter = Router();
 
-// GET /api/tokens - list enrollment tokens
+type EnrolledDeviceRef = { id: string; systemName: string };
+
+/**
+ * Fetch the device(s) that enrolled via the given token ids, grouped by token,
+ * so every token response can carry an `enrolledDevices` array (matching the
+ * OpenAPI contract). Returns an empty map when no ids are supplied.
+ */
+async function enrolledDevicesByToken(
+  tokenIds: string[],
+): Promise<Map<string, EnrolledDeviceRef[]>> {
+  const byToken = new Map<string, EnrolledDeviceRef[]>();
+  if (tokenIds.length === 0) return byToken;
+
+  const devices = await db
+    .select({
+      id: devicesTable.id,
+      systemName: devicesTable.systemName,
+      enrolledViaTokenId: devicesTable.enrolledViaTokenId,
+    })
+    .from(devicesTable)
+    .where(inArray(devicesTable.enrolledViaTokenId, tokenIds))
+    .orderBy(desc(devicesTable.enrolledAt));
+
+  for (const d of devices) {
+    if (!d.enrolledViaTokenId) continue;
+    const list = byToken.get(d.enrolledViaTokenId) ?? [];
+    list.push({ id: d.id, systemName: d.systemName });
+    byToken.set(d.enrolledViaTokenId, list);
+  }
+  return byToken;
+}
+
+// GET /api/tokens - list enrollment tokens, each with the device(s) that
+// enrolled using it so admins can see exactly where a token's uses went.
 router.get("/", async (_req, res) => {
   try {
     const rows = await db
       .select()
       .from(enrollmentTokensTable)
       .orderBy(desc(enrollmentTokensTable.createdAt));
-    res.json(rows);
+
+    const byToken = await enrolledDevicesByToken(rows.map((r) => r.id));
+
+    res.json(
+      rows.map((row) => ({
+        ...row,
+        enrolledDevices: byToken.get(row.id) ?? [],
+      })),
+    );
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }
@@ -49,7 +90,9 @@ router.post("/", requireRole("admin", "super_user"), async (req, res) => {
       })
       .returning();
 
-    res.status(201).json(token);
+    // A brand-new token has no enrolled devices yet, but the response shape
+    // must still match the OpenAPI `EnrollmentTokenItem` contract.
+    res.status(201).json({ ...token, enrolledDevices: [] });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }
@@ -71,7 +114,8 @@ router.post(
         res.status(404).json({ error: "Token not found" });
         return;
       }
-      res.json(updated);
+      const byToken = await enrolledDevicesByToken([updated.id]);
+      res.json({ ...updated, enrolledDevices: byToken.get(updated.id) ?? [] });
     } catch (error) {
       res.status(500).json({ error: (error as Error).message });
     }

@@ -11,6 +11,7 @@ import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { usersTable } from "./users";
+import { enrollmentTokensTable } from "./enrollmentTokens";
 
 export const osTypeEnum = pgEnum("os_type", ["windows", "macos", "linux"]);
 
@@ -23,6 +24,10 @@ export const devicesTable = pgTable("devices", {
   assignedUserId: uuid("assigned_user_id").references(() => usersTable.id, {
     onDelete: "set null",
   }),
+  enrolledViaTokenId: uuid("enrolled_via_token_id").references(
+    () => enrollmentTokensTable.id,
+    { onDelete: "set null" },
+  ),
   secretHash: text("secret_hash").notNull(),
   consentAcknowledgedAt: timestamp("consent_acknowledged_at", {
     withTimezone: true,
@@ -49,6 +54,10 @@ export const devicesRelations = relations(devicesTable, ({ one }) => ({
   assignedUser: one(usersTable, {
     fields: [devicesTable.assignedUserId],
     references: [usersTable.id],
+  }),
+  enrolledViaToken: one(enrollmentTokensTable, {
+    fields: [devicesTable.enrolledViaTokenId],
+    references: [enrollmentTokensTable.id],
   }),
 }));
 

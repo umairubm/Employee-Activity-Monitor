@@ -5,6 +5,7 @@
  * API specification for Workforce Analytics & IT Management
  * OpenAPI spec version: 0.1.0
  */
+import type { EnrolledDeviceRef } from "./enrolledDeviceRef";
 
 export interface EnrollmentTokenItem {
   id: string;
@@ -22,4 +23,5 @@ export interface EnrollmentTokenItem {
   /** @nullable */
   revokedAt?: Date | null;
   createdAt: Date;
+  enrolledDevices: EnrolledDeviceRef[];
 }

@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { KeyRound, Plus, Trash2, Copy, CheckCircle2 } from "lucide-react";
+import { KeyRound, Plus, Trash2, Copy, CheckCircle2, Monitor } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 
@@ -155,6 +155,7 @@ export default function Tokens() {
                   <TableHead>Token / Label</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Uses</TableHead>
+                  <TableHead>Enrolled Devices</TableHead>
                   <TableHead>Created</TableHead>
                   <TableHead>Expires</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -163,7 +164,7 @@ export default function Tokens() {
               <TableBody>
                 {tokens?.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="h-32 text-center text-muted-foreground">
+                    <TableCell colSpan={7} className="h-32 text-center text-muted-foreground">
                       <div className="flex flex-col items-center justify-center">
                         <KeyRound className="h-8 w-8 mb-2 opacity-20" />
                         No enrollment tokens exist.
@@ -191,6 +192,20 @@ export default function Tokens() {
                         </TableCell>
                         <TableCell className="text-sm">
                           {token.useCount} / {token.maxUses}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {token.enrolledDevices.length === 0 ? (
+                            <span className="text-muted-foreground">—</span>
+                          ) : (
+                            <div className="flex flex-wrap gap-1">
+                              {token.enrolledDevices.map((d) => (
+                                <Badge key={d.id} variant="secondary" className="gap-1 font-normal">
+                                  <Monitor className="h-3 w-3" />
+                                  {d.systemName}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
                           {format(new Date(token.createdAt), "MMM d, yyyy")}

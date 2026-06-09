@@ -80,6 +80,8 @@ describe("POST /sync/enroll", () => {
     expect(row.secretHash).not.toBe(res.body.deviceSecret);
     expect(row.consentAcknowledgedAt).not.toBeNull();
     expect(row.consentName).toBe("Jane Operator");
+    // The device records which token it enrolled with so admins can trace it.
+    expect(row.enrolledViaTokenId).toBe(token.id);
 
     // The token use was claimed.
     const [tk] = await db
