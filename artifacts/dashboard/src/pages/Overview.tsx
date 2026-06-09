@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { MonitorSmartphone, Image as ImageIcon, Terminal, Users, Activity, Trophy, LayoutGrid, Download } from "lucide-react";
+import { MonitorSmartphone, Image as ImageIcon, Terminal, Users, Activity, Trophy, LayoutGrid, Download, FileSpreadsheet, FileText } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -21,6 +21,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Progress } from "@/components/ui/progress";
 import { Link } from "wouter";
 import { useGroupFilter, ALL_GROUPS as ALL } from "@/hooks/use-group-filter";
@@ -113,20 +119,26 @@ export default function Overview() {
     return hours.toFixed(1) + 'h';
   };
 
+  const groupLabel = groupFilter !== ALL ? groupFilter : "All groups";
+  const fileScope = groupFilter !== ALL ? groupFilter : "all-groups";
+
+  const activityBreakdown: [string, number][] = [
+    ["Productive", summary.activityToday.productiveSeconds / 3600],
+    ["Neutral", summary.activityToday.neutralSeconds / 3600],
+    ["Unproductive", summary.activityToday.unproductiveSeconds / 3600],
+    ["Undefined", summary.activityToday.undefinedSeconds / 3600],
+    ["Total", summary.activityToday.totalSeconds / 3600],
+  ];
+
   const exportCsv = () => {
-    const scope = groupFilter !== ALL ? groupFilter : "all-groups";
     const rows: (string | number)[][] = [
-      ["Group", groupFilter !== ALL ? groupFilter : "All groups"],
+      ["Group", groupLabel],
       ["From", rangeFrom],
       ["To", rangeTo],
       [],
       ["Activity breakdown"],
       ["Classification", "Hours"],
-      ["Productive", (summary.activityToday.productiveSeconds / 3600).toFixed(2)],
-      ["Neutral", (summary.activityToday.neutralSeconds / 3600).toFixed(2)],
-      ["Unproductive", (summary.activityToday.unproductiveSeconds / 3600).toFixed(2)],
-      ["Undefined", (summary.activityToday.undefinedSeconds / 3600).toFixed(2)],
-      ["Total", (summary.activityToday.totalSeconds / 3600).toFixed(2)],
+      ...activityBreakdown.map(([label, hours]) => [label, hours.toFixed(2)]),
       [],
       ["Leaderboard"],
       ["Rank", "Device", "Productive (hours)", "Total (hours)", "Score"],
@@ -138,8 +150,75 @@ export default function Overview() {
         Math.round(item.score),
       ]),
     ];
-    downloadCsv(`overview_${scope}_${rangeFrom}_to_${rangeTo}.csv`, rows);
+    downloadCsv(`overview_${fileScope}_${rangeFrom}_to_${rangeTo}.csv`, rows);
     toast({ title: "CSV exported" });
+  };
+
+  const exportXlsx = async () => {
+    try {
+      const ExcelJS = (await import("exceljs")).default;
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = "Workforce Analytics Dashboard";
+      workbook.created = new Date();
+
+      const headerFont = { bold: true } as const;
+      const titleFont = { bold: true, size: 14 } as const;
+
+      const activitySheet = workbook.addWorksheet("Activity breakdown");
+      activitySheet.columns = [
+        { header: "", key: "label", width: 24 },
+        { header: "", key: "value", width: 18 },
+      ];
+      activitySheet.addRow(["Overview — Activity breakdown"]).font = titleFont;
+      activitySheet.addRow(["Group", groupLabel]);
+      activitySheet.addRow(["From", rangeFrom]);
+      activitySheet.addRow(["To", rangeTo]);
+      activitySheet.addRow([]);
+      const activityHeader = activitySheet.addRow(["Classification", "Hours"]);
+      activityHeader.font = headerFont;
+      for (const [label, hours] of activityBreakdown) {
+        const row = activitySheet.addRow([label, Number(hours.toFixed(2))]);
+        row.getCell(2).numFmt = "0.00";
+        if (label === "Total") row.font = headerFont;
+      }
+
+      const leaderboardSheet = workbook.addWorksheet("Leaderboard");
+      leaderboardSheet.columns = [
+        { header: "Rank", key: "rank", width: 8 },
+        { header: "Device", key: "device", width: 28 },
+        { header: "Productive (hours)", key: "productive", width: 18 },
+        { header: "Total (hours)", key: "total", width: 16 },
+        { header: "Score", key: "score", width: 10 },
+      ];
+      leaderboardSheet.getRow(1).font = headerFont;
+      (leaderboard ?? []).forEach((item, index) => {
+        const row = leaderboardSheet.addRow([
+          index + 1,
+          item.systemName,
+          Number((item.productiveSeconds / 3600).toFixed(2)),
+          Number((item.totalSeconds / 3600).toFixed(2)),
+          Math.round(item.score),
+        ]);
+        row.getCell(3).numFmt = "0.00";
+        row.getCell(4).numFmt = "0.00";
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `overview_${fileScope}_${rangeFrom}_to_${rangeTo}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast({ title: "Excel file exported" });
+    } catch {
+      toast({ title: "Export failed", description: "Could not generate the Excel file.", variant: "destructive" });
+    }
   };
 
   return (
@@ -216,14 +295,25 @@ export default function Overview() {
               onChange={(e) => setRangeTo(e.target.value || todayStr())}
             />
           </div>
-          <Button
-            variant="outline"
-            className="h-8 gap-2"
-            onClick={exportCsv}
-            disabled={!leaderboard || leaderboard.length === 0}
-          >
-            <Download className="h-4 w-4" /> Export
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                className="h-8 gap-2"
+                disabled={!leaderboard || leaderboard.length === 0}
+              >
+                <Download className="h-4 w-4" /> Export
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={exportCsv}>
+                <FileText className="mr-2 h-4 w-4" /> CSV
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={exportXlsx}>
+                <FileSpreadsheet className="mr-2 h-4 w-4" /> Excel (.xlsx)
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
