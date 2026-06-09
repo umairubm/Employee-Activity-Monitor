@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { and, eq, sql, isNull, or, gt, lt } from "drizzle-orm";
+import { and, eq, sql, isNull, or, gt, lt, inArray } from "drizzle-orm";
 import {
   db,
   devicesTable,
@@ -327,6 +327,12 @@ router.post(
     if (status === "acknowledged") patch.acknowledgedAt = now;
     if (status === "completed" || status === "failed") patch.completedAt = now;
 
+    // Atomic guard: only advance a command that is still in a non-terminal
+    // state (pending or acknowledged). A device must never resurrect a command
+    // an admin already cancelled — without this guard, an ack arriving just
+    // after a successful cancel would overwrite `cancelled` -> `acknowledged`,
+    // silently undoing the admin's cancel. This mirrors the cancel handler's
+    // `status='pending'` guard in routes/devices.ts.
     const [updated] = await db
       .update(deviceCommandsTable)
       .set(patch)
@@ -334,16 +340,41 @@ router.post(
         and(
           eq(deviceCommandsTable.id, commandId),
           eq(deviceCommandsTable.deviceId, device.id),
+          inArray(deviceCommandsTable.status, ["pending", "acknowledged"]),
         ),
       )
       .returning();
 
-    if (!updated) {
+    if (updated) {
+      res.json({ id: updated.id, status: updated.status });
+      return;
+    }
+
+    // Nothing advanced: the command either doesn't exist for this device or is
+    // already in a terminal state (cancelled / completed / failed). Look it up
+    // to tell the two cases apart.
+    const [existing] = await db
+      .select({
+        id: deviceCommandsTable.id,
+        status: deviceCommandsTable.status,
+      })
+      .from(deviceCommandsTable)
+      .where(
+        and(
+          eq(deviceCommandsTable.id, commandId),
+          eq(deviceCommandsTable.deviceId, device.id),
+        ),
+      );
+
+    if (!existing) {
       res.status(404).json({ error: "Command not found" });
       return;
     }
 
-    res.json({ id: updated.id, status: updated.status });
+    // The command is settled (e.g. an admin cancelled it). Leave the row as-is
+    // and report its real state with a non-error 200 so the agent stops
+    // retrying the ack instead of hammering a command that will never advance.
+    res.json({ id: existing.id, status: existing.status });
   },
 );
 

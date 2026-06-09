@@ -515,10 +515,10 @@ describe("PATCH cancel racing the agent ack (concurrency)", () => {
 
       // Neither side may 500: the race must resolve cleanly. The cancel either
       // wins the still-pending row (200) or is refused because the device got
-      // there first (409) — never anything else.
+      // there first (409) — never anything else. The ack is always a non-error
+      // 200, even when it loses (it just reports the settled state back).
       expect([200, 409]).toContain(cancelRes.status);
       expect(ackRes.status).toBe(200);
-      expect(ackRes.body.status).toBe("acknowledged");
 
       const [row] = await db
         .select()
@@ -530,12 +530,55 @@ describe("PATCH cancel racing the agent ack (concurrency)", () => {
       expect(["acknowledged", "cancelled"]).toContain(row.status);
       expect(row.status).not.toBe("pending");
 
-      // A 409 means the device's ack won the row first, so the cancel was
-      // correctly refused and the device-acknowledged state must stand.
       if (cancelRes.status === 409) {
+        // A 409 means the device's ack won the row first, so the cancel was
+        // correctly refused and the device-acknowledged state must stand.
         expect(row.status).toBe("acknowledged");
+        expect(ackRes.body.status).toBe("acknowledged");
+      } else {
+        // A 200 means the admin cancel committed first. The ack must NOT
+        // resurrect it: the row stays cancelled and the ack reports cancelled
+        // back rather than silently flipping it to acknowledged.
+        expect(row.status).toBe("cancelled");
+        expect(ackRes.body.status).toBe("cancelled");
       }
     }
+  });
+
+  it("when the admin cancel commits first, a later device ack leaves it cancelled", async () => {
+    const syncApp = makeSyncApp();
+    const { device, secret } = await createDeviceWithSecret();
+    createdDeviceIds.push(device.id);
+    const command = await createDeviceCommand(device.id, {
+      issuedById: adminUserId,
+    });
+
+    // Admin cancels and the cancel fully commits first.
+    const cancelRes = await request(adminApp).patch(
+      `/devices/${device.id}/commands/${command.id}/cancel`,
+    );
+    expect(cancelRes.status).toBe(200);
+    expect(cancelRes.body.status).toBe("cancelled");
+
+    // The device then acks the same command. The ack must not undo the cancel:
+    // it gets a clear, non-error response reporting the real (cancelled) state
+    // so the agent stops retrying, and the row stays cancelled.
+    const ackRes = await request(syncApp)
+      .post("/sync/commands/ack")
+      .set("x-device-id", device.id)
+      .set("x-device-secret", secret)
+      .send({ commandId: command.id, status: "acknowledged" });
+
+    expect(ackRes.status).toBe(200);
+    expect(ackRes.body.id).toBe(command.id);
+    expect(ackRes.body.status).toBe("cancelled");
+
+    const [row] = await db
+      .select()
+      .from(deviceCommandsTable)
+      .where(eq(deviceCommandsTable.id, command.id));
+    expect(row.status).toBe("cancelled");
+    expect(row.acknowledgedAt).toBeNull();
   });
 });
 
