@@ -517,6 +517,35 @@ export interface SyncActivityRequest {
   screenshots?: ScreenshotItem[];
 }
 
+export type DownloadItemPlatform =
+  (typeof DownloadItemPlatform)[keyof typeof DownloadItemPlatform];
+
+export const DownloadItemPlatform = {
+  windows: "windows",
+  macos: "macos",
+} as const;
+
+export interface DownloadItem {
+  platform: DownloadItemPlatform;
+  label: string;
+  extension: string;
+  available: boolean;
+  /** @nullable */
+  fileName?: string | null;
+  /** @nullable */
+  sizeBytes?: number | null;
+  /** @nullable */
+  version?: string | null;
+  /** @nullable */
+  updatedAt?: string | null;
+  /** @nullable */
+  downloadUrl?: string | null;
+}
+
+export interface DownloadList {
+  items: DownloadItem[];
+}
+
 export type HealthCheck200 = {
   status?: string;
 };

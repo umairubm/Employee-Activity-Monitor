@@ -9,6 +9,7 @@ import reportsRouter from "./reports";
 import screenshotsRouter from "./screenshots";
 import attendanceRouter from "./attendance";
 import tokensRouter from "./tokens";
+import downloadsRouter from "./downloads";
 import syncRouter from "./sync";
 import { userAuth, requireRole } from "../middlewares/userAuth";
 
@@ -33,5 +34,6 @@ router.use("/reports", ...admin, reportsRouter);
 router.use("/screenshots", ...admin, screenshotsRouter);
 router.use("/attendance", ...admin, attendanceRouter);
 router.use("/tokens", ...admin, tokensRouter);
+router.use("/downloads", ...admin, downloadsRouter);
 
 export default router;

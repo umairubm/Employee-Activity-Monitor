@@ -18,6 +18,7 @@ import Attendance from "@/pages/Attendance";
 import Categories from "@/pages/Categories";
 import Tokens from "@/pages/Tokens";
 import Settings from "@/pages/Settings";
+import Downloads from "@/pages/Downloads";
 import NotFound from "@/pages/not-found";
 
 const ADMIN_ROLES = ["super_user", "admin"];
@@ -105,6 +106,9 @@ function Router() {
       </Route>
       <Route path="/settings">
         {(params) => <ProtectedRoute component={Settings} />}
+      </Route>
+      <Route path="/downloads">
+        {(params) => <ProtectedRoute component={Downloads} />}
       </Route>
       <Route component={NotFound} />
     </Switch>

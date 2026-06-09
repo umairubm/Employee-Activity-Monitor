@@ -319,6 +319,25 @@ export const UpdateDeviceConfigResponse = zod.object({
 });
 
 /**
+ * @summary List available desktop agent installers
+ */
+export const ListDownloadsResponse = zod.object({
+  items: zod.array(
+    zod.object({
+      platform: zod.enum(["windows", "macos"]),
+      label: zod.string(),
+      extension: zod.string(),
+      available: zod.boolean(),
+      fileName: zod.string().nullish(),
+      sizeBytes: zod.number().nullish(),
+      version: zod.string().nullish(),
+      updatedAt: zod.coerce.date().nullish(),
+      downloadUrl: zod.string().nullish(),
+    }),
+  ),
+});
+
+/**
  * @summary Rename a device group across all devices
  */
 

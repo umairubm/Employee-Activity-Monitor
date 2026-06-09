@@ -1,4 +1,5 @@
 - [Admin API authorization posture](admin-surface-authz.md) — whole admin API + dashboard is role-gated to admin/super_user (reads too), because the token list returns plaintext credentials.
+- [Desktop agent installers + downloads](agent-installers.md) — tkinter/pystray agent can't cross-compile from Linux; build .exe/.dmg on GitHub Actions; dashboard serves them from latest Release via fresh connector token.
 - [Two desktop agents in lockstep](desktop-agents.md) — Python `agent/` + Node `agent-node/` both MUST use the same secure sync contract (enroll token + device secret + consent, presigned screenshot upload); never add a public/unauthenticated sync endpoint.
 - [API test harness](api-test-harness.md) — vitest integration tests in `artifacts/api-server/test/` hit the real dev DB; seed unique rows + clean up, run files sequentially (global settings row), stub auth via injected `req.user`.
 - [Drizzle partial unique indexes](drizzle-partial-unique-indexes.md) — upserts onto a partial unique index need `targetWhere`; `drizzle-kit push` ignores WHERE-predicate changes, so DROP/CREATE the index by hand.

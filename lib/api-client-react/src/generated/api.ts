@@ -34,6 +34,7 @@ import type {
   DeviceConfigInput,
   DeviceGroupInput,
   DeviceItem,
+  DownloadList,
   EnrollmentTokenItem,
   FlagScreenshot200,
   GetActivityLogsParams,
@@ -1070,6 +1071,81 @@ export const useUpdateDeviceConfig = <
 > => {
   return useMutation(getUpdateDeviceConfigMutationOptions(options));
 };
+
+/**
+ * @summary List available desktop agent installers
+ */
+export const getListDownloadsUrl = () => {
+  return `/api/downloads`;
+};
+
+export const listDownloads = async (
+  options?: RequestInit,
+): Promise<DownloadList> => {
+  return customFetch<DownloadList>(getListDownloadsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListDownloadsQueryKey = () => {
+  return [`/api/downloads`] as const;
+};
+
+export const getListDownloadsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listDownloads>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listDownloads>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListDownloadsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listDownloads>>> = ({
+    signal,
+  }) => listDownloads({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listDownloads>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListDownloadsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listDownloads>>
+>;
+export type ListDownloadsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List available desktop agent installers
+ */
+
+export function useListDownloads<
+  TData = Awaited<ReturnType<typeof listDownloads>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listDownloads>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListDownloadsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * @summary Rename a device group across all devices
