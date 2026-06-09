@@ -4,14 +4,15 @@ import {
   getGetDeviceQueryKey, 
   useGetDeviceCommands, 
   getGetDeviceCommandsQueryKey, 
-  useIssueDeviceCommand 
+  useIssueDeviceCommand,
+  useCancelDeviceCommand 
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { MonitorSmartphone, ShieldAlert, LogOut, Clock, ShieldCheck, Cpu } from "lucide-react";
+import { MonitorSmartphone, ShieldAlert, LogOut, Clock, ShieldCheck, Cpu, Ban } from "lucide-react";
 import { format } from "date-fns";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -24,6 +25,7 @@ export default function DeviceDetail({ id }: { id: string }) {
   const { data: device, isLoading: isDeviceLoading } = useGetDevice(id, { query: { enabled: !!id, queryKey: getGetDeviceQueryKey(id) } });
   const { data: commands, isLoading: isCommandsLoading } = useGetDeviceCommands(id, { query: { enabled: !!id, queryKey: getGetDeviceCommandsQueryKey(id) } });
   const issueCommand = useIssueDeviceCommand();
+  const cancelCommand = useCancelDeviceCommand();
   
   const [commandDialogOpen, setCommandDialogOpen] = useState(false);
   const [commandType, setCommandType] = useState<'lock_screen' | 'logout_user' | null>(null);
@@ -66,6 +68,18 @@ export default function DeviceDetail({ id }: { id: string }) {
     setCommandType(type);
     setCommandReason("");
     setCommandDialogOpen(true);
+  };
+
+  const handleCancelCommand = (commandId: string) => {
+    cancelCommand.mutate({ id, commandId }, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getGetDeviceCommandsQueryKey(id) });
+        toast({ title: "Command cancelled" });
+      },
+      onError: (error: any) => {
+        toast({ title: "Failed to cancel command", description: error.message, variant: "destructive" });
+      }
+    });
   };
 
   return (
@@ -209,15 +223,17 @@ export default function DeviceDetail({ id }: { id: string }) {
                 <TableRow>
                   <TableHead>Type</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Issued By</TableHead>
                   <TableHead>Reason</TableHead>
                   <TableHead>Issued</TableHead>
                   <TableHead>Completed</TableHead>
+                  <TableHead className="text-right">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {commands?.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="h-32 text-center text-muted-foreground">
+                    <TableCell colSpan={7} className="h-32 text-center text-muted-foreground">
                       No commands have been issued.
                     </TableCell>
                   </TableRow>
@@ -236,6 +252,9 @@ export default function DeviceDetail({ id }: { id: string }) {
                           {cmd.status}
                         </Badge>
                       </TableCell>
+                      <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
+                        {cmd.issuedByUsername || "Unknown"}
+                      </TableCell>
                       <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">
                         {cmd.reason || "-"}
                       </TableCell>
@@ -244,6 +263,22 @@ export default function DeviceDetail({ id }: { id: string }) {
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
                         {cmd.completedAt ? format(new Date(cmd.completedAt), "MMM d, HH:mm") : "-"}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {cmd.status === 'pending' ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="gap-1.5 text-muted-foreground hover:text-destructive"
+                            onClick={() => handleCancelCommand(cmd.id)}
+                            disabled={cancelCommand.isPending}
+                          >
+                            <Ban className="h-3.5 w-3.5" />
+                            Cancel
+                          </Button>
+                        ) : (
+                          <span className="text-muted-foreground text-sm">-</span>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))

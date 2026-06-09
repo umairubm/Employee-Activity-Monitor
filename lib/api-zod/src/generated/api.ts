@@ -116,6 +116,7 @@ export const GetDeviceCommandsResponseItem = zod.object({
   id: zod.string().uuid(),
   deviceId: zod.string().uuid(),
   issuedById: zod.string().uuid().nullish(),
+  issuedByUsername: zod.string().nullish(),
   commandType: zod.enum(["lock_screen", "logout_user", "update_config"]),
   payload: zod.string().nullish(),
   status: zod.enum([
@@ -144,6 +145,34 @@ export const IssueDeviceCommandParams = zod.object({
 export const IssueDeviceCommandBody = zod.object({
   commandType: zod.enum(["lock_screen", "logout_user"]),
   reason: zod.string().optional(),
+});
+
+/**
+ * @summary Cancel a still-pending IT command
+ */
+export const CancelDeviceCommandParams = zod.object({
+  id: zod.coerce.string().uuid(),
+  commandId: zod.coerce.string().uuid(),
+});
+
+export const CancelDeviceCommandResponse = zod.object({
+  id: zod.string().uuid(),
+  deviceId: zod.string().uuid(),
+  issuedById: zod.string().uuid().nullish(),
+  issuedByUsername: zod.string().nullish(),
+  commandType: zod.enum(["lock_screen", "logout_user", "update_config"]),
+  payload: zod.string().nullish(),
+  status: zod.enum([
+    "pending",
+    "acknowledged",
+    "completed",
+    "failed",
+    "cancelled",
+  ]),
+  reason: zod.string().nullish(),
+  issuedAt: zod.coerce.date(),
+  acknowledgedAt: zod.coerce.date().nullish(),
+  completedAt: zod.coerce.date().nullish(),
 });
 
 /**

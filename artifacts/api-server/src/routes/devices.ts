@@ -4,9 +4,10 @@ import {
   db,
   devicesTable,
   deviceCommandsTable,
+  usersTable,
   publicDeviceColumns,
 } from "@workspace/db";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { requireRole, type AuthedRequest } from "../middlewares/userAuth";
 
 const groupNameSchema = z
@@ -63,8 +64,21 @@ router.get("/:id", async (req, res) => {
 router.get("/:id/commands", async (req, res) => {
   try {
     const rows = await db
-      .select()
+      .select({
+        id: deviceCommandsTable.id,
+        deviceId: deviceCommandsTable.deviceId,
+        issuedById: deviceCommandsTable.issuedById,
+        issuedByUsername: usersTable.username,
+        commandType: deviceCommandsTable.commandType,
+        payload: deviceCommandsTable.payload,
+        status: deviceCommandsTable.status,
+        reason: deviceCommandsTable.reason,
+        issuedAt: deviceCommandsTable.issuedAt,
+        acknowledgedAt: deviceCommandsTable.acknowledgedAt,
+        completedAt: deviceCommandsTable.completedAt,
+      })
       .from(deviceCommandsTable)
+      .leftJoin(usersTable, eq(deviceCommandsTable.issuedById, usersTable.id))
       .where(eq(deviceCommandsTable.deviceId, String(req.params.id)))
       .orderBy(desc(deviceCommandsTable.issuedAt))
       .limit(50);
@@ -112,6 +126,60 @@ router.post(
         .returning();
 
       res.status(201).json(command);
+    } catch (error) {
+      res.status(500).json({ error: (error as Error).message });
+    }
+  },
+);
+
+// PATCH /api/devices/:id/commands/:commandId/cancel - cancel a pending command
+router.patch(
+  "/:id/commands/:commandId/cancel",
+  requireRole("admin", "super_user"),
+  async (req, res) => {
+    try {
+      const deviceId = String(req.params.id);
+      const commandId = String(req.params.commandId);
+
+      // Atomic guard: only a still-pending command for this device can be
+      // cancelled, so a device acknowledging concurrently can't be clobbered.
+      const [cancelled] = await db
+        .update(deviceCommandsTable)
+        .set({ status: "cancelled" })
+        .where(
+          and(
+            eq(deviceCommandsTable.id, commandId),
+            eq(deviceCommandsTable.deviceId, deviceId),
+            eq(deviceCommandsTable.status, "pending"),
+          ),
+        )
+        .returning();
+
+      if (cancelled) {
+        res.json(cancelled);
+        return;
+      }
+
+      // Nothing was cancelled: figure out whether the command is missing or
+      // simply not in a cancellable state, and respond accordingly.
+      const [existing] = await db
+        .select({ status: deviceCommandsTable.status })
+        .from(deviceCommandsTable)
+        .where(
+          and(
+            eq(deviceCommandsTable.id, commandId),
+            eq(deviceCommandsTable.deviceId, deviceId),
+          ),
+        );
+
+      if (!existing) {
+        res.status(404).json({ error: "Command not found" });
+        return;
+      }
+
+      res.status(409).json({
+        error: `Cannot cancel a command that is ${existing.status}`,
+      });
     } catch (error) {
       res.status(500).json({ error: (error as Error).message });
     }

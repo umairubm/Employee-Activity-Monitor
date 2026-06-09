@@ -156,6 +156,26 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DeviceCommandItem"
+  /devices/{id}/commands/{commandId}/cancel:
+    patch:
+      operationId: cancelDeviceCommand
+      tags: [devices]
+      summary: Cancel a still-pending IT command
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - name: commandId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Cancelled command
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceCommandItem"
 
   /devices/{id}/group:
     patch:
@@ -819,6 +839,8 @@ components:
         issuedById:
           type: [string, "null"]
           format: uuid
+        issuedByUsername:
+          type: [string, "null"]
         commandType:
           type: string
           enum: [lock_screen, logout_user, update_config]

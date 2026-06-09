@@ -101,6 +101,8 @@ export interface DeviceCommandItem {
   deviceId: string;
   /** @nullable */
   issuedById?: string | null;
+  /** @nullable */
+  issuedByUsername?: string | null;
   commandType: DeviceCommandItemCommandType;
   /** @nullable */
   payload?: string | null;

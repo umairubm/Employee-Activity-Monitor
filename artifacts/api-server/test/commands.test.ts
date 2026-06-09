@@ -276,3 +276,189 @@ describe("GET /devices/:id/commands", () => {
     expect(res.status).toBe(401);
   });
 });
+
+/**
+ * The cancel side of the pipeline: an admin can call off a command while it's
+ * still pending (before the device picks it up). Once a command has been
+ * acknowledged/completed/etc., cancelling it must be rejected so we never lie
+ * about what actually ran on the device.
+ */
+describe("PATCH /devices/:id/commands/:commandId/cancel", () => {
+  it("cancels a still-pending command (status flips to cancelled)", async () => {
+    const device = await newDevice();
+    const command = await createDeviceCommand(device.id, {
+      issuedById: adminUserId,
+    });
+
+    const res = await request(adminApp).patch(
+      `/devices/${device.id}/commands/${command.id}/cancel`,
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe(command.id);
+    expect(res.body.status).toBe("cancelled");
+
+    // The change is really persisted, not just echoed back.
+    const [row] = await db
+      .select()
+      .from(deviceCommandsTable)
+      .where(eq(deviceCommandsTable.id, command.id));
+    expect(row.status).toBe("cancelled");
+  });
+
+  it("lets a super_user cancel a pending command too", async () => {
+    const device = await newDevice();
+    const command = await createDeviceCommand(device.id, {
+      issuedById: adminUserId,
+    });
+
+    const res = await request(superApp).patch(
+      `/devices/${device.id}/commands/${command.id}/cancel`,
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("cancelled");
+  });
+
+  it("rejects cancelling an already-acknowledged command (409) and leaves it untouched", async () => {
+    const device = await newDevice();
+    const command = await createDeviceCommand(device.id, {
+      issuedById: adminUserId,
+      status: "acknowledged",
+    });
+
+    const res = await request(adminApp).patch(
+      `/devices/${device.id}/commands/${command.id}/cancel`,
+    );
+
+    expect(res.status).toBe(409);
+
+    const [row] = await db
+      .select()
+      .from(deviceCommandsTable)
+      .where(eq(deviceCommandsTable.id, command.id));
+    expect(row.status).toBe("acknowledged");
+  });
+
+  it("rejects cancelling a completed command (409) and leaves it untouched", async () => {
+    const device = await newDevice();
+    const command = await createDeviceCommand(device.id, {
+      issuedById: adminUserId,
+      status: "completed",
+    });
+
+    const res = await request(adminApp).patch(
+      `/devices/${device.id}/commands/${command.id}/cancel`,
+    );
+
+    expect(res.status).toBe(409);
+
+    const [row] = await db
+      .select()
+      .from(deviceCommandsTable)
+      .where(eq(deviceCommandsTable.id, command.id));
+    expect(row.status).toBe("completed");
+  });
+
+  it("returns 404 for an unknown command id", async () => {
+    const device = await newDevice();
+    const ghostCommandId = randomUUID();
+
+    const res = await request(adminApp).patch(
+      `/devices/${device.id}/commands/${ghostCommandId}/cancel`,
+    );
+
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 404 when the command belongs to a different device", async () => {
+    const device = await newDevice();
+    const otherDevice = await newDevice();
+    const command = await createDeviceCommand(device.id, {
+      issuedById: adminUserId,
+    });
+
+    // Right command id, wrong device in the path: must not cancel.
+    const res = await request(adminApp).patch(
+      `/devices/${otherDevice.id}/commands/${command.id}/cancel`,
+    );
+
+    expect(res.status).toBe(404);
+
+    const [row] = await db
+      .select()
+      .from(deviceCommandsTable)
+      .where(eq(deviceCommandsTable.id, command.id));
+    expect(row.status).toBe("pending");
+  });
+
+  it("rejects a non-admin caller (403) and leaves the command pending", async () => {
+    const memberApp = makeApp({ role: "team_member" });
+    const device = await newDevice();
+    const command = await createDeviceCommand(device.id, {
+      issuedById: adminUserId,
+    });
+
+    const res = await request(memberApp).patch(
+      `/devices/${device.id}/commands/${command.id}/cancel`,
+    );
+
+    expect(res.status).toBe(403);
+
+    const [row] = await db
+      .select()
+      .from(deviceCommandsTable)
+      .where(eq(deviceCommandsTable.id, command.id));
+    expect(row.status).toBe("pending");
+  });
+
+  it("rejects an unauthenticated caller (401) and leaves the command pending", async () => {
+    const device = await newDevice();
+    const command = await createDeviceCommand(device.id, {
+      issuedById: adminUserId,
+    });
+
+    const res = await request(realApp).patch(
+      `/api/devices/${device.id}/commands/${command.id}/cancel`,
+    );
+
+    expect(res.status).toBe(401);
+
+    const [row] = await db
+      .select()
+      .from(deviceCommandsTable)
+      .where(eq(deviceCommandsTable.id, command.id));
+    expect(row.status).toBe("pending");
+  });
+});
+
+/**
+ * The audit view: command history must surface a readable issuer (the
+ * username) alongside the raw issuer id, so admins can see *who* issued what.
+ */
+describe("GET /devices/:id/commands (audit view)", () => {
+  it("includes the issuer username for each command", async () => {
+    const device = await newDevice();
+    await createDeviceCommand(device.id, { issuedById: adminUserId });
+
+    const res = await request(adminApp).get(`/devices/${device.id}/commands`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0].issuedById).toBe(adminUserId);
+    expect(typeof res.body[0].issuedByUsername).toBe("string");
+    expect(res.body[0].issuedByUsername.length).toBeGreaterThan(0);
+  });
+
+  it("returns a null issuer username when the issuer is unknown", async () => {
+    const device = await newDevice();
+    await createDeviceCommand(device.id, { issuedById: null });
+
+    const res = await request(adminApp).get(`/devices/${device.id}/commands`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0].issuedById).toBeNull();
+    expect(res.body[0].issuedByUsername).toBeNull();
+  });
+});

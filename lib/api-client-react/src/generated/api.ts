@@ -718,6 +718,94 @@ export const useIssueDeviceCommand = <
 };
 
 /**
+ * @summary Cancel a still-pending IT command
+ */
+export const getCancelDeviceCommandUrl = (id: string, commandId: string) => {
+  return `/api/devices/${id}/commands/${commandId}/cancel`;
+};
+
+export const cancelDeviceCommand = async (
+  id: string,
+  commandId: string,
+  options?: RequestInit,
+): Promise<DeviceCommandItem> => {
+  return customFetch<DeviceCommandItem>(
+    getCancelDeviceCommandUrl(id, commandId),
+    {
+      ...options,
+      method: "PATCH",
+    },
+  );
+};
+
+export const getCancelDeviceCommandMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof cancelDeviceCommand>>,
+    TError,
+    { id: string; commandId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof cancelDeviceCommand>>,
+  TError,
+  { id: string; commandId: string },
+  TContext
+> => {
+  const mutationKey = ["cancelDeviceCommand"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof cancelDeviceCommand>>,
+    { id: string; commandId: string }
+  > = (props) => {
+    const { id, commandId } = props ?? {};
+
+    return cancelDeviceCommand(id, commandId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CancelDeviceCommandMutationResult = NonNullable<
+  Awaited<ReturnType<typeof cancelDeviceCommand>>
+>;
+
+export type CancelDeviceCommandMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Cancel a still-pending IT command
+ */
+export const useCancelDeviceCommand = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof cancelDeviceCommand>>,
+    TError,
+    { id: string; commandId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof cancelDeviceCommand>>,
+  TError,
+  { id: string; commandId: string },
+  TContext
+> => {
+  return useMutation(getCancelDeviceCommandMutationOptions(options));
+};
+
+/**
  * @summary Assign a device to a group
  */
 export const getSetDeviceGroupUrl = (id: string) => {
