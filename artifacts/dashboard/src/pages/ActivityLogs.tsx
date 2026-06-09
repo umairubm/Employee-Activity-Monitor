@@ -13,12 +13,11 @@ import {
 import { format } from "date-fns";
 import { Activity, Search, Clock, AppWindow } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-
-const ALL = "__all__";
+import { useGroupFilter, ALL_GROUPS as ALL } from "@/hooks/use-group-filter";
 
 export default function ActivityLogs() {
   const [search, setSearch] = useState("");
-  const [groupFilter, setGroupFilter] = useState<string>(ALL);
+  const [groupFilter, setGroupFilter] = useGroupFilter();
   const { data: devices } = useListDevices();
   const groups = useMemo(() => {
     const set = new Set<string>();

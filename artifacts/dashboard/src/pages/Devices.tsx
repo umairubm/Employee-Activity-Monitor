@@ -24,8 +24,7 @@ import { Label } from "@/components/ui/label";
 import { MonitorSmartphone, Search, CheckCircle2, XCircle, Clock, ShieldCheck, FolderPen, FolderSync } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
-
-const ALL = "__all__";
+import { useGroupFilter, ALL_GROUPS as ALL } from "@/hooks/use-group-filter";
 
 export default function Devices() {
   const queryClient = useQueryClient();
@@ -34,7 +33,7 @@ export default function Devices() {
   const setGroup = useSetDeviceGroup();
   const renameGroup = useRenameDeviceGroup();
   const [search, setSearch] = useState("");
-  const [groupFilter, setGroupFilter] = useState<string>(ALL);
+  const [groupFilter, setGroupFilter] = useGroupFilter();
 
   const [editId, setEditId] = useState<string | null>(null);
   const [editGroup, setEditGroup] = useState("");

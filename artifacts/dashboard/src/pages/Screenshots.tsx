@@ -19,14 +19,13 @@ import { format } from "date-fns";
 import { Image as ImageIcon, Info, Flag } from "lucide-react";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-
-const ALL = "__all__";
+import { useGroupFilter, ALL_GROUPS as ALL } from "@/hooks/use-group-filter";
 
 export default function Screenshots() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [flaggedOnly, setFlaggedOnly] = useState(false);
-  const [groupFilter, setGroupFilter] = useState<string>(ALL);
+  const [groupFilter, setGroupFilter] = useGroupFilter();
   const { data: devices } = useListDevices();
   const groups = useMemo(() => {
     const set = new Set<string>();

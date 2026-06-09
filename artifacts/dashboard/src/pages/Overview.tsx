@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import {
   useGetSummary,
   getGetSummaryQueryKey,
@@ -17,11 +17,10 @@ import {
 } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
 import { Link } from "wouter";
-
-const ALL = "__all__";
+import { useGroupFilter, ALL_GROUPS as ALL } from "@/hooks/use-group-filter";
 
 export default function Overview() {
-  const [groupFilter, setGroupFilter] = useState<string>(ALL);
+  const [groupFilter, setGroupFilter] = useGroupFilter();
   const { data: devices } = useListDevices();
   const groups = useMemo(() => {
     const set = new Set<string>();
