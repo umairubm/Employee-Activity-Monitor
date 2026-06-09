@@ -454,9 +454,16 @@ function applyConfig(c) {
 
 // ── Authorized IT commands (with visible notice before execution) ─────────────
 async function executeCommand(cmd) {
+  const actionLabel =
+    cmd.commandType === "lock_screen"
+      ? "lock your screen"
+      : cmd.commandType === "logout_user"
+        ? "sign you out"
+        : cmd.commandType;
+  const reasonText = cmd.reason ? ` Reason: ${cmd.reason}` : "";
   await showNotice(
     "Administrator action",
-    `Your administrator requested: ${cmd.commandType}${cmd.reason ? ` (${cmd.reason})` : ""}`
+    `IT is about to ${actionLabel}.${reasonText}`
   );
   try {
     await apiPost("/commands/ack", { commandId: cmd.id, status: "acknowledged" });
