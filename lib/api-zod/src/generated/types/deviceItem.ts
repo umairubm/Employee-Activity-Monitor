@@ -30,6 +30,7 @@ export interface DeviceItem {
   idleThresholdSeconds: number;
   syncIntervalSeconds: number;
   monitoringEnabled: boolean;
+  deviceGroup: string;
   online: boolean;
   createdAt: Date;
   updatedAt: Date;

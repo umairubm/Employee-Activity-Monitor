@@ -6,8 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type ListScreenshotsParams = {
-  deviceId?: string;
-  flagged?: boolean;
-  limit?: number;
+export type FlagScreenshot200 = {
+  id: string;
+  flagged: boolean;
 };

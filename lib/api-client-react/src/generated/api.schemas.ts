@@ -58,9 +58,22 @@ export interface DeviceItem {
   idleThresholdSeconds: number;
   syncIntervalSeconds: number;
   monitoringEnabled: boolean;
+  deviceGroup: string;
   online: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface DeviceGroupInput {
+  /** @minLength 1 */
+  deviceGroup: string;
+}
+
+export interface GroupRenameInput {
+  /** @minLength 1 */
+  from: string;
+  /** @minLength 1 */
+  to: string;
 }
 
 export type DeviceCommandItemCommandType =
@@ -137,8 +150,13 @@ export interface ScreenshotListItem {
   /** @nullable */
   userId?: string | null;
   fileSizeBytes: number;
+  flagged: boolean;
   capturedAt: string;
   imageUrl: string;
+}
+
+export interface ScreenshotFlagInput {
+  flagged: boolean;
 }
 
 export type SummaryResponseDevices = {
@@ -204,6 +222,55 @@ export const UpdateCategoryRequestClassification = {
 export interface UpdateCategoryRequest {
   classification?: UpdateCategoryRequestClassification;
   displayName?: string;
+}
+
+export interface AttendanceSettingsItem {
+  id: string;
+  /** @nullable */
+  deviceId?: string | null;
+  workStartTime: string;
+  halfDayThresholdHours: number;
+  requiredHoursNormal: number;
+  requiredHoursFriday: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface AttendanceSettingsUpdate {
+  workStartTime: string;
+  halfDayThresholdHours: number;
+  requiredHoursNormal: number;
+  requiredHoursFriday: number;
+}
+
+export type AttendanceRowStatus =
+  (typeof AttendanceRowStatus)[keyof typeof AttendanceRowStatus];
+
+export const AttendanceRowStatus = {
+  present: "present",
+  half_day: "half_day",
+  absent: "absent",
+} as const;
+
+export interface AttendanceRow {
+  deviceId: string;
+  systemName: string;
+  deviceGroup: string;
+  /** @nullable */
+  checkIn?: string | null;
+  /** @nullable */
+  lastActivity?: string | null;
+  workedSeconds: number;
+  idleSeconds: number;
+  requiredHours: number;
+  status: AttendanceRowStatus;
+}
+
+export interface AttendanceReport {
+  date: string;
+  isFriday: boolean;
+  requiredHours: number;
+  devices: AttendanceRow[];
 }
 
 export interface EnrollmentTokenItem {
@@ -280,6 +347,10 @@ export type Logout200 = {
   ok: boolean;
 };
 
+export type RenameDeviceGroup200 = {
+  renamed: number;
+};
+
 export type GetActivityLogsParams = {
   deviceId?: string;
   userId?: string;
@@ -292,7 +363,20 @@ export type GetTimelineParams = {
 
 export type ListScreenshotsParams = {
   deviceId?: string;
+  flagged?: boolean;
   limit?: number;
+};
+
+export type FlagScreenshot200 = {
+  id: string;
+  flagged: boolean;
+};
+
+export type GetAttendanceReportParams = {
+  /**
+   * Day in YYYY-MM-DD format; defaults to today
+   */
+  date?: string;
 };
 
 export type SyncActivity200 = {

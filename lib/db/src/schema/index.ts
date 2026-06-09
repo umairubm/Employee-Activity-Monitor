@@ -7,3 +7,4 @@ export * from "./screenshots";
 export * from "./dailySummaries";
 export * from "./deviceCommands";
 export * from "./sessions";
+export * from "./attendanceSettings";

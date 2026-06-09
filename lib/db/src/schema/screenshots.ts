@@ -4,6 +4,7 @@ import {
   text,
   timestamp,
   integer,
+  boolean,
   index,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
@@ -24,6 +25,7 @@ export const screenshotsTable = pgTable(
     }),
     storageKey: text("storage_key").notNull(),
     fileSizeBytes: integer("file_size_bytes").notNull().default(0),
+    flagged: boolean("flagged").notNull().default(false),
     capturedAt: timestamp("captured_at", { withTimezone: true }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

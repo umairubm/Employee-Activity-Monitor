@@ -9,6 +9,13 @@ import {
 import { desc, eq } from "drizzle-orm";
 import { requireRole, type AuthedRequest } from "../middlewares/userAuth";
 
+const groupNameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(60)
+  .transform((s) => s.replace(/\s+/g, " "));
+
 const router: IRouter = Router();
 
 const ONLINE_WINDOW_MS = 5 * 60 * 1000;
@@ -105,6 +112,63 @@ router.post(
         .returning();
 
       res.status(201).json(command);
+    } catch (error) {
+      res.status(500).json({ error: (error as Error).message });
+    }
+  },
+);
+
+const setGroupSchema = z.object({ deviceGroup: groupNameSchema });
+
+// PATCH /api/devices/:id/group - assign a device to a group
+router.patch(
+  "/:id/group",
+  requireRole("admin", "super_user"),
+  async (req, res) => {
+    try {
+      const parsed = setGroupSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: "Invalid group" });
+        return;
+      }
+      const [updated] = await db
+        .update(devicesTable)
+        .set({ deviceGroup: parsed.data.deviceGroup, updatedAt: new Date() })
+        .where(eq(devicesTable.id, String(req.params.id)))
+        .returning(publicDeviceColumns);
+      if (!updated) {
+        res.status(404).json({ error: "Device not found" });
+        return;
+      }
+      res.json(withOnline(updated));
+    } catch (error) {
+      res.status(500).json({ error: (error as Error).message });
+    }
+  },
+);
+
+const renameGroupSchema = z.object({
+  from: groupNameSchema,
+  to: groupNameSchema,
+});
+
+// POST /api/devices/groups/rename - rename a group across all devices
+router.post(
+  "/groups/rename",
+  requireRole("admin", "super_user"),
+  async (req, res) => {
+    try {
+      const parsed = renameGroupSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: "Invalid group names" });
+        return;
+      }
+      const updated = await db
+        .update(devicesTable)
+        .set({ deviceGroup: parsed.data.to, updatedAt: new Date() })
+        .where(eq(devicesTable.deviceGroup, parsed.data.from))
+        .returning({ id: devicesTable.id });
+      res.json({ renamed: updated.length });
     } catch (error) {
       res.status(500).json({ error: (error as Error).message });
     }

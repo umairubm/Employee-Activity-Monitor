@@ -6,6 +6,7 @@ import {
   MonitorSmartphone, 
   Activity, 
   Image as ImageIcon, 
+  CalendarCheck,
   Tags, 
   KeyRound, 
   LogOut,
@@ -19,6 +20,7 @@ const NAV_ITEMS = [
   { href: "/devices", label: "Devices", icon: MonitorSmartphone },
   { href: "/activity", label: "Activity Logs", icon: Activity },
   { href: "/screenshots", label: "Screenshots", icon: ImageIcon },
+  { href: "/attendance", label: "Attendance", icon: CalendarCheck },
   { href: "/categories", label: "App Categories", icon: Tags },
   { href: "/tokens", label: "Enrollment Tokens", icon: KeyRound },
 ];

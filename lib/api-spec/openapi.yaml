@@ -19,6 +19,8 @@ tags:
     description: Screenshot gallery
   - name: reports
     description: Dashboard reports
+  - name: attendance
+    description: Attendance tracking
   - name: categories
     description: App productivity classification
   - name: tokens
@@ -155,6 +157,49 @@ paths:
               schema:
                 $ref: "#/components/schemas/DeviceCommandItem"
 
+  /devices/{id}/group:
+    patch:
+      operationId: setDeviceGroup
+      tags: [devices]
+      summary: Assign a device to a group
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceGroupInput"
+      responses:
+        "200":
+          description: Updated device
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceItem"
+  /devices/groups/rename:
+    post:
+      operationId: renameDeviceGroup
+      tags: [devices]
+      summary: Rename a device group across all devices
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GroupRenameInput"
+      responses:
+        "200":
+          description: Rename result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  renamed:
+                    type: integer
+                required: [renamed]
+
   /activity:
     get:
       operationId: getActivityLogs
@@ -221,6 +266,11 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: flagged
+          in: query
+          required: false
+          schema:
+            type: boolean
         - name: limit
           in: query
           required: false
@@ -235,6 +285,33 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/ScreenshotListItem"
+  /screenshots/{id}/flag:
+    patch:
+      operationId: flagScreenshot
+      tags: [screenshots]
+      summary: Flag or unflag a screenshot
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScreenshotFlagInput"
+      responses:
+        "200":
+          description: Updated flag state
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  flagged:
+                    type: boolean
+                required: [id, flagged]
 
   /reports/summary:
     get:
@@ -262,6 +339,55 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/LeaderboardItem"
+
+  /attendance/settings:
+    get:
+      operationId: getAttendanceSettings
+      tags: [attendance]
+      summary: Get global attendance rules
+      responses:
+        "200":
+          description: Attendance settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttendanceSettingsItem"
+    put:
+      operationId: updateAttendanceSettings
+      tags: [attendance]
+      summary: Update global attendance rules
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AttendanceSettingsUpdate"
+      responses:
+        "200":
+          description: Updated attendance settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttendanceSettingsItem"
+  /attendance:
+    get:
+      operationId: getAttendanceReport
+      tags: [attendance]
+      summary: Per-device daily attendance report
+      parameters:
+        - name: date
+          in: query
+          required: false
+          schema:
+            type: string
+            description: Day in YYYY-MM-DD format; defaults to today
+      responses:
+        "200":
+          description: Attendance report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttendanceReport"
 
   /categories:
     get:
@@ -475,6 +601,8 @@ components:
           type: integer
         monitoringEnabled:
           type: boolean
+        deviceGroup:
+          type: string
         online:
           type: boolean
         createdAt:
@@ -494,9 +622,27 @@ components:
         - idleThresholdSeconds
         - syncIntervalSeconds
         - monitoringEnabled
+        - deviceGroup
         - online
         - createdAt
         - updatedAt
+    DeviceGroupInput:
+      type: object
+      properties:
+        deviceGroup:
+          type: string
+          minLength: 1
+      required: [deviceGroup]
+    GroupRenameInput:
+      type: object
+      properties:
+        from:
+          type: string
+          minLength: 1
+        to:
+          type: string
+          minLength: 1
+      required: [from, to]
     DeviceCommandItem:
       type: object
       properties:
@@ -593,12 +739,20 @@ components:
           format: uuid
         fileSizeBytes:
           type: integer
+        flagged:
+          type: boolean
         capturedAt:
           type: string
           format: date-time
         imageUrl:
           type: string
-      required: [id, deviceId, fileSizeBytes, capturedAt, imageUrl]
+      required: [id, deviceId, fileSizeBytes, flagged, capturedAt, imageUrl]
+    ScreenshotFlagInput:
+      type: object
+      properties:
+        flagged:
+          type: boolean
+      required: [flagged]
     SummaryResponse:
       type: object
       properties:
@@ -687,6 +841,98 @@ components:
           enum: [productive, unproductive, neutral, undefined]
         displayName:
           type: string
+    AttendanceSettingsItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        deviceId:
+          type: [string, "null"]
+          format: uuid
+        workStartTime:
+          type: string
+        halfDayThresholdHours:
+          type: number
+        requiredHoursNormal:
+          type: number
+        requiredHoursFriday:
+          type: number
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - workStartTime
+        - halfDayThresholdHours
+        - requiredHoursNormal
+        - requiredHoursFriday
+    AttendanceSettingsUpdate:
+      type: object
+      properties:
+        workStartTime:
+          type: string
+        halfDayThresholdHours:
+          type: number
+        requiredHoursNormal:
+          type: number
+        requiredHoursFriday:
+          type: number
+      required:
+        - workStartTime
+        - halfDayThresholdHours
+        - requiredHoursNormal
+        - requiredHoursFriday
+    AttendanceRow:
+      type: object
+      properties:
+        deviceId:
+          type: string
+          format: uuid
+        systemName:
+          type: string
+        deviceGroup:
+          type: string
+        checkIn:
+          type: [string, "null"]
+          format: date-time
+        lastActivity:
+          type: [string, "null"]
+          format: date-time
+        workedSeconds:
+          type: integer
+        idleSeconds:
+          type: integer
+        requiredHours:
+          type: number
+        status:
+          type: string
+          enum: [present, half_day, absent]
+      required:
+        - deviceId
+        - systemName
+        - deviceGroup
+        - workedSeconds
+        - idleSeconds
+        - requiredHours
+        - status
+    AttendanceReport:
+      type: object
+      properties:
+        date:
+          type: string
+        isFriday:
+          type: boolean
+        requiredHours:
+          type: number
+        devices:
+          type: array
+          items:
+            $ref: "#/components/schemas/AttendanceRow"
+      required: [date, isFriday, requiredHours, devices]
     EnrollmentTokenItem:
       type: object
       properties:

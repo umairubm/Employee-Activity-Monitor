@@ -14,6 +14,7 @@ import Devices from "@/pages/Devices";
 import DeviceDetail from "@/pages/DeviceDetail";
 import ActivityLogs from "@/pages/ActivityLogs";
 import Screenshots from "@/pages/Screenshots";
+import Attendance from "@/pages/Attendance";
 import Categories from "@/pages/Categories";
 import Tokens from "@/pages/Tokens";
 import NotFound from "@/pages/not-found";
@@ -91,6 +92,9 @@ function Router() {
       </Route>
       <Route path="/screenshots">
         {(params) => <ProtectedRoute component={Screenshots} />}
+      </Route>
+      <Route path="/attendance">
+        {(params) => <ProtectedRoute component={Attendance} />}
       </Route>
       <Route path="/categories">
         {(params) => <ProtectedRoute component={Categories} />}

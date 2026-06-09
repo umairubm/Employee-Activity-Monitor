@@ -68,6 +68,7 @@ export const ListDevicesResponseItem = zod.object({
   idleThresholdSeconds: zod.number(),
   syncIntervalSeconds: zod.number(),
   monitoringEnabled: zod.boolean(),
+  deviceGroup: zod.string(),
   online: zod.boolean(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -98,6 +99,7 @@ export const GetDeviceResponse = zod.object({
   idleThresholdSeconds: zod.number(),
   syncIntervalSeconds: zod.number(),
   monitoringEnabled: zod.boolean(),
+  deviceGroup: zod.string(),
   online: zod.boolean(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -142,6 +144,53 @@ export const IssueDeviceCommandParams = zod.object({
 export const IssueDeviceCommandBody = zod.object({
   commandType: zod.enum(["lock_screen", "logout_user"]),
   reason: zod.string().optional(),
+});
+
+/**
+ * @summary Assign a device to a group
+ */
+export const SetDeviceGroupParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
+
+export const SetDeviceGroupBody = zod.object({
+  deviceGroup: zod.string().min(1),
+});
+
+export const SetDeviceGroupResponse = zod.object({
+  id: zod.string().uuid(),
+  hardwareHash: zod.string(),
+  systemName: zod.string(),
+  osType: zod.enum(["windows", "macos", "linux"]),
+  agentVersion: zod.string().nullish(),
+  assignedUserId: zod.string().uuid().nullish(),
+  consentAcknowledgedAt: zod.coerce.date().nullish(),
+  consentName: zod.string().nullish(),
+  enrolledAt: zod.coerce.date().nullish(),
+  lastSeenAt: zod.coerce.date().nullish(),
+  isLocked: zod.boolean(),
+  screenshotMinMinutes: zod.number(),
+  screenshotMaxMinutes: zod.number(),
+  idleThresholdSeconds: zod.number(),
+  syncIntervalSeconds: zod.number(),
+  monitoringEnabled: zod.boolean(),
+  deviceGroup: zod.string(),
+  online: zod.boolean(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Rename a device group across all devices
+ */
+
+export const RenameDeviceGroupBody = zod.object({
+  from: zod.string().min(1),
+  to: zod.string().min(1),
+});
+
+export const RenameDeviceGroupResponse = zod.object({
+  renamed: zod.number(),
 });
 
 /**
@@ -195,6 +244,7 @@ export const GetTimelineResponse = zod.array(GetTimelineResponseItem);
  */
 export const ListScreenshotsQueryParams = zod.object({
   deviceId: zod.coerce.string().uuid().optional(),
+  flagged: zod.coerce.boolean().optional(),
   limit: zod.coerce.number().optional(),
 });
 
@@ -203,10 +253,27 @@ export const ListScreenshotsResponseItem = zod.object({
   deviceId: zod.string().uuid(),
   userId: zod.string().uuid().nullish(),
   fileSizeBytes: zod.number(),
+  flagged: zod.boolean(),
   capturedAt: zod.coerce.date(),
   imageUrl: zod.string(),
 });
 export const ListScreenshotsResponse = zod.array(ListScreenshotsResponseItem);
+
+/**
+ * @summary Flag or unflag a screenshot
+ */
+export const FlagScreenshotParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
+
+export const FlagScreenshotBody = zod.object({
+  flagged: zod.boolean(),
+});
+
+export const FlagScreenshotResponse = zod.object({
+  id: zod.string().uuid(),
+  flagged: zod.boolean(),
+});
 
 /**
  * @summary Dashboard overview KPIs
@@ -239,6 +306,67 @@ export const GetLeaderboardResponseItem = zod.object({
   score: zod.number(),
 });
 export const GetLeaderboardResponse = zod.array(GetLeaderboardResponseItem);
+
+/**
+ * @summary Get global attendance rules
+ */
+export const GetAttendanceSettingsResponse = zod.object({
+  id: zod.string().uuid(),
+  deviceId: zod.string().uuid().nullish(),
+  workStartTime: zod.string(),
+  halfDayThresholdHours: zod.number(),
+  requiredHoursNormal: zod.number(),
+  requiredHoursFriday: zod.number(),
+  createdAt: zod.coerce.date().optional(),
+  updatedAt: zod.coerce.date().optional(),
+});
+
+/**
+ * @summary Update global attendance rules
+ */
+export const UpdateAttendanceSettingsBody = zod.object({
+  workStartTime: zod.string(),
+  halfDayThresholdHours: zod.number(),
+  requiredHoursNormal: zod.number(),
+  requiredHoursFriday: zod.number(),
+});
+
+export const UpdateAttendanceSettingsResponse = zod.object({
+  id: zod.string().uuid(),
+  deviceId: zod.string().uuid().nullish(),
+  workStartTime: zod.string(),
+  halfDayThresholdHours: zod.number(),
+  requiredHoursNormal: zod.number(),
+  requiredHoursFriday: zod.number(),
+  createdAt: zod.coerce.date().optional(),
+  updatedAt: zod.coerce.date().optional(),
+});
+
+/**
+ * @summary Per-device daily attendance report
+ */
+export const GetAttendanceReportQueryParams = zod.object({
+  date: zod.coerce.string().optional(),
+});
+
+export const GetAttendanceReportResponse = zod.object({
+  date: zod.string(),
+  isFriday: zod.boolean(),
+  requiredHours: zod.number(),
+  devices: zod.array(
+    zod.object({
+      deviceId: zod.string().uuid(),
+      systemName: zod.string(),
+      deviceGroup: zod.string(),
+      checkIn: zod.coerce.date().nullish(),
+      lastActivity: zod.coerce.date().nullish(),
+      workedSeconds: zod.number(),
+      idleSeconds: zod.number(),
+      requiredHours: zod.number(),
+      status: zod.enum(["present", "half_day", "absent"]),
+    }),
+  ),
+});
 
 /**
  * @summary List app classification rules

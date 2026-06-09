@@ -36,6 +36,7 @@ export const devicesTable = pgTable("devices", {
   idleThresholdSeconds: integer("idle_threshold_seconds").notNull().default(120),
   syncIntervalSeconds: integer("sync_interval_seconds").notNull().default(300),
   monitoringEnabled: boolean("monitoring_enabled").notNull().default(true),
+  deviceGroup: text("device_group").notNull().default("Unassigned"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -74,6 +75,7 @@ export const publicDeviceColumns = {
   idleThresholdSeconds: devicesTable.idleThresholdSeconds,
   syncIntervalSeconds: devicesTable.syncIntervalSeconds,
   monitoringEnabled: devicesTable.monitoringEnabled,
+  deviceGroup: devicesTable.deviceGroup,
   createdAt: devicesTable.createdAt,
   updatedAt: devicesTable.updatedAt,
 };

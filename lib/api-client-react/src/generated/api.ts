@@ -18,14 +18,21 @@ import type {
 
 import type {
   ActivityLogRecord,
+  AttendanceReport,
+  AttendanceSettingsItem,
+  AttendanceSettingsUpdate,
   AuthUser,
   CategoryItem,
   CreateTokenRequest,
   DeviceCommandItem,
+  DeviceGroupInput,
   DeviceItem,
   EnrollmentTokenItem,
+  FlagScreenshot200,
   GetActivityLogsParams,
+  GetAttendanceReportParams,
   GetTimelineParams,
+  GroupRenameInput,
   HealthCheck200,
   HeartbeatRequest,
   HeartbeatResponse,
@@ -34,6 +41,8 @@ import type {
   ListScreenshotsParams,
   LoginRequest,
   Logout200,
+  RenameDeviceGroup200,
+  ScreenshotFlagInput,
   ScreenshotListItem,
   SummaryResponse,
   SyncActivity200,
@@ -700,6 +709,179 @@ export const useIssueDeviceCommand = <
 };
 
 /**
+ * @summary Assign a device to a group
+ */
+export const getSetDeviceGroupUrl = (id: string) => {
+  return `/api/devices/${id}/group`;
+};
+
+export const setDeviceGroup = async (
+  id: string,
+  deviceGroupInput: DeviceGroupInput,
+  options?: RequestInit,
+): Promise<DeviceItem> => {
+  return customFetch<DeviceItem>(getSetDeviceGroupUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(deviceGroupInput),
+  });
+};
+
+export const getSetDeviceGroupMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setDeviceGroup>>,
+    TError,
+    { id: string; data: BodyType<DeviceGroupInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof setDeviceGroup>>,
+  TError,
+  { id: string; data: BodyType<DeviceGroupInput> },
+  TContext
+> => {
+  const mutationKey = ["setDeviceGroup"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof setDeviceGroup>>,
+    { id: string; data: BodyType<DeviceGroupInput> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return setDeviceGroup(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SetDeviceGroupMutationResult = NonNullable<
+  Awaited<ReturnType<typeof setDeviceGroup>>
+>;
+export type SetDeviceGroupMutationBody = BodyType<DeviceGroupInput>;
+export type SetDeviceGroupMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Assign a device to a group
+ */
+export const useSetDeviceGroup = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setDeviceGroup>>,
+    TError,
+    { id: string; data: BodyType<DeviceGroupInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof setDeviceGroup>>,
+  TError,
+  { id: string; data: BodyType<DeviceGroupInput> },
+  TContext
+> => {
+  return useMutation(getSetDeviceGroupMutationOptions(options));
+};
+
+/**
+ * @summary Rename a device group across all devices
+ */
+export const getRenameDeviceGroupUrl = () => {
+  return `/api/devices/groups/rename`;
+};
+
+export const renameDeviceGroup = async (
+  groupRenameInput: GroupRenameInput,
+  options?: RequestInit,
+): Promise<RenameDeviceGroup200> => {
+  return customFetch<RenameDeviceGroup200>(getRenameDeviceGroupUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(groupRenameInput),
+  });
+};
+
+export const getRenameDeviceGroupMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof renameDeviceGroup>>,
+    TError,
+    { data: BodyType<GroupRenameInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof renameDeviceGroup>>,
+  TError,
+  { data: BodyType<GroupRenameInput> },
+  TContext
+> => {
+  const mutationKey = ["renameDeviceGroup"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof renameDeviceGroup>>,
+    { data: BodyType<GroupRenameInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return renameDeviceGroup(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RenameDeviceGroupMutationResult = NonNullable<
+  Awaited<ReturnType<typeof renameDeviceGroup>>
+>;
+export type RenameDeviceGroupMutationBody = BodyType<GroupRenameInput>;
+export type RenameDeviceGroupMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Rename a device group across all devices
+ */
+export const useRenameDeviceGroup = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof renameDeviceGroup>>,
+    TError,
+    { data: BodyType<GroupRenameInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof renameDeviceGroup>>,
+  TError,
+  { data: BodyType<GroupRenameInput> },
+  TContext
+> => {
+  return useMutation(getRenameDeviceGroupMutationOptions(options));
+};
+
+/**
  * @summary Get activity logs
  */
 export const getGetActivityLogsUrl = (params?: GetActivityLogsParams) => {
@@ -982,6 +1164,93 @@ export function useListScreenshots<
 }
 
 /**
+ * @summary Flag or unflag a screenshot
+ */
+export const getFlagScreenshotUrl = (id: string) => {
+  return `/api/screenshots/${id}/flag`;
+};
+
+export const flagScreenshot = async (
+  id: string,
+  screenshotFlagInput: ScreenshotFlagInput,
+  options?: RequestInit,
+): Promise<FlagScreenshot200> => {
+  return customFetch<FlagScreenshot200>(getFlagScreenshotUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(screenshotFlagInput),
+  });
+};
+
+export const getFlagScreenshotMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof flagScreenshot>>,
+    TError,
+    { id: string; data: BodyType<ScreenshotFlagInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof flagScreenshot>>,
+  TError,
+  { id: string; data: BodyType<ScreenshotFlagInput> },
+  TContext
+> => {
+  const mutationKey = ["flagScreenshot"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof flagScreenshot>>,
+    { id: string; data: BodyType<ScreenshotFlagInput> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return flagScreenshot(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type FlagScreenshotMutationResult = NonNullable<
+  Awaited<ReturnType<typeof flagScreenshot>>
+>;
+export type FlagScreenshotMutationBody = BodyType<ScreenshotFlagInput>;
+export type FlagScreenshotMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Flag or unflag a screenshot
+ */
+export const useFlagScreenshot = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof flagScreenshot>>,
+    TError,
+    { id: string; data: BodyType<ScreenshotFlagInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof flagScreenshot>>,
+  TError,
+  { id: string; data: BodyType<ScreenshotFlagInput> },
+  TContext
+> => {
+  return useMutation(getFlagScreenshotMutationOptions(options));
+};
+
+/**
  * @summary Dashboard overview KPIs
  */
 export const getGetSummaryUrl = () => {
@@ -1123,6 +1392,268 @@ export function useGetLeaderboard<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetLeaderboardQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Get global attendance rules
+ */
+export const getGetAttendanceSettingsUrl = () => {
+  return `/api/attendance/settings`;
+};
+
+export const getAttendanceSettings = async (
+  options?: RequestInit,
+): Promise<AttendanceSettingsItem> => {
+  return customFetch<AttendanceSettingsItem>(getGetAttendanceSettingsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetAttendanceSettingsQueryKey = () => {
+  return [`/api/attendance/settings`] as const;
+};
+
+export const getGetAttendanceSettingsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAttendanceSettings>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getAttendanceSettings>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetAttendanceSettingsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getAttendanceSettings>>
+  > = ({ signal }) => getAttendanceSettings({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAttendanceSettings>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetAttendanceSettingsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAttendanceSettings>>
+>;
+export type GetAttendanceSettingsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get global attendance rules
+ */
+
+export function useGetAttendanceSettings<
+  TData = Awaited<ReturnType<typeof getAttendanceSettings>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getAttendanceSettings>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetAttendanceSettingsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Update global attendance rules
+ */
+export const getUpdateAttendanceSettingsUrl = () => {
+  return `/api/attendance/settings`;
+};
+
+export const updateAttendanceSettings = async (
+  attendanceSettingsUpdate: AttendanceSettingsUpdate,
+  options?: RequestInit,
+): Promise<AttendanceSettingsItem> => {
+  return customFetch<AttendanceSettingsItem>(getUpdateAttendanceSettingsUrl(), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(attendanceSettingsUpdate),
+  });
+};
+
+export const getUpdateAttendanceSettingsMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateAttendanceSettings>>,
+    TError,
+    { data: BodyType<AttendanceSettingsUpdate> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateAttendanceSettings>>,
+  TError,
+  { data: BodyType<AttendanceSettingsUpdate> },
+  TContext
+> => {
+  const mutationKey = ["updateAttendanceSettings"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateAttendanceSettings>>,
+    { data: BodyType<AttendanceSettingsUpdate> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return updateAttendanceSettings(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateAttendanceSettingsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateAttendanceSettings>>
+>;
+export type UpdateAttendanceSettingsMutationBody =
+  BodyType<AttendanceSettingsUpdate>;
+export type UpdateAttendanceSettingsMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Update global attendance rules
+ */
+export const useUpdateAttendanceSettings = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateAttendanceSettings>>,
+    TError,
+    { data: BodyType<AttendanceSettingsUpdate> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateAttendanceSettings>>,
+  TError,
+  { data: BodyType<AttendanceSettingsUpdate> },
+  TContext
+> => {
+  return useMutation(getUpdateAttendanceSettingsMutationOptions(options));
+};
+
+/**
+ * @summary Per-device daily attendance report
+ */
+export const getGetAttendanceReportUrl = (
+  params?: GetAttendanceReportParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/attendance?${stringifiedParams}`
+    : `/api/attendance`;
+};
+
+export const getAttendanceReport = async (
+  params?: GetAttendanceReportParams,
+  options?: RequestInit,
+): Promise<AttendanceReport> => {
+  return customFetch<AttendanceReport>(getGetAttendanceReportUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetAttendanceReportQueryKey = (
+  params?: GetAttendanceReportParams,
+) => {
+  return [`/api/attendance`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetAttendanceReportQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAttendanceReport>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetAttendanceReportParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getAttendanceReport>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetAttendanceReportQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getAttendanceReport>>
+  > = ({ signal }) =>
+    getAttendanceReport(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAttendanceReport>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetAttendanceReportQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAttendanceReport>>
+>;
+export type GetAttendanceReportQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Per-device daily attendance report
+ */
+
+export function useGetAttendanceReport<
+  TData = Awaited<ReturnType<typeof getAttendanceReport>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetAttendanceReportParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getAttendanceReport>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetAttendanceReportQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

@@ -6,8 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type ListScreenshotsParams = {
-  deviceId?: string;
-  flagged?: boolean;
-  limit?: number;
+export type GetAttendanceReportParams = {
+  /**
+   * Day in YYYY-MM-DD format; defaults to today
+   */
+  date?: string;
 };

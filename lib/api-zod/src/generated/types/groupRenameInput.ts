@@ -6,8 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type ListScreenshotsParams = {
-  deviceId?: string;
-  flagged?: boolean;
-  limit?: number;
-};
+export interface GroupRenameInput {
+  /** @minLength 1 */
+  from: string;
+  /** @minLength 1 */
+  to: string;
+}

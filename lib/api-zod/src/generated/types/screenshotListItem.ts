@@ -12,6 +12,7 @@ export interface ScreenshotListItem {
   /** @nullable */
   userId?: string | null;
   fileSizeBytes: number;
+  flagged: boolean;
   capturedAt: Date;
   imageUrl: string;
 }
