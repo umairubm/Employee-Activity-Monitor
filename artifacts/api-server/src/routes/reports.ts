@@ -22,12 +22,6 @@ import {
 
 const router: IRouter = Router();
 
-function startOfToday(): Date {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
 function todayString(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
@@ -52,11 +46,24 @@ function parseDateParam(raw: unknown): string | null {
   return roundTrip === raw ? raw : null;
 }
 
-// GET /api/reports/summary - dashboard overview KPIs
+// GET /api/reports/summary?from=YYYY-MM-DD&to=YYYY-MM-DD - dashboard overview KPIs
 router.get("/summary", async (req, res) => {
   try {
     const { group } = req.query as Record<string, string | undefined>;
-    const todayStart = startOfToday();
+    const from = parseDateParam(req.query.from);
+    const to = parseDateParam(req.query.to);
+    if (from === null || to === null) {
+      res.status(400).json({ error: "Invalid from/to; expected YYYY-MM-DD" });
+      return;
+    }
+    if (from > to) {
+      res.status(400).json({ error: "`from` must be on or before `to`" });
+      return;
+    }
+    const rangeStart = new Date(`${from}T00:00:00`);
+    // Exclusive upper bound: start of the day after `to`.
+    const rangeEnd = new Date(`${to}T00:00:00`);
+    rangeEnd.setDate(rangeEnd.getDate() + 1);
     const onlineSince = new Date(Date.now() - 5 * 60 * 1000);
 
     const deviceIdsInGroup = group
@@ -100,10 +107,14 @@ router.get("/summary", async (req, res) => {
           .where(
             screenshotGroupFilter
               ? and(
-                  gte(screenshotsTable.capturedAt, todayStart),
+                  gte(screenshotsTable.capturedAt, rangeStart),
+                  lt(screenshotsTable.capturedAt, rangeEnd),
                   screenshotGroupFilter,
                 )
-              : gte(screenshotsTable.capturedAt, todayStart),
+              : and(
+                  gte(screenshotsTable.capturedAt, rangeStart),
+                  lt(screenshotsTable.capturedAt, rangeEnd),
+                ),
           ),
         db
           .select({ value: count() })
@@ -130,8 +141,15 @@ router.get("/summary", async (req, res) => {
       )
       .where(
         activityGroupFilter
-          ? and(gte(activityLogsTable.startedAt, todayStart), activityGroupFilter)
-          : gte(activityLogsTable.startedAt, todayStart),
+          ? and(
+              gte(activityLogsTable.startedAt, rangeStart),
+              lt(activityLogsTable.startedAt, rangeEnd),
+              activityGroupFilter,
+            )
+          : and(
+              gte(activityLogsTable.startedAt, rangeStart),
+              lt(activityLogsTable.startedAt, rangeEnd),
+            ),
       )
       .groupBy(sql`coalesce(${appCategoriesTable.classification}, 'undefined')`);
 
@@ -166,11 +184,24 @@ router.get("/summary", async (req, res) => {
   }
 });
 
-// GET /api/reports/leaderboard - per-device productivity today
+// GET /api/reports/leaderboard?from=YYYY-MM-DD&to=YYYY-MM-DD - per-device productivity
 router.get("/leaderboard", async (req, res) => {
   try {
     const { group } = req.query as Record<string, string | undefined>;
-    const todayStart = startOfToday();
+    const from = parseDateParam(req.query.from);
+    const to = parseDateParam(req.query.to);
+    if (from === null || to === null) {
+      res.status(400).json({ error: "Invalid from/to; expected YYYY-MM-DD" });
+      return;
+    }
+    if (from > to) {
+      res.status(400).json({ error: "`from` must be on or before `to`" });
+      return;
+    }
+    const rangeStart = new Date(`${from}T00:00:00`);
+    // Exclusive upper bound: start of the day after `to`.
+    const rangeEnd = new Date(`${to}T00:00:00`);
+    rangeEnd.setDate(rangeEnd.getDate() + 1);
 
     const rows = await db
       .select({
@@ -191,10 +222,14 @@ router.get("/leaderboard", async (req, res) => {
       .where(
         group
           ? and(
-              gte(activityLogsTable.startedAt, todayStart),
+              gte(activityLogsTable.startedAt, rangeStart),
+              lt(activityLogsTable.startedAt, rangeEnd),
               eq(devicesTable.deviceGroup, group),
             )
-          : gte(activityLogsTable.startedAt, todayStart),
+          : and(
+              gte(activityLogsTable.startedAt, rangeStart),
+              lt(activityLogsTable.startedAt, rangeEnd),
+            ),
       )
       .groupBy(activityLogsTable.deviceId, devicesTable.systemName);
 

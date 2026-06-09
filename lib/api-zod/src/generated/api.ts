@@ -291,6 +291,8 @@ export const GetSummaryQueryParams = zod.object({
     .string()
     .optional()
     .describe("Restrict aggregation to devices in this group"),
+  from: zod.coerce.string().optional(),
+  to: zod.coerce.string().optional(),
 });
 
 export const GetSummaryResponse = zod.object({
@@ -311,13 +313,15 @@ export const GetSummaryResponse = zod.object({
 });
 
 /**
- * @summary Per-device productivity today
+ * @summary Per-device productivity over a date range
  */
 export const GetLeaderboardQueryParams = zod.object({
   group: zod.coerce
     .string()
     .optional()
     .describe("Restrict aggregation to devices in this group"),
+  from: zod.coerce.string().optional(),
+  to: zod.coerce.string().optional(),
 });
 
 export const GetLeaderboardResponseItem = zod.object({

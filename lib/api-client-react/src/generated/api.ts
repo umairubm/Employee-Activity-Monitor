@@ -1351,7 +1351,7 @@ export function useGetSummary<
 }
 
 /**
- * @summary Per-device productivity today
+ * @summary Per-device productivity over a date range
  */
 export const getGetLeaderboardUrl = (params?: GetLeaderboardParams) => {
   const normalizedParams = new URLSearchParams();
@@ -1418,7 +1418,7 @@ export type GetLeaderboardQueryResult = NonNullable<
 export type GetLeaderboardQueryError = ErrorType<unknown>;
 
 /**
- * @summary Per-device productivity today
+ * @summary Per-device productivity over a date range
  */
 
 export function useGetLeaderboard<

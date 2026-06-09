@@ -337,6 +337,18 @@ paths:
           description: Restrict aggregation to devices in this group
           schema:
             type: string
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            description: Range start day in YYYY-MM-DD format (inclusive); defaults to today
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            description: Range end day in YYYY-MM-DD format (inclusive); defaults to today
       responses:
         "200":
           description: Summary
@@ -348,7 +360,7 @@ paths:
     get:
       operationId: getLeaderboard
       tags: [reports]
-      summary: Per-device productivity today
+      summary: Per-device productivity over a date range
       parameters:
         - name: group
           in: query
@@ -356,6 +368,18 @@ paths:
           description: Restrict aggregation to devices in this group
           schema:
             type: string
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            description: Range start day in YYYY-MM-DD format (inclusive); defaults to today
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            description: Range end day in YYYY-MM-DD format (inclusive); defaults to today
       responses:
         "200":
           description: Leaderboard

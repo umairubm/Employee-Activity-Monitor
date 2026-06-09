@@ -146,3 +146,119 @@ describe("GET /api/reports/group-comparison", () => {
     expect(res.status).toBe(401);
   });
 });
+
+describe("GET /api/reports/leaderboard", () => {
+  it("defaults to today only (past activity excluded)", async () => {
+    const group = `lb-today-${randomUUID()}`;
+    const productive = await newCategory("productive");
+    const device = await newDevice(group);
+    await seedActivity(device.id, TODAY, 3600, 0, productive.id);
+    await seedActivity(device.id, PAST, 7200, 0, productive.id);
+
+    const res = await request(featureApp)
+      .get("/reports/leaderboard")
+      .query({ group });
+    expect(res.status).toBe(200);
+
+    const row = res.body.find((r: any) => r.deviceId === device.id);
+    expect(row, "device missing from leaderboard").toBeDefined();
+    expect(row.productiveSeconds).toBe(3600);
+    expect(row.totalSeconds).toBe(3600);
+    expect(row.score).toBe(100);
+  });
+
+  it("aggregates over an explicit from/to range (inclusive)", async () => {
+    const group = `lb-range-${randomUUID()}`;
+    const productive = await newCategory("productive");
+    const unproductive = await newCategory("unproductive");
+    const device = await newDevice(group);
+    // Two days inside the range: productive 3600 (day1) + unproductive 1200 (day2).
+    await seedActivity(device.id, "2024-03-10", 3600, 0, productive.id);
+    await seedActivity(device.id, "2024-03-11", 1200, 0, unproductive.id);
+    // Outside the range — must be excluded.
+    await seedActivity(device.id, "2024-03-09", 9999, 0, productive.id);
+    await seedActivity(device.id, "2024-03-12", 9999, 0, productive.id);
+
+    const res = await request(featureApp)
+      .get("/reports/leaderboard")
+      .query({ group, from: "2024-03-10", to: "2024-03-11" });
+    expect(res.status).toBe(200);
+
+    const row = res.body.find((r: any) => r.deviceId === device.id);
+    expect(row, "device missing from leaderboard").toBeDefined();
+    expect(row.productiveSeconds).toBe(3600);
+    expect(row.totalSeconds).toBe(4800);
+    expect(row.score).toBe(75);
+  });
+
+  it("rejects an inverted range with 400", async () => {
+    const res = await request(featureApp)
+      .get("/reports/leaderboard")
+      .query({ from: "2024-03-11", to: "2024-03-10" });
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects a malformed date with 400", async () => {
+    const res = await request(featureApp)
+      .get("/reports/leaderboard")
+      .query({ from: "not-a-date" });
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects unauthenticated requests with 401 (admin gating)", async () => {
+    const res = await request(app).get("/api/reports/leaderboard");
+    expect(res.status).toBe(401);
+  });
+});
+
+describe("GET /api/reports/summary", () => {
+  it("defaults activity breakdown to today (past excluded)", async () => {
+    const group = `sum-today-${randomUUID()}`;
+    const productive = await newCategory("productive");
+    const neutral = await newCategory("neutral");
+    const device = await newDevice(group);
+    await seedActivity(device.id, TODAY, 3600, 0, productive.id);
+    await seedActivity(device.id, TODAY, 600, 0, neutral.id);
+    await seedActivity(device.id, PAST, 7200, 0, productive.id);
+
+    const res = await request(featureApp)
+      .get("/reports/summary")
+      .query({ group });
+    expect(res.status).toBe(200);
+    expect(res.body.activityToday.productiveSeconds).toBe(3600);
+    expect(res.body.activityToday.neutralSeconds).toBe(600);
+    expect(res.body.activityToday.totalSeconds).toBe(4200);
+  });
+
+  it("aggregates the activity breakdown over an explicit range", async () => {
+    const group = `sum-range-${randomUUID()}`;
+    const productive = await newCategory("productive");
+    const unproductive = await newCategory("unproductive");
+    const device = await newDevice(group);
+    await seedActivity(device.id, "2024-05-01", 3600, 0, productive.id);
+    await seedActivity(device.id, "2024-05-02", 1800, 0, unproductive.id);
+    // Outside the range — excluded.
+    await seedActivity(device.id, "2024-04-30", 9999, 0, productive.id);
+    await seedActivity(device.id, "2024-05-03", 9999, 0, productive.id);
+
+    const res = await request(featureApp)
+      .get("/reports/summary")
+      .query({ group, from: "2024-05-01", to: "2024-05-02" });
+    expect(res.status).toBe(200);
+    expect(res.body.activityToday.productiveSeconds).toBe(3600);
+    expect(res.body.activityToday.unproductiveSeconds).toBe(1800);
+    expect(res.body.activityToday.totalSeconds).toBe(5400);
+  });
+
+  it("rejects an inverted range with 400", async () => {
+    const res = await request(featureApp)
+      .get("/reports/summary")
+      .query({ from: "2024-05-02", to: "2024-05-01" });
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects unauthenticated requests with 401 (admin gating)", async () => {
+    const res = await request(app).get("/api/reports/summary");
+    expect(res.status).toBe(401);
+  });
+});

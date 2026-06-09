@@ -11,4 +11,12 @@ export type GetLeaderboardParams = {
    * Restrict aggregation to devices in this group
    */
   group?: string;
+  /**
+   * Range start day in YYYY-MM-DD format (inclusive); defaults to today
+   */
+  from?: string;
+  /**
+   * Range end day in YYYY-MM-DD format (inclusive); defaults to today
+   */
+  to?: string;
 };

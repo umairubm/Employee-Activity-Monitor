@@ -36,8 +36,9 @@ function daysAgoStr(n: number): string {
 
 export default function Overview() {
   const [groupFilter, setGroupFilter] = useGroupFilter();
-  const [comparisonFrom, setComparisonFrom] = useState(todayStr());
-  const [comparisonTo, setComparisonTo] = useState(todayStr());
+  const [rangeFrom, setRangeFrom] = useState(todayStr());
+  const [rangeTo, setRangeTo] = useState(todayStr());
+  const isToday = rangeFrom === todayStr() && rangeTo === todayStr();
   const { data: devices } = useListDevices();
   const groups = useMemo(() => {
     const set = new Set<string>();
@@ -45,16 +46,19 @@ export default function Overview() {
     return Array.from(set).sort();
   }, [devices]);
 
-  const params = groupFilter !== ALL ? { group: groupFilter } : {};
+  const rangeParams = { from: rangeFrom, to: rangeTo };
+  const params = {
+    ...(groupFilter !== ALL ? { group: groupFilter } : {}),
+    ...rangeParams,
+  };
   const { data: summary, isLoading: isSummaryLoading } = useGetSummary(params, {
     query: { queryKey: getGetSummaryQueryKey(params) },
   });
   const { data: leaderboard, isLoading: isLeaderboardLoading } = useGetLeaderboard(params, {
     query: { queryKey: getGetLeaderboardQueryKey(params) },
   });
-  const comparisonParams = { from: comparisonFrom, to: comparisonTo };
-  const { data: groupComparison } = useGetGroupComparison(comparisonParams, {
-    query: { queryKey: getGetGroupComparisonQueryKey(comparisonParams) },
+  const { data: groupComparison } = useGetGroupComparison(rangeParams, {
+    query: { queryKey: getGetGroupComparisonQueryKey(rangeParams) },
   });
 
   if (isSummaryLoading || isLeaderboardLoading) {
@@ -88,24 +92,79 @@ export default function Overview() {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Overview</h1>
-          <p className="text-muted-foreground mt-1">Today's workforce activity and IT status.</p>
+          <p className="text-muted-foreground mt-1">
+            {isToday
+              ? "Today's workforce activity and IT status."
+              : "Workforce activity and IT status over the selected range."}
+          </p>
         </div>
-        <Select value={groupFilter} onValueChange={setGroupFilter}>
-          <SelectTrigger className="w-full sm:w-44">
-            <SelectValue placeholder="All groups" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>All groups</SelectItem>
-            {groups.map((g) => (
-              <SelectItem key={g} value={g}>
-                {g}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex flex-wrap items-end gap-2">
+          <Select value={groupFilter} onValueChange={setGroupFilter}>
+            <SelectTrigger className="w-full sm:w-44">
+              <SelectValue placeholder="All groups" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>All groups</SelectItem>
+              {groups.map((g) => (
+                <SelectItem key={g} value={g}>
+                  {g}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <div className="flex gap-1">
+            {[
+              { label: "Today", from: todayStr(), to: todayStr() },
+              { label: "7d", from: daysAgoStr(6), to: todayStr() },
+              { label: "30d", from: daysAgoStr(29), to: todayStr() },
+            ].map((preset) => {
+              const active = rangeFrom === preset.from && rangeTo === preset.to;
+              return (
+                <button
+                  key={preset.label}
+                  type="button"
+                  onClick={() => {
+                    setRangeFrom(preset.from);
+                    setRangeTo(preset.to);
+                  }}
+                  className={`rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
+                    active
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "bg-background hover:bg-muted"
+                  }`}
+                >
+                  {preset.label}
+                </button>
+              );
+            })}
+          </div>
+          <div className="flex flex-col">
+            <Label htmlFor="range-from" className="text-xs text-muted-foreground mb-1 block">From</Label>
+            <Input
+              id="range-from"
+              type="date"
+              className="h-8 w-[9.5rem]"
+              value={rangeFrom}
+              max={rangeTo}
+              onChange={(e) => setRangeFrom(e.target.value || todayStr())}
+            />
+          </div>
+          <div className="flex flex-col">
+            <Label htmlFor="range-to" className="text-xs text-muted-foreground mb-1 block">To</Label>
+            <Input
+              id="range-to"
+              type="date"
+              className="h-8 w-[9.5rem]"
+              value={rangeTo}
+              min={rangeFrom}
+              max={todayStr()}
+              onChange={(e) => setRangeTo(e.target.value || todayStr())}
+            />
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -165,66 +224,12 @@ export default function Overview() {
       {groupComparison && groupComparison.length > 0 && (
         <Card>
           <CardHeader>
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <CardTitle className="flex items-center gap-2">
-                  <LayoutGrid className="h-5 w-5" />
-                  Team Comparison
-                </CardTitle>
-                <CardDescription>Productivity across all device groups over the selected range, side by side.</CardDescription>
-              </div>
-              <div className="flex flex-wrap items-end gap-2">
-                <div className="flex gap-1">
-                  {[
-                    { label: "Today", from: todayStr(), to: todayStr() },
-                    { label: "7d", from: daysAgoStr(6), to: todayStr() },
-                    { label: "30d", from: daysAgoStr(29), to: todayStr() },
-                  ].map((preset) => {
-                    const active =
-                      comparisonFrom === preset.from && comparisonTo === preset.to;
-                    return (
-                      <button
-                        key={preset.label}
-                        type="button"
-                        onClick={() => {
-                          setComparisonFrom(preset.from);
-                          setComparisonTo(preset.to);
-                        }}
-                        className={`rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
-                          active
-                            ? "border-primary bg-primary text-primary-foreground"
-                            : "bg-background hover:bg-muted"
-                        }`}
-                      >
-                        {preset.label}
-                      </button>
-                    );
-                  })}
-                </div>
-                <div className="flex flex-col">
-                  <Label htmlFor="comparison-from" className="text-xs text-muted-foreground mb-1 block">From</Label>
-                  <Input
-                    id="comparison-from"
-                    type="date"
-                    className="h-8 w-[9.5rem]"
-                    value={comparisonFrom}
-                    max={comparisonTo}
-                    onChange={(e) => setComparisonFrom(e.target.value || todayStr())}
-                  />
-                </div>
-                <div className="flex flex-col">
-                  <Label htmlFor="comparison-to" className="text-xs text-muted-foreground mb-1 block">To</Label>
-                  <Input
-                    id="comparison-to"
-                    type="date"
-                    className="h-8 w-[9.5rem]"
-                    value={comparisonTo}
-                    min={comparisonFrom}
-                    max={todayStr()}
-                    onChange={(e) => setComparisonTo(e.target.value || todayStr())}
-                  />
-                </div>
-              </div>
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <LayoutGrid className="h-5 w-5" />
+                Team Comparison
+              </CardTitle>
+              <CardDescription>Productivity across all device groups over the selected range, side by side.</CardDescription>
             </div>
           </CardHeader>
           <CardContent>
@@ -261,7 +266,7 @@ export default function Overview() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Activity className="h-5 w-5" />
-              Today's Activity Breakdown
+              {isToday ? "Today's Activity Breakdown" : "Activity Breakdown"}
             </CardTitle>
             <CardDescription>Aggregate foreground app usage classified by productivity.</CardDescription>
           </CardHeader>
@@ -313,7 +318,7 @@ export default function Overview() {
               <Trophy className="h-5 w-5 text-amber-500" />
               Leaderboard
             </CardTitle>
-            <CardDescription>Most productive devices today.</CardDescription>
+            <CardDescription>{isToday ? "Most productive devices today." : "Most productive devices over the selected range."}</CardDescription>
           </CardHeader>
           <CardContent>
             {leaderboard && leaderboard.length > 0 ? (
@@ -345,7 +350,7 @@ export default function Overview() {
             ) : (
               <div className="flex flex-col items-center justify-center py-8 text-center">
                 <Trophy className="h-10 w-10 text-muted mb-3" />
-                <p className="text-sm text-muted-foreground">No data available for today yet.</p>
+                <p className="text-sm text-muted-foreground">{isToday ? "No data available for today yet." : "No data available for the selected range."}</p>
               </div>
             )}
           </CardContent>
