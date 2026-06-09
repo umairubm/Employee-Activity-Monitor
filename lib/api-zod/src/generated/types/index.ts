@@ -34,6 +34,7 @@ export * from "./flagScreenshot200";
 export * from "./getActivityLogsParams";
 export * from "./getAttendanceRangeReportParams";
 export * from "./getAttendanceReportParams";
+export * from "./getGroupComparisonParams";
 export * from "./getLeaderboardParams";
 export * from "./getSummaryParams";
 export * from "./getTimelineParams";

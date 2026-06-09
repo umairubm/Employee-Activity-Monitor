@@ -369,7 +369,20 @@ paths:
     get:
       operationId: getGroupComparison
       tags: [reports]
-      summary: Per-group productivity comparison today
+      summary: Per-group productivity comparison over a date range
+      parameters:
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            description: Range start day in YYYY-MM-DD format (inclusive); defaults to today
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            description: Range end day in YYYY-MM-DD format (inclusive); defaults to today
       responses:
         "200":
           description: Group comparison

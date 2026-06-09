@@ -464,6 +464,17 @@ export type GetLeaderboardParams = {
   group?: string;
 };
 
+export type GetGroupComparisonParams = {
+  /**
+   * Range start day in YYYY-MM-DD format (inclusive); defaults to today
+   */
+  from?: string;
+  /**
+   * Range end day in YYYY-MM-DD format (inclusive); defaults to today
+   */
+  to?: string;
+};
+
 export type GetAttendanceReportParams = {
   /**
    * Day in YYYY-MM-DD format; defaults to today

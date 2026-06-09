@@ -8,7 +8,17 @@ import {
   activityLogsTable,
   appCategoriesTable,
 } from "@workspace/db";
-import { and, count, eq, gt, gte, inArray, sql } from "drizzle-orm";
+import {
+  and,
+  count,
+  countDistinct,
+  eq,
+  gt,
+  gte,
+  inArray,
+  lt,
+  sql,
+} from "drizzle-orm";
 
 const router: IRouter = Router();
 
@@ -16,6 +26,30 @@ function startOfToday(): Date {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
   return d;
+}
+
+function todayString(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+    d.getDate(),
+  ).padStart(2, "0")}`;
+}
+
+/**
+ * Returns a valid YYYY-MM-DD string, or null if the input is malformed.
+ * Defaults to today when the input is omitted or empty.
+ */
+function parseDateParam(raw: unknown): string | null {
+  if (raw === undefined || raw === "") return todayString();
+  if (typeof raw !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null;
+  const d = new Date(`${raw}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return null;
+  // Reject impossible calendar dates (e.g. 2026-02-30 rolls over to March).
+  const roundTrip = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(
+    2,
+    "0",
+  )}-${String(d.getDate()).padStart(2, "0")}`;
+  return roundTrip === raw ? raw : null;
 }
 
 // GET /api/reports/summary - dashboard overview KPIs
@@ -187,22 +221,36 @@ router.get("/leaderboard", async (req, res) => {
   }
 });
 
-// GET /api/reports/group-comparison - per-group productivity today
-router.get("/group-comparison", async (_req, res) => {
+// GET /api/reports/group-comparison?from=YYYY-MM-DD&to=YYYY-MM-DD
+// Per-group productivity aggregated over a date range (defaults to today).
+router.get("/group-comparison", async (req, res) => {
   try {
-    const todayStart = startOfToday();
+    const from = parseDateParam(req.query.from);
+    const to = parseDateParam(req.query.to);
+    if (from === null || to === null) {
+      res.status(400).json({ error: "Invalid from/to; expected YYYY-MM-DD" });
+      return;
+    }
+    if (from > to) {
+      res.status(400).json({ error: "`from` must be on or before `to`" });
+      return;
+    }
+    const rangeStart = new Date(`${from}T00:00:00`);
+    // Exclusive upper bound: start of the day after `to`.
+    const rangeEnd = new Date(`${to}T00:00:00`);
+    rangeEnd.setDate(rangeEnd.getDate() + 1);
 
-    const [deviceCountRows, activityRows] = await Promise.all([
+    const [groupRows, activityRows] = await Promise.all([
+      // All enrolled groups, so every group is listed even with no activity.
       db
-        .select({
-          group: devicesTable.deviceGroup,
-          deviceCount: count(),
-        })
+        .select({ group: devicesTable.deviceGroup })
         .from(devicesTable)
         .groupBy(devicesTable.deviceGroup),
+      // Per-group activity totals + distinct devices active within the range.
       db
         .select({
           group: devicesTable.deviceGroup,
+          deviceCount: countDistinct(activityLogsTable.deviceId),
           productiveSeconds: sql<number>`coalesce(sum(case when ${appCategoriesTable.classification} = 'productive' then ${activityLogsTable.durationSeconds} else 0 end), 0)`,
           totalSeconds: sql<number>`coalesce(sum(${activityLogsTable.durationSeconds}), 0)`,
         })
@@ -212,31 +260,38 @@ router.get("/group-comparison", async (_req, res) => {
           appCategoriesTable,
           eq(activityLogsTable.categoryId, appCategoriesTable.id),
         )
-        .where(gte(activityLogsTable.startedAt, todayStart))
+        .where(
+          and(
+            gte(activityLogsTable.startedAt, rangeStart),
+            lt(activityLogsTable.startedAt, rangeEnd),
+          ),
+        )
         .groupBy(devicesTable.deviceGroup),
     ]);
 
     const activityByGroup = new Map<
       string,
-      { productiveSeconds: number; totalSeconds: number }
+      { deviceCount: number; productiveSeconds: number; totalSeconds: number }
     >();
     for (const row of activityRows) {
       activityByGroup.set(row.group, {
+        deviceCount: Number(row.deviceCount),
         productiveSeconds: Number(row.productiveSeconds),
         totalSeconds: Number(row.totalSeconds),
       });
     }
 
-    const comparison = deviceCountRows
+    const comparison = groupRows
       .map((r) => {
         const activity = activityByGroup.get(r.group) ?? {
+          deviceCount: 0,
           productiveSeconds: 0,
           totalSeconds: 0,
         };
-        const { productiveSeconds, totalSeconds } = activity;
+        const { deviceCount, productiveSeconds, totalSeconds } = activity;
         return {
           group: r.group,
-          deviceCount: r.deviceCount,
+          deviceCount,
           productiveSeconds,
           totalSeconds,
           score:

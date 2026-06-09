@@ -330,8 +330,13 @@ export const GetLeaderboardResponseItem = zod.object({
 export const GetLeaderboardResponse = zod.array(GetLeaderboardResponseItem);
 
 /**
- * @summary Per-group productivity comparison today
+ * @summary Per-group productivity comparison over a date range
  */
+export const GetGroupComparisonQueryParams = zod.object({
+  from: zod.coerce.string().optional(),
+  to: zod.coerce.string().optional(),
+});
+
 export const GetGroupComparisonResponseItem = zod.object({
   group: zod.string(),
   deviceCount: zod.number(),

@@ -1,13 +1,16 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import {
   useGetSummary,
   getGetSummaryQueryKey,
   useGetLeaderboard,
   getGetLeaderboardQueryKey,
   useGetGroupComparison,
+  getGetGroupComparisonQueryKey,
   useListDevices,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { MonitorSmartphone, Image as ImageIcon, Terminal, Users, Activity, Trophy, LayoutGrid } from "lucide-react";
 import {
   Select,
@@ -20,8 +23,21 @@ import { Progress } from "@/components/ui/progress";
 import { Link } from "wouter";
 import { useGroupFilter, ALL_GROUPS as ALL } from "@/hooks/use-group-filter";
 
+function todayStr(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function daysAgoStr(n: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 export default function Overview() {
   const [groupFilter, setGroupFilter] = useGroupFilter();
+  const [comparisonFrom, setComparisonFrom] = useState(todayStr());
+  const [comparisonTo, setComparisonTo] = useState(todayStr());
   const { data: devices } = useListDevices();
   const groups = useMemo(() => {
     const set = new Set<string>();
@@ -36,7 +52,10 @@ export default function Overview() {
   const { data: leaderboard, isLoading: isLeaderboardLoading } = useGetLeaderboard(params, {
     query: { queryKey: getGetLeaderboardQueryKey(params) },
   });
-  const { data: groupComparison } = useGetGroupComparison();
+  const comparisonParams = { from: comparisonFrom, to: comparisonTo };
+  const { data: groupComparison } = useGetGroupComparison(comparisonParams, {
+    query: { queryKey: getGetGroupComparisonQueryKey(comparisonParams) },
+  });
 
   if (isSummaryLoading || isLeaderboardLoading) {
     return (
@@ -146,11 +165,67 @@ export default function Overview() {
       {groupComparison && groupComparison.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <LayoutGrid className="h-5 w-5" />
-              Team Comparison
-            </CardTitle>
-            <CardDescription>Productivity across all device groups today, side by side.</CardDescription>
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <LayoutGrid className="h-5 w-5" />
+                  Team Comparison
+                </CardTitle>
+                <CardDescription>Productivity across all device groups over the selected range, side by side.</CardDescription>
+              </div>
+              <div className="flex flex-wrap items-end gap-2">
+                <div className="flex gap-1">
+                  {[
+                    { label: "Today", from: todayStr(), to: todayStr() },
+                    { label: "7d", from: daysAgoStr(6), to: todayStr() },
+                    { label: "30d", from: daysAgoStr(29), to: todayStr() },
+                  ].map((preset) => {
+                    const active =
+                      comparisonFrom === preset.from && comparisonTo === preset.to;
+                    return (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        onClick={() => {
+                          setComparisonFrom(preset.from);
+                          setComparisonTo(preset.to);
+                        }}
+                        className={`rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
+                          active
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "bg-background hover:bg-muted"
+                        }`}
+                      >
+                        {preset.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="flex flex-col">
+                  <Label htmlFor="comparison-from" className="text-xs text-muted-foreground mb-1 block">From</Label>
+                  <Input
+                    id="comparison-from"
+                    type="date"
+                    className="h-8 w-[9.5rem]"
+                    value={comparisonFrom}
+                    max={comparisonTo}
+                    onChange={(e) => setComparisonFrom(e.target.value || todayStr())}
+                  />
+                </div>
+                <div className="flex flex-col">
+                  <Label htmlFor="comparison-to" className="text-xs text-muted-foreground mb-1 block">To</Label>
+                  <Input
+                    id="comparison-to"
+                    type="date"
+                    className="h-8 w-[9.5rem]"
+                    value={comparisonTo}
+                    min={comparisonFrom}
+                    max={todayStr()}
+                    onChange={(e) => setComparisonTo(e.target.value || todayStr())}
+                  />
+                </div>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
