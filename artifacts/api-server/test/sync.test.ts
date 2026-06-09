@@ -157,6 +157,98 @@ describe("POST /sync/enroll", () => {
       .send(enrollBody(token.token));
     expect(second.status).toBe(403);
   });
+
+  it("lets only one of two concurrent new enrollments claim a single-use token", async () => {
+    // Two *different* machines race to claim the same maxUses:1 token at the
+    // exact same time. The atomic "claim one use" UPDATE in the enroll
+    // transaction must let exactly one win — the other must be rejected — so the
+    // token can never be over-claimed.
+    const token = await createEnrollmentToken({ maxUses: 1 });
+    createdTokenIds.push(token.id);
+
+    const [a, b] = await Promise.all([
+      request(app).post("/sync/enroll").send(enrollBody(token.token)),
+      request(app).post("/sync/enroll").send(enrollBody(token.token)),
+    ]);
+
+    // Track any device rows that were created so cleanup removes them.
+    for (const res of [a, b]) {
+      if (res.status === 201) trackDevice(res.body.deviceId);
+    }
+
+    // Exactly one 201 and one 403 — never two winners, never two losers.
+    const statuses = [a.status, b.status].sort();
+    expect(statuses).toEqual([201, 403]);
+
+    const winner = a.status === 201 ? a : b;
+    expect(winner.body.deviceId).toBeTruthy();
+    expect(winner.body.deviceSecret).toMatch(/^[0-9a-f]{64}$/);
+
+    const loser = a.status === 201 ? b : a;
+    expect(loser.body).toMatchObject({
+      error: "Enrollment token invalid or exhausted",
+    });
+
+    // The token use is claimed exactly once despite two concurrent attempts.
+    const [tk] = await db
+      .select()
+      .from(enrollmentTokensTable)
+      .where(eq(enrollmentTokensTable.id, token.id));
+    expect(tk.useCount).toBe(1);
+
+    // Only one device row was actually created from this token race.
+    const created = await db
+      .select()
+      .from(devicesTable)
+      .where(eq(devicesTable.id, winner.body.deviceId));
+    expect(created.length).toBe(1);
+  });
+
+  it("lets a known machine re-enroll concurrently without burning extra uses", async () => {
+    // Re-enrollment (same hardwareHash) must be unaffected by the single-use
+    // race protection: it never consumes a token use, so even two simultaneous
+    // re-enrollments of an already-enrolled device both succeed and leave
+    // useCount at its first-enrollment value.
+    const token = await createEnrollmentToken({ maxUses: 1 });
+    createdTokenIds.push(token.id);
+    const hardwareHash = `hw-${randomUUID()}`;
+
+    // First establish the device row (claims the one and only use).
+    const first = await request(app)
+      .post("/sync/enroll")
+      .send({ ...enrollBody(token.token), hardwareHash });
+    expect(first.status).toBe(201);
+    trackDevice(first.body.deviceId);
+
+    const [a, b] = await Promise.all([
+      request(app)
+        .post("/sync/enroll")
+        .send({ ...enrollBody(token.token), hardwareHash }),
+      request(app)
+        .post("/sync/enroll")
+        .send({ ...enrollBody(token.token), hardwareHash }),
+    ]);
+
+    // Both concurrent re-enrollments succeed against the same device row.
+    expect(a.status).toBe(201);
+    expect(b.status).toBe(201);
+    expect(a.body.deviceId).toBe(first.body.deviceId);
+    expect(b.body.deviceId).toBe(first.body.deviceId);
+
+    // No extra token uses were burned by re-enrollment.
+    const [tk] = await db
+      .select()
+      .from(enrollmentTokensTable)
+      .where(eq(enrollmentTokensTable.id, token.id));
+    expect(tk.useCount).toBe(1);
+
+    // Still exactly one device row for this hardwareHash.
+    const rows = await db
+      .select()
+      .from(devicesTable)
+      .where(eq(devicesTable.hardwareHash, hardwareHash));
+    expect(rows.length).toBe(1);
+  });
 });
 
 describe("POST /sync/enroll (re-enrollment of a known machine)", () => {
