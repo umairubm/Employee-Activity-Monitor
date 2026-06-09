@@ -199,6 +199,10 @@ export const RenameDeviceGroupResponse = zod.object({
 export const GetActivityLogsQueryParams = zod.object({
   deviceId: zod.coerce.string().uuid().optional(),
   userId: zod.coerce.string().uuid().optional(),
+  group: zod.coerce
+    .string()
+    .optional()
+    .describe("Restrict to devices in this group"),
   limit: zod.coerce.number().optional(),
 });
 
@@ -245,6 +249,10 @@ export const GetTimelineResponse = zod.array(GetTimelineResponseItem);
 export const ListScreenshotsQueryParams = zod.object({
   deviceId: zod.coerce.string().uuid().optional(),
   flagged: zod.coerce.boolean().optional(),
+  group: zod.coerce
+    .string()
+    .optional()
+    .describe("Restrict to devices in this group"),
   limit: zod.coerce.number().optional(),
 });
 

@@ -1,15 +1,33 @@
-import React, { useState } from "react";
-import { useGetActivityLogs, getGetActivityLogsQueryKey } from "@workspace/api-client-react";
+import React, { useMemo, useState } from "react";
+import { useGetActivityLogs, getGetActivityLogsQueryKey, useListDevices } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { format } from "date-fns";
 import { Activity, Search, Clock, AppWindow } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
+const ALL = "__all__";
+
 export default function ActivityLogs() {
   const [search, setSearch] = useState("");
-  const { data: logs, isLoading } = useGetActivityLogs({ limit: 100 }, { query: { queryKey: getGetActivityLogsQueryKey({ limit: 100 }) } });
+  const [groupFilter, setGroupFilter] = useState<string>(ALL);
+  const { data: devices } = useListDevices();
+  const groups = useMemo(() => {
+    const set = new Set<string>();
+    devices?.forEach((d) => set.add(d.deviceGroup));
+    return Array.from(set).sort();
+  }, [devices]);
+
+  const params = { limit: 100, ...(groupFilter !== ALL ? { group: groupFilter } : {}) };
+  const { data: logs, isLoading } = useGetActivityLogs(params, { query: { queryKey: getGetActivityLogsQueryKey(params) } });
 
   const formatDuration = (seconds: number) => {
     if (seconds < 60) return `${seconds}s`;
@@ -30,15 +48,30 @@ export default function ActivityLogs() {
           <h1 className="text-3xl font-bold tracking-tight">Activity Logs</h1>
           <p className="text-muted-foreground mt-1">Detailed foreground application usage across devices.</p>
         </div>
-        <div className="relative w-full sm:w-80">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input 
-            type="search" 
-            placeholder="Search processes or window titles..." 
-            className="pl-9"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+          <Select value={groupFilter} onValueChange={setGroupFilter}>
+            <SelectTrigger className="w-full sm:w-44">
+              <SelectValue placeholder="All groups" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>All groups</SelectItem>
+              {groups.map((g) => (
+                <SelectItem key={g} value={g}>
+                  {g}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <div className="relative w-full sm:w-80">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              type="search"
+              placeholder="Search processes or window titles..."
+              className="pl-9"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
         </div>
       </div>
 

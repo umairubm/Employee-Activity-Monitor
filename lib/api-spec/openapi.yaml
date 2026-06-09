@@ -218,6 +218,12 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: group
+          in: query
+          required: false
+          description: Restrict to devices in this group
+          schema:
+            type: string
         - name: limit
           in: query
           required: false
@@ -271,6 +277,12 @@ paths:
           required: false
           schema:
             type: boolean
+        - name: group
+          in: query
+          required: false
+          description: Restrict to devices in this group
+          schema:
+            type: string
         - name: limit
           in: query
           required: false

@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { activityLogsTable } from "@workspace/db";
-import { and, desc, eq } from "drizzle-orm";
+import { activityLogsTable, devicesTable } from "@workspace/db";
+import { and, desc, eq, inArray } from "drizzle-orm";
 
 const router: IRouter = Router();
 
@@ -14,12 +14,22 @@ function parseLimit(raw: unknown, fallback: number, max: number): number {
 // GET /api/activity - activity log feed (filter by device/user)
 router.get("/", async (req, res) => {
   try {
-    const { deviceId, userId } = req.query as Record<string, string | undefined>;
+    const { deviceId, userId, group } = req.query as Record<string, string | undefined>;
     const limit = parseLimit(req.query.limit, 50, 200);
 
     const conditions = [];
     if (deviceId) conditions.push(eq(activityLogsTable.deviceId, deviceId));
     if (userId) conditions.push(eq(activityLogsTable.userId, userId));
+    if (group)
+      conditions.push(
+        inArray(
+          activityLogsTable.deviceId,
+          db
+            .select({ id: devicesTable.id })
+            .from(devicesTable)
+            .where(eq(devicesTable.deviceGroup, group)),
+        ),
+      );
 
     const logs = await db.query.activityLogsTable.findMany({
       where: conditions.length ? and(...conditions) : undefined,

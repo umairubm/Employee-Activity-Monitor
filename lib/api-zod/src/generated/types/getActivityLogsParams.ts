@@ -9,5 +9,9 @@
 export type GetActivityLogsParams = {
   deviceId?: string;
   userId?: string;
+  /**
+   * Restrict to devices in this group
+   */
+  group?: string;
   limit?: number;
 };

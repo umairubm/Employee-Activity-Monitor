@@ -9,5 +9,9 @@
 export type ListScreenshotsParams = {
   deviceId?: string;
   flagged?: boolean;
+  /**
+   * Restrict to devices in this group
+   */
+  group?: string;
   limit?: number;
 };

@@ -1,22 +1,43 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   useListScreenshots,
   getListScreenshotsQueryKey,
   useFlagScreenshot,
+  useListDevices,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { format } from "date-fns";
 import { Image as ImageIcon, Info, Flag } from "lucide-react";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 
+const ALL = "__all__";
+
 export default function Screenshots() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [flaggedOnly, setFlaggedOnly] = useState(false);
-  const params = { limit: 50, ...(flaggedOnly ? { flagged: true } : {}) };
+  const [groupFilter, setGroupFilter] = useState<string>(ALL);
+  const { data: devices } = useListDevices();
+  const groups = useMemo(() => {
+    const set = new Set<string>();
+    devices?.forEach((d) => set.add(d.deviceGroup));
+    return Array.from(set).sort();
+  }, [devices]);
+  const params = {
+    limit: 50,
+    ...(flaggedOnly ? { flagged: true } : {}),
+    ...(groupFilter !== ALL ? { group: groupFilter } : {}),
+  };
   const { data: screenshots, isLoading } = useListScreenshots(params, {
     query: { queryKey: getListScreenshotsQueryKey(params) },
   });
@@ -44,14 +65,29 @@ export default function Screenshots() {
           <h1 className="text-3xl font-bold tracking-tight">Screenshots</h1>
           <p className="text-muted-foreground mt-1">Periodic captures taken with explicit user consent.</p>
         </div>
-        <Button
-          variant={flaggedOnly ? "default" : "outline"}
-          className="gap-2"
-          onClick={() => setFlaggedOnly((v) => !v)}
-        >
-          <Flag className="h-4 w-4" />
-          {flaggedOnly ? "Showing flagged" : "Flagged only"}
-        </Button>
+        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+          <Select value={groupFilter} onValueChange={setGroupFilter}>
+            <SelectTrigger className="w-full sm:w-44">
+              <SelectValue placeholder="All groups" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>All groups</SelectItem>
+              {groups.map((g) => (
+                <SelectItem key={g} value={g}>
+                  {g}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            variant={flaggedOnly ? "default" : "outline"}
+            className="gap-2"
+            onClick={() => setFlaggedOnly((v) => !v)}
+          >
+            <Flag className="h-4 w-4" />
+            {flaggedOnly ? "Showing flagged" : "Flagged only"}
+          </Button>
+        </div>
       </div>
 
       <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 flex gap-3 text-sm text-primary">
