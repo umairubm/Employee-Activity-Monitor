@@ -7,13 +7,19 @@ import {
   activityLogsTable,
   screenshotsTable,
   attendanceSettingsTable,
+  usersTable,
+  sessionsTable,
   type Device,
   type Screenshot,
+  type User,
   type UserRole,
 } from "@workspace/db";
 import devicesRouter from "../src/routes/devices";
 import attendanceRouter from "../src/routes/attendance";
 import screenshotsRouter from "../src/routes/screenshots";
+import { hashPassword } from "../src/lib/passwords";
+import { generateSecret, hashSecret } from "../src/lib/secrets";
+import { SESSION_COOKIE } from "../src/lib/session";
 
 /**
  * Build an Express app that mounts the feature routers behind a stubbed auth
@@ -115,4 +121,44 @@ export async function setGlobalSettings(values: {
     .update(attendanceSettingsTable)
     .set(values)
     .where(isNull(attendanceSettingsTable.deviceId));
+}
+
+/**
+ * Insert a user with a known plaintext password; returns the row and password.
+ * Defaults to the `admin` role.
+ */
+export async function createUser(
+  opts: { role?: UserRole; password?: string } = {},
+): Promise<{ user: User; password: string }> {
+  const tag = randomUUID();
+  const password = opts.password ?? `pw-${tag}`;
+  const [user] = await db
+    .insert(usersTable)
+    .values({
+      username: `user-${tag}`,
+      email: `${tag}@test.local`,
+      passwordHash: hashPassword(password),
+      role: opts.role ?? "admin",
+    })
+    .returning();
+  return { user, password };
+}
+
+/**
+ * Insert a session row directly (bypassing login) and return the value to send
+ * as the `wa_session` cookie. Lets tests craft expired/revoked sessions that the
+ * normal login path would never produce.
+ */
+export async function makeSessionCookie(
+  userId: string,
+  opts: { expiresAt?: Date; revokedAt?: Date | null } = {},
+): Promise<string> {
+  const token = generateSecret();
+  await db.insert(sessionsTable).values({
+    userId,
+    tokenHash: hashSecret(token),
+    expiresAt: opts.expiresAt ?? new Date(Date.now() + 60_000),
+    revokedAt: opts.revokedAt ?? null,
+  });
+  return `${SESSION_COOKIE}=${token}`;
 }
