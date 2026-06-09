@@ -10,6 +10,8 @@ import type { AttendanceRangeDayDevice } from "./attendanceRangeDayDevice";
 export interface AttendanceRangeDay {
   /** Day in YYYY-MM-DD format */
   day: string;
+  /** False for weekends/holidays, which are excluded from device classification */
+  isWorkingDay: boolean;
   /** Total worked seconds across all devices that day */
   workedSeconds: number;
   presentDevices: number;

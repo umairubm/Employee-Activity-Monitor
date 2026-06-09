@@ -10,6 +10,7 @@ import type { AttendanceRow } from "./attendanceRow";
 export interface AttendanceReport {
   date: string;
   isFriday: boolean;
+  isWorkingDay: boolean;
   requiredHours: number;
   devices: AttendanceRow[];
 }

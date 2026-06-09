@@ -909,6 +909,16 @@ components:
           type: number
         requiredHoursFriday:
           type: number
+        workingDays:
+          type: array
+          description: Working weekdays, 0=Sunday .. 6=Saturday.
+          items:
+            type: integer
+        holidays:
+          type: array
+          description: Company holidays as YYYY-MM-DD strings.
+          items:
+            type: string
         createdAt:
           type: string
           format: date-time
@@ -921,6 +931,8 @@ components:
         - halfDayThresholdHours
         - requiredHoursNormal
         - requiredHoursFriday
+        - workingDays
+        - holidays
     AttendanceSettingsUpdate:
       type: object
       properties:
@@ -932,6 +944,16 @@ components:
           type: number
         requiredHoursFriday:
           type: number
+        workingDays:
+          type: array
+          description: Working weekdays, 0=Sunday .. 6=Saturday.
+          items:
+            type: integer
+        holidays:
+          type: array
+          description: Company holidays as YYYY-MM-DD strings.
+          items:
+            type: string
       required:
         - workStartTime
         - halfDayThresholdHours
@@ -961,7 +983,7 @@ components:
           type: number
         status:
           type: string
-          enum: [present, half_day, absent]
+          enum: [present, half_day, absent, non_working]
       required:
         - deviceId
         - systemName
@@ -977,13 +999,15 @@ components:
           type: string
         isFriday:
           type: boolean
+        isWorkingDay:
+          type: boolean
         requiredHours:
           type: number
         devices:
           type: array
           items:
             $ref: "#/components/schemas/AttendanceRow"
-      required: [date, isFriday, requiredHours, devices]
+      required: [date, isFriday, isWorkingDay, requiredHours, devices]
     AttendanceRangeRow:
       type: object
       properties:
@@ -1035,6 +1059,9 @@ components:
         day:
           type: string
           description: Day in YYYY-MM-DD format
+        isWorkingDay:
+          type: boolean
+          description: False for weekends/holidays, which are excluded from device classification
         workedSeconds:
           type: integer
           description: Total worked seconds across all devices that day
@@ -1051,6 +1078,7 @@ components:
             $ref: "#/components/schemas/AttendanceRangeDayDevice"
       required:
         - day
+        - isWorkingDay
         - workedSeconds
         - presentDevices
         - halfDayDevices
@@ -1065,6 +1093,8 @@ components:
           type: string
         days:
           type: integer
+        workingDays:
+          type: integer
         devices:
           type: array
           items:
@@ -1073,7 +1103,7 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AttendanceRangeDay"
-      required: [from, to, days, devices, daily]
+      required: [from, to, days, workingDays, devices, daily]
     EnrollmentTokenItem:
       type: object
       properties:

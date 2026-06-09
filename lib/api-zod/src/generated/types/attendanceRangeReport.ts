@@ -12,6 +12,7 @@ export interface AttendanceRangeReport {
   from: string;
   to: string;
   days: number;
+  workingDays: number;
   devices: AttendanceRangeRow[];
   daily: AttendanceRangeDay[];
 }

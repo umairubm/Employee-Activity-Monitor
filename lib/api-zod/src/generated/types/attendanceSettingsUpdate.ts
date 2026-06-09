@@ -11,4 +11,8 @@ export interface AttendanceSettingsUpdate {
   halfDayThresholdHours: number;
   requiredHoursNormal: number;
   requiredHoursFriday: number;
+  /** Working weekdays, 0=Sunday .. 6=Saturday. */
+  workingDays?: number[];
+  /** Company holidays as YYYY-MM-DD strings. */
+  holidays?: string[];
 }

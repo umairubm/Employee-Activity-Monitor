@@ -3,6 +3,7 @@ import {
   uuid,
   text,
   real,
+  integer,
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
@@ -25,6 +26,18 @@ export const attendanceSettingsTable = pgTable("attendance_settings", {
   halfDayThresholdHours: real("half_day_threshold_hours").notNull().default(4),
   requiredHoursNormal: real("required_hours_normal").notNull().default(7.5),
   requiredHoursFriday: real("required_hours_friday").notNull().default(7.0),
+  // Working days of the week as ISO-style indices, 0=Sunday .. 6=Saturday.
+  // Days not listed here (e.g. weekends) are excluded from attendance counts.
+  workingDays: integer("working_days")
+    .array()
+    .notNull()
+    .default(sql`'{1,2,3,4,5}'::integer[]`),
+  // Company holidays as YYYY-MM-DD strings; these are treated as non-working
+  // days even if their weekday falls within workingDays.
+  holidays: text("holidays")
+    .array()
+    .notNull()
+    .default(sql`'{}'::text[]`),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

@@ -232,6 +232,10 @@ export interface AttendanceSettingsItem {
   halfDayThresholdHours: number;
   requiredHoursNormal: number;
   requiredHoursFriday: number;
+  /** Working weekdays, 0=Sunday .. 6=Saturday. */
+  workingDays: number[];
+  /** Company holidays as YYYY-MM-DD strings. */
+  holidays: string[];
   createdAt?: string;
   updatedAt?: string;
 }
@@ -241,6 +245,10 @@ export interface AttendanceSettingsUpdate {
   halfDayThresholdHours: number;
   requiredHoursNormal: number;
   requiredHoursFriday: number;
+  /** Working weekdays, 0=Sunday .. 6=Saturday. */
+  workingDays?: number[];
+  /** Company holidays as YYYY-MM-DD strings. */
+  holidays?: string[];
 }
 
 export type AttendanceRowStatus =
@@ -250,6 +258,7 @@ export const AttendanceRowStatus = {
   present: "present",
   half_day: "half_day",
   absent: "absent",
+  non_working: "non_working",
 } as const;
 
 export interface AttendanceRow {
@@ -269,6 +278,7 @@ export interface AttendanceRow {
 export interface AttendanceReport {
   date: string;
   isFriday: boolean;
+  isWorkingDay: boolean;
   requiredHours: number;
   devices: AttendanceRow[];
 }
@@ -305,6 +315,8 @@ export interface AttendanceRangeDayDevice {
 export interface AttendanceRangeDay {
   /** Day in YYYY-MM-DD format */
   day: string;
+  /** False for weekends/holidays, which are excluded from device classification */
+  isWorkingDay: boolean;
   /** Total worked seconds across all devices that day */
   workedSeconds: number;
   presentDevices: number;
@@ -318,6 +330,7 @@ export interface AttendanceRangeReport {
   from: string;
   to: string;
   days: number;
+  workingDays: number;
   devices: AttendanceRangeRow[];
   daily: AttendanceRangeDay[];
 }

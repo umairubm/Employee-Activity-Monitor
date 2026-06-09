@@ -17,7 +17,24 @@ const DEFAULT_SETTINGS = {
   halfDayThresholdHours: 4,
   requiredHoursNormal: 7.5,
   requiredHoursFriday: 7.0,
+  workingDays: [1, 2, 3, 4, 5],
+  holidays: [] as string[],
 };
+
+/**
+ * A calendar day counts as a working day when its weekday is configured as a
+ * working day AND it is not listed as a company holiday. Non-working days are
+ * excluded from attendance classification and from worked-hours averages.
+ */
+function isWorkingDay(
+  day: string,
+  weekday: number,
+  settings: AttendanceSettings,
+): boolean {
+  if (!settings.workingDays.includes(weekday)) return false;
+  if (settings.holidays.includes(day)) return false;
+  return true;
+}
 
 /**
  * Load the single global attendance-settings row, creating defaults if absent.
@@ -55,6 +72,16 @@ const updateSettingsSchema = z.object({
   halfDayThresholdHours: z.number().min(0).max(24),
   requiredHoursNormal: z.number().min(0).max(24),
   requiredHoursFriday: z.number().min(0).max(24),
+  // Optional so existing clients that omit them keep working; when provided,
+  // de-duplicated and sorted/validated before persisting.
+  workingDays: z
+    .array(z.number().int().min(0).max(6))
+    .max(7)
+    .optional(),
+  holidays: z
+    .array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD"))
+    .max(366)
+    .optional(),
 });
 
 // PUT /api/attendance/settings - update global attendance rules
@@ -69,9 +96,19 @@ router.put(
         return;
       }
       const current = await getGlobalSettings();
+      const { workingDays, holidays, ...rest } = parsed.data;
       const [updated] = await db
         .update(attendanceSettingsTable)
-        .set({ ...parsed.data, updatedAt: new Date() })
+        .set({
+          ...rest,
+          ...(workingDays !== undefined
+            ? { workingDays: Array.from(new Set(workingDays)).sort((a, b) => a - b) }
+            : {}),
+          ...(holidays !== undefined
+            ? { holidays: Array.from(new Set(holidays)).sort() }
+            : {}),
+          updatedAt: new Date(),
+        })
         .where(eq(attendanceSettingsTable.id, current.id))
         .returning();
       res.json(updated);
@@ -151,16 +188,19 @@ router.get("/range", async (req, res) => {
 
     const settings = await getGlobalSettings();
 
-    // Pre-compute required hours per day (Friday vs normal).
-    const requiredByDay = new Map(
-      dayList.map((day) => {
-        const isFriday = new Date(`${day}T00:00:00Z`).getUTCDay() === 5;
-        return [
-          day,
-          isFriday ? settings.requiredHoursFriday : settings.requiredHoursNormal,
-        ];
-      }),
-    );
+    // Pre-compute required hours per day (Friday vs normal) and whether each day
+    // is a working day. Non-working days are excluded from attendance counts.
+    const requiredByDay = new Map<string, number>();
+    const workingByDay = new Map<string, boolean>();
+    for (const day of dayList) {
+      const weekday = new Date(`${day}T00:00:00Z`).getUTCDay();
+      requiredByDay.set(
+        day,
+        weekday === 5 ? settings.requiredHoursFriday : settings.requiredHoursNormal,
+      );
+      workingByDay.set(day, isWorkingDay(day, weekday, settings));
+    }
+    const workingDayCount = dayList.filter((d) => workingByDay.get(d)).length;
 
     const devices = await db
       .select({
@@ -208,7 +248,10 @@ router.get("/range", async (req, res) => {
 
       for (const day of dayList) {
         const workedSeconds = perDay?.get(day) ?? 0;
+        // Worked time still accumulates on every day, but only working days are
+        // classified present/half/absent and counted in the average denominator.
         totalWorkedSeconds += workedSeconds;
+        if (!workingByDay.get(day)) continue;
         const workedHours = workedSeconds / 3600;
         const requiredHours = requiredByDay.get(day) ?? settings.requiredHoursNormal;
         if (workedHours >= requiredHours) presentDays += 1;
@@ -224,13 +267,17 @@ router.get("/range", async (req, res) => {
         halfDays,
         absentDays,
         totalWorkedSeconds,
-        avgWorkedSeconds: Math.round(totalWorkedSeconds / dayList.length),
+        avgWorkedSeconds:
+          workingDayCount > 0
+            ? Math.round(totalWorkedSeconds / workingDayCount)
+            : 0,
       };
     });
 
     const daily = dayList.map((day) => {
       const requiredHours =
         requiredByDay.get(day) ?? settings.requiredHoursNormal;
+      const working = workingByDay.get(day) ?? false;
       let workedSeconds = 0;
       let presentDevices = 0;
       let halfDayDevices = 0;
@@ -243,7 +290,11 @@ router.get("/range", async (req, res) => {
 
       for (const device of devices) {
         const ws = workedByDevice.get(device.id)?.get(day) ?? 0;
+        // Worked time is always tallied so the trend chart reflects real
+        // activity, but devices are only classified on working days — weekends
+        // and holidays are not counted present/half/absent.
         workedSeconds += ws;
+        if (!working) continue;
         const workedHours = ws / 3600;
         let status: "present" | "half_day" | "absent";
         if (workedHours >= requiredHours) {
@@ -261,6 +312,7 @@ router.get("/range", async (req, res) => {
 
       return {
         day,
+        isWorkingDay: working,
         workedSeconds,
         presentDevices,
         halfDayDevices,
@@ -269,7 +321,14 @@ router.get("/range", async (req, res) => {
       };
     });
 
-    res.json({ from, to, days: dayList.length, devices: rows, daily });
+    res.json({
+      from,
+      to,
+      days: dayList.length,
+      workingDays: workingDayCount,
+      devices: rows,
+      daily,
+    });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }
@@ -285,9 +344,11 @@ router.get("/", async (req, res) => {
     }
     const dayStart = new Date(`${date}T00:00:00`);
     const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
-    const isFriday = dayStart.getDay() === 5;
+    const weekday = dayStart.getDay();
+    const isFriday = weekday === 5;
 
     const settings = await getGlobalSettings();
+    const workingDay = isWorkingDay(date, weekday, settings);
     const requiredHours = isFriday
       ? settings.requiredHoursFriday
       : settings.requiredHoursNormal;
@@ -325,8 +386,12 @@ router.get("/", async (req, res) => {
       const workedSeconds = a ? Number(a.workedSeconds) : 0;
       const workedHours = workedSeconds / 3600;
 
-      let status: "present" | "half_day" | "absent";
-      if (workedHours >= requiredHours) status = "present";
+      // On non-working days (weekend/holiday) devices are not marked absent;
+      // this keeps the single-day report consistent with the range report,
+      // which excludes the same days from present/half/absent counts.
+      let status: "present" | "half_day" | "absent" | "non_working";
+      if (!workingDay) status = "non_working";
+      else if (workedHours >= requiredHours) status = "present";
       else if (workedHours >= settings.halfDayThresholdHours)
         status = "half_day";
       else status = "absent";
@@ -344,7 +409,13 @@ router.get("/", async (req, res) => {
       };
     });
 
-    res.json({ date, isFriday, requiredHours, devices: rows });
+    res.json({
+      date,
+      isFriday,
+      isWorkingDay: workingDay,
+      requiredHours,
+      devices: rows,
+    });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }

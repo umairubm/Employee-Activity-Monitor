@@ -45,6 +45,7 @@ const STATUS_STYLE: Record<string, string> = {
   present: "bg-emerald-500/15 text-emerald-700 border-emerald-500/20",
   half_day: "bg-amber-500/15 text-amber-700 border-amber-500/20",
   absent: "bg-muted text-muted-foreground",
+  non_working: "bg-sky-500/10 text-sky-700 border-sky-500/20",
 };
 
 const CHART_CONFIG = {
@@ -62,7 +63,18 @@ const STATUS_LABEL: Record<string, string> = {
   present: "Present",
   half_day: "Half-day",
   absent: "Absent",
+  non_working: "Non-working",
 };
+
+const WEEKDAYS = [
+  { value: 0, label: "Sun" },
+  { value: 1, label: "Mon" },
+  { value: 2, label: "Tue" },
+  { value: 3, label: "Wed" },
+  { value: 4, label: "Thu" },
+  { value: 5, label: "Fri" },
+  { value: 6, label: "Sat" },
+];
 
 function downloadCsv(filename: string, rows: (string | number)[][]) {
   const escape = (v: string | number) => {
@@ -90,9 +102,9 @@ function DayView() {
   });
 
   const counts = useMemo(() => {
-    const c = { present: 0, half_day: 0, absent: 0 };
+    const c = { present: 0, half_day: 0, absent: 0, non_working: 0 };
     report?.devices.forEach((d) => {
-      c[d.status as keyof typeof c] += 1;
+      if (d.status in c) c[d.status as keyof typeof c] += 1;
     });
     return c;
   }, [report]);
@@ -127,10 +139,12 @@ function DayView() {
           <p className="text-2xl font-bold text-muted-foreground">{counts.absent}</p>
         </CardContent></Card>
         <Card><CardContent className="p-4">
-          <p className="text-xs text-muted-foreground">Required {report?.isFriday ? "(Friday)" : ""}</p>
+          <p className="text-xs text-muted-foreground">
+            {report && !report.isWorkingDay ? "Non-working day" : `Required ${report?.isFriday ? "(Friday)" : ""}`}
+          </p>
           <p className="text-2xl font-bold flex items-center gap-1">
             <Clock className="h-4 w-4 text-muted-foreground" />
-            {report ? `${report.requiredHours}h` : "-"}
+            {report ? (report.isWorkingDay ? `${report.requiredHours}h` : "—") : "-"}
           </p>
         </CardContent></Card>
       </div>
@@ -140,8 +154,15 @@ function DayView() {
           <CardTitle className="text-lg flex items-center gap-2">
             <CalendarCheck className="h-5 w-5 text-muted-foreground" />
             {date}
+            {report && !report.isWorkingDay && (
+              <Badge variant="outline" className={STATUS_STYLE.non_working}>Non-working day</Badge>
+            )}
           </CardTitle>
-          <CardDescription>Attendance is computed from recorded foreground activity for the selected day.</CardDescription>
+          <CardDescription>
+            {report && !report.isWorkingDay
+              ? "This is a weekend or holiday, so devices are not marked present or absent."
+              : "Attendance is computed from recorded foreground activity for the selected day."}
+          </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
@@ -170,7 +191,7 @@ function DayView() {
                     <TableCell className="text-sm">{fmtHours(row.workedSeconds)}</TableCell>
                     <TableCell>
                       <Badge variant="outline" className={STATUS_STYLE[row.status]}>
-                        {row.status === "half_day" ? "Half-day" : row.status.charAt(0).toUpperCase() + row.status.slice(1)}
+                        {STATUS_LABEL[row.status] ?? row.status}
                       </Badge>
                     </TableCell>
                   </TableRow>
@@ -318,10 +339,13 @@ function RangeView() {
           <p className="text-2xl font-bold text-muted-foreground">{totals.absent}</p>
         </CardContent></Card>
         <Card><CardContent className="p-4">
-          <p className="text-xs text-muted-foreground">Days in range</p>
+          <p className="text-xs text-muted-foreground">Working days</p>
           <p className="text-2xl font-bold flex items-center gap-1">
             <Clock className="h-4 w-4 text-muted-foreground" />
-            {report ? report.days : "-"}
+            {report ? report.workingDays : "-"}
+            {report && (
+              <span className="text-sm font-normal text-muted-foreground">/ {report.days} total</span>
+            )}
           </p>
         </CardContent></Card>
       </div>
@@ -411,7 +435,7 @@ function RangeView() {
             <CalendarRange className="h-5 w-5 text-muted-foreground" />
             {from} → {to}
           </CardTitle>
-          <CardDescription>Per-device totals across the selected range. Each day is classified present / half-day / absent using the attendance rules.</CardDescription>
+          <CardDescription>Per-device totals across the selected range. Weekends and holidays are excluded; only working days are classified present / half-day / absent, and the daily average is over working days.</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
@@ -471,6 +495,8 @@ export default function Attendance() {
     requiredHoursNormal: "7.5",
     requiredHoursFriday: "7",
   });
+  const [workingDays, setWorkingDays] = useState<number[]>([1, 2, 3, 4, 5]);
+  const [holidaysText, setHolidaysText] = useState("");
 
   const openSettings = () => {
     if (settings) {
@@ -480,11 +506,32 @@ export default function Attendance() {
         requiredHoursNormal: String(settings.requiredHoursNormal),
         requiredHoursFriday: String(settings.requiredHoursFriday),
       });
+      setWorkingDays([...settings.workingDays].sort((a, b) => a - b));
+      setHolidaysText(settings.holidays.join(", "));
     }
     setSettingsOpen(true);
   };
 
+  const toggleWorkingDay = (value: number) => {
+    setWorkingDays((days) =>
+      days.includes(value) ? days.filter((d) => d !== value) : [...days, value].sort((a, b) => a - b),
+    );
+  };
+
   const saveSettings = () => {
+    const holidays = holidaysText
+      .split(/[\s,]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const invalid = holidays.find((h) => !/^\d{4}-\d{2}-\d{2}$/.test(h));
+    if (invalid) {
+      toast({
+        title: "Invalid holiday date",
+        description: `"${invalid}" is not in YYYY-MM-DD format.`,
+        variant: "destructive",
+      });
+      return;
+    }
     updateSettings.mutate(
       {
         data: {
@@ -492,6 +539,8 @@ export default function Attendance() {
           halfDayThresholdHours: Number(form.halfDayThresholdHours),
           requiredHoursNormal: Number(form.requiredHoursNormal),
           requiredHoursFriday: Number(form.requiredHoursFriday),
+          workingDays,
+          holidays,
         },
       },
       {
@@ -543,6 +592,37 @@ export default function Attendance() {
               <div className="space-y-1">
                 <Label htmlFor="reqFriday">Required hours (Friday)</Label>
                 <Input id="reqFriday" type="number" step="0.5" min="0" max="24" value={form.requiredHoursFriday} onChange={(e) => setForm((f) => ({ ...f, requiredHoursFriday: e.target.value }))} />
+              </div>
+              <div className="space-y-1 col-span-2">
+                <Label>Working days</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {WEEKDAYS.map((d) => {
+                    const active = workingDays.includes(d.value);
+                    return (
+                      <Button
+                        key={d.value}
+                        type="button"
+                        size="sm"
+                        variant={active ? "default" : "outline"}
+                        className="h-8 w-12 px-0"
+                        onClick={() => toggleWorkingDay(d.value)}
+                      >
+                        {d.label}
+                      </Button>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-muted-foreground">Days not selected (e.g. weekends) are excluded from attendance counts.</p>
+              </div>
+              <div className="space-y-1 col-span-2">
+                <Label htmlFor="holidays">Holidays</Label>
+                <Input
+                  id="holidays"
+                  placeholder="2026-01-01, 2026-12-25"
+                  value={holidaysText}
+                  onChange={(e) => setHolidaysText(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">Comma-separated YYYY-MM-DD dates, treated as non-working days.</p>
               </div>
             </div>
             <DialogFooter>

@@ -339,6 +339,12 @@ export const GetAttendanceSettingsResponse = zod.object({
   halfDayThresholdHours: zod.number(),
   requiredHoursNormal: zod.number(),
   requiredHoursFriday: zod.number(),
+  workingDays: zod
+    .array(zod.number())
+    .describe("Working weekdays, 0=Sunday .. 6=Saturday."),
+  holidays: zod
+    .array(zod.string())
+    .describe("Company holidays as YYYY-MM-DD strings."),
   createdAt: zod.coerce.date().optional(),
   updatedAt: zod.coerce.date().optional(),
 });
@@ -351,6 +357,14 @@ export const UpdateAttendanceSettingsBody = zod.object({
   halfDayThresholdHours: zod.number(),
   requiredHoursNormal: zod.number(),
   requiredHoursFriday: zod.number(),
+  workingDays: zod
+    .array(zod.number())
+    .optional()
+    .describe("Working weekdays, 0=Sunday .. 6=Saturday."),
+  holidays: zod
+    .array(zod.string())
+    .optional()
+    .describe("Company holidays as YYYY-MM-DD strings."),
 });
 
 export const UpdateAttendanceSettingsResponse = zod.object({
@@ -360,6 +374,12 @@ export const UpdateAttendanceSettingsResponse = zod.object({
   halfDayThresholdHours: zod.number(),
   requiredHoursNormal: zod.number(),
   requiredHoursFriday: zod.number(),
+  workingDays: zod
+    .array(zod.number())
+    .describe("Working weekdays, 0=Sunday .. 6=Saturday."),
+  holidays: zod
+    .array(zod.string())
+    .describe("Company holidays as YYYY-MM-DD strings."),
   createdAt: zod.coerce.date().optional(),
   updatedAt: zod.coerce.date().optional(),
 });
@@ -374,6 +394,7 @@ export const GetAttendanceReportQueryParams = zod.object({
 export const GetAttendanceReportResponse = zod.object({
   date: zod.string(),
   isFriday: zod.boolean(),
+  isWorkingDay: zod.boolean(),
   requiredHours: zod.number(),
   devices: zod.array(
     zod.object({
@@ -385,7 +406,7 @@ export const GetAttendanceReportResponse = zod.object({
       workedSeconds: zod.number(),
       idleSeconds: zod.number(),
       requiredHours: zod.number(),
-      status: zod.enum(["present", "half_day", "absent"]),
+      status: zod.enum(["present", "half_day", "absent", "non_working"]),
     }),
   ),
 });
@@ -402,6 +423,7 @@ export const GetAttendanceRangeReportResponse = zod.object({
   from: zod.string(),
   to: zod.string(),
   days: zod.number(),
+  workingDays: zod.number(),
   devices: zod.array(
     zod.object({
       deviceId: zod.string().uuid(),
@@ -417,6 +439,11 @@ export const GetAttendanceRangeReportResponse = zod.object({
   daily: zod.array(
     zod.object({
       day: zod.string().describe("Day in YYYY-MM-DD format"),
+      isWorkingDay: zod
+        .boolean()
+        .describe(
+          "False for weekends\/holidays, which are excluded from device classification",
+        ),
       workedSeconds: zod
         .number()
         .describe("Total worked seconds across all devices that day"),
