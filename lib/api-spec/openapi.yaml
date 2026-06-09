@@ -421,6 +421,12 @@ paths:
           schema:
             type: string
             description: Day in YYYY-MM-DD format; defaults to today
+        - name: group
+          in: query
+          required: false
+          description: Restrict to devices in this group
+          schema:
+            type: string
       responses:
         "200":
           description: Attendance report
@@ -446,6 +452,12 @@ paths:
           schema:
             type: string
             description: Range end day in YYYY-MM-DD format (inclusive)
+        - name: group
+          in: query
+          required: false
+          description: Restrict to devices in this group
+          schema:
+            type: string
       responses:
         "200":
           description: Attendance range report

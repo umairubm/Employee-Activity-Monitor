@@ -469,6 +469,10 @@ export type GetAttendanceReportParams = {
    * Day in YYYY-MM-DD format; defaults to today
    */
   date?: string;
+  /**
+   * Restrict to devices in this group
+   */
+  group?: string;
 };
 
 export type GetAttendanceRangeReportParams = {
@@ -480,6 +484,10 @@ export type GetAttendanceRangeReportParams = {
    * Range end day in YYYY-MM-DD format (inclusive)
    */
   to: string;
+  /**
+   * Restrict to devices in this group
+   */
+  group?: string;
 };
 
 export type SyncActivity200 = {

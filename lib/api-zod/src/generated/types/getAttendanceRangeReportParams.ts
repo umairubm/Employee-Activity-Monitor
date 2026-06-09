@@ -15,4 +15,8 @@ export type GetAttendanceRangeReportParams = {
    * Range end day in YYYY-MM-DD format (inclusive)
    */
   to: string;
+  /**
+   * Restrict to devices in this group
+   */
+  group?: string;
 };

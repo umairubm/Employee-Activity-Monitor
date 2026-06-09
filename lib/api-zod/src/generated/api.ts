@@ -403,6 +403,10 @@ export const UpdateAttendanceSettingsResponse = zod.object({
  */
 export const GetAttendanceReportQueryParams = zod.object({
   date: zod.coerce.string().optional(),
+  group: zod.coerce
+    .string()
+    .optional()
+    .describe("Restrict to devices in this group"),
 });
 
 export const GetAttendanceReportResponse = zod.object({
@@ -431,6 +435,10 @@ export const GetAttendanceReportResponse = zod.object({
 export const GetAttendanceRangeReportQueryParams = zod.object({
   from: zod.coerce.string(),
   to: zod.coerce.string(),
+  group: zod.coerce
+    .string()
+    .optional()
+    .describe("Restrict to devices in this group"),
 });
 
 export const GetAttendanceRangeReportResponse = zod.object({

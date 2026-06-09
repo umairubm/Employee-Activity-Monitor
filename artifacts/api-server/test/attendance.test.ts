@@ -121,6 +121,44 @@ describe("Friday vs normal required hours", () => {
   });
 });
 
+describe("group filtering", () => {
+  it("restricts the daily report to devices in the selected group", async () => {
+    const tag = `grp-${Date.now()}`;
+    const eng = await newDevice({ deviceGroup: `Engineering-${tag}` });
+    const sales = await newDevice({ deviceGroup: `Sales-${tag}` });
+    await seedActivity(eng.id, NORMAL_DAY, 8 * 3600);
+    await seedActivity(sales.id, NORMAL_DAY, 8 * 3600);
+
+    const res = await request(app).get(
+      `/attendance?date=${NORMAL_DAY}&group=${encodeURIComponent(`Engineering-${tag}`)}`,
+    );
+    expect(res.status).toBe(200);
+    const ids = res.body.devices.map((r: any) => r.deviceId);
+    expect(ids).toContain(eng.id);
+    expect(ids).not.toContain(sales.id);
+  });
+
+  it("restricts the range report to devices in the selected group", async () => {
+    const tag = `grp-${Date.now()}`;
+    const eng = await newDevice({ deviceGroup: `Engineering-${tag}` });
+    const sales = await newDevice({ deviceGroup: `Sales-${tag}` });
+    await seedActivity(eng.id, NORMAL_DAY, 8 * 3600);
+    await seedActivity(sales.id, NORMAL_DAY, 8 * 3600);
+
+    const res = await request(app).get(
+      `/attendance/range?from=${NORMAL_DAY}&to=${NORMAL_DAY}&group=${encodeURIComponent(`Sales-${tag}`)}`,
+    );
+    expect(res.status).toBe(200);
+    const ids = res.body.devices.map((r: any) => r.deviceId);
+    expect(ids).toContain(sales.id);
+    expect(ids).not.toContain(eng.id);
+    for (const d of res.body.daily) {
+      const dailyIds = d.byDevice.map((b: any) => b.deviceId);
+      expect(dailyIds).not.toContain(eng.id);
+    }
+  });
+});
+
 describe("invalid date handling", () => {
   it.each([
     "not-a-date",

@@ -183,6 +183,11 @@ router.get("/range", async (req, res) => {
       return;
     }
 
+    const group =
+      typeof req.query.group === "string" && req.query.group !== ""
+        ? req.query.group
+        : undefined;
+
     const rangeStart = new Date(`${from}T00:00:00Z`);
     const rangeEnd = new Date(Date.parse(`${to}T00:00:00Z`) + 86400000);
 
@@ -209,6 +214,7 @@ router.get("/range", async (req, res) => {
         deviceGroup: devicesTable.deviceGroup,
       })
       .from(devicesTable)
+      .where(group ? eq(devicesTable.deviceGroup, group) : undefined)
       .orderBy(asc(devicesTable.systemName));
 
     const dayBucket = sql<string>`to_char(${activityLogsTable.startedAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD')`;
@@ -342,6 +348,10 @@ router.get("/", async (req, res) => {
       res.status(400).json({ error: "Invalid date; expected YYYY-MM-DD" });
       return;
     }
+    const group =
+      typeof req.query.group === "string" && req.query.group !== ""
+        ? req.query.group
+        : undefined;
     const dayStart = new Date(`${date}T00:00:00`);
     const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
     const weekday = dayStart.getDay();
@@ -360,6 +370,7 @@ router.get("/", async (req, res) => {
         deviceGroup: devicesTable.deviceGroup,
       })
       .from(devicesTable)
+      .where(group ? eq(devicesTable.deviceGroup, group) : undefined)
       .orderBy(asc(devicesTable.systemName));
 
     const activity = await db

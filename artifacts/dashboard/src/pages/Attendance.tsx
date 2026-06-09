@@ -7,6 +7,7 @@ import {
   useGetAttendanceSettings,
   getGetAttendanceSettingsQueryKey,
   useUpdateAttendanceSettings,
+  useListDevices,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -23,6 +24,7 @@ import { CartesianGrid, XAxis, YAxis, Line, ComposedChart, Bar, Cell } from "rec
 import { CalendarCheck, CalendarRange, Settings2, Clock, Download, TrendingUp } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
+import { useGroupFilter, ALL_GROUPS as ALL } from "@/hooks/use-group-filter";
 
 function todayStr(): string {
   const d = new Date();
@@ -95,8 +97,15 @@ function downloadCsv(filename: string, rows: (string | number)[][]) {
 
 function DayView() {
   const [date, setDate] = useState(todayStr());
+  const [groupFilter, setGroupFilter] = useGroupFilter();
+  const { data: devices } = useListDevices();
+  const groups = useMemo(() => {
+    const set = new Set<string>();
+    devices?.forEach((d) => set.add(d.deviceGroup));
+    return Array.from(set).sort();
+  }, [devices]);
 
-  const reportParams = { date };
+  const reportParams = { date, ...(groupFilter !== ALL ? { group: groupFilter } : {}) };
   const { data: report, isLoading } = useGetAttendanceReport(reportParams, {
     query: { queryKey: getGetAttendanceReportQueryKey(reportParams) },
   });
@@ -111,7 +120,23 @@ function DayView() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-end justify-end">
+      <div className="flex flex-col sm:flex-row sm:items-end justify-end gap-2">
+        <div>
+          <Label htmlFor="day-group" className="text-xs text-muted-foreground mb-1 block">Team</Label>
+          <Select value={groupFilter} onValueChange={setGroupFilter}>
+            <SelectTrigger id="day-group" className="w-full sm:w-44">
+              <SelectValue placeholder="All groups" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>All groups</SelectItem>
+              {groups.map((g) => (
+                <SelectItem key={g} value={g}>
+                  {g}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <div>
           <Label htmlFor="date" className="text-xs text-muted-foreground mb-1 block">Date</Label>
           <Input
@@ -210,9 +235,20 @@ function RangeView() {
   const [from, setFrom] = useState(daysAgoStr(6));
   const [to, setTo] = useState(todayStr());
   const [selectedDeviceId, setSelectedDeviceId] = useState("all");
+  const [groupFilter, setGroupFilter] = useGroupFilter();
+  const { data: allDevices } = useListDevices();
+  const groups = useMemo(() => {
+    const set = new Set<string>();
+    allDevices?.forEach((d) => set.add(d.deviceGroup));
+    return Array.from(set).sort();
+  }, [allDevices]);
+
+  React.useEffect(() => {
+    setSelectedDeviceId("all");
+  }, [groupFilter]);
 
   const valid = from <= to;
-  const rangeParams = { from, to };
+  const rangeParams = { from, to, ...(groupFilter !== ALL ? { group: groupFilter } : {}) };
   const { data: report, isLoading, isError, error } = useGetAttendanceRangeReport(rangeParams, {
     query: {
       queryKey: getGetAttendanceRangeReportQueryKey(rangeParams),
@@ -293,6 +329,22 @@ function RangeView() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-end justify-end gap-2">
+        <div>
+          <Label htmlFor="range-group" className="text-xs text-muted-foreground mb-1 block">Team</Label>
+          <Select value={groupFilter} onValueChange={setGroupFilter}>
+            <SelectTrigger id="range-group" className="w-full sm:w-44">
+              <SelectValue placeholder="All groups" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>All groups</SelectItem>
+              {groups.map((g) => (
+                <SelectItem key={g} value={g}>
+                  {g}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <div>
           <Label htmlFor="from" className="text-xs text-muted-foreground mb-1 block">From</Label>
           <Input

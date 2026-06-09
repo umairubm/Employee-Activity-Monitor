@@ -11,4 +11,8 @@ export type GetAttendanceReportParams = {
    * Day in YYYY-MM-DD format; defaults to today
    */
   date?: string;
+  /**
+   * Restrict to devices in this group
+   */
+  group?: string;
 };
