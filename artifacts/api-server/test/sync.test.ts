@@ -157,6 +157,79 @@ describe("POST /sync/enroll", () => {
   });
 });
 
+describe("POST /sync/enroll (re-enrollment of a known machine)", () => {
+  it("reuses the same device row and rotates the secret for a known hardwareHash", async () => {
+    const token = await createEnrollmentToken({ maxUses: 2 });
+    createdTokenIds.push(token.id);
+
+    // First enrollment establishes the device row + its original secret.
+    const hardwareHash = `hw-${randomUUID()}`;
+    const first = await request(app)
+      .post("/sync/enroll")
+      .send({ ...enrollBody(token.token), hardwareHash });
+    expect(first.status).toBe(201);
+    const deviceId = trackDevice(first.body.deviceId);
+    const firstSecret = first.body.deviceSecret as string;
+
+    const [before] = await db
+      .select()
+      .from(devicesTable)
+      .where(eq(devicesTable.id, deviceId));
+
+    // Re-enroll the same machine (same hardwareHash) with a fresh consent name.
+    const second = await request(app)
+      .post("/sync/enroll")
+      .send({
+        ...enrollBody(token.token),
+        hardwareHash,
+        consentName: "Second Operator",
+      });
+    expect(second.status).toBe(201);
+    const secondSecret = second.body.deviceSecret as string;
+
+    // Same device row is returned, not a new one.
+    expect(second.body.deviceId).toBe(deviceId);
+
+    // A genuinely new secret is issued.
+    expect(secondSecret).toMatch(/^[0-9a-f]{64}$/);
+    expect(secondSecret).not.toBe(firstSecret);
+
+    // No duplicate device row was created for this hardwareHash.
+    const rows = await db
+      .select()
+      .from(devicesTable)
+      .where(eq(devicesTable.hardwareHash, hardwareHash));
+    expect(rows.length).toBe(1);
+
+    // The new secret authenticates; the old one no longer does.
+    const withNew = await request(app)
+      .post("/sync/heartbeat")
+      .set("x-device-id", deviceId)
+      .set("x-device-secret", secondSecret)
+      .send({});
+    expect(withNew.status).toBe(200);
+
+    const withOld = await request(app)
+      .post("/sync/heartbeat")
+      .set("x-device-id", deviceId)
+      .set("x-device-secret", firstSecret)
+      .send({});
+    expect(withOld.status).toBe(401);
+
+    // Consent name/timestamp are refreshed; the original enrolledAt is preserved.
+    const [after] = await db
+      .select()
+      .from(devicesTable)
+      .where(eq(devicesTable.id, deviceId));
+    expect(after.consentName).toBe("Second Operator");
+    expect(after.consentAcknowledgedAt).not.toBeNull();
+    expect(after.consentAcknowledgedAt!.getTime()).toBeGreaterThanOrEqual(
+      before.consentAcknowledgedAt!.getTime(),
+    );
+    expect(after.enrolledAt!.getTime()).toBe(before.enrolledAt!.getTime());
+  });
+});
+
 describe("device authentication on /sync (deviceAuth)", () => {
   it("rejects sync calls with no credentials (401)", async () => {
     const res = await request(app).post("/sync/heartbeat").send({});
