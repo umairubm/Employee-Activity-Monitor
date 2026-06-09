@@ -10,6 +10,11 @@ import {
   revokeSession,
 } from "../lib/session";
 import { userAuth, type AuthedRequest } from "../middlewares/userAuth";
+import {
+  loginRateLimit,
+  recordLoginFailure,
+  clearLoginFailures,
+} from "../middlewares/loginRateLimit";
 
 const router: IRouter = Router();
 
@@ -28,8 +33,10 @@ function publicUser(u: User) {
   };
 }
 
-// POST /api/auth/login - exchange credentials for a session cookie
-router.post("/login", async (req, res) => {
+// POST /api/auth/login - exchange credentials for a session cookie.
+// `loginRateLimit` short-circuits with 429 while a client is locked out after
+// repeated failures (brute-force protection).
+router.post("/login", loginRateLimit, async (req, res) => {
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "username and password are required" });
@@ -43,10 +50,12 @@ router.post("/login", async (req, res) => {
     .where(eq(usersTable.username, username));
 
   if (!user || !verifyPassword(password, user.passwordHash)) {
+    recordLoginFailure(req, username);
     res.status(401).json({ error: "Invalid username or password" });
     return;
   }
 
+  clearLoginFailures(req, username);
   const { token, expiresAt } = await createSession(user.id, req);
   setSessionCookie(res, token, expiresAt);
   res.json(publicUser(user));

@@ -1,8 +1,9 @@
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import request from "supertest";
 import { inArray } from "drizzle-orm";
 import { db, usersTable, pool } from "@workspace/db";
 import app from "../src/app";
+import { resetLoginRateLimit } from "../src/middlewares/loginRateLimit";
 import { createUser, makeSessionCookie } from "./helpers";
 
 /**
@@ -42,6 +43,13 @@ afterAll(async () => {
     await db.delete(usersTable).where(inArray(usersTable.id, createdUserIds));
   }
   await pool.end();
+});
+
+// The login rate limiter keeps per-(IP+username) failure counters in process
+// memory; clear them before each test so one suite's lockouts can't bleed into
+// another.
+beforeEach(() => {
+  resetLoginRateLimit();
 });
 
 describe("POST /api/auth/login", () => {
@@ -165,6 +173,86 @@ describe("admin surface role enforcement", () => {
       expect([401, 403], `${route} should admit super_user`).not.toContain(
         res.status,
       );
+    }
+  });
+});
+
+describe("login brute-force protection", () => {
+  it("locks out after repeated failures, even for the correct password", async () => {
+    const { user, password } = await newUser({ role: "admin" });
+
+    // Five wrong attempts: all should be 401 (not yet locked).
+    for (let i = 0; i < 5; i++) {
+      const res = await request(app)
+        .post("/api/auth/login")
+        .send({ username: user.username, password: "wrong-password" });
+      expect(res.status, `attempt ${i + 1} should be 401`).toBe(401);
+    }
+
+    // The next attempt is throttled with 429 and a Retry-After hint.
+    const blocked = await request(app)
+      .post("/api/auth/login")
+      .send({ username: user.username, password: "wrong-password" });
+    expect(blocked.status).toBe(429);
+    expect(blocked.headers["retry-after"]).toBeDefined();
+    expect(blocked.body.retryAfterSeconds).toBeGreaterThan(0);
+
+    // Even the *correct* password is refused while the cooldown is active.
+    const correctButLocked = await request(app)
+      .post("/api/auth/login")
+      .send({ username: user.username, password });
+    expect(correctButLocked.status).toBe(429);
+    expect(correctButLocked.headers["set-cookie"]).toBeUndefined();
+  });
+
+  it("does not lock out an unrelated account", async () => {
+    const { user: victim } = await newUser({ role: "admin" });
+    const { user: other, password: otherPassword } = await newUser({
+      role: "admin",
+    });
+
+    // Hammer the victim account into a lockout.
+    for (let i = 0; i < 6; i++) {
+      await request(app)
+        .post("/api/auth/login")
+        .send({ username: victim.username, password: "wrong-password" });
+    }
+    const victimBlocked = await request(app)
+      .post("/api/auth/login")
+      .send({ username: victim.username, password: "wrong-password" });
+    expect(victimBlocked.status).toBe(429);
+
+    // A different account is unaffected and logs in normally.
+    const ok = await request(app)
+      .post("/api/auth/login")
+      .send({ username: other.username, password: otherPassword });
+    expect(ok.status).toBe(200);
+    expect(ok.headers["set-cookie"]).toBeDefined();
+  });
+
+  it("resets the failure counter after a successful login", async () => {
+    const { user, password } = await newUser({ role: "admin" });
+
+    // Four failures (one short of the 5-failure threshold).
+    for (let i = 0; i < 4; i++) {
+      const res = await request(app)
+        .post("/api/auth/login")
+        .send({ username: user.username, password: "wrong-password" });
+      expect(res.status).toBe(401);
+    }
+
+    // A correct login succeeds and clears the counter.
+    const success = await request(app)
+      .post("/api/auth/login")
+      .send({ username: user.username, password });
+    expect(success.status).toBe(200);
+
+    // Four more failures still do not lock out, proving the counter reset.
+    for (let i = 0; i < 4; i++) {
+      const res = await request(app)
+        .post("/api/auth/login")
+        .send({ username: user.username, password: "wrong-password" });
+      expect(res.status, `post-reset attempt ${i + 1} should be 401`).toBe(401);
     }
   });
 });
