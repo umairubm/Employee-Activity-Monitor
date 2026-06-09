@@ -37,6 +37,7 @@ export * from "./getAttendanceReportParams";
 export * from "./getLeaderboardParams";
 export * from "./getSummaryParams";
 export * from "./getTimelineParams";
+export * from "./groupComparisonItem";
 export * from "./groupRenameInput";
 export * from "./healthCheck200";
 export * from "./heartbeatRequest";

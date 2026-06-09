@@ -188,6 +188,14 @@ export interface LeaderboardItem {
   score: number;
 }
 
+export interface GroupComparisonItem {
+  group: string;
+  deviceCount: number;
+  productiveSeconds: number;
+  totalSeconds: number;
+  score: number;
+}
+
 export type CategoryItemClassification =
   (typeof CategoryItemClassification)[keyof typeof CategoryItemClassification];
 

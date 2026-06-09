@@ -365,6 +365,20 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/LeaderboardItem"
+  /reports/group-comparison:
+    get:
+      operationId: getGroupComparison
+      tags: [reports]
+      summary: Per-group productivity comparison today
+      responses:
+        "200":
+          description: Group comparison
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GroupComparisonItem"
 
   /attendance/settings:
     get:
@@ -861,6 +875,20 @@ components:
         score:
           type: integer
       required: [deviceId, systemName, productiveSeconds, totalSeconds, score]
+    GroupComparisonItem:
+      type: object
+      properties:
+        group:
+          type: string
+        deviceCount:
+          type: integer
+        productiveSeconds:
+          type: integer
+        totalSeconds:
+          type: integer
+        score:
+          type: integer
+      required: [group, deviceCount, productiveSeconds, totalSeconds, score]
     CategoryItem:
       type: object
       properties:

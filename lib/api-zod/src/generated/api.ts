@@ -330,6 +330,20 @@ export const GetLeaderboardResponseItem = zod.object({
 export const GetLeaderboardResponse = zod.array(GetLeaderboardResponseItem);
 
 /**
+ * @summary Per-group productivity comparison today
+ */
+export const GetGroupComparisonResponseItem = zod.object({
+  group: zod.string(),
+  deviceCount: zod.number(),
+  productiveSeconds: zod.number(),
+  totalSeconds: zod.number(),
+  score: zod.number(),
+});
+export const GetGroupComparisonResponse = zod.array(
+  GetGroupComparisonResponseItem,
+);
+
+/**
  * @summary Get global attendance rules
  */
 export const GetAttendanceSettingsResponse = zod.object({

@@ -36,6 +36,7 @@ import type {
   GetLeaderboardParams,
   GetSummaryParams,
   GetTimelineParams,
+  GroupComparisonItem,
   GroupRenameInput,
   HealthCheck200,
   HeartbeatRequest,
@@ -1434,6 +1435,81 @@ export function useGetLeaderboard<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetLeaderboardQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Per-group productivity comparison today
+ */
+export const getGetGroupComparisonUrl = () => {
+  return `/api/reports/group-comparison`;
+};
+
+export const getGroupComparison = async (
+  options?: RequestInit,
+): Promise<GroupComparisonItem[]> => {
+  return customFetch<GroupComparisonItem[]>(getGetGroupComparisonUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetGroupComparisonQueryKey = () => {
+  return [`/api/reports/group-comparison`] as const;
+};
+
+export const getGetGroupComparisonQueryOptions = <
+  TData = Awaited<ReturnType<typeof getGroupComparison>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getGroupComparison>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetGroupComparisonQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getGroupComparison>>
+  > = ({ signal }) => getGroupComparison({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getGroupComparison>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetGroupComparisonQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getGroupComparison>>
+>;
+export type GetGroupComparisonQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Per-group productivity comparison today
+ */
+
+export function useGetGroupComparison<
+  TData = Awaited<ReturnType<typeof getGroupComparison>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getGroupComparison>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetGroupComparisonQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

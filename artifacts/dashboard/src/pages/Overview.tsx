@@ -4,10 +4,11 @@ import {
   getGetSummaryQueryKey,
   useGetLeaderboard,
   getGetLeaderboardQueryKey,
+  useGetGroupComparison,
   useListDevices,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { MonitorSmartphone, Image as ImageIcon, Terminal, Users, Activity, Trophy } from "lucide-react";
+import { MonitorSmartphone, Image as ImageIcon, Terminal, Users, Activity, Trophy, LayoutGrid } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -35,6 +36,7 @@ export default function Overview() {
   const { data: leaderboard, isLoading: isLeaderboardLoading } = useGetLeaderboard(params, {
     query: { queryKey: getGetLeaderboardQueryKey(params) },
   });
+  const { data: groupComparison } = useGetGroupComparison();
 
   if (isSummaryLoading || isLeaderboardLoading) {
     return (
@@ -140,6 +142,44 @@ export default function Overview() {
           </CardContent>
         </Card>
       </div>
+
+      {groupComparison && groupComparison.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <LayoutGrid className="h-5 w-5" />
+              Team Comparison
+            </CardTitle>
+            <CardDescription>Productivity across all device groups today, side by side.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {groupComparison.map((g) => (
+                <div
+                  key={g.group}
+                  className="rounded-xl border bg-card p-4 flex flex-col gap-3"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="font-semibold truncate" title={g.group}>{g.group}</div>
+                    <span className="text-xs text-muted-foreground whitespace-nowrap">
+                      {g.deviceCount} {g.deviceCount === 1 ? "device" : "devices"}
+                    </span>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-3xl font-bold text-primary">{g.score}</span>
+                    <span className="text-sm text-muted-foreground">/ 100 score</span>
+                  </div>
+                  <Progress value={g.score} className="h-2" />
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>{formatHours(g.productiveSeconds)} productive</span>
+                    <span>{formatHours(g.totalSeconds)} tracked</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="lg:col-span-2">

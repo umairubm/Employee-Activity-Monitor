@@ -187,4 +187,70 @@ router.get("/leaderboard", async (req, res) => {
   }
 });
 
+// GET /api/reports/group-comparison - per-group productivity today
+router.get("/group-comparison", async (_req, res) => {
+  try {
+    const todayStart = startOfToday();
+
+    const [deviceCountRows, activityRows] = await Promise.all([
+      db
+        .select({
+          group: devicesTable.deviceGroup,
+          deviceCount: count(),
+        })
+        .from(devicesTable)
+        .groupBy(devicesTable.deviceGroup),
+      db
+        .select({
+          group: devicesTable.deviceGroup,
+          productiveSeconds: sql<number>`coalesce(sum(case when ${appCategoriesTable.classification} = 'productive' then ${activityLogsTable.durationSeconds} else 0 end), 0)`,
+          totalSeconds: sql<number>`coalesce(sum(${activityLogsTable.durationSeconds}), 0)`,
+        })
+        .from(activityLogsTable)
+        .innerJoin(devicesTable, eq(activityLogsTable.deviceId, devicesTable.id))
+        .leftJoin(
+          appCategoriesTable,
+          eq(activityLogsTable.categoryId, appCategoriesTable.id),
+        )
+        .where(gte(activityLogsTable.startedAt, todayStart))
+        .groupBy(devicesTable.deviceGroup),
+    ]);
+
+    const activityByGroup = new Map<
+      string,
+      { productiveSeconds: number; totalSeconds: number }
+    >();
+    for (const row of activityRows) {
+      activityByGroup.set(row.group, {
+        productiveSeconds: Number(row.productiveSeconds),
+        totalSeconds: Number(row.totalSeconds),
+      });
+    }
+
+    const comparison = deviceCountRows
+      .map((r) => {
+        const activity = activityByGroup.get(r.group) ?? {
+          productiveSeconds: 0,
+          totalSeconds: 0,
+        };
+        const { productiveSeconds, totalSeconds } = activity;
+        return {
+          group: r.group,
+          deviceCount: r.deviceCount,
+          productiveSeconds,
+          totalSeconds,
+          score:
+            totalSeconds > 0
+              ? Math.round((productiveSeconds / totalSeconds) * 100)
+              : 0,
+        };
+      })
+      .sort((a, b) => b.score - a.score);
+
+    res.json(comparison);
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
 export default router;
