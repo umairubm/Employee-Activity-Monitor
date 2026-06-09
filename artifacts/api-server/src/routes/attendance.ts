@@ -235,18 +235,38 @@ router.get("/range", async (req, res) => {
       let presentDevices = 0;
       let halfDayDevices = 0;
       let absentDevices = 0;
+      const byDevice: {
+        deviceId: string;
+        workedSeconds: number;
+        status: "present" | "half_day" | "absent";
+      }[] = [];
 
       for (const device of devices) {
         const ws = workedByDevice.get(device.id)?.get(day) ?? 0;
         workedSeconds += ws;
         const workedHours = ws / 3600;
-        if (workedHours >= requiredHours) presentDevices += 1;
-        else if (workedHours >= settings.halfDayThresholdHours)
+        let status: "present" | "half_day" | "absent";
+        if (workedHours >= requiredHours) {
+          presentDevices += 1;
+          status = "present";
+        } else if (workedHours >= settings.halfDayThresholdHours) {
           halfDayDevices += 1;
-        else absentDevices += 1;
+          status = "half_day";
+        } else {
+          absentDevices += 1;
+          status = "absent";
+        }
+        byDevice.push({ deviceId: device.id, workedSeconds: ws, status });
       }
 
-      return { day, workedSeconds, presentDevices, halfDayDevices, absentDevices };
+      return {
+        day,
+        workedSeconds,
+        presentDevices,
+        halfDayDevices,
+        absentDevices,
+        byDevice,
+      };
     });
 
     res.json({ from, to, days: dayList.length, devices: rows, daily });

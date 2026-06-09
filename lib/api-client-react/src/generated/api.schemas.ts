@@ -284,6 +284,24 @@ export interface AttendanceRangeRow {
   avgWorkedSeconds: number;
 }
 
+export type AttendanceRangeDayDeviceStatus =
+  (typeof AttendanceRangeDayDeviceStatus)[keyof typeof AttendanceRangeDayDeviceStatus];
+
+export const AttendanceRangeDayDeviceStatus = {
+  present: "present",
+  half_day: "half_day",
+  absent: "absent",
+} as const;
+
+/**
+ * One device's worked time and status for a single day.
+ */
+export interface AttendanceRangeDayDevice {
+  deviceId: string;
+  workedSeconds: number;
+  status: AttendanceRangeDayDeviceStatus;
+}
+
 export interface AttendanceRangeDay {
   /** Day in YYYY-MM-DD format */
   day: string;
@@ -292,6 +310,8 @@ export interface AttendanceRangeDay {
   presentDevices: number;
   halfDayDevices: number;
   absentDevices: number;
+  /** Per-device worked seconds and status for this day. */
+  byDevice: AttendanceRangeDayDevice[];
 }
 
 export interface AttendanceRangeReport {

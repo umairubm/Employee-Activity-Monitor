@@ -17,8 +17,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent, type ChartConfig } from "@/components/ui/chart";
-import { CartesianGrid, XAxis, YAxis, Line, ComposedChart, Bar } from "recharts";
+import { CartesianGrid, XAxis, YAxis, Line, ComposedChart, Bar, Cell } from "recharts";
 import { CalendarCheck, CalendarRange, Settings2, Clock, Download, TrendingUp } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -50,6 +51,18 @@ const CHART_CONFIG = {
   workedHours: { label: "Worked hours", color: "hsl(var(--chart-1))" },
   present: { label: "Devices present", color: "hsl(var(--chart-2))" },
 } satisfies ChartConfig;
+
+const STATUS_FILL: Record<string, string> = {
+  present: "hsl(var(--chart-2))",
+  half_day: "hsl(var(--chart-4))",
+  absent: "hsl(var(--muted-foreground))",
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  present: "Present",
+  half_day: "Half-day",
+  absent: "Absent",
+};
 
 function downloadCsv(filename: string, rows: (string | number)[][]) {
   const escape = (v: string | number) => {
@@ -175,6 +188,7 @@ function RangeView() {
   const { toast } = useToast();
   const [from, setFrom] = useState(daysAgoStr(6));
   const [to, setTo] = useState(todayStr());
+  const [selectedDeviceId, setSelectedDeviceId] = useState("all");
 
   const valid = from <= to;
   const rangeParams = { from, to };
@@ -196,16 +210,39 @@ function RangeView() {
     return t;
   }, [report]);
 
-  const chartData = useMemo(
-    () =>
-      (report?.daily ?? []).map((d) => ({
+  const singleDevice = selectedDeviceId !== "all";
+
+  const chartData = useMemo(() => {
+    const daily = report?.daily ?? [];
+    if (!singleDevice) {
+      return daily.map((d) => ({
         day: d.day,
         label: format(new Date(`${d.day}T00:00:00`), "MMM d"),
         workedHours: Number((d.workedSeconds / 3600).toFixed(2)),
         present: d.presentDevices,
         absent: d.absentDevices,
-      })),
-    [report],
+        status: "" as string,
+      }));
+    }
+    return daily.map((d) => {
+      const dev = d.byDevice.find((b) => b.deviceId === selectedDeviceId);
+      const workedSeconds = dev?.workedSeconds ?? 0;
+      return {
+        day: d.day,
+        label: format(new Date(`${d.day}T00:00:00`), "MMM d"),
+        workedHours: Number((workedSeconds / 3600).toFixed(2)),
+        present: 0,
+        absent: 0,
+        status: dev?.status ?? "absent",
+      };
+    });
+  }, [report, singleDevice, selectedDeviceId]);
+
+  const selectedDeviceName = useMemo(
+    () =>
+      report?.devices.find((d) => d.deviceId === selectedDeviceId)?.systemName ??
+      "All devices",
+    [report, selectedDeviceId],
   );
 
   const exportCsv = () => {
@@ -291,11 +328,35 @@ function RangeView() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
-            <TrendingUp className="h-5 w-5 text-muted-foreground" />
-            Daily trend
-          </CardTitle>
-          <CardDescription>Total worked hours per day (bars) and devices present per day (line) across the selected range.</CardDescription>
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+            <div>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <TrendingUp className="h-5 w-5 text-muted-foreground" />
+                Daily trend
+              </CardTitle>
+              <CardDescription>
+                {singleDevice
+                  ? `Worked hours per day for ${selectedDeviceName}, with each bar colored by attendance status.`
+                  : "Total worked hours per day (bars) and devices present per day (line) across the selected range."}
+              </CardDescription>
+            </div>
+            <div className="shrink-0">
+              <Label htmlFor="device" className="text-xs text-muted-foreground mb-1 block">Device</Label>
+              <Select value={selectedDeviceId} onValueChange={setSelectedDeviceId}>
+                <SelectTrigger id="device" className="w-56">
+                  <SelectValue placeholder="All devices" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All devices</SelectItem>
+                  {report?.devices.map((d) => (
+                    <SelectItem key={d.deviceId} value={d.deviceId}>
+                      {d.systemName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           {!valid ? (
@@ -307,18 +368,39 @@ function RangeView() {
           ) : chartData.length === 0 ? (
             <div className="h-72 flex items-center justify-center text-muted-foreground">No data in this range.</div>
           ) : (
-            <ChartContainer config={CHART_CONFIG} className="aspect-auto h-72 w-full">
-              <ComposedChart data={chartData} margin={{ left: 4, right: 4, top: 8 }}>
-                <CartesianGrid vertical={false} />
-                <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} minTickGap={16} />
-                <YAxis yAxisId="left" tickLine={false} axisLine={false} tickMargin={8} width={36} />
-                <YAxis yAxisId="right" orientation="right" tickLine={false} axisLine={false} tickMargin={8} width={28} allowDecimals={false} />
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <ChartLegend content={<ChartLegendContent />} />
-                <Bar yAxisId="left" dataKey="workedHours" fill="var(--color-workedHours)" radius={[4, 4, 0, 0]} />
-                <Line yAxisId="right" type="monotone" dataKey="present" stroke="var(--color-present)" strokeWidth={2} dot={false} />
-              </ComposedChart>
-            </ChartContainer>
+            <>
+              <ChartContainer config={CHART_CONFIG} className="aspect-auto h-72 w-full">
+                <ComposedChart data={chartData} margin={{ left: 4, right: 4, top: 8 }}>
+                  <CartesianGrid vertical={false} />
+                  <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} minTickGap={16} />
+                  <YAxis yAxisId="left" tickLine={false} axisLine={false} tickMargin={8} width={36} />
+                  {!singleDevice && (
+                    <YAxis yAxisId="right" orientation="right" tickLine={false} axisLine={false} tickMargin={8} width={28} allowDecimals={false} />
+                  )}
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  {!singleDevice && <ChartLegend content={<ChartLegendContent />} />}
+                  <Bar yAxisId="left" dataKey="workedHours" fill="var(--color-workedHours)" radius={[4, 4, 0, 0]}>
+                    {singleDevice &&
+                      chartData.map((d) => (
+                        <Cell key={d.day} fill={STATUS_FILL[d.status] ?? STATUS_FILL.absent} />
+                      ))}
+                  </Bar>
+                  {!singleDevice && (
+                    <Line yAxisId="right" type="monotone" dataKey="present" stroke="var(--color-present)" strokeWidth={2} dot={false} />
+                  )}
+                </ComposedChart>
+              </ChartContainer>
+              {singleDevice && (
+                <div className="mt-3 flex flex-wrap items-center justify-center gap-4 text-xs text-muted-foreground">
+                  {(["present", "half_day", "absent"] as const).map((s) => (
+                    <span key={s} className="flex items-center gap-1.5">
+                      <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: STATUS_FILL[s] }} />
+                      {STATUS_LABEL[s]}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>

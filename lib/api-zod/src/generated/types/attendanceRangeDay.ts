@@ -5,6 +5,7 @@
  * API specification for Workforce Analytics & IT Management
  * OpenAPI spec version: 0.1.0
  */
+import type { AttendanceRangeDayDevice } from "./attendanceRangeDayDevice";
 
 export interface AttendanceRangeDay {
   /** Day in YYYY-MM-DD format */
@@ -14,4 +15,6 @@ export interface AttendanceRangeDay {
   presentDevices: number;
   halfDayDevices: number;
   absentDevices: number;
+  /** Per-device worked seconds and status for this day. */
+  byDevice: AttendanceRangeDayDevice[];
 }

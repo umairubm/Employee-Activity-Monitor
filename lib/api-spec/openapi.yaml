@@ -999,6 +999,22 @@ components:
         - absentDays
         - totalWorkedSeconds
         - avgWorkedSeconds
+    AttendanceRangeDayDevice:
+      type: object
+      description: One device's worked time and status for a single day.
+      properties:
+        deviceId:
+          type: string
+          format: uuid
+        workedSeconds:
+          type: integer
+        status:
+          type: string
+          enum: [present, half_day, absent]
+      required:
+        - deviceId
+        - workedSeconds
+        - status
     AttendanceRangeDay:
       type: object
       properties:
@@ -1014,12 +1030,18 @@ components:
           type: integer
         absentDevices:
           type: integer
+        byDevice:
+          type: array
+          description: Per-device worked seconds and status for this day.
+          items:
+            $ref: "#/components/schemas/AttendanceRangeDayDevice"
       required:
         - day
         - workedSeconds
         - presentDevices
         - halfDayDevices
         - absentDevices
+        - byDevice
     AttendanceRangeReport:
       type: object
       properties:

@@ -409,6 +409,17 @@ export const GetAttendanceRangeReportResponse = zod.object({
       presentDevices: zod.number(),
       halfDayDevices: zod.number(),
       absentDevices: zod.number(),
+      byDevice: zod
+        .array(
+          zod
+            .object({
+              deviceId: zod.string().uuid(),
+              workedSeconds: zod.number(),
+              status: zod.enum(["present", "half_day", "absent"]),
+            })
+            .describe("One device's worked time and status for a single day."),
+        )
+        .describe("Per-device worked seconds and status for this day."),
     }),
   ),
 });
