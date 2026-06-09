@@ -11,7 +11,9 @@ import {
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { MonitorSmartphone, Image as ImageIcon, Terminal, Users, Activity, Trophy, LayoutGrid } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
+import { MonitorSmartphone, Image as ImageIcon, Terminal, Users, Activity, Trophy, LayoutGrid, Download } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -34,7 +36,28 @@ function daysAgoStr(n: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+function downloadCsv(filename: string, rows: (string | number)[][]) {
+  const escape = (v: string | number) => {
+    let s = String(v);
+    // Guard against CSV formula injection: prefix cells that a spreadsheet
+    // would otherwise evaluate as a formula with a single quote.
+    if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const csv = rows.map((r) => r.map(escape).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 export default function Overview() {
+  const { toast } = useToast();
   const [groupFilter, setGroupFilter] = useGroupFilter();
   const [rangeFrom, setRangeFrom] = useState(todayStr());
   const [rangeTo, setRangeTo] = useState(todayStr());
@@ -88,6 +111,35 @@ export default function Overview() {
   const formatHours = (seconds: number) => {
     const hours = seconds / 3600;
     return hours.toFixed(1) + 'h';
+  };
+
+  const exportCsv = () => {
+    const scope = groupFilter !== ALL ? groupFilter : "all-groups";
+    const rows: (string | number)[][] = [
+      ["Group", groupFilter !== ALL ? groupFilter : "All groups"],
+      ["From", rangeFrom],
+      ["To", rangeTo],
+      [],
+      ["Activity breakdown"],
+      ["Classification", "Hours"],
+      ["Productive", (summary.activityToday.productiveSeconds / 3600).toFixed(2)],
+      ["Neutral", (summary.activityToday.neutralSeconds / 3600).toFixed(2)],
+      ["Unproductive", (summary.activityToday.unproductiveSeconds / 3600).toFixed(2)],
+      ["Undefined", (summary.activityToday.undefinedSeconds / 3600).toFixed(2)],
+      ["Total", (summary.activityToday.totalSeconds / 3600).toFixed(2)],
+      [],
+      ["Leaderboard"],
+      ["Rank", "Device", "Productive (hours)", "Total (hours)", "Score"],
+      ...(leaderboard ?? []).map((item, index) => [
+        index + 1,
+        item.systemName,
+        (item.productiveSeconds / 3600).toFixed(2),
+        (item.totalSeconds / 3600).toFixed(2),
+        Math.round(item.score),
+      ]),
+    ];
+    downloadCsv(`overview_${scope}_${rangeFrom}_to_${rangeTo}.csv`, rows);
+    toast({ title: "CSV exported" });
   };
 
   return (
@@ -164,6 +216,14 @@ export default function Overview() {
               onChange={(e) => setRangeTo(e.target.value || todayStr())}
             />
           </div>
+          <Button
+            variant="outline"
+            className="h-8 gap-2"
+            onClick={exportCsv}
+            disabled={!leaderboard || leaderboard.length === 0}
+          >
+            <Download className="h-4 w-4" /> Export
+          </Button>
         </div>
       </div>
 
