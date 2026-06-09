@@ -102,6 +102,138 @@ function parseDateParam(raw: unknown): string | null {
   return roundTrip === raw ? raw : null;
 }
 
+/** Parses a required explicit YYYY-MM-DD param; returns null if missing/malformed. */
+function parseExplicitDate(raw: unknown): string | null {
+  if (typeof raw !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null;
+  const d = new Date(`${raw}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString().slice(0, 10) === raw ? raw : null;
+}
+
+const MAX_RANGE_DAYS = 366;
+
+/** Inclusive list of YYYY-MM-DD day strings (UTC) between `from` and `to`. */
+function eachDayUTC(from: string, to: string): string[] {
+  const days: string[] = [];
+  const end = Date.parse(`${to}T00:00:00Z`);
+  for (let t = Date.parse(`${from}T00:00:00Z`); t <= end; t += 86400000) {
+    days.push(new Date(t).toISOString().slice(0, 10));
+  }
+  return days;
+}
+
+// GET /api/attendance/range?from=YYYY-MM-DD&to=YYYY-MM-DD
+// Per-device attendance summary aggregated across a date range.
+router.get("/range", async (req, res) => {
+  try {
+    const from = parseExplicitDate(req.query.from);
+    const to = parseExplicitDate(req.query.to);
+    if (from === null || to === null) {
+      res
+        .status(400)
+        .json({ error: "Invalid from/to; expected YYYY-MM-DD" });
+      return;
+    }
+    if (from > to) {
+      res.status(400).json({ error: "`from` must be on or before `to`" });
+      return;
+    }
+    const dayList = eachDayUTC(from, to);
+    if (dayList.length > MAX_RANGE_DAYS) {
+      res
+        .status(400)
+        .json({ error: `Range too large; max ${MAX_RANGE_DAYS} days` });
+      return;
+    }
+
+    const rangeStart = new Date(`${from}T00:00:00Z`);
+    const rangeEnd = new Date(Date.parse(`${to}T00:00:00Z`) + 86400000);
+
+    const settings = await getGlobalSettings();
+
+    // Pre-compute required hours per day (Friday vs normal).
+    const requiredByDay = new Map(
+      dayList.map((day) => {
+        const isFriday = new Date(`${day}T00:00:00Z`).getUTCDay() === 5;
+        return [
+          day,
+          isFriday ? settings.requiredHoursFriday : settings.requiredHoursNormal,
+        ];
+      }),
+    );
+
+    const devices = await db
+      .select({
+        id: devicesTable.id,
+        systemName: devicesTable.systemName,
+        deviceGroup: devicesTable.deviceGroup,
+      })
+      .from(devicesTable)
+      .orderBy(asc(devicesTable.systemName));
+
+    const dayBucket = sql<string>`to_char(${activityLogsTable.startedAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD')`;
+
+    const activity = await db
+      .select({
+        deviceId: activityLogsTable.deviceId,
+        day: dayBucket,
+        workedSeconds: sql<number>`coalesce(sum(${activityLogsTable.durationSeconds}), 0)`,
+      })
+      .from(activityLogsTable)
+      .where(
+        and(
+          gte(activityLogsTable.startedAt, rangeStart),
+          lt(activityLogsTable.startedAt, rangeEnd),
+        ),
+      )
+      .groupBy(activityLogsTable.deviceId, dayBucket);
+
+    // device id -> (day -> worked seconds)
+    const workedByDevice = new Map<string, Map<string, number>>();
+    for (const a of activity) {
+      let perDay = workedByDevice.get(a.deviceId);
+      if (!perDay) {
+        perDay = new Map();
+        workedByDevice.set(a.deviceId, perDay);
+      }
+      perDay.set(a.day, Number(a.workedSeconds));
+    }
+
+    const rows = devices.map((device) => {
+      const perDay = workedByDevice.get(device.id);
+      let presentDays = 0;
+      let halfDays = 0;
+      let absentDays = 0;
+      let totalWorkedSeconds = 0;
+
+      for (const day of dayList) {
+        const workedSeconds = perDay?.get(day) ?? 0;
+        totalWorkedSeconds += workedSeconds;
+        const workedHours = workedSeconds / 3600;
+        const requiredHours = requiredByDay.get(day) ?? settings.requiredHoursNormal;
+        if (workedHours >= requiredHours) presentDays += 1;
+        else if (workedHours >= settings.halfDayThresholdHours) halfDays += 1;
+        else absentDays += 1;
+      }
+
+      return {
+        deviceId: device.id,
+        systemName: device.systemName,
+        deviceGroup: device.deviceGroup,
+        presentDays,
+        halfDays,
+        absentDays,
+        totalWorkedSeconds,
+        avgWorkedSeconds: Math.round(totalWorkedSeconds / dayList.length),
+      };
+    });
+
+    res.json({ from, to, days: dayList.length, devices: rows });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
 // GET /api/attendance?date=YYYY-MM-DD - per-device daily attendance report
 router.get("/", async (req, res) => {
   try {

@@ -400,6 +400,31 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AttendanceReport"
+  /attendance/range:
+    get:
+      operationId: getAttendanceRangeReport
+      tags: [attendance]
+      summary: Per-device attendance summary across a date range
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            description: Range start day in YYYY-MM-DD format (inclusive)
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            description: Range end day in YYYY-MM-DD format (inclusive)
+      responses:
+        "200":
+          description: Attendance range report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttendanceRangeReport"
 
   /categories:
     get:
@@ -945,6 +970,49 @@ components:
           items:
             $ref: "#/components/schemas/AttendanceRow"
       required: [date, isFriday, requiredHours, devices]
+    AttendanceRangeRow:
+      type: object
+      properties:
+        deviceId:
+          type: string
+          format: uuid
+        systemName:
+          type: string
+        deviceGroup:
+          type: string
+        presentDays:
+          type: integer
+        halfDays:
+          type: integer
+        absentDays:
+          type: integer
+        totalWorkedSeconds:
+          type: integer
+        avgWorkedSeconds:
+          type: integer
+      required:
+        - deviceId
+        - systemName
+        - deviceGroup
+        - presentDays
+        - halfDays
+        - absentDays
+        - totalWorkedSeconds
+        - avgWorkedSeconds
+    AttendanceRangeReport:
+      type: object
+      properties:
+        from:
+          type: string
+        to:
+          type: string
+        days:
+          type: integer
+        devices:
+          type: array
+          items:
+            $ref: "#/components/schemas/AttendanceRangeRow"
+      required: [from, to, days, devices]
     EnrollmentTokenItem:
       type: object
       properties:

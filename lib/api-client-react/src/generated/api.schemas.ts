@@ -273,6 +273,24 @@ export interface AttendanceReport {
   devices: AttendanceRow[];
 }
 
+export interface AttendanceRangeRow {
+  deviceId: string;
+  systemName: string;
+  deviceGroup: string;
+  presentDays: number;
+  halfDays: number;
+  absentDays: number;
+  totalWorkedSeconds: number;
+  avgWorkedSeconds: number;
+}
+
+export interface AttendanceRangeReport {
+  from: string;
+  to: string;
+  days: number;
+  devices: AttendanceRangeRow[];
+}
+
 export interface EnrollmentTokenItem {
   id: string;
   token: string;
@@ -385,6 +403,17 @@ export type GetAttendanceReportParams = {
    * Day in YYYY-MM-DD format; defaults to today
    */
   date?: string;
+};
+
+export type GetAttendanceRangeReportParams = {
+  /**
+   * Range start day in YYYY-MM-DD format (inclusive)
+   */
+  from: string;
+  /**
+   * Range end day in YYYY-MM-DD format (inclusive)
+   */
+  to: string;
 };
 
 export type SyncActivity200 = {

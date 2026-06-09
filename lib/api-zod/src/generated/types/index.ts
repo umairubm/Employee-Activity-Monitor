@@ -8,6 +8,8 @@
 
 export * from "./activityLogItem";
 export * from "./activityLogRecord";
+export * from "./attendanceRangeReport";
+export * from "./attendanceRangeRow";
 export * from "./attendanceReport";
 export * from "./attendanceRow";
 export * from "./attendanceRowStatus";
@@ -27,6 +29,7 @@ export * from "./deviceItemOsType";
 export * from "./enrollmentTokenItem";
 export * from "./flagScreenshot200";
 export * from "./getActivityLogsParams";
+export * from "./getAttendanceRangeReportParams";
 export * from "./getAttendanceReportParams";
 export * from "./getTimelineParams";
 export * from "./groupRenameInput";

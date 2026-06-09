@@ -377,6 +377,32 @@ export const GetAttendanceReportResponse = zod.object({
 });
 
 /**
+ * @summary Per-device attendance summary across a date range
+ */
+export const GetAttendanceRangeReportQueryParams = zod.object({
+  from: zod.coerce.string(),
+  to: zod.coerce.string(),
+});
+
+export const GetAttendanceRangeReportResponse = zod.object({
+  from: zod.string(),
+  to: zod.string(),
+  days: zod.number(),
+  devices: zod.array(
+    zod.object({
+      deviceId: zod.string().uuid(),
+      systemName: zod.string(),
+      deviceGroup: zod.string(),
+      presentDays: zod.number(),
+      halfDays: zod.number(),
+      absentDays: zod.number(),
+      totalWorkedSeconds: zod.number(),
+      avgWorkedSeconds: zod.number(),
+    }),
+  ),
+});
+
+/**
  * @summary List app classification rules
  */
 export const ListCategoriesResponseItem = zod.object({

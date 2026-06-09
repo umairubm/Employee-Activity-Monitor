@@ -18,6 +18,7 @@ import type {
 
 import type {
   ActivityLogRecord,
+  AttendanceRangeReport,
   AttendanceReport,
   AttendanceSettingsItem,
   AttendanceSettingsUpdate,
@@ -30,6 +31,7 @@ import type {
   EnrollmentTokenItem,
   FlagScreenshot200,
   GetActivityLogsParams,
+  GetAttendanceRangeReportParams,
   GetAttendanceReportParams,
   GetTimelineParams,
   GroupRenameInput,
@@ -1654,6 +1656,109 @@ export function useGetAttendanceReport<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetAttendanceReportQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Per-device attendance summary across a date range
+ */
+export const getGetAttendanceRangeReportUrl = (
+  params: GetAttendanceRangeReportParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/attendance/range?${stringifiedParams}`
+    : `/api/attendance/range`;
+};
+
+export const getAttendanceRangeReport = async (
+  params: GetAttendanceRangeReportParams,
+  options?: RequestInit,
+): Promise<AttendanceRangeReport> => {
+  return customFetch<AttendanceRangeReport>(
+    getGetAttendanceRangeReportUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetAttendanceRangeReportQueryKey = (
+  params?: GetAttendanceRangeReportParams,
+) => {
+  return [`/api/attendance/range`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetAttendanceRangeReportQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAttendanceRangeReport>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetAttendanceRangeReportParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getAttendanceRangeReport>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetAttendanceRangeReportQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getAttendanceRangeReport>>
+  > = ({ signal }) =>
+    getAttendanceRangeReport(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAttendanceRangeReport>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetAttendanceRangeReportQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAttendanceRangeReport>>
+>;
+export type GetAttendanceRangeReportQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Per-device attendance summary across a date range
+ */
+
+export function useGetAttendanceRangeReport<
+  TData = Awaited<ReturnType<typeof getAttendanceRangeReport>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetAttendanceRangeReportParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getAttendanceRangeReport>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetAttendanceRangeReportQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
