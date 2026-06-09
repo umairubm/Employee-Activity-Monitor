@@ -18,5 +18,7 @@ export interface AttendanceRow {
   workedSeconds: number;
   idleSeconds: number;
   requiredHours: number;
+  /** Whether the day is a working day under this device's effective rule. */
+  isWorkingDay: boolean;
   status: AttendanceRowStatus;
 }

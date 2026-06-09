@@ -18,6 +18,8 @@ import type {
 
 import type {
   ActivityLogRecord,
+  AttendanceOverrideItem,
+  AttendanceOverrideUpsert,
   AttendanceRangeReport,
   AttendanceReport,
   AttendanceSettingsItem,
@@ -25,6 +27,7 @@ import type {
   AuthUser,
   CategoryItem,
   CreateTokenRequest,
+  DeleteAttendanceOverride200,
   DeviceCommandItem,
   DeviceGroupInput,
   DeviceItem,
@@ -1704,6 +1707,256 @@ export const useUpdateAttendanceSettings = <
   TContext
 > => {
   return useMutation(getUpdateAttendanceSettingsMutationOptions(options));
+};
+
+/**
+ * @summary List per-device and per-team attendance overrides
+ */
+export const getGetAttendanceOverridesUrl = () => {
+  return `/api/attendance/overrides`;
+};
+
+export const getAttendanceOverrides = async (
+  options?: RequestInit,
+): Promise<AttendanceOverrideItem[]> => {
+  return customFetch<AttendanceOverrideItem[]>(getGetAttendanceOverridesUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetAttendanceOverridesQueryKey = () => {
+  return [`/api/attendance/overrides`] as const;
+};
+
+export const getGetAttendanceOverridesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAttendanceOverrides>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getAttendanceOverrides>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetAttendanceOverridesQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getAttendanceOverrides>>
+  > = ({ signal }) => getAttendanceOverrides({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAttendanceOverrides>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetAttendanceOverridesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAttendanceOverrides>>
+>;
+export type GetAttendanceOverridesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List per-device and per-team attendance overrides
+ */
+
+export function useGetAttendanceOverrides<
+  TData = Awaited<ReturnType<typeof getAttendanceOverrides>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getAttendanceOverrides>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetAttendanceOverridesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Create or replace a per-device or per-team attendance override
+ */
+export const getUpsertAttendanceOverrideUrl = () => {
+  return `/api/attendance/overrides`;
+};
+
+export const upsertAttendanceOverride = async (
+  attendanceOverrideUpsert: AttendanceOverrideUpsert,
+  options?: RequestInit,
+): Promise<AttendanceOverrideItem> => {
+  return customFetch<AttendanceOverrideItem>(getUpsertAttendanceOverrideUrl(), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(attendanceOverrideUpsert),
+  });
+};
+
+export const getUpsertAttendanceOverrideMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof upsertAttendanceOverride>>,
+    TError,
+    { data: BodyType<AttendanceOverrideUpsert> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof upsertAttendanceOverride>>,
+  TError,
+  { data: BodyType<AttendanceOverrideUpsert> },
+  TContext
+> => {
+  const mutationKey = ["upsertAttendanceOverride"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof upsertAttendanceOverride>>,
+    { data: BodyType<AttendanceOverrideUpsert> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return upsertAttendanceOverride(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpsertAttendanceOverrideMutationResult = NonNullable<
+  Awaited<ReturnType<typeof upsertAttendanceOverride>>
+>;
+export type UpsertAttendanceOverrideMutationBody =
+  BodyType<AttendanceOverrideUpsert>;
+export type UpsertAttendanceOverrideMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Create or replace a per-device or per-team attendance override
+ */
+export const useUpsertAttendanceOverride = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof upsertAttendanceOverride>>,
+    TError,
+    { data: BodyType<AttendanceOverrideUpsert> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof upsertAttendanceOverride>>,
+  TError,
+  { data: BodyType<AttendanceOverrideUpsert> },
+  TContext
+> => {
+  return useMutation(getUpsertAttendanceOverrideMutationOptions(options));
+};
+
+/**
+ * @summary Remove a per-device or per-team attendance override
+ */
+export const getDeleteAttendanceOverrideUrl = (id: string) => {
+  return `/api/attendance/overrides/${id}`;
+};
+
+export const deleteAttendanceOverride = async (
+  id: string,
+  options?: RequestInit,
+): Promise<DeleteAttendanceOverride200> => {
+  return customFetch<DeleteAttendanceOverride200>(
+    getDeleteAttendanceOverrideUrl(id),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
+};
+
+export const getDeleteAttendanceOverrideMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteAttendanceOverride>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteAttendanceOverride>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["deleteAttendanceOverride"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteAttendanceOverride>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteAttendanceOverride(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteAttendanceOverrideMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteAttendanceOverride>>
+>;
+
+export type DeleteAttendanceOverrideMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Remove a per-device or per-team attendance override
+ */
+export const useDeleteAttendanceOverride = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteAttendanceOverride>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteAttendanceOverride>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getDeleteAttendanceOverrideMutationOptions(options));
 };
 
 /**

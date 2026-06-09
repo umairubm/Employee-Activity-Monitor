@@ -408,6 +408,91 @@ export const UpdateAttendanceSettingsResponse = zod.object({
 });
 
 /**
+ * @summary List per-device and per-team attendance overrides
+ */
+export const GetAttendanceOverridesResponseItem = zod
+  .object({
+    id: zod.string().uuid(),
+    scope: zod.enum(["device", "group"]),
+    deviceId: zod.string().uuid().nullish(),
+    deviceGroup: zod.string().nullish(),
+    deviceName: zod
+      .string()
+      .nullish()
+      .describe("System name for device-scoped overrides."),
+    workStartTime: zod.string(),
+    halfDayThresholdHours: zod.number(),
+    requiredHoursNormal: zod.number(),
+    requiredHoursFriday: zod.number(),
+    workingDays: zod.array(zod.number()),
+    holidays: zod.array(zod.string()),
+    createdAt: zod.coerce.date().optional(),
+    updatedAt: zod.coerce.date().optional(),
+  })
+  .describe("A per-device or per-team attendance override row.");
+export const GetAttendanceOverridesResponse = zod.array(
+  GetAttendanceOverridesResponseItem,
+);
+
+/**
+ * @summary Create or replace a per-device or per-team attendance override
+ */
+export const UpsertAttendanceOverrideBody = zod
+  .object({
+    scope: zod.enum(["device", "group"]),
+    deviceId: zod
+      .string()
+      .uuid()
+      .optional()
+      .describe('Required when scope is \"device\".'),
+    deviceGroup: zod
+      .string()
+      .optional()
+      .describe('Required when scope is \"group\".'),
+    workStartTime: zod.string(),
+    halfDayThresholdHours: zod.number(),
+    requiredHoursNormal: zod.number(),
+    requiredHoursFriday: zod.number(),
+    workingDays: zod.array(zod.number()),
+    holidays: zod.array(zod.string()),
+  })
+  .describe(
+    "Create or replace a complete override. Provide deviceId for a device override or deviceGroup for a team override (exactly one).",
+  );
+
+export const UpsertAttendanceOverrideResponse = zod
+  .object({
+    id: zod.string().uuid(),
+    scope: zod.enum(["device", "group"]),
+    deviceId: zod.string().uuid().nullish(),
+    deviceGroup: zod.string().nullish(),
+    deviceName: zod
+      .string()
+      .nullish()
+      .describe("System name for device-scoped overrides."),
+    workStartTime: zod.string(),
+    halfDayThresholdHours: zod.number(),
+    requiredHoursNormal: zod.number(),
+    requiredHoursFriday: zod.number(),
+    workingDays: zod.array(zod.number()),
+    holidays: zod.array(zod.string()),
+    createdAt: zod.coerce.date().optional(),
+    updatedAt: zod.coerce.date().optional(),
+  })
+  .describe("A per-device or per-team attendance override row.");
+
+/**
+ * @summary Remove a per-device or per-team attendance override
+ */
+export const DeleteAttendanceOverrideParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
+
+export const DeleteAttendanceOverrideResponse = zod.object({
+  id: zod.string().uuid(),
+});
+
+/**
  * @summary Per-device daily attendance report
  */
 export const GetAttendanceReportQueryParams = zod.object({
@@ -433,6 +518,11 @@ export const GetAttendanceReportResponse = zod.object({
       workedSeconds: zod.number(),
       idleSeconds: zod.number(),
       requiredHours: zod.number(),
+      isWorkingDay: zod
+        .boolean()
+        .describe(
+          "Whether the day is a working day under this device's effective rule.",
+        ),
       status: zod.enum(["present", "half_day", "absent", "non_working"]),
     }),
   ),

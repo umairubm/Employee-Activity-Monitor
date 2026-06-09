@@ -80,6 +80,11 @@ notification before every screenshot.
   the `artifacts/api-server: API Server` workflow after changing server code.
 - `drizzle-kit push` prompts interactively on column renames even with `--force`.
   On an empty dev DB, drop the affected tables and re-push to avoid the prompt.
+- `drizzle-kit push` does NOT diff a partial index's `WHERE` predicate — editing
+  only the `.where(...)` of a `uniqueIndex` leaves the old index in place. After
+  such a change, verify with `pg_indexes` and DROP/CREATE the index by hand (dev
+  and prod). Upserts onto a partial unique index also need a matching
+  `targetWhere` in `onConflictDoUpdate`.
 - After editing `lib/db` schema, run `pnpm run typecheck:libs` (or `typecheck`)
   so the api-server sees the rebuilt declarations, not stale ones.
 

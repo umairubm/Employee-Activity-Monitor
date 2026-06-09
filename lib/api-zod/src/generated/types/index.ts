@@ -8,6 +8,10 @@
 
 export * from "./activityLogItem";
 export * from "./activityLogRecord";
+export * from "./attendanceOverrideItem";
+export * from "./attendanceOverrideItemScope";
+export * from "./attendanceOverrideUpsert";
+export * from "./attendanceOverrideUpsertScope";
 export * from "./attendanceRangeDay";
 export * from "./attendanceRangeDayDevice";
 export * from "./attendanceRangeDayDeviceStatus";
@@ -23,6 +27,7 @@ export * from "./authUserRole";
 export * from "./categoryItem";
 export * from "./categoryItemClassification";
 export * from "./createTokenRequest";
+export * from "./deleteAttendanceOverride200";
 export * from "./deviceCommandItem";
 export * from "./deviceCommandItemCommandType";
 export * from "./deviceCommandItemStatus";

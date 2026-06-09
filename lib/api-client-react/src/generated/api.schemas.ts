@@ -259,6 +259,64 @@ export interface AttendanceSettingsUpdate {
   holidays?: string[];
 }
 
+export type AttendanceOverrideItemScope =
+  (typeof AttendanceOverrideItemScope)[keyof typeof AttendanceOverrideItemScope];
+
+export const AttendanceOverrideItemScope = {
+  device: "device",
+  group: "group",
+} as const;
+
+/**
+ * A per-device or per-team attendance override row.
+ */
+export interface AttendanceOverrideItem {
+  id: string;
+  scope: AttendanceOverrideItemScope;
+  /** @nullable */
+  deviceId?: string | null;
+  /** @nullable */
+  deviceGroup?: string | null;
+  /**
+   * System name for device-scoped overrides.
+   * @nullable
+   */
+  deviceName?: string | null;
+  workStartTime: string;
+  halfDayThresholdHours: number;
+  requiredHoursNormal: number;
+  requiredHoursFriday: number;
+  workingDays: number[];
+  holidays: string[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export type AttendanceOverrideUpsertScope =
+  (typeof AttendanceOverrideUpsertScope)[keyof typeof AttendanceOverrideUpsertScope];
+
+export const AttendanceOverrideUpsertScope = {
+  device: "device",
+  group: "group",
+} as const;
+
+/**
+ * Create or replace a complete override. Provide deviceId for a device override or deviceGroup for a team override (exactly one).
+ */
+export interface AttendanceOverrideUpsert {
+  scope: AttendanceOverrideUpsertScope;
+  /** Required when scope is "device". */
+  deviceId?: string;
+  /** Required when scope is "group". */
+  deviceGroup?: string;
+  workStartTime: string;
+  halfDayThresholdHours: number;
+  requiredHoursNormal: number;
+  requiredHoursFriday: number;
+  workingDays: number[];
+  holidays: string[];
+}
+
 export type AttendanceRowStatus =
   (typeof AttendanceRowStatus)[keyof typeof AttendanceRowStatus];
 
@@ -280,6 +338,8 @@ export interface AttendanceRow {
   workedSeconds: number;
   idleSeconds: number;
   requiredHours: number;
+  /** Whether the day is a working day under this device's effective rule. */
+  isWorkingDay: boolean;
   status: AttendanceRowStatus;
 }
 
@@ -495,6 +555,10 @@ export type GetGroupComparisonParams = {
    * Range end day in YYYY-MM-DD format (inclusive); defaults to today
    */
   to?: string;
+};
+
+export type DeleteAttendanceOverride200 = {
+  id: string;
 };
 
 export type GetAttendanceReportParams = {

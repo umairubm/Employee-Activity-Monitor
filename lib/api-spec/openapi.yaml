@@ -446,6 +446,56 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AttendanceSettingsItem"
+  /attendance/overrides:
+    get:
+      operationId: getAttendanceOverrides
+      tags: [attendance]
+      summary: List per-device and per-team attendance overrides
+      responses:
+        "200":
+          description: Attendance overrides
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AttendanceOverrideItem"
+    put:
+      operationId: upsertAttendanceOverride
+      tags: [attendance]
+      summary: Create or replace a per-device or per-team attendance override
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AttendanceOverrideUpsert"
+      responses:
+        "200":
+          description: Saved override
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttendanceOverrideItem"
+  /attendance/overrides/{id}:
+    delete:
+      operationId: deleteAttendanceOverride
+      tags: [attendance]
+      summary: Remove a per-device or per-team attendance override
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Deleted override id
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                required: [id]
   /attendance:
     get:
       operationId: getAttendanceReport
@@ -1036,6 +1086,95 @@ components:
         - halfDayThresholdHours
         - requiredHoursNormal
         - requiredHoursFriday
+    AttendanceOverrideItem:
+      type: object
+      description: A per-device or per-team attendance override row.
+      properties:
+        id:
+          type: string
+          format: uuid
+        scope:
+          type: string
+          enum: [device, group]
+        deviceId:
+          type: [string, "null"]
+          format: uuid
+        deviceGroup:
+          type: [string, "null"]
+        deviceName:
+          type: [string, "null"]
+          description: System name for device-scoped overrides.
+        workStartTime:
+          type: string
+        halfDayThresholdHours:
+          type: number
+        requiredHoursNormal:
+          type: number
+        requiredHoursFriday:
+          type: number
+        workingDays:
+          type: array
+          items:
+            type: integer
+        holidays:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - scope
+        - workStartTime
+        - halfDayThresholdHours
+        - requiredHoursNormal
+        - requiredHoursFriday
+        - workingDays
+        - holidays
+    AttendanceOverrideUpsert:
+      type: object
+      description: >-
+        Create or replace a complete override. Provide deviceId for a device
+        override or deviceGroup for a team override (exactly one).
+      properties:
+        scope:
+          type: string
+          enum: [device, group]
+        deviceId:
+          type: string
+          format: uuid
+          description: Required when scope is "device".
+        deviceGroup:
+          type: string
+          description: Required when scope is "group".
+        workStartTime:
+          type: string
+        halfDayThresholdHours:
+          type: number
+        requiredHoursNormal:
+          type: number
+        requiredHoursFriday:
+          type: number
+        workingDays:
+          type: array
+          items:
+            type: integer
+        holidays:
+          type: array
+          items:
+            type: string
+      required:
+        - scope
+        - workStartTime
+        - halfDayThresholdHours
+        - requiredHoursNormal
+        - requiredHoursFriday
+        - workingDays
+        - holidays
     AttendanceRow:
       type: object
       properties:
@@ -1058,6 +1197,9 @@ components:
           type: integer
         requiredHours:
           type: number
+        isWorkingDay:
+          type: boolean
+          description: Whether the day is a working day under this device's effective rule.
         status:
           type: string
           enum: [present, half_day, absent, non_working]
@@ -1068,6 +1210,7 @@ components:
         - workedSeconds
         - idleSeconds
         - requiredHours
+        - isWorkingDay
         - status
     AttendanceReport:
       type: object

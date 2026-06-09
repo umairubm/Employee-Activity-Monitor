@@ -7,7 +7,12 @@ import {
   useGetAttendanceSettings,
   getGetAttendanceSettingsQueryKey,
   useUpdateAttendanceSettings,
+  useGetAttendanceOverrides,
+  getGetAttendanceOverridesQueryKey,
+  useUpsertAttendanceOverride,
+  useDeleteAttendanceOverride,
   useListDevices,
+  type AttendanceOverrideItem,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -18,7 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent, type ChartConfig } from "@/components/ui/chart";
 import { CartesianGrid, XAxis, YAxis, Line, ComposedChart, Bar, Cell } from "recharts";
 import { CalendarCheck, CalendarRange, Settings2, Clock, Download, TrendingUp } from "lucide-react";
@@ -532,15 +537,52 @@ function RangeView() {
   );
 }
 
+const GLOBAL_SCOPE = "global";
+
+/** Encodes the selected scope into a single Select value string. */
+function scopeKey(scope: "global" | "group" | "device", id?: string): string {
+  if (scope === "global") return GLOBAL_SCOPE;
+  return `${scope}:${id}`;
+}
+
 export default function Attendance() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { data: settings } = useGetAttendanceSettings({
     query: { queryKey: getGetAttendanceSettingsQueryKey() },
   });
+  const { data: devices } = useListDevices();
+  const { data: overrides } = useGetAttendanceOverrides({
+    query: { queryKey: getGetAttendanceOverridesQueryKey() },
+  });
   const updateSettings = useUpdateAttendanceSettings();
+  const upsertOverride = useUpsertAttendanceOverride();
+  const deleteOverride = useDeleteAttendanceOverride();
+
+  const groups = useMemo(() => {
+    const set = new Set<string>();
+    devices?.forEach((d) => set.add(d.deviceGroup));
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [devices]);
+
+  const overrideByGroup = useMemo(() => {
+    const m = new Map<string, AttendanceOverrideItem>();
+    overrides?.forEach((o) => {
+      if (o.scope === "group" && o.deviceGroup) m.set(o.deviceGroup, o);
+    });
+    return m;
+  }, [overrides]);
+
+  const overrideByDevice = useMemo(() => {
+    const m = new Map<string, AttendanceOverrideItem>();
+    overrides?.forEach((o) => {
+      if (o.scope === "device" && o.deviceId) m.set(o.deviceId, o);
+    });
+    return m;
+  }, [overrides]);
 
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [scopeValue, setScopeValue] = useState<string>(GLOBAL_SCOPE);
   const [form, setForm] = useState({
     workStartTime: "09:00",
     halfDayThresholdHours: "4",
@@ -550,17 +592,62 @@ export default function Attendance() {
   const [workingDays, setWorkingDays] = useState<number[]>([1, 2, 3, 4, 5]);
   const [holidaysText, setHolidaysText] = useState("");
 
-  const openSettings = () => {
-    if (settings) {
-      setForm({
-        workStartTime: settings.workStartTime,
-        halfDayThresholdHours: String(settings.halfDayThresholdHours),
-        requiredHoursNormal: String(settings.requiredHoursNormal),
-        requiredHoursFriday: String(settings.requiredHoursFriday),
-      });
-      setWorkingDays([...settings.workingDays].sort((a, b) => a - b));
-      setHolidaysText(settings.holidays.join(", "));
+  // Parse the encoded scope value into its parts.
+  const scope = useMemo(() => {
+    if (scopeValue === GLOBAL_SCOPE) return { type: "global" as const };
+    const [type, ...rest] = scopeValue.split(":");
+    const id = rest.join(":");
+    if (type === "group") return { type: "group" as const, group: id };
+    return { type: "device" as const, deviceId: id };
+  }, [scopeValue]);
+
+  // The existing override row (if any) for the currently selected scope.
+  const currentOverride =
+    scope.type === "group"
+      ? overrideByGroup.get(scope.group)
+      : scope.type === "device"
+        ? overrideByDevice.get(scope.deviceId)
+        : undefined;
+
+  type Rules = {
+    workStartTime: string;
+    halfDayThresholdHours: number;
+    requiredHoursNormal: number;
+    requiredHoursFriday: number;
+    workingDays: number[];
+    holidays: string[];
+  };
+
+  const loadRulesIntoForm = (r: Rules) => {
+    setForm({
+      workStartTime: r.workStartTime,
+      halfDayThresholdHours: String(r.halfDayThresholdHours),
+      requiredHoursNormal: String(r.requiredHoursNormal),
+      requiredHoursFriday: String(r.requiredHoursFriday),
+    });
+    setWorkingDays([...r.workingDays].sort((a, b) => a - b));
+    setHolidaysText(r.holidays.join(", "));
+  };
+
+  // Prefill the form for a scope: use its override if defined, otherwise the
+  // global default as a starting template (saving then creates an override).
+  const loadForScope = (value: string) => {
+    setScopeValue(value);
+    let row: Rules | undefined;
+    if (value === GLOBAL_SCOPE) {
+      row = settings ?? undefined;
+    } else {
+      const [type, ...rest] = value.split(":");
+      const id = rest.join(":");
+      const ov =
+        type === "group" ? overrideByGroup.get(id) : overrideByDevice.get(id);
+      row = ov ?? settings ?? undefined;
     }
+    if (row) loadRulesIntoForm(row);
+  };
+
+  const openSettings = () => {
+    loadForScope(GLOBAL_SCOPE);
     setSettingsOpen(true);
   };
 
@@ -570,7 +657,7 @@ export default function Attendance() {
     );
   };
 
-  const saveSettings = () => {
+  const parseHolidays = (): string[] | null => {
     const holidays = holidaysText
       .split(/[\s,]+/)
       .map((s) => s.trim())
@@ -582,32 +669,104 @@ export default function Attendance() {
         description: `"${invalid}" is not in YYYY-MM-DD format.`,
         variant: "destructive",
       });
+      return null;
+    }
+    return holidays;
+  };
+
+  const refetchAll = () => {
+    queryClient.invalidateQueries({ queryKey: getGetAttendanceSettingsQueryKey() });
+    queryClient.invalidateQueries({ queryKey: getGetAttendanceOverridesQueryKey() });
+    queryClient.invalidateQueries();
+  };
+
+  const saveSettings = () => {
+    const holidays = parseHolidays();
+    if (holidays === null) return;
+    const rules = {
+      workStartTime: form.workStartTime,
+      halfDayThresholdHours: Number(form.halfDayThresholdHours),
+      requiredHoursNormal: Number(form.requiredHoursNormal),
+      requiredHoursFriday: Number(form.requiredHoursFriday),
+      workingDays,
+      holidays,
+    };
+
+    if (scope.type === "global") {
+      updateSettings.mutate(
+        { data: rules },
+        {
+          onSuccess: () => {
+            refetchAll();
+            toast({ title: "Global attendance rules updated" });
+            setSettingsOpen(false);
+          },
+          onError: (error: any) => {
+            toast({ title: "Failed to update rules", description: error.message, variant: "destructive" });
+          },
+        },
+      );
       return;
     }
-    updateSettings.mutate(
-      {
-        data: {
-          workStartTime: form.workStartTime,
-          halfDayThresholdHours: Number(form.halfDayThresholdHours),
-          requiredHoursNormal: Number(form.requiredHoursNormal),
-          requiredHoursFriday: Number(form.requiredHoursFriday),
-          workingDays,
-          holidays,
-        },
-      },
+
+    const data =
+      scope.type === "group"
+        ? { scope: "group" as const, deviceGroup: scope.group, ...rules }
+        : { scope: "device" as const, deviceId: scope.deviceId, ...rules };
+
+    upsertOverride.mutate(
+      { data },
       {
         onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: getGetAttendanceSettingsQueryKey() });
-          queryClient.invalidateQueries();
-          toast({ title: "Attendance rules updated" });
+          refetchAll();
+          toast({ title: "Override saved" });
           setSettingsOpen(false);
         },
         onError: (error: any) => {
-          toast({ title: "Failed to update rules", description: error.message, variant: "destructive" });
+          toast({ title: "Failed to save override", description: error.message, variant: "destructive" });
         },
       },
     );
   };
+
+  const removeOverride = () => {
+    if (!currentOverride) return;
+    deleteOverride.mutate(
+      { id: currentOverride.id },
+      {
+        onSuccess: () => {
+          refetchAll();
+          toast({ title: "Override removed" });
+          // Fall back to showing the inherited rule for this scope.
+          if (settings) loadRulesIntoForm(settings);
+        },
+        onError: (error: any) => {
+          toast({ title: "Failed to remove override", description: error.message, variant: "destructive" });
+        },
+      },
+    );
+  };
+
+  const deviceName = (deviceId: string) =>
+    devices?.find((d) => d.id === deviceId)?.systemName ?? deviceId;
+
+  const inheritedNote =
+    scope.type === "device"
+      ? overrideByDevice.get(scope.deviceId)
+        ? "This device has its own override."
+        : (() => {
+            const dev = devices?.find((d) => d.id === scope.deviceId);
+            return dev && overrideByGroup.has(dev.deviceGroup)
+              ? `Inheriting from team "${dev.deviceGroup}". Saving creates a device override.`
+              : "Inheriting the global default. Saving creates a device override.";
+          })()
+      : scope.type === "group"
+        ? overrideByGroup.get(scope.group)
+          ? "This team has its own override."
+          : "Inheriting the global default. Saving creates a team override."
+        : "The global default applies to every device without a team or device override.";
+
+  const saving = updateSettings.isPending || upsertOverride.isPending;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -624,10 +783,50 @@ export default function Attendance() {
               <Settings2 className="h-4 w-4" /> Rules
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Attendance Rules</DialogTitle>
+              <CardDescription>
+                Set a global default, then override working days, holidays, and
+                required hours per team or per device.
+              </CardDescription>
             </DialogHeader>
+
+            <div className="space-y-1 py-1">
+              <Label htmlFor="scope">Applies to</Label>
+              <Select value={scopeValue} onValueChange={loadForScope}>
+                <SelectTrigger id="scope">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={GLOBAL_SCOPE}>Global default</SelectItem>
+                  {groups.length > 0 && (
+                    <SelectGroup>
+                      <SelectLabel>Teams</SelectLabel>
+                      {groups.map((g) => (
+                        <SelectItem key={`g:${g}`} value={scopeKey("group", g)}>
+                          {g}
+                          {overrideByGroup.has(g) ? " ·  override" : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  )}
+                  {devices && devices.length > 0 && (
+                    <SelectGroup>
+                      <SelectLabel>Devices</SelectLabel>
+                      {devices.map((d) => (
+                        <SelectItem key={`d:${d.id}`} value={scopeKey("device", d.id)}>
+                          {d.systemName}
+                          {overrideByDevice.has(d.id) ? " ·  override" : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  )}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">{inheritedNote}</p>
+            </div>
+
             <div className="grid grid-cols-2 gap-4 py-2">
               <div className="space-y-1">
                 <Label htmlFor="workStartTime">Work start time</Label>
@@ -677,15 +876,70 @@ export default function Attendance() {
                 <p className="text-xs text-muted-foreground">Comma-separated YYYY-MM-DD dates, treated as non-working days.</p>
               </div>
             </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setSettingsOpen(false)}>Cancel</Button>
-              <Button onClick={saveSettings} disabled={updateSettings.isPending}>
-                {updateSettings.isPending ? "Saving..." : "Save rules"}
-              </Button>
+            <DialogFooter className="gap-2 sm:justify-between">
+              {currentOverride ? (
+                <Button
+                  variant="ghost"
+                  className="text-destructive hover:text-destructive"
+                  onClick={removeOverride}
+                  disabled={deleteOverride.isPending}
+                >
+                  {deleteOverride.isPending ? "Removing..." : "Remove override"}
+                </Button>
+              ) : (
+                <span />
+              )}
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setSettingsOpen(false)}>Cancel</Button>
+                <Button onClick={saveSettings} disabled={saving}>
+                  {saving
+                    ? "Saving..."
+                    : scope.type === "global"
+                      ? "Save rules"
+                      : "Save override"}
+                </Button>
+              </div>
             </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
+
+      {overrides && overrides.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Settings2 className="h-4 w-4 text-muted-foreground" /> Active overrides
+            </CardTitle>
+            <CardDescription>
+              These teams and devices use their own attendance rules instead of the global default.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-2">
+            {overrides.map((o) => (
+              <button
+                key={o.id}
+                type="button"
+                onClick={() => {
+                  loadForScope(
+                    o.scope === "group"
+                      ? scopeKey("group", o.deviceGroup ?? "")
+                      : scopeKey("device", o.deviceId ?? ""),
+                  );
+                  setSettingsOpen(true);
+                }}
+                className="group inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm hover:bg-muted transition-colors"
+              >
+                <Badge variant="secondary" className="font-normal">
+                  {o.scope === "group" ? "Team" : "Device"}
+                </Badge>
+                <span className="font-medium">
+                  {o.scope === "group" ? o.deviceGroup : o.deviceName ?? deviceName(o.deviceId ?? "")}
+                </span>
+              </button>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       <Tabs defaultValue="day">
         <TabsList>

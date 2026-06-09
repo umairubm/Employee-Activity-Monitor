@@ -11,7 +11,6 @@ import {
 import {
   and,
   count,
-  countDistinct,
   eq,
   gt,
   gte,
@@ -276,16 +275,19 @@ router.get("/group-comparison", async (req, res) => {
     rangeEnd.setDate(rangeEnd.getDate() + 1);
 
     const [groupRows, activityRows] = await Promise.all([
-      // All enrolled groups, so every group is listed even with no activity.
-      db
-        .select({ group: devicesTable.deviceGroup })
-        .from(devicesTable)
-        .groupBy(devicesTable.deviceGroup),
-      // Per-group activity totals + distinct devices active within the range.
+      // All enrolled groups (with their enrolled device counts), so every group
+      // is listed even with no activity in the range.
       db
         .select({
           group: devicesTable.deviceGroup,
-          deviceCount: countDistinct(activityLogsTable.deviceId),
+          deviceCount: count(devicesTable.id),
+        })
+        .from(devicesTable)
+        .groupBy(devicesTable.deviceGroup),
+      // Per-group activity totals within the range.
+      db
+        .select({
+          group: devicesTable.deviceGroup,
           productiveSeconds: sql<number>`coalesce(sum(case when ${appCategoriesTable.classification} = 'productive' then ${activityLogsTable.durationSeconds} else 0 end), 0)`,
           totalSeconds: sql<number>`coalesce(sum(${activityLogsTable.durationSeconds}), 0)`,
         })
@@ -306,11 +308,10 @@ router.get("/group-comparison", async (req, res) => {
 
     const activityByGroup = new Map<
       string,
-      { deviceCount: number; productiveSeconds: number; totalSeconds: number }
+      { productiveSeconds: number; totalSeconds: number }
     >();
     for (const row of activityRows) {
       activityByGroup.set(row.group, {
-        deviceCount: Number(row.deviceCount),
         productiveSeconds: Number(row.productiveSeconds),
         totalSeconds: Number(row.totalSeconds),
       });
@@ -319,11 +320,11 @@ router.get("/group-comparison", async (req, res) => {
     const comparison = groupRows
       .map((r) => {
         const activity = activityByGroup.get(r.group) ?? {
-          deviceCount: 0,
           productiveSeconds: 0,
           totalSeconds: 0,
         };
-        const { deviceCount, productiveSeconds, totalSeconds } = activity;
+        const { productiveSeconds, totalSeconds } = activity;
+        const deviceCount = Number(r.deviceCount);
         return {
           group: r.group,
           deviceCount,
