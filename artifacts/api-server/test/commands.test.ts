@@ -14,9 +14,11 @@ import realApp from "../src/app";
 import {
   createDevice,
   createDeviceCommand,
+  createDeviceWithSecret,
   createUser,
   makeApp,
   makeSessionCookie,
+  makeSyncApp,
 } from "./helpers";
 
 /**
@@ -429,6 +431,67 @@ describe("PATCH /devices/:id/commands/:commandId/cancel", () => {
       .from(deviceCommandsTable)
       .where(eq(deviceCommandsTable.id, command.id));
     expect(row.status).toBe("pending");
+  });
+});
+
+/**
+ * Concurrency safety: the whole point of the cancel handler's atomic
+ * `status='pending'` guard (`routes/devices.ts`) is that an admin cancel and a
+ * device's heartbeat-ack (`routes/sync.ts`) can fire at the same instant on the
+ * same command without clobbering each other. The sequential cases above only
+ * cover one ordering at a time; this drives both routes *simultaneously* and
+ * asserts the row always resolves to exactly one terminal state — never a lost
+ * update that leaves it stuck `pending`.
+ */
+describe("PATCH cancel racing the agent ack (concurrency)", () => {
+  it("resolves to exactly one winner, never a lost update", async () => {
+    const syncApp = makeSyncApp();
+
+    // Repeat with fresh devices/commands so both scheduler orderings
+    // (cancel-commits-first and ack-commits-first) get exercised rather than a
+    // single lucky timing.
+    for (let i = 0; i < 10; i++) {
+      const { device, secret } = await createDeviceWithSecret();
+      createdDeviceIds.push(device.id);
+      const command = await createDeviceCommand(device.id, {
+        issuedById: adminUserId,
+      });
+
+      // Admin cancel and device ack fire concurrently against the same command.
+      const [cancelRes, ackRes] = await Promise.all([
+        request(adminApp).patch(
+          `/devices/${device.id}/commands/${command.id}/cancel`,
+        ),
+        request(syncApp)
+          .post("/sync/commands/ack")
+          .set("x-device-id", device.id)
+          .set("x-device-secret", secret)
+          .send({ commandId: command.id, status: "acknowledged" }),
+      ]);
+
+      // Neither side may 500: the race must resolve cleanly. The cancel either
+      // wins the still-pending row (200) or is refused because the device got
+      // there first (409) — never anything else.
+      expect([200, 409]).toContain(cancelRes.status);
+      expect(ackRes.status).toBe(200);
+      expect(ackRes.body.status).toBe("acknowledged");
+
+      const [row] = await db
+        .select()
+        .from(deviceCommandsTable)
+        .where(eq(deviceCommandsTable.id, command.id));
+
+      // Exactly one terminal state survives: never left pending (a lost update)
+      // and never a torn/unknown value.
+      expect(["acknowledged", "cancelled"]).toContain(row.status);
+      expect(row.status).not.toBe("pending");
+
+      // A 409 means the device's ack won the row first, so the cancel was
+      // correctly refused and the device-acknowledged state must stand.
+      if (cancelRes.status === 409) {
+        expect(row.status).toBe("acknowledged");
+      }
+    }
   });
 });
 
