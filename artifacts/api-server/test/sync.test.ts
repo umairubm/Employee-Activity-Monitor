@@ -204,6 +204,60 @@ describe("POST /sync/enroll", () => {
     expect(created.length).toBe(1);
   });
 
+  it("lets exactly maxUses of N concurrent new enrollments claim a multi-use token", async () => {
+    // The general case of the single-use race: N *different* machines race to
+    // claim the same maxUses:M token at the exact same time (N > M). The atomic
+    // "claim one use" UPDATE — gated on useCount < maxUses — must let exactly M
+    // win and reject the rest, so the token can never be over-claimed.
+    const N = 5;
+    const M = 2;
+    const token = await createEnrollmentToken({ maxUses: M });
+    createdTokenIds.push(token.id);
+
+    const results = await Promise.all(
+      Array.from({ length: N }, () =>
+        request(app).post("/sync/enroll").send(enrollBody(token.token)),
+      ),
+    );
+
+    // Track any device rows that were created so cleanup removes them.
+    for (const res of results) {
+      if (res.status === 201) trackDevice(res.body.deviceId);
+    }
+
+    const winners = results.filter((r) => r.status === 201);
+    const losers = results.filter((r) => r.status === 403);
+
+    // Exactly M winners and N - M losers — never an over-claim.
+    expect(winners).toHaveLength(M);
+    expect(losers).toHaveLength(N - M);
+
+    for (const res of winners) {
+      expect(res.body.deviceId).toBeTruthy();
+      expect(res.body.deviceSecret).toMatch(/^[0-9a-f]{64}$/);
+    }
+    for (const res of losers) {
+      expect(res.body).toMatchObject({
+        error: "Enrollment token invalid or exhausted",
+      });
+    }
+
+    // The token's use count lands at exactly M despite N concurrent attempts.
+    const [tk] = await db
+      .select()
+      .from(enrollmentTokensTable)
+      .where(eq(enrollmentTokensTable.id, token.id));
+    expect(tk.useCount).toBe(M);
+
+    // Exactly M device rows were created from this token race.
+    const winnerIds = winners.map((r) => r.body.deviceId as string);
+    const created = await db
+      .select()
+      .from(devicesTable)
+      .where(inArray(devicesTable.id, winnerIds));
+    expect(created.length).toBe(M);
+  });
+
   it("lets a known machine re-enroll concurrently without burning extra uses", async () => {
     // Re-enrollment (same hardwareHash) must be unaffected by the single-use
     // race protection: it never consumes a token use, so even two simultaneous
