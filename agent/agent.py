@@ -331,26 +331,25 @@ def ensure_enrolled() -> config_mod.AgentConfig | None:
     prefill_name = ""
 
     seed = config_mod.load_enroll_seed()
-    if (
-        seed
-        and seed.get("consent_acknowledged")
-        and str(seed.get("token", "")).strip()
-        and str(seed.get("name", "")).strip()
-    ):
+    if seed is not None:
+        consent_ok = seed.get("consent_acknowledged") is True
         server_url = str(seed.get("server_url", "")).strip() or prefill_server
-        token = str(seed["token"]).strip()
-        name = str(seed["name"]).strip()
-        try:
-            cfg = _perform_enrollment(cfg, server_url, token, name)
-            config_mod.clear_enroll_seed()
-            print("[agent] enrolled successfully from installer details.")
-            return cfg
-        except Exception as exc:  # noqa: BLE001 — fall back to the dialog
-            print(
-                f"[agent] silent enrollment failed ({exc}); showing consent dialog.",
-                file=sys.stderr,
-            )
-            prefill_server, prefill_token, prefill_name = server_url, token, name
+        token = str(seed.get("token", "")).strip()
+        name = str(seed.get("name", "")).strip()
+        # Consume the seed immediately so the plaintext token never lingers on
+        # disk, even if enrollment fails below — the values stay in memory.
+        config_mod.clear_enroll_seed()
+        if consent_ok and token and name:
+            try:
+                cfg = _perform_enrollment(cfg, server_url, token, name)
+                print("[agent] enrolled successfully from installer details.")
+                return cfg
+            except Exception as exc:  # noqa: BLE001 — fall back to the dialog
+                print(
+                    f"[agent] silent enrollment failed ({exc}); showing consent dialog.",
+                    file=sys.stderr,
+                )
+                prefill_server, prefill_token, prefill_name = server_url, token, name
 
     consent = consent_mod.show_consent_dialog(
         prefill_server, prefill_token, prefill_name
