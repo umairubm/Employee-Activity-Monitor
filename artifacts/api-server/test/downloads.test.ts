@@ -1,14 +1,26 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
 import { requireRole } from "../src/middlewares/userAuth";
 import downloadsRouter from "../src/routes/downloads";
 
 /**
+ * Simulate "no release reachable" deterministically. The real
+ * `getLatestRelease` hits GitHub, so its result depends on the live repo's
+ * published releases and on whether a GitHub connection exists in the current
+ * environment — neither is stable for a unit test. Mocking it to return `null`
+ * pins the "installers not yet available" path the tests below assert.
+ */
+vi.mock("../src/lib/github", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/lib/github")>();
+  return { ...actual, getLatestRelease: vi.fn(async () => null) };
+});
+
+/**
  * Mount the downloads router behind the real role guard plus a synthetic user,
- * mirroring how routes/index.ts gates the admin surface. In the test
- * environment there is no GitHub connection, so the metadata endpoint must
- * gracefully report installers as unavailable rather than erroring.
+ * mirroring how routes/index.ts gates the admin surface. With no release
+ * reachable (mocked above), the metadata endpoint must gracefully report
+ * installers as unavailable rather than erroring.
  */
 function makeDownloadsApp(role: string | null): Express {
   const app = express();
