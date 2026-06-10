@@ -211,6 +211,65 @@ router.patch(
   },
 );
 
+const deviceConfigSchema = z
+  .object({
+    monitoringEnabled: z.boolean(),
+    screenshotMinMinutes: z.number().int().min(1).max(1440),
+    screenshotMaxMinutes: z.number().int().min(1).max(1440),
+    idleThresholdSeconds: z.number().int().min(10).max(7200),
+    syncIntervalSeconds: z.number().int().min(10).max(3600),
+  })
+  .refine((d) => d.screenshotMinMinutes <= d.screenshotMaxMinutes, {
+    message: "screenshotMinMinutes must be <= screenshotMaxMinutes",
+    path: ["screenshotMinMinutes"],
+  });
+
+// PATCH /api/devices/config - apply agent configuration to every device.
+// Registered before "/:id/config" so the literal path is matched first.
+router.patch("/config", requireRole("admin", "super_user"), async (req, res) => {
+  try {
+    const parsed = deviceConfigSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid configuration" });
+      return;
+    }
+    const updated = await db
+      .update(devicesTable)
+      .set({ ...parsed.data, updatedAt: new Date() })
+      .returning({ id: devicesTable.id });
+    res.json({ updated: updated.length });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// PATCH /api/devices/:id/config - update one device's agent configuration
+router.patch(
+  "/:id/config",
+  requireRole("admin", "super_user"),
+  async (req, res) => {
+    try {
+      const parsed = deviceConfigSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: "Invalid configuration" });
+        return;
+      }
+      const [updated] = await db
+        .update(devicesTable)
+        .set({ ...parsed.data, updatedAt: new Date() })
+        .where(eq(devicesTable.id, String(req.params.id)))
+        .returning(publicDeviceColumns);
+      if (!updated) {
+        res.status(404).json({ error: "Device not found" });
+        return;
+      }
+      res.json(withOnline(updated));
+    } catch (error) {
+      res.status(500).json({ error: (error as Error).message });
+    }
+  },
+);
+
 const setGroupSchema = z.object({ deviceGroup: groupNameSchema });
 
 // PATCH /api/devices/:id/group - assign a device to a group

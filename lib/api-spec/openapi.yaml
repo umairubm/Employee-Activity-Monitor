@@ -27,6 +27,8 @@ tags:
     description: Enrollment tokens
   - name: users
     description: User directory
+  - name: downloads
+    description: Desktop agent installer downloads
   - name: sync
     description: Device agent synchronization
 paths:
@@ -203,6 +205,56 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DeviceItem"
+  /devices/config:
+    patch:
+      operationId: applyDeviceConfigToAll
+      tags: [devices]
+      summary: Apply agent configuration to all devices
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceConfigInput"
+      responses:
+        "200":
+          description: Number of devices updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkUpdateResult"
+  /devices/{id}/config:
+    patch:
+      operationId: updateDeviceConfig
+      tags: [devices]
+      summary: Update a device's agent configuration
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceConfigInput"
+      responses:
+        "200":
+          description: Updated device
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceItem"
+  /downloads:
+    get:
+      operationId: listDownloads
+      tags: [downloads]
+      summary: List available desktop agent installers
+      responses:
+        "200":
+          description: Installer availability per platform
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DownloadList"
   /devices/groups/rename:
     post:
       operationId: renameDeviceGroup
@@ -823,6 +875,39 @@ components:
           type: string
           minLength: 1
       required: [deviceGroup]
+    DeviceConfigInput:
+      type: object
+      properties:
+        monitoringEnabled:
+          type: boolean
+        screenshotMinMinutes:
+          type: integer
+          minimum: 1
+          maximum: 1440
+        screenshotMaxMinutes:
+          type: integer
+          minimum: 1
+          maximum: 1440
+        idleThresholdSeconds:
+          type: integer
+          minimum: 10
+          maximum: 7200
+        syncIntervalSeconds:
+          type: integer
+          minimum: 10
+          maximum: 3600
+      required:
+        - monitoringEnabled
+        - screenshotMinMinutes
+        - screenshotMaxMinutes
+        - idleThresholdSeconds
+        - syncIntervalSeconds
+    BulkUpdateResult:
+      type: object
+      properties:
+        updated:
+          type: integer
+      required: [updated]
     GroupRenameInput:
       type: object
       properties:
@@ -1495,3 +1580,40 @@ components:
       required:
         - capturedAt
         - base64Data
+    DownloadItem:
+      type: object
+      properties:
+        platform:
+          type: string
+          enum: [windows, macos]
+        label:
+          type: string
+        extension:
+          type: string
+        available:
+          type: boolean
+        fileName:
+          type: [string, "null"]
+        sizeBytes:
+          type: [integer, "null"]
+        version:
+          type: [string, "null"]
+        updatedAt:
+          type: [string, "null"]
+          format: date-time
+        downloadUrl:
+          type: [string, "null"]
+      required:
+        - platform
+        - label
+        - extension
+        - available
+    DownloadList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DownloadItem"
+      required:
+        - items

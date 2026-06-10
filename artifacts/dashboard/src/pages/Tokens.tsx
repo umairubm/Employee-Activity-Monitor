@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { KeyRound, Plus, Trash2, Copy, CheckCircle2, Monitor } from "lucide-react";
 import { format } from "date-fns";
@@ -23,6 +24,7 @@ export default function Tokens() {
   const [newLabel, setNewLabel] = useState("");
   const [maxUses, setMaxUses] = useState("1");
   const [expiresDays, setExpiresDays] = useState("30");
+  const [neverExpires, setNeverExpires] = useState(true);
   const [createdTokenStr, setCreatedTokenStr] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -31,7 +33,7 @@ export default function Tokens() {
       data: {
         label: newLabel || undefined,
         maxUses: maxUses ? parseInt(maxUses) : undefined,
-        expiresDays: expiresDays ? parseInt(expiresDays) : undefined,
+        expiresDays: neverExpires ? undefined : (expiresDays ? parseInt(expiresDays) : undefined),
       }
     }, {
       onSuccess: (data) => {
@@ -40,6 +42,7 @@ export default function Tokens() {
         setNewLabel("");
         setMaxUses("1");
         setExpiresDays("30");
+        setNeverExpires(true);
       }
     });
   };
@@ -126,8 +129,15 @@ export default function Tokens() {
                     </div>
                     <div className="grid gap-2">
                       <Label htmlFor="expires">Expires In (Days)</Label>
-                      <Input id="expires" type="number" min="1" value={expiresDays} onChange={e => setExpiresDays(e.target.value)} />
+                      <Input id="expires" type="number" min="1" value={expiresDays} onChange={e => setExpiresDays(e.target.value)} disabled={neverExpires} />
                     </div>
+                  </div>
+                  <div className="flex items-center justify-between rounded-lg border border-border p-3">
+                    <div className="space-y-0.5">
+                      <Label htmlFor="neverExpires">Never expires</Label>
+                      <p className="text-xs text-muted-foreground">Token stays valid until revoked or all uses are spent.</p>
+                    </div>
+                    <Switch id="neverExpires" checked={neverExpires} onCheckedChange={setNeverExpires} />
                   </div>
                 </div>
                 <DialogFooter>

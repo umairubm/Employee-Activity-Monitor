@@ -10,7 +10,9 @@ import {
   Tags, 
   KeyRound, 
   LogOut,
-  ShieldCheck
+  ShieldCheck,
+  Settings,
+  Download
 } from "lucide-react";
 import { useLogout, getGetCurrentUserQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -23,6 +25,8 @@ const NAV_ITEMS = [
   { href: "/attendance", label: "Attendance", icon: CalendarCheck },
   { href: "/categories", label: "App Categories", icon: Tags },
   { href: "/tokens", label: "Enrollment Tokens", icon: KeyRound },
+  { href: "/settings", label: "Agent Settings", icon: Settings },
+  { href: "/downloads", label: "Download Agent", icon: Download },
 ];
 
 export function Shell({ children }: { children: React.ReactNode }) {
