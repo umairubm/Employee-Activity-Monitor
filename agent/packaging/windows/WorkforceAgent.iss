@@ -4,8 +4,10 @@
 ; Paths below are relative to this .iss file (agent/packaging/windows).
 
 #define AppName "Workforce Analytics Agent"
-#define AppVersion "0.1.2"
+#define AppVersion "0.1.3"
 #define AppPublisher "Workforce Analytics"
+; Server URL is baked into the installer — users never type or see it.
+#define ServerUrl "https://activitymonitor.replit.app"
 
 [Setup]
 AppId={{8E1F4C2A-7B3D-4E9A-9F1C-2A6D5B0E3C71}
@@ -81,8 +83,6 @@ begin
     'your name. These details are used to register this device on first launch.');
   EnrollPage.Add('Your full name:', False);
   EnrollPage.Add('Enrollment token:', False);
-  EnrollPage.Add('Server URL:', False);
-  EnrollPage.Values[2] := 'https://activitymonitor.replit.app';
 
   { Page 2 — disclosure + explicit consent checkbox. }
   ConsentPage := CreateCustomPage(EnrollPage.ID,
@@ -131,11 +131,6 @@ begin
       MsgBox('Please enter the enrollment token from your administrator.',
         mbError, MB_OK);
       Result := False;
-    end
-    else if Trim(EnrollPage.Values[2]) = '' then
-    begin
-      MsgBox('Please enter the server URL.', mbError, MB_OK);
-      Result := False;
     end;
   end
   else if CurPageID = ConsentPage.ID then
@@ -159,7 +154,8 @@ procedure WriteEnrollSeed();
 var
   Dir, Path, Json, Server: String;
 begin
-  Server := Trim(EnrollPage.Values[2]);
+  { Server URL is baked into the installer, not entered by the user. }
+  Server := '{#ServerUrl}';
   { Drop a trailing slash so the agent's URL building stays clean. }
   if (Length(Server) > 0) and (Server[Length(Server)] = '/') then
     Server := Copy(Server, 1, Length(Server) - 1);

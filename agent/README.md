@@ -29,12 +29,14 @@ While running and active, the agent:
    ```bash
    pnpm --filter @workspace/scripts run mint-token -- --label "Reception PC" --max-uses 1 --expires-days 7
    ```
-2. The user provides the server URL, enrollment token, and their name, and gives
-   explicit consent. This happens in one of two places:
+2. The user provides their name and the enrollment token, and gives explicit
+   consent. The server URL is baked into the installer, so the user never enters
+   it. This happens in one of two places:
    - **Windows installer (preferred):** the setup wizard collects the name +
-     token and shows the full disclosure with a mandatory consent checkbox. It
-     writes a one-time `enroll_seed.json` into the config dir; the agent enrolls
-     silently from it on first launch (then deletes the seed). No second dialog.
+     token and shows the full disclosure with a mandatory consent checkbox (the
+     server URL is hard-coded into the installer). It writes a one-time
+     `enroll_seed.json` into the config dir; the agent enrolls silently from it
+     on first launch (then deletes the seed). No second dialog.
    - **First-run consent dialog (fallback):** used for macOS drag-install, runs
      from source, or if silent enrollment fails. Same disclosure + consent, shown
      by the agent itself (`consent.py`).
