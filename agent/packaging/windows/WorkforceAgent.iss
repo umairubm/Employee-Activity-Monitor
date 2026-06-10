@@ -6,13 +6,15 @@
 #define AppName "Workforce Analytics Agent"
 #define AppVersion "0.1.4"
 #define AppPublisher "Workforce Analytics"
-; Shared AppId — also used to locate the previous version's uninstaller.
+; AppId used by the Pascal code to find the previous version's uninstaller.
+; MUST match the literal AppId in [Setup] below (kept literal there because the
+; ISPP preprocessor mangles brace-escaping when a define is embedded in it).
 #define AppId "8E1F4C2A-7B3D-4E9A-9F1C-2A6D5B0E3C71"
 ; Server URL is baked into the installer — users never type or see it.
 #define ServerUrl "https://activitymonitor.replit.app"
 
 [Setup]
-AppId={{#AppId}
+AppId={{8E1F4C2A-7B3D-4E9A-9F1C-2A6D5B0E3C71}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
