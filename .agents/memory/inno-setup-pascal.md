@@ -25,3 +25,31 @@ Two traps that each cost a build cycle:
 **How to apply:** after editing the `[Code]` section, grep for `^\s*#` (only the
 top-of-file `#define`s should match) and double-check any control property
 assignments against that control's class before pushing a new release tag.
+
+## Embedding a `#define` in `[Setup] AppId` mangles the braces
+
+Inno's `AppId={{GUID}` relies on `{{` meaning a literal `{`. But ISPP expands
+`{#Name}` *before* Inno's constant parser runs, and in `{{#AppId}` the second `{`
+is consumed as the start of the `{#AppId}` directive, eating the closing brace —
+you get `AppId={GUID` (no closing `}`) and a compile error "A } is missing".
+**Rule:** keep `AppId` LITERAL in `[Setup]` (`{{<guid>}`). If Pascal code also
+needs the GUID (e.g. to read `...Uninstall\{<guid>}_is1`), define it separately
+and build the string at runtime as `'{' + '{#AppId}' + '}_is1'` (the `'{'`
+literal survives ISPP because the char after it is a quote, not `#`). The
+`#define` value and the `[Setup]` literal must be kept in sync by hand.
+
+## Replacing the running agent's locked .exe on upgrade
+
+PyInstaller onefile `WorkforceAgent.exe` (a pystray tray app) locks its own file
+while running, so an over-the-top reinstall hits "DeleteFile failed; code 5
+(Access is denied)". Restart Manager (`CloseApplications=force`) does NOT reliably
+close a hidden-window tray app, so you must kill it explicitly in
+`PrepareToInstall`. What actually worked: call `{sys}\taskkill.exe` DIRECTLY
+(not `{cmd} /C taskkill` — the cmd wrapper can silently no-op) with `/F /T /IM`,
+re-issue the kill on EVERY poll iteration (autostart/the old uninstaller can
+relaunch it), then `DeleteFile` in a loop until the lock clears. If it never
+clears, return a non-empty string from `PrepareToInstall` to abort with a clear
+"quit the agent from the tray, or reboot, then re-run" message instead of the
+cryptic code-5 dialog. The agent has no watchdog, so a successful kill stays dead.
+**Why:** code-5 on upgrade is a file-lock problem, not a permissions bug — the
+running tray process is the locker.

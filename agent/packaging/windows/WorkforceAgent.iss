@@ -4,7 +4,7 @@
 ; Paths below are relative to this .iss file (agent/packaging/windows).
 
 #define AppName "Workforce Analytics Agent"
-#define AppVersion "0.1.4"
+#define AppVersion "0.1.5"
 #define AppPublisher "Workforce Analytics"
 ; AppId used by the Pascal code to find the previous version's uninstaller.
 ; MUST match the literal AppId in [Setup] below (kept literal there because the
@@ -187,12 +187,14 @@ begin
     WriteEnrollSeed();
 end;
 
-{ Force-close any running agent (parent + child processes) so its .exe unlocks. }
+{ Force-close any running agent (parent + child processes) so its .exe unlocks.
+  Call taskkill.exe directly (not via cmd) so it always runs, and terminate the
+  whole process tree (/T) forcefully (/F). }
 procedure KillRunningAgent();
 var
   ResultCode: Integer;
 begin
-  Exec(ExpandConstant('{cmd}'), '/C taskkill /F /T /IM WorkforceAgent.exe', '',
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM WorkforceAgent.exe', '',
     SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
@@ -240,22 +242,42 @@ function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   ExePath: String;
   I: Integer;
+  Cleared: Boolean;
 begin
   NeedsRestart := False;
   ExePath := ExpandConstant('{app}\WorkforceAgent.exe');
 
   KillRunningAgent();
   UninstallPreviousVersion();
-  { Autostart or the uninstaller may have relaunched the agent — kill again. }
-  KillRunningAgent();
 
-  { Wait for the file handle to be released; try deleting it ourselves. }
-  for I := 0 to 20 do
+  { Re-kill on every pass (autostart or the uninstaller may relaunch it) and try
+    to delete the old executable ourselves until its file lock is released. }
+  Cleared := False;
+  for I := 0 to 30 do
   begin
-    if not FileExists(ExePath) then break;
-    if DeleteFile(ExePath) then break;
+    KillRunningAgent();
+    if not FileExists(ExePath) then
+    begin
+      Cleared := True;
+      break;
+    end;
+    if DeleteFile(ExePath) then
+    begin
+      Cleared := True;
+      break;
+    end;
     Sleep(500);
   end;
 
-  Result := '';
+  { If the file is still locked, give the user a clear, actionable message
+    instead of the cryptic "DeleteFile failed; code 5" dialog. }
+  if not Cleared then
+    Result :=
+      'The Workforce Analytics Agent is still running and could not be closed ' +
+      'automatically, so its files cannot be replaced.' + #13#10 + #13#10 +
+      'Please right-click the tray icon (near the clock) and choose ' +
+      '"Quit agent" — or simply restart your computer — then run this ' +
+      'installer again.'
+  else
+    Result := '';
 end;
