@@ -4,7 +4,7 @@
 ; Paths below are relative to this .iss file (agent/packaging/windows).
 
 #define AppName "Workforce Analytics Agent"
-#define AppVersion "0.1.0"
+#define AppVersion "0.1.1"
 #define AppPublisher "Workforce Analytics"
 
 [Setup]
@@ -24,6 +24,10 @@ SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=lowest
 ArchitecturesInstallIn64BitMode=x64compatible
+; Detect/close the agent if it is running so an upgrade can replace the .exe.
+CloseApplications=yes
+CloseApplicationsFilter=WorkforceAgent.exe
+RestartApplications=no
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -48,3 +52,15 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 [Run]
 Filename: "{app}\WorkforceAgent.exe"; Description: "Launch the agent now"; \
   Flags: nowait postinstall skipifsilent
+
+[Code]
+{ Force-close a running agent before copying files, so an in-place upgrade
+  never fails with "DeleteFile failed; code 5 (Access is denied)". }
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ResultCode: Integer;
+begin
+  Exec(ExpandConstant('{cmd}'), '/C taskkill /F /IM WorkforceAgent.exe', '',
+    SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Result := '';
+end;
