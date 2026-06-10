@@ -112,7 +112,6 @@ begin
   ConsentCheck.Top := Disclosure.Top + Disclosure.Height + ScaleY(8);
   ConsentCheck.Width := ConsentPage.SurfaceWidth;
   ConsentCheck.Height := ScaleY(40);
-  ConsentCheck.WordWrap := True;
   ConsentCheck.Caption :=
     'I have read the above and consent to this monitoring on this device.';
 end;
