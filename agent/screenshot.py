@@ -10,8 +10,18 @@ from __future__ import annotations
 import io
 
 
-def capture_png_bytes() -> bytes:
-    """Grab the primary monitor and return PNG-encoded bytes."""
+# Lossy WebP quality (0-100). ~60 keeps on-screen text legible while shrinking
+# a typical desktop screenshot from a multi-MB PNG to a few hundred KB.
+WEBP_QUALITY = 60
+
+
+def capture_webp_bytes(quality: int = WEBP_QUALITY) -> bytes:
+    """Grab the primary monitor and return lossy WebP-encoded bytes.
+
+    Lossy WebP is far smaller than PNG for full-screen captures, which cuts
+    upload bandwidth and object-storage cost. ``method=6`` spends more CPU for
+    the best size at a given quality.
+    """
     import mss
     from PIL import Image
 
@@ -22,5 +32,5 @@ def capture_png_bytes() -> bytes:
         img = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
 
     buf = io.BytesIO()
-    img.save(buf, format="PNG", optimize=True)
+    img.save(buf, format="WEBP", quality=quality, method=6)
     return buf.getvalue()

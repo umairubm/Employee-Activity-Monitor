@@ -4,7 +4,7 @@
 ; Paths below are relative to this .iss file (agent/packaging/windows).
 
 #define AppName "Workforce Analytics Agent"
-#define AppVersion "0.1.5"
+#define AppVersion "0.1.6"
 #define AppPublisher "Workforce Analytics"
 ; AppId used by the Pascal code to find the previous version's uninstaller.
 ; MUST match the literal AppId in [Setup] below (kept literal there because the
