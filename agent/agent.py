@@ -39,7 +39,7 @@ else:
     from . import screenshot as screenshot_mod
     from . import tray as tray_mod
 
-AGENT_VERSION = "0.1.3"
+AGENT_VERSION = "0.1.4"
 POLL_SECONDS = 15
 
 

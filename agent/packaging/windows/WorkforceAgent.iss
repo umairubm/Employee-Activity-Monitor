@@ -4,13 +4,15 @@
 ; Paths below are relative to this .iss file (agent/packaging/windows).
 
 #define AppName "Workforce Analytics Agent"
-#define AppVersion "0.1.3"
+#define AppVersion "0.1.4"
 #define AppPublisher "Workforce Analytics"
+; Shared AppId — also used to locate the previous version's uninstaller.
+#define AppId "8E1F4C2A-7B3D-4E9A-9F1C-2A6D5B0E3C71"
 ; Server URL is baked into the installer — users never type or see it.
 #define ServerUrl "https://activitymonitor.replit.app"
 
 [Setup]
-AppId={{8E1F4C2A-7B3D-4E9A-9F1C-2A6D5B0E3C71}
+AppId={{#AppId}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
@@ -27,7 +29,7 @@ WizardStyle=modern
 PrivilegesRequired=lowest
 ArchitecturesInstallIn64BitMode=x64compatible
 ; Detect/close the agent if it is running so an upgrade can replace the .exe.
-CloseApplications=yes
+CloseApplications=force
 CloseApplicationsFilter=WorkforceAgent.exe
 RestartApplications=no
 
@@ -183,13 +185,75 @@ begin
     WriteEnrollSeed();
 end;
 
-{ Force-close a running agent before copying files, so an in-place upgrade
-  never fails with "DeleteFile failed; code 5 (Access is denied)". }
-function PrepareToInstall(var NeedsRestart: Boolean): String;
+{ Force-close any running agent (parent + child processes) so its .exe unlocks. }
+procedure KillRunningAgent();
 var
   ResultCode: Integer;
 begin
-  Exec(ExpandConstant('{cmd}'), '/C taskkill /F /IM WorkforceAgent.exe', '',
+  Exec(ExpandConstant('{cmd}'), '/C taskkill /F /T /IM WorkforceAgent.exe', '',
     SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
+
+{ Look up the previous version's uninstaller from the registry (per-user first,
+  then machine-wide). Returns '' when no prior install is registered. }
+function GetUninstallString(): String;
+var
+  Key, S: String;
+begin
+  Key := 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{' + '{#AppId}' + '}_is1';
+  S := '';
+  if not RegQueryStringValue(HKCU, Key, 'UninstallString', S) then
+    RegQueryStringValue(HKLM, Key, 'UninstallString', S);
+  Result := S;
+end;
+
+{ Run the previous version's uninstaller silently and wait for it to finish.
+  The Inno uninstaller relaunches itself from %TEMP% and returns early, so we
+  poll until the old executable is actually gone. The agent's data in
+  %APPDATA%\WorkforceAgent (device id/secret, enroll seed) is left untouched,
+  so the device stays enrolled across the upgrade. }
+procedure UninstallPreviousVersion();
+var
+  UnInstStr: String;
+  ResultCode, I: Integer;
+begin
+  UnInstStr := GetUninstallString();
+  if UnInstStr = '' then
+    exit;
+  UnInstStr := RemoveQuotes(UnInstStr);
+  Exec(UnInstStr, '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART', '',
+    SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  for I := 0 to 30 do
+  begin
+    if not FileExists(ExpandConstant('{app}\WorkforceAgent.exe')) then
+      break;
+    Sleep(500);
+  end;
+end;
+
+{ Before copying files: stop the agent, cleanly uninstall the previous version,
+  then make sure the old .exe's lock is released so the copy never hits
+  "DeleteFile failed; code 5 (Access is denied)". }
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ExePath: String;
+  I: Integer;
+begin
+  NeedsRestart := False;
+  ExePath := ExpandConstant('{app}\WorkforceAgent.exe');
+
+  KillRunningAgent();
+  UninstallPreviousVersion();
+  { Autostart or the uninstaller may have relaunched the agent — kill again. }
+  KillRunningAgent();
+
+  { Wait for the file handle to be released; try deleting it ourselves. }
+  for I := 0 to 20 do
+  begin
+    if not FileExists(ExePath) then break;
+    if DeleteFile(ExePath) then break;
+    Sleep(500);
+  end;
+
   Result := '';
 end;
