@@ -1,4 +1,5 @@
 - [Admin API authorization posture](admin-surface-authz.md) — whole admin API + dashboard is role-gated to admin/super_user (reads too), because the token list returns plaintext credentials.
+- [Inno Setup [Code] gotchas](inno-setup-pascal.md) — Windows installer .iss only compiles in CI; never start a line with `#` (ISPP directive) and TNewCheckBox has no WordWrap.
 - [Desktop agent installers + downloads](agent-installers.md) — tkinter/pystray agent can't cross-compile from Linux; build .exe/.dmg on GitHub Actions; dashboard serves them from latest Release via fresh connector token.
 - [Two desktop agents in lockstep](desktop-agents.md) — Python `agent/` + Node `agent-node/` both MUST use the same secure sync contract (enroll token + device secret + consent, presigned screenshot upload); never add a public/unauthenticated sync endpoint.
 - [API test harness](api-test-harness.md) — vitest integration tests in `artifacts/api-server/test/` hit the real dev DB; seed unique rows + clean up, run files sequentially (global settings row), stub auth via injected `req.user`.

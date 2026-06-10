@@ -16,6 +16,9 @@ from typing import Optional
 
 APP_DIR_NAME = "WorkforceAgent"
 CONFIG_FILE = "config.json"
+# One-time hand-off file written by the installer (token + name + consent).
+# The agent consumes it on first launch to enroll without a second dialog.
+SEED_FILE = "enroll_seed.json"
 
 
 def config_dir() -> Path:
@@ -33,6 +36,30 @@ def config_dir() -> Path:
 
 def config_path() -> Path:
     return config_dir() / CONFIG_FILE
+
+
+def seed_path() -> Path:
+    return config_dir() / SEED_FILE
+
+
+def load_enroll_seed() -> Optional[dict]:
+    """Read the one-time installer seed (token + name + consent), if present."""
+    path = seed_path()
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def clear_enroll_seed() -> None:
+    """Delete the installer seed so the token is not left lying around."""
+    try:
+        seed_path().unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 @dataclass

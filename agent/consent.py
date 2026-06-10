@@ -50,7 +50,7 @@ def _asset(name: str) -> Optional[str]:
 
 
 def show_consent_dialog(
-    default_server: str = "", default_token: str = ""
+    default_server: str = "", default_token: str = "", default_name: str = ""
 ) -> Optional[ConsentResult]:
     root = tk.Tk()
     root.title("Workforce Analytics — Setup & Consent")
@@ -165,7 +165,7 @@ def show_consent_dialog(
 
     server_entry = field("Server URL", default_server or "https://activitymonitor.replit.app")
     token_entry = field("Enrollment token (from your IT administrator)", default_token)
-    name_entry = field("Your full name", "")
+    name_entry = field("Your full name", default_name)
 
     # ---- Acknowledgement ---------------------------------------------------
     ack_var = tk.BooleanVar(value=False)
