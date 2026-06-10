@@ -50,6 +50,13 @@ notification before every screenshot.
 - **Enrollment requires a token + consent.** `enrollment_tokens` (label, maxUses,
   useCount, expiresAt, revokedAt) gate `/sync/enroll`; consent name + timestamp
   are persisted on the device row.
+- **Consent can be collected at install time (Windows).** The Inno Setup wizard
+  collects the name + token and shows the full disclosure + an explicit consent
+  checkbox, then writes a one-time `enroll_seed.json` into the agent config dir.
+  The agent enrolls silently from that seed on first launch (then deletes it).
+  This is NOT covert: the installer disclosure/consent is mandatory and the agent
+  stays visible at runtime. macOS drag-install / source runs / seed-enroll
+  failures fall back to the visible first-run consent dialog (`consent.py`).
 - **Sync schemas are hand-written Zod, not OpenAPI codegen.** The agent is an
   external client; its payloads live in `lib/syncValidation.ts`.
 - **Screenshots use presigned object-storage URLs.** The agent requests a PUT URL,

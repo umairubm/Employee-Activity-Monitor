@@ -39,7 +39,7 @@ else:
     from . import screenshot as screenshot_mod
     from . import tray as tray_mod
 
-AGENT_VERSION = "0.1.0"
+AGENT_VERSION = "0.1.2"
 POLL_SECONDS = 15
 
 
@@ -289,35 +289,84 @@ class MonitoringAgent:
         worker.join(timeout=10)
 
 
+def _perform_enrollment(
+    cfg: config_mod.AgentConfig, server_url: str, token: str, name: str
+) -> config_mod.AgentConfig:
+    """Exchange a token for device credentials and persist them."""
+    api = api_mod.AgentAPI(server_url)
+    data = api.enroll(
+        token=token,
+        hardware_hash=identity_mod.hardware_hash(),
+        system_name=identity_mod.system_name(),
+        os_type=identity_mod.os_type(),
+        consent_name=name,
+        agent_version=AGENT_VERSION,
+    )
+    cfg.server_url = server_url
+    cfg.device_id = data["deviceId"]
+    cfg.device_secret = data["deviceSecret"]
+    cfg.consent_name = name
+    cfg.enrolled_at = _now_iso()
+    cfg.apply_server_config(data.get("config", {}))
+    cfg.save()
+    return cfg
+
+
 def ensure_enrolled() -> config_mod.AgentConfig | None:
-    """Load config; run the consent + enrollment flow if not yet enrolled."""
+    """Load config; enroll the device if it isn't already.
+
+    Preferred path: the installer collected the token, the user's name, and an
+    explicit consent acknowledgement, and dropped a one-time seed file. We enroll
+    silently from it — no second dialog. If there is no seed (macOS drag-install,
+    running from source) or silent enrollment fails, we fall back to the visible
+    first-run consent dialog so consent is still always explicit and recorded.
+    """
     cfg = config_mod.AgentConfig.load()
     if cfg.is_enrolled:
+        config_mod.clear_enroll_seed()  # hygiene: drop any stale token file
         return cfg
 
-    default_server = os.environ.get("AGENT_SERVER_URL", cfg.server_url)
-    default_token = os.environ.get("AGENT_ENROLL_TOKEN", "")
-    consent = consent_mod.show_consent_dialog(default_server, default_token)
+    prefill_server = os.environ.get("AGENT_SERVER_URL", cfg.server_url)
+    prefill_token = os.environ.get("AGENT_ENROLL_TOKEN", "")
+    prefill_name = ""
+
+    seed = config_mod.load_enroll_seed()
+    if (
+        seed
+        and seed.get("consent_acknowledged")
+        and str(seed.get("token", "")).strip()
+        and str(seed.get("name", "")).strip()
+    ):
+        server_url = str(seed.get("server_url", "")).strip() or prefill_server
+        token = str(seed["token"]).strip()
+        name = str(seed["name"]).strip()
+        try:
+            cfg = _perform_enrollment(cfg, server_url, token, name)
+            config_mod.clear_enroll_seed()
+            print("[agent] enrolled successfully from installer details.")
+            return cfg
+        except Exception as exc:  # noqa: BLE001 — fall back to the dialog
+            print(
+                f"[agent] silent enrollment failed ({exc}); showing consent dialog.",
+                file=sys.stderr,
+            )
+            prefill_server, prefill_token, prefill_name = server_url, token, name
+
+    consent = consent_mod.show_consent_dialog(
+        prefill_server, prefill_token, prefill_name
+    )
     if consent is None:
         print("[agent] consent declined; exiting without monitoring.")
         return None
 
-    api = api_mod.AgentAPI(consent["server_url"])
-    data = api.enroll(
-        token=consent["token"],
-        hardware_hash=identity_mod.hardware_hash(),
-        system_name=identity_mod.system_name(),
-        os_type=identity_mod.os_type(),
-        consent_name=consent["name"],
-        agent_version=AGENT_VERSION,
-    )
-    cfg.server_url = consent["server_url"]
-    cfg.device_id = data["deviceId"]
-    cfg.device_secret = data["deviceSecret"]
-    cfg.consent_name = consent["name"]
-    cfg.enrolled_at = _now_iso()
-    cfg.apply_server_config(data.get("config", {}))
-    cfg.save()
+    try:
+        cfg = _perform_enrollment(
+            cfg, consent["server_url"], consent["token"], consent["name"]
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(f"[agent] enrollment failed: {exc}", file=sys.stderr)
+        return None
+    config_mod.clear_enroll_seed()
     print("[agent] enrolled successfully.")
     return cfg
 

@@ -29,13 +29,19 @@ While running and active, the agent:
    ```bash
    pnpm --filter @workspace/scripts run mint-token -- --label "Reception PC" --max-uses 1 --expires-days 7
    ```
-2. On first run, the agent shows a **consent dialog** disclosing exactly what is
-   collected. The user enters the server URL, the enrollment token, and their
-   name, then clicks **"I Acknowledge & Consent"**.
+2. The user provides the server URL, enrollment token, and their name, and gives
+   explicit consent. This happens in one of two places:
+   - **Windows installer (preferred):** the setup wizard collects the name +
+     token and shows the full disclosure with a mandatory consent checkbox. It
+     writes a one-time `enroll_seed.json` into the config dir; the agent enrolls
+     silently from it on first launch (then deletes the seed). No second dialog.
+   - **First-run consent dialog (fallback):** used for macOS drag-install, runs
+     from source, or if silent enrollment fails. Same disclosure + consent, shown
+     by the agent itself (`consent.py`).
 3. The agent calls `POST /api/sync/enroll`. The server returns a one-time device
    secret, which the agent stores locally. Monitoring then begins.
 
-If the user declines, the agent exits and monitors nothing.
+If the user declines (no consent), nothing is enrolled and nothing is monitored.
 
 ## Configuration
 
