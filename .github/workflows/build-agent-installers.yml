@@ -1,0 +1,85 @@
+name: Build Agent Installers
+
+on:
+  push:
+    tags:
+      - "agent-v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release tag to create/publish (e.g. agent-v0.1.0)"
+        required: true
+        default: "agent-v0.1.0"
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r agent/requirements.txt pyinstaller
+
+      - name: Generate icons
+        run: python agent/packaging/make_icons.py
+
+      - name: Build agent executable
+        working-directory: agent/packaging
+        run: pyinstaller --noconfirm WorkforceAgent.spec
+
+      - name: Build installer (Inno Setup)
+        working-directory: agent/packaging
+        run: |
+          choco install innosetup -y --no-progress
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" windows\WorkforceAgent.iss
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: agent/packaging/dist/WorkforceAgent-Setup-windows.exe
+
+      - name: Publish to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.version || github.ref_name }}
+          files: agent/packaging/dist/WorkforceAgent-Setup-windows.exe
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r agent/requirements.txt pyinstaller
+
+      - name: Generate icons
+        run: python agent/packaging/make_icons.py
+
+      - name: Build .app and .dmg
+        run: bash agent/packaging/macos/build_dmg.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-installer
+          path: agent/packaging/dist/WorkforceAgent-macos.dmg
+
+      - name: Publish to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.version || github.ref_name }}
+          files: agent/packaging/dist/WorkforceAgent-macos.dmg
