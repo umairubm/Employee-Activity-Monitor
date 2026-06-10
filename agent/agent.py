@@ -39,7 +39,7 @@ else:
     from . import screenshot as screenshot_mod
     from . import tray as tray_mod
 
-AGENT_VERSION = "0.1.5"
+AGENT_VERSION = "0.1.6"
 POLL_SECONDS = 15
 
 
@@ -128,10 +128,10 @@ class MonitoringAgent:
             self.tray.notify("Taking a screenshot now…", "Workforce Analytics")
         time.sleep(1.0)
         try:
-            png = screenshot_mod.capture_png_bytes()
+            img = screenshot_mod.capture_webp_bytes()
             url_info = self.api.request_screenshot_url()
-            self.api.upload_screenshot_bytes(url_info["uploadURL"], png)
-            self.api.report_screenshot(url_info["storageKey"], _now_iso(), len(png))
+            self.api.upload_screenshot_bytes(url_info["uploadURL"], img)
+            self.api.report_screenshot(url_info["storageKey"], _now_iso(), len(img))
         except Exception as exc:  # noqa: BLE001 — best-effort, never crash agent
             print(f"[agent] screenshot failed: {exc}", file=sys.stderr)
 

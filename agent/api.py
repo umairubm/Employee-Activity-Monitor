@@ -104,7 +104,7 @@ class AgentAPI:
         resp = requests.put(
             upload_url,
             data=data,
-            headers={"Content-Type": "image/png"},
+            headers={"Content-Type": "image/webp"},
             timeout=self.timeout,
         )
         if resp.status_code not in (200, 201):

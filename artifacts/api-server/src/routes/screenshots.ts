@@ -104,9 +104,13 @@ router.get("/:id/image", async (req, res) => {
     const file = await storage.getObjectEntityFile(shot.storageKey);
     const [metadata] = await file.getMetadata();
 
+    // The agent sets the object's content-type at upload time (WebP for the
+    // Python agent, JPEG for the Node agent). Drive the response from that
+    // metadata; only fall back to a neutral type if it is somehow missing so we
+    // never actively mislabel the bytes.
     res.setHeader(
       "Content-Type",
-      (metadata.contentType as string) || "image/png",
+      (metadata.contentType as string) || "application/octet-stream",
     );
     res.setHeader("Cache-Control", "private, max-age=3600");
 
