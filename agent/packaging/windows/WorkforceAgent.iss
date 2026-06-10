@@ -98,12 +98,11 @@ begin
   Disclosure.WordWrap := True;
   Disclosure.AutoSize := False;
   Disclosure.Caption :=
-    'This software runs visibly — a tray icon stays on screen the whole time — and records:' + #13#10 +
-    #13#10 +
+    'This software runs visibly - a tray icon stays on screen the whole time' + #13#10 +
+    'and records:' + #13#10 + #13#10 +
     '  - The app you are using and its window title' + #13#10 +
     '  - How long each app is in focus, and idle time' + #13#10 +
-    '  - Periodic screenshots, always with a visible notice shown first' + #13#10 +
-    #13#10 +
+    '  - Periodic screenshots, always with a visible notice shown first' + #13#10 + #13#10 +
     'It never logs keystrokes, and never accesses your microphone or camera. ' +
     'You can pause monitoring or quit at any time from the tray icon.';
 
