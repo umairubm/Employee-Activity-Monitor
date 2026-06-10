@@ -4,7 +4,7 @@
 ; Paths below are relative to this .iss file (agent/packaging/windows).
 
 #define AppName "Workforce Analytics Agent"
-#define AppVersion "0.1.6"
+#define AppVersion "0.1.7"
 #define AppPublisher "Workforce Analytics"
 ; AppId used by the Pascal code to find the previous version's uninstaller.
 ; MUST match the literal AppId in [Setup] below (kept literal there because the
@@ -57,7 +57,11 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 
 [Run]
 Filename: "{app}\WorkforceAgent.exe"; Description: "Launch the agent now"; \
-  Flags: nowait postinstall skipifsilent
+  Flags: nowait postinstall skipifsilent; Check: NotPendingReboot
+
+[UninstallDelete]
+; Remove any executables we had to set aside during a locked-file upgrade.
+Type: files; Name: "{app}\WorkforceAgent.exe.old-*"
 
 [Code]
 { ---------------------------------------------------------------------------
@@ -74,6 +78,9 @@ var
   EnrollPage: TInputQueryWizardPage;
   ConsentPage: TWizardPage;
   ConsentCheck: TNewCheckBox;
+  { Set when the old .exe could not be killed and had to be renamed aside, so
+    the stale process keeps running until the machine restarts. }
+  gPendingReboot: Boolean;
 
 procedure InitializeWizard();
 var
@@ -198,6 +205,35 @@ begin
     SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
+{ [Run]'s post-install launch is skipped when a restart is pending: in that case
+  the stale old process is still running, so launching the new one would leave
+  two agents active until reboot. }
+function NotPendingReboot(): Boolean;
+begin
+  Result := not gPendingReboot;
+end;
+
+{ Best-effort removal of any WorkforceAgent.exe.old-* files left behind by a
+  previous locked-file upgrade. Files still held open by a not-yet-restarted
+  process simply fail to delete and are retried on the next run. }
+procedure CleanupOldExes();
+var
+  Dir: String;
+  FindRec: TFindRec;
+begin
+  Dir := ExpandConstant('{app}');
+  if FindFirst(Dir + '\WorkforceAgent.exe.old-*', FindRec) then
+  begin
+    try
+      repeat
+        DeleteFile(Dir + '\' + FindRec.Name);
+      until not FindNext(FindRec);
+    finally
+      FindClose(FindRec);
+    end;
+  end;
+end;
+
 { Look up the previous version's uninstaller from the registry (per-user first,
   then machine-wide). Returns '' when no prior install is registered. }
 function GetUninstallString(): String;
@@ -240,12 +276,16 @@ end;
   "DeleteFile failed; code 5 (Access is denied)". }
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
-  ExePath: String;
+  ExePath, OldExe: String;
   I: Integer;
   Cleared: Boolean;
 begin
   NeedsRestart := False;
+  gPendingReboot := False;
   ExePath := ExpandConstant('{app}\WorkforceAgent.exe');
+
+  { Sweep away any leftovers from a previous rename-aside upgrade. }
+  CleanupOldExes();
 
   KillRunningAgent();
   UninstallPreviousVersion();
@@ -269,8 +309,26 @@ begin
     Sleep(500);
   end;
 
-  { If the file is still locked, give the user a clear, actionable message
-    instead of the cryptic "DeleteFile failed; code 5" dialog. }
+  { Fallback when the process refuses to die — e.g. it was launched elevated and
+    this non-elevated installer cannot terminate it. Windows still permits
+    RENAMING a running .exe within its own folder (only deletion is blocked while
+    the image is mapped), and the install dir is user-owned, so move the locked
+    file aside to free the path. The stale process keeps running from the renamed
+    file until reboot, so request a restart and let [Run] skip the immediate
+    launch (NotPendingReboot) to avoid two agents running at once. }
+  if (not Cleared) and FileExists(ExePath) then
+  begin
+    OldExe := ExePath + '.old-' + GetDateTimeString('yyyymmddhhnnss', '-', '-');
+    if RenameFile(ExePath, OldExe) then
+    begin
+      gPendingReboot := True;
+      NeedsRestart := True;
+      Cleared := True;
+    end;
+  end;
+
+  { Only if we could neither delete nor rename it: give the user a clear,
+    actionable message instead of the cryptic "DeleteFile failed; code 5". }
   if not Cleared then
     Result :=
       'The Workforce Analytics Agent is still running and could not be closed ' +

@@ -53,3 +53,20 @@ clears, return a non-empty string from `PrepareToInstall` to abort with a clear
 cryptic code-5 dialog. The agent has no watchdog, so a successful kill stays dead.
 **Why:** code-5 on upgrade is a file-lock problem, not a permissions bug — the
 running tray process is the locker.
+
+**taskkill is NOT enough on its own — add a rename-aside fallback.** A
+`PrivilegesRequired=lowest` installer CANNOT terminate a process running at a
+higher integrity (e.g. the agent was once started elevated), so `taskkill /F`
+returns "access denied" and the kill loop exhausts → the abort dialog still
+shows. The robust fix: Windows lets you **RENAME a running .exe within its own
+folder** (only *deletion* is blocked while the image is mapped, and the
+lowest-priv install dir `{localappdata}\Programs\WorkforceAgent` is user-owned,
+so the rename is permitted regardless of the process's integrity). In
+`PrepareToInstall`, after the kill+delete loop fails, `RenameFile(exe,
+exe+'.old-<ts>')` to free the path so the new file installs. The stale process
+keeps running from the renamed image until reboot, so set `NeedsRestart := True`
+and gate the `[Run]` post-install launch behind a `Check:` that returns false
+when a reboot is pending (otherwise two agents run at once). Sweep `*.old-*`
+leftovers at the next run (FindFirst/DeleteFile, locked ones just retry) and via
+`[UninstallDelete]`. **Why:** kill and rename live in different permission
+domains — rename succeeds (dir ACL) even when kill fails (process integrity).
