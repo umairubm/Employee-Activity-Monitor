@@ -37,8 +37,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { format } from "date-fns";
 import { Search, MonitorSmartphone, LayoutGrid } from "lucide-react";
 import { useGroupFilter, ALL_GROUPS as ALL } from "@/hooks/use-group-filter";
-import { useDateFilter, dayBoundsIso, todayStr } from "@/hooks/use-date-filter";
-import { DateFilter } from "@/components/DateFilter";
+import { useDateRange, rangeBoundsIso, todayStr } from "@/hooks/use-date-filter";
+import { DateRangeFilter } from "@/components/DateFilter";
 
 /* ----------------------------- types & helpers ---------------------------- */
 
@@ -317,7 +317,7 @@ function DeviceActivityPanel({
           </div>
           {appBreakdown.length === 0 ? (
             <p className="mt-3 text-sm text-muted-foreground">
-              No application activity recorded today.
+              No application activity recorded.
             </p>
           ) : (
             <div className="mt-3 space-y-0.5">
@@ -346,7 +346,7 @@ function DeviceActivityPanel({
             Session Timeline
           </div>
           {sessions.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No sessions today.</p>
+            <p className="text-sm text-muted-foreground">No sessions recorded.</p>
           ) : (
             <div className="space-y-2">
               {sessions.map((log) => {
@@ -402,10 +402,11 @@ export default function ActivityLogs() {
   const [groupFilter, setGroupFilter] = useGroupFilter();
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  // Shared, persisted single-day filter (browser-local). The query window is
-  // the [00:00, next 00:00) bounds of the selected day.
-  const [dateFilter] = useDateFilter();
-  const { from, to } = useMemo(() => dayBoundsIso(dateFilter), [dateFilter]);
+  // Shared, persisted date-range filter (browser-local). The query window is
+  // the [start of `from` 00:00, start of day after `to` 00:00) interval.
+  const [dateRange] = useDateRange();
+  const { from, to } = useMemo(() => rangeBoundsIso(dateRange), [dateRange]);
+  const isSingleDay = dateRange.from === dateRange.to;
 
   const { data: devices, isLoading: devicesLoading } = useListDevices();
   const { data: categories } = useListCategories();
@@ -474,12 +475,16 @@ export default function ActivityLogs() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Activity Logs</h1>
           <p className="mt-1 text-muted-foreground">
-            {dateFilter === todayStr() ? "Today's" : "Selected day's"} activity
-            per user. Select a row for the full breakdown.
+            {isSingleDay
+              ? dateRange.to === todayStr()
+                ? "Today's"
+                : "Selected day's"
+              : "Selected range's"}{" "}
+            activity per user. Select a row for the full breakdown.
           </p>
         </div>
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
-          <DateFilter />
+          <DateRangeFilter />
           <Select value={groupFilter} onValueChange={setGroupFilter}>
             <SelectTrigger className="w-full sm:w-44">
               <SelectValue placeholder="All groups" />
@@ -527,7 +532,9 @@ export default function ActivityLogs() {
                   <TableHead className="min-w-[280px]">
                     Daily Activity{" "}
                     <span className="font-normal text-muted-foreground">
-                      (10-min slots)
+                      {isSingleDay
+                        ? "(10-min slots)"
+                        : "(10-min slots, range overlaid on a 24h day)"}
                     </span>
                   </TableHead>
                 </TableRow>

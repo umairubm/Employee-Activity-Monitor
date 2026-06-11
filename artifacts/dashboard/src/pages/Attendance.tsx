@@ -30,15 +30,10 @@ import { CalendarCheck, CalendarRange, Settings2, Clock, Download, TrendingUp } 
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { useGroupFilter, ALL_GROUPS as ALL } from "@/hooks/use-group-filter";
+import { useDateRange } from "@/hooks/use-date-filter";
 
 function todayStr(): string {
   const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function daysAgoStr(n: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
@@ -237,8 +232,7 @@ function DayView() {
 
 function RangeView() {
   const { toast } = useToast();
-  const [from, setFrom] = useState(daysAgoStr(6));
-  const [to, setTo] = useState(todayStr());
+  const [{ from, to }, setRange] = useDateRange();
   const [selectedDeviceId, setSelectedDeviceId] = useState("all");
   const [groupFilter, setGroupFilter] = useGroupFilter();
   const { data: allDevices } = useListDevices();
@@ -357,7 +351,7 @@ function RangeView() {
             type="date"
             value={from}
             max={to}
-            onChange={(e) => setFrom(e.target.value || daysAgoStr(6))}
+            onChange={(e) => setRange({ from: e.target.value || to })}
             className="w-44"
           />
         </div>
@@ -369,7 +363,7 @@ function RangeView() {
             value={to}
             min={from}
             max={todayStr()}
-            onChange={(e) => setTo(e.target.value || todayStr())}
+            onChange={(e) => setRange({ to: e.target.value || from })}
             className="w-44"
           />
         </div>

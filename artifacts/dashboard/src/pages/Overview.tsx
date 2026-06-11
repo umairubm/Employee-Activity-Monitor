@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import {
   useGetSummary,
   getGetSummaryQueryKey,
@@ -9,8 +9,6 @@ import {
   useListDevices,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { MonitorSmartphone, Image as ImageIcon, Terminal, Users, Activity, Trophy, LayoutGrid, Download, FileSpreadsheet, FileText } from "lucide-react";
@@ -30,17 +28,8 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { Link } from "wouter";
 import { useGroupFilter, ALL_GROUPS as ALL } from "@/hooks/use-group-filter";
-
-function todayStr(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function daysAgoStr(n: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
+import { useDateRange, todayStr } from "@/hooks/use-date-filter";
+import { DateRangeFilter } from "@/components/DateFilter";
 
 function downloadCsv(filename: string, rows: (string | number)[][]) {
   const escape = (v: string | number) => {
@@ -65,8 +54,9 @@ function downloadCsv(filename: string, rows: (string | number)[][]) {
 export default function Overview() {
   const { toast } = useToast();
   const [groupFilter, setGroupFilter] = useGroupFilter();
-  const [rangeFrom, setRangeFrom] = useState(todayStr());
-  const [rangeTo, setRangeTo] = useState(todayStr());
+  const [range] = useDateRange();
+  const rangeFrom = range.from;
+  const rangeTo = range.to;
   const isToday = rangeFrom === todayStr() && rangeTo === todayStr();
   const { data: devices } = useListDevices();
   const groups = useMemo(() => {
@@ -246,55 +236,7 @@ export default function Overview() {
               ))}
             </SelectContent>
           </Select>
-          <div className="flex gap-1">
-            {[
-              { label: "Today", from: todayStr(), to: todayStr() },
-              { label: "7d", from: daysAgoStr(6), to: todayStr() },
-              { label: "30d", from: daysAgoStr(29), to: todayStr() },
-            ].map((preset) => {
-              const active = rangeFrom === preset.from && rangeTo === preset.to;
-              return (
-                <button
-                  key={preset.label}
-                  type="button"
-                  onClick={() => {
-                    setRangeFrom(preset.from);
-                    setRangeTo(preset.to);
-                  }}
-                  className={`rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
-                    active
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "bg-background hover:bg-muted"
-                  }`}
-                >
-                  {preset.label}
-                </button>
-              );
-            })}
-          </div>
-          <div className="flex flex-col">
-            <Label htmlFor="range-from" className="text-xs text-muted-foreground mb-1 block">From</Label>
-            <Input
-              id="range-from"
-              type="date"
-              className="h-8 w-[9.5rem]"
-              value={rangeFrom}
-              max={rangeTo}
-              onChange={(e) => setRangeFrom(e.target.value || todayStr())}
-            />
-          </div>
-          <div className="flex flex-col">
-            <Label htmlFor="range-to" className="text-xs text-muted-foreground mb-1 block">To</Label>
-            <Input
-              id="range-to"
-              type="date"
-              className="h-8 w-[9.5rem]"
-              value={rangeTo}
-              min={rangeFrom}
-              max={todayStr()}
-              onChange={(e) => setRangeTo(e.target.value || todayStr())}
-            />
-          </div>
+          <DateRangeFilter />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button

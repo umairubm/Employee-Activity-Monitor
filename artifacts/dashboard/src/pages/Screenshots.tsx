@@ -20,16 +20,17 @@ import { Image as ImageIcon, Info, Flag } from "lucide-react";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useGroupFilter, ALL_GROUPS as ALL } from "@/hooks/use-group-filter";
-import { useDateFilter, dayBoundsIso, todayStr } from "@/hooks/use-date-filter";
-import { DateFilter } from "@/components/DateFilter";
+import { useDateRange, rangeBoundsIso, todayStr } from "@/hooks/use-date-filter";
+import { DateRangeFilter } from "@/components/DateFilter";
 
 export default function Screenshots() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [flaggedOnly, setFlaggedOnly] = useState(false);
   const [groupFilter, setGroupFilter] = useGroupFilter();
-  const [dateFilter] = useDateFilter();
-  const { from, to } = useMemo(() => dayBoundsIso(dateFilter), [dateFilter]);
+  const [dateRange] = useDateRange();
+  const { from, to } = useMemo(() => rangeBoundsIso(dateRange), [dateRange]);
+  const isSingleDay = dateRange.from === dateRange.to;
   const { data: devices } = useListDevices();
   const groups = useMemo(() => {
     const set = new Set<string>();
@@ -69,13 +70,15 @@ export default function Screenshots() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Screenshots</h1>
           <p className="text-muted-foreground mt-1">
-            {dateFilter === todayStr()
-              ? "Today's captures, taken with explicit user consent."
-              : "Captures from the selected day, taken with explicit user consent."}
+            {isSingleDay
+              ? dateRange.to === todayStr()
+                ? "Today's captures, taken with explicit user consent."
+                : "Captures from the selected day, taken with explicit user consent."
+              : "Captures from the selected range, taken with explicit user consent."}
           </p>
         </div>
         <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full sm:w-auto">
-          <DateFilter />
+          <DateRangeFilter />
           <Select value={groupFilter} onValueChange={setGroupFilter}>
             <SelectTrigger className="w-full sm:w-44">
               <SelectValue placeholder="All groups" />
@@ -120,10 +123,12 @@ export default function Screenshots() {
             <ImageIcon className="h-10 w-10 mb-4 opacity-20" />
             <p>
               {flaggedOnly
-                ? "No flagged screenshots for this day."
-                : dateFilter === todayStr()
+                ? "No flagged screenshots in this range."
+                : isSingleDay && dateRange.to === todayStr()
                   ? "No screenshots have been captured today yet."
-                  : "No screenshots were captured on this day."}
+                  : isSingleDay
+                    ? "No screenshots were captured on this day."
+                    : "No screenshots were captured in this range."}
             </p>
           </CardContent>
         </Card>
