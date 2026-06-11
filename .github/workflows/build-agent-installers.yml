@@ -41,31 +41,30 @@ jobs:
       - name: Generate icons
         run: python agent/packaging/make_icons.py
 
-      - name: Build invisible agent executable
+      - name: Build system service agent executable
         working-directory: agent/packaging
-        run: pyinstaller --noconfirm WorkforceAgent-Invisible.spec
+        run: pyinstaller --noconfirm WorkforceAgent-SystemService.spec
 
-      - name: Build invisible installer (Inno Setup)
+      - name: Build system service installer (Inno Setup)
         working-directory: agent/packaging
         run: |
           choco install innosetup -y --no-progress
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" windows\WorkforceAgent-Invisible.iss
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" windows\WorkforceAgent-SystemService.iss
 
-      # actions/upload-artifact v4.4+ supports Node.js 24
       - uses: actions/upload-artifact@v4.4.3
         with:
-          name: windows-installer-invisible
-          path: agent/packaging/dist/WorkforceAgent-Setup-Invisible-windows.exe
+          name: windows-installer-system-service
+          path: agent/packaging/dist/WorkforceAgent-Setup-SystemService-windows.exe
 
       # Only publish a GitHub Release when this job was triggered by a real tag
-      - name: Publish invisible to release
+      - name: Publish system service to release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2.2.1
         with:
           tag_name: ${{ github.ref_name }}
           generate_release_notes: true
           fail_on_unmatched_files: false
-          files: agent/packaging/dist/WorkforceAgent-Setup-Invisible-windows.exe
+          files: agent/packaging/dist/WorkforceAgent-Setup-SystemService-windows.exe
 
   macos:
     runs-on: macos-latest
@@ -86,19 +85,19 @@ jobs:
       - name: Generate icons
         run: python agent/packaging/make_icons.py
 
-      - name: Build invisible .app and .dmg
-        run: bash agent/packaging/macos/build_dmg_invisible.sh
+      - name: Build system service .app and .dmg
+        run: bash agent/packaging/macos/build_dmg_system_service.sh
 
       - uses: actions/upload-artifact@v4.4.3
         with:
-          name: macos-installer-invisible
-          path: agent/packaging/dist/WorkforceAgent-Invisible-macos.dmg
+          name: macos-installer-system-service
+          path: agent/packaging/dist/WorkforceAgent-SystemService-macos.dmg
 
-      - name: Publish invisible to release
+      - name: Publish system service to release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2.2.1
         with:
           tag_name: ${{ github.ref_name }}
           generate_release_notes: true
           fail_on_unmatched_files: false
-          files: agent/packaging/dist/WorkforceAgent-Invisible-macos.dmg
+          files: agent/packaging/dist/WorkforceAgent-SystemService-macos.dmg

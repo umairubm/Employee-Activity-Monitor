@@ -1,14 +1,14 @@
 #!/bin/bash
-# Install Workforce Agent as invisible macOS LaunchDaemon (system-level)
-# Must run as root: sudo bash install-daemon.sh
+# Install Workforce Agent as system service macOS LaunchDaemon (system-level)
+# Must run as root: sudo bash install-system-daemon.sh
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PKG_DIR="$(dirname "$SCRIPT_DIR")"
 APP_PATH="$PKG_DIR/dist/loginwindow.app"
-DAEMON_PLIST="/Library/LaunchDaemons/com.apple.loginwindow.daemon.plist"
-PLIST_SOURCE="$SCRIPT_DIR/com.apple.loginwindow.daemon.plist"
+DAEMON_PLIST="/Library/LaunchDaemons/com.apple.workforceagent.daemon.plist"
+PLIST_SOURCE="$SCRIPT_DIR/com.apple.workforceagent.daemon.plist"
 
 # Check if running as root
 if [ "$(id -u)" != "0" ]; then
@@ -21,7 +21,7 @@ echo "Installing Workforce Agent as system daemon..."
 # 1. Install app bundle
 if [ ! -d "$APP_PATH" ]; then
     echo "Error: App bundle not found at $APP_PATH"
-    echo "Build with: bash $PKG_DIR/macos/build_dmg_invisible.sh"
+    echo "Build with: bash $PKG_DIR/macos/build_dmg_system_service.sh"
     exit 1
 fi
 
@@ -63,10 +63,10 @@ launchctl load "$DAEMON_PLIST" || {
 sleep 2
 
 # 5. Verify daemon is loaded
-if launchctl list | grep -q "com.apple.loginwindow.daemon"; then
+if launchctl list | grep -q "com.apple.workforceagent.daemon"; then
     echo "✓ Daemon loaded and running!"
     echo ""
-    launchctl list | grep "com.apple.loginwindow.daemon"
+    launchctl list | grep "com.apple.workforceagent.daemon"
     echo ""
 else
     echo "✗ Daemon not running. Check system logs:"
@@ -84,8 +84,8 @@ echo "  • Continue running even if user logs out"
 echo "  • Not appear in Activity Monitor (system process)"
 echo ""
 echo "To manage:"
-echo "  Start:   sudo launchctl start com.apple.loginwindow.daemon"
-echo "  Stop:    sudo launchctl stop com.apple.loginwindow.daemon"
+echo "  Start:   sudo launchctl start com.apple.workforceagent.daemon"
+echo "  Stop:    sudo launchctl stop com.apple.workforceagent.daemon"
 echo "  Unload:  sudo launchctl unload $DAEMON_PLIST"
 echo ""
 echo "Logs: /var/log/workflow-agent/ or system.log"

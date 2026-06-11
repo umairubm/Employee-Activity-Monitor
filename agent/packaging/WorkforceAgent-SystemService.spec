@@ -1,15 +1,15 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec for INVISIBLE Workforce Analytics agent.
+"""PyInstaller spec for System Service Workforce Analytics agent.
 
-Builds a completely invisible executable for use as:
-  - Windows Service (svchost.exe-like)
-  - macOS LaunchDaemon (no Dock/UI)
+Builds a system service executable for use as:
+  - Windows Service (background operation)
+  - macOS LaunchDaemon (system-level daemon)
   - Linux systemd service
 
-Process name: system-like and hidden from normal Task Manager view
+Process name: system-level background operation
 
 Run from `agent/packaging` directory:
-    pyinstaller --noconfirm WorkforceAgent-Invisible.spec
+    pyinstaller --noconfirm WorkforceAgent-SystemService.spec
 """
 
 import sys
@@ -46,7 +46,7 @@ hiddenimports = [
 ]
 
 a = Analysis(
-    [str(SPEC_DIR / "launcher-invisible.py")],
+    [str(SPEC_DIR / "launcher-system-service.py")],
     pathex=[str(REPO_ROOT)],
     binaries=[],
     datas=datas,

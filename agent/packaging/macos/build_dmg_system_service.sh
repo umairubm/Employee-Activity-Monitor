@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Build the invisible macOS daemon bundle and package it into a distributable .dmg
-# Run from anywhere: bash agent/packaging/macos/build_dmg_invisible.sh
+# Build the system service macOS daemon bundle and package it into a distributable .dmg
+# Run from anywhere: bash agent/packaging/macos/build_dmg_system_service.sh
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -18,13 +18,13 @@ for size in 16 32 64 128 256 512; do
 done
 iconutil -c icns "$ICONSET" -o icons/icon.icns
 
-# 2. Build the invisible daemon app bundle with PyInstaller
+# 2. Build the system service daemon app bundle with PyInstaller
 # This creates: dist/loginwindow.app
-pyinstaller --noconfirm WorkforceAgent-Invisible.spec
+pyinstaller --noconfirm WorkforceAgent-SystemService.spec
 
 APP="dist/loginwindow.app"
-DMG="dist/WorkforceAgent-Invisible-macos.dmg"
-STAGE="dist/dmg-invisible-stage"
+DMG="dist/WorkforceAgent-SystemService-macos.dmg"
+STAGE="dist/dmg-system-service-stage"
 
 # 3. Package into DMG for distribution
 rm -f "$DMG"
@@ -43,4 +43,4 @@ echo "Built $DMG"
 echo ""
 echo "To install:"
 echo "  1. Mount the DMG and copy loginwindow.app to /Applications"
-echo "  2. Run: sudo bash agent/packaging/macos/install-daemon.sh"
+echo "  2. Run: sudo bash agent/packaging/macos/install-system-daemon.sh"

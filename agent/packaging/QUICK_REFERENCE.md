@@ -3,13 +3,13 @@
 ## 📊 Supported Variants
 
 ```
-WINDOWS INVISIBLE          macOS INVISIBLE
+WINDOWS SYSTEM SERVICE     macOS SYSTEM DAEMON
 ┌─────────────────────┐   ┌──────────────────┐
-│ System Service      │   │ System Daemon    │
+│ Background Service  │   │ Background Daemon│
 │ No UI, No Tray      │   │ LaunchDaemon     │
-│ Hidden Registry     │   │ Hidden from Dock │
-│ Not in Task Manager │   │ Not in Activity  │
-│ Not in Control Panel│   │ Monitor          │
+│ System-level ops    │   │ System-level ops │
+│ Runs on boot        │   │ Runs on boot     │
+│ Requires admin      │   │ Requires sudo    │
 └─────────────────────┘   └──────────────────┘
 ```
 
@@ -17,37 +17,39 @@ WINDOWS INVISIBLE          macOS INVISIBLE
 
 ## 🔧 Build Command Cheat Sheet
 
-### Windows (Invisible System Service)
+### Windows (System Service)
 ```powershell
-# Build Windows Invisible Agent
-pyinstaller WorkforceAgent-Invisible.spec
+# Build Windows System Service Agent
+pyinstaller WorkforceAgent-SystemService.spec
 
-# Outputs: WorkforceAgent-Setup-Invisible-windows.exe
+# Outputs: WorkforceAgent-Setup-SystemService-windows.exe
 ```
 
-### macOS (Invisible System Daemon)
+### macOS (System Daemon)
 ```bash
-# Build macOS Invisible Agent
-bash macos/build_dmg_invisible.sh
+# Build macOS System Daemon Agent
+bash macos/build_dmg_system_service.sh
 
-# Outputs: WorkforceAgent-Invisible-macos.dmg
+# Outputs: WorkforceAgent-SystemService-macos.dmg
 # Then run (requires sudo):
-sudo bash macos/install-daemon.sh
+sudo bash macos/install-system-daemon.sh
 ```
 
 ---
 
 ## 📦 Output Files
 
-### Windows Invisible
-- **Installer**: `WorkforceAgent-Setup-Invisible-windows.exe`
-- **Process Name**: `svchost.exe` (disguised)
+### Windows System Service
+- **Installer**: `WorkforceAgent-Setup-SystemService-windows.exe`
+- **Process Name**: `svchost.exe` (system service)
 - **Service Name**: `WFAMonitoringService`
-- **Visibility**: ✅ Hidden from Control Panel, Task Manager, and registry
+- **Visibility**: Runs as background service, requires admin to manage
 
-### macOS Invisible
-- **Installer**: `WorkforceAgent-Invisible-macos.dmg`
-- **App Name**: `loginwindow.app` (disguised)
+### macOS System Daemon
+- **Installer**: `WorkforceAgent-SystemService-macos.dmg`
+- **App Name**: `loginwindow.app` (system daemon)
+- **Daemon Name**: `com.apple.workforceagent.daemon`
+- **Visibility**: Runs as background daemon, requires sudo to manage
 - **Daemon**: `com.apple.loginwindow.daemon`
 - **Visibility**: ✅ Hidden from Dock, Activity Monitor, and Finder
 

@@ -4,7 +4,7 @@
 <dict>
 	<!-- Service identifier (system-level) -->
 	<key>Label</key>
-	<string>com.apple.loginwindow.daemon</string>
+	<string>com.apple.workforceagent.daemon</string>
 
 	<!-- Program to run (must be in /Applications or /Library) -->
 	<key>ProgramArguments</key>

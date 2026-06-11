@@ -1,15 +1,15 @@
-; Inno Setup script for INVISIBLE Workforce Analytics agent — SERVICE build.
+; Inno Setup script for System Service Workforce Analytics agent.
 ;
 ; Installation method:
-;   1. Silent installation to hidden system path (ProgramData\Microsoft)
-;   2. Registers as Windows Service (not visible in normal Task Manager)
+;   1. Installation to system path (ProgramData\Workforce)
+;   2. Registers as Windows Service (background operation)
 ;   3. Runs under Local System account (system-level)
 ;   4. Launches post-install PowerShell to register service
 ;
 ; Compile from `agent/packaging` directory:
-;   "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" windows\WorkforceAgent-Invisible.iss
+;   "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" windows\WorkforceAgent-SystemService.iss
 
-#define AppId       "WT-Invisible-{8E1F4C2A-7B3D-4E9A-9F1C-2A6D5B0E3C73}"
+#define AppId       "WT-SystemService-{8E1F4C2A-7B3D-4E9A-9F1C-2A6D5B0E3C73}"
 #define AppVersion  "1.0.0"
 #define ExeName     "svchost.exe"
 #define ServiceName "WFAMonitoringService"
@@ -27,8 +27,9 @@ CreateUninstallRegKey=no
 DisableWelcomePage=yes
 DisableReadyPage=yes
 DisableFinishedPage=yes
-OutputDir=..\dist
-OutputBaseFilename=WorkforceAgent-Setup-Invisible-windows
+OutputDir=..
+dist
+OutputBaseFilename=WorkforceAgent-Setup-SystemService-windows
 SetupIconFile=..\icons\icon.ico
 Compression=lzma2
 SolidCompression=yes

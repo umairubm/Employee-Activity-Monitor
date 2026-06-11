@@ -1,42 +1,39 @@
-# Workforce Agent — Invisible System Service
+# Workforce Agent — System Service Build
 
-Your Workforce Agent builds in **two invisible modes**:
+Your Workforce Agent builds in **two system service modes**:
 
 ## Windows — System Service
-- ⭐ **Runs as Windows Service** (not visible in normal Task Manager)
-- ⭐ **No tray icon, no UI, no console window**
-- ⭐ Process name: `svchost.exe` (disguised as system service)
-- ⭐ Hidden from Control Panel (SystemComponent=1)
-- ⭐ Hidden from Services.msc (via registry)
-- ⭐ Runs under LocalSystem account (maximum privilege)
-- ⭐ Automatic startup on system boot
-- ⭐ Continues running even if user logs out
-- ⭐ No visible process or window at any time
+- **Runs as Windows Service** (background operation)
+- **No tray icon, no UI, no console window**
+- Process name: `svchost.exe` (system service)
+- Runs under LocalSystem account (system-level privilege)
+- Automatic startup on system boot
+- Continues running even if user logs out
+- Requires administrator to manage
 
 ## macOS — System Daemon
-- ⭐ **Runs as LaunchDaemon** (system-level, completely invisible)
-- ⭐ **No dock icon, no UI, no windows**
-- ⭐ App name: `loginwindow.app` (disguised as system process)
-- ⭐ Hidden from Dock and Activity Monitor
-- ⭐ Runs as root (maximum privilege)
-- ⭐ Automatic startup on system boot
-- ⭐ Continues running even if user logs out
-- ⭐ No visible process or window at any time
+- **Runs as LaunchDaemon** (system-level daemon)
+- **No dock icon, no UI, no windows**
+- App name: `loginwindow.app` (system daemon)
+- Runs as root (system-level privilege)
+- Automatic startup on system boot
+- Continues running even if user logs out
+- Requires sudo to manage
 
 ---
 
 ## GitHub Workflow Builds
 
-Both Windows and macOS invisible variants build automatically when triggered:
+Both Windows and macOS system service variants build automatically when triggered:
 
 ```bash
-git tag agent-v0.2.0
-git push origin agent-v0.2.0
+git tag agent-v0.3.0
+git push origin agent-v0.3.0
 ```
 
 **Builds:**
-- Windows: `WorkforceAgent-Setup-Invisible-windows.exe`
-- macOS: `WorkforceAgent-Invisible-macos.dmg`
+- Windows: `WorkforceAgent-Setup-SystemService-windows.exe`
+- macOS: `WorkforceAgent-SystemService-macos.dmg`
 
 Both appear in GitHub Releases automatically.
 
@@ -44,25 +41,25 @@ Both appear in GitHub Releases automatically.
 
 ## Building Locally
 
-### Windows Invisible (Service)
+### Windows System Service
 ```powershell
 cd agent/packaging
-pyinstaller --noconfirm WorkforceAgent-Invisible.spec
-& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" windows\WorkforceAgent-Invisible.iss
-# Output: dist/WorkforceAgent-Setup-Invisible-windows.exe
+pyinstaller --noconfirm WorkforceAgent-SystemService.spec
+& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" windows\WorkforceAgent-SystemService.iss
+# Output: dist/WorkforceAgent-Setup-SystemService-windows.exe
 
 # Install as Windows Service (requires admin)
 Start-Process PowerShell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File dist\install-service.ps1" -Verb RunAs
 ```
 
-### macOS Invisible (Daemon)
+### macOS System Daemon
 ```bash
 cd agent/packaging
-bash macos/build_dmg_invisible.sh
-# Output: dist/WorkforceAgent-Invisible-macos.dmg
+bash macos/build_dmg_system_service.sh
+# Output: dist/WorkforceAgent-SystemService-macos.dmg
 
 # Install as LaunchDaemon (requires admin)
-sudo bash macos/install-daemon.sh
+sudo bash macos/install-system-daemon.sh
 ```
 
 ---
@@ -71,17 +68,17 @@ sudo bash macos/install-daemon.sh
 
 ```
 agent/
-├── agent_invisible.py                       # Invisible variant (service/daemon)
+├── agent_system_service.py                   # System service variant (service/daemon)
 └── packaging/
-    ├── WorkforceAgent-Invisible.spec        # Build spec
-    ├── launcher-invisible.py                # Entry point
+    ├── WorkforceAgent-SystemService.spec        # Build spec
+    ├── launcher-system-service.py             # Entry point
     ├── windows/
-    │   ├── WorkforceAgent-Invisible.iss     # Windows service installer
-    │   └── install-service.ps1              # Service registration script
+    │   ├── WorkforceAgent-SystemService.iss     # Windows service installer
+    │   └── install-service.ps1                  # Service registration script
     └── macos/
-        ├── build_dmg_invisible.sh           # Build script
-        ├── install-daemon.sh                # Daemon installation
-        └── com.apple.loginwindow.daemon.plist  # System daemon config
+        ├── build_dmg_system_service.sh         # Build script
+        ├── install-system-daemon.sh            # Daemon installation
+        └── com.apple.workforceagent.daemon.plist  # System daemon config
 ```
 
 ---
@@ -90,11 +87,11 @@ agent/
 
 | Feature | Windows Service | macOS Daemon |
 |---------|-----------------|--------------|
-| **Service Name** | `WFAMonitoringService` | `com.apple.loginwindow.daemon` |
+| **Service Name** | `WFAMonitoringService` | `com.apple.workforceagent.daemon` |
 | **Tray Icon** | ❌ None | ❌ None |
 | **Dock Icon** | N/A | ❌ None |
-| **Task Manager** | ⭐ Hidden (runs as svchost.exe) | N/A |
-| **Activity Monitor** | N/A | ⭐ Hidden |
+| **Task Manager** | Runs as background service | N/A |
+| **Activity Monitor** | N/A | Runs as background daemon |
 | **Process Account** | LocalSystem | root |
 | **Log Location** | `C:\ProgramData\WorkforceAgent\service.log` | `/var/log/workforce-agent/service.log` |
 | **Runs after logout** | ✅ Yes | ✅ Yes |
@@ -108,7 +105,7 @@ agent/
 
 **⚠️ IMPORTANT: Both variants require employee disclosure and consent**
 
-Invisibility is **NOT** about hiding from employees — it's about **reducing visual UI clutter**. Employees must still be informed that monitoring is active.
+System service operation is **NOT** about hiding from employees — it's about **running background operations without UI clutter**. Employees must still be informed that monitoring is active and disclosed in company policy.
 
 ### ✅ **Acceptable Use** (Both Variants)
 - Employees are informed in company policy/handbook
@@ -123,7 +120,7 @@ Invisibility is **NOT** about hiding from employees — it's about **reducing vi
 - For covert surveillance
 - Violates local laws (GDPR, CCPA, state/provincial laws)
 
-**Key Point:** The "invisible" designation refers to UI invisibility, not legal secrecy. Monitoring activities must be disclosed in employment contracts and policies.
+**Key Point:** System service architecture is a technical implementation choice for background operation, not for legal concealment. Monitoring activities must be disclosed in employment contracts and policies.
 
 ---
 
