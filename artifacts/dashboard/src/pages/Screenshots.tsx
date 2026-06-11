@@ -20,12 +20,16 @@ import { Image as ImageIcon, Info, Flag } from "lucide-react";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useGroupFilter, ALL_GROUPS as ALL } from "@/hooks/use-group-filter";
+import { useDateFilter, dayBoundsIso, todayStr } from "@/hooks/use-date-filter";
+import { DateFilter } from "@/components/DateFilter";
 
 export default function Screenshots() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [flaggedOnly, setFlaggedOnly] = useState(false);
   const [groupFilter, setGroupFilter] = useGroupFilter();
+  const [dateFilter] = useDateFilter();
+  const { from, to } = useMemo(() => dayBoundsIso(dateFilter), [dateFilter]);
   const { data: devices } = useListDevices();
   const groups = useMemo(() => {
     const set = new Set<string>();
@@ -33,7 +37,9 @@ export default function Screenshots() {
     return Array.from(set).sort();
   }, [devices]);
   const params = {
-    limit: 50,
+    limit: 200,
+    from,
+    to,
     ...(flaggedOnly ? { flagged: true } : {}),
     ...(groupFilter !== ALL ? { group: groupFilter } : {}),
   };
@@ -62,9 +68,14 @@ export default function Screenshots() {
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Screenshots</h1>
-          <p className="text-muted-foreground mt-1">Periodic captures taken with explicit user consent.</p>
+          <p className="text-muted-foreground mt-1">
+            {dateFilter === todayStr()
+              ? "Today's captures, taken with explicit user consent."
+              : "Captures from the selected day, taken with explicit user consent."}
+          </p>
         </div>
-        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full sm:w-auto">
+          <DateFilter />
           <Select value={groupFilter} onValueChange={setGroupFilter}>
             <SelectTrigger className="w-full sm:w-44">
               <SelectValue placeholder="All groups" />
@@ -107,7 +118,13 @@ export default function Screenshots() {
         <Card className="border-dashed">
           <CardContent className="flex flex-col items-center justify-center h-64 text-muted-foreground">
             <ImageIcon className="h-10 w-10 mb-4 opacity-20" />
-            <p>{flaggedOnly ? "No flagged screenshots." : "No screenshots have been captured yet."}</p>
+            <p>
+              {flaggedOnly
+                ? "No flagged screenshots for this day."
+                : dateFilter === todayStr()
+                  ? "No screenshots have been captured today yet."
+                  : "No screenshots were captured on this day."}
+            </p>
           </CardContent>
         </Card>
       ) : (

@@ -5,3 +5,4 @@
 - [API test harness](api-test-harness.md) — vitest integration tests in `artifacts/api-server/test/` hit the real dev DB; seed unique rows + clean up, run files sequentially (global settings row), stub auth via injected `req.user`.
 - [Drizzle partial unique indexes](drizzle-partial-unique-indexes.md) — upserts onto a partial unique index need `targetWhere`; `drizzle-kit push` ignores WHERE-predicate changes, so DROP/CREATE the index by hand.
 - [Activity Logs daily aggregation](activity-daily-aggregation.md) — Activity Logs screen aggregates a day of logs CLIENT-SIDE in browser-local tz via `/activity/range`; intentionally diverges from server-local `/reports`.
+- [Dashboard shared filters](dashboard-shared-filters.md) — no global header; group/date filters share state via localStorage+window-event hooks; date filter is single-day (Overview/Attendance keep their own range pickers).

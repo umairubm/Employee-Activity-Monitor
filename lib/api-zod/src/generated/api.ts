@@ -440,6 +440,16 @@ export const ListScreenshotsQueryParams = zod.object({
     .string()
     .optional()
     .describe("Restrict to devices in this group"),
+  from: zod
+    .date()
+    .optional()
+    .describe("Only screenshots captured at or after this instant (inclusive)"),
+  to: zod
+    .date()
+    .optional()
+    .describe(
+      "Only screenshots captured strictly before this instant (exclusive)",
+    ),
   limit: zod.coerce.number().optional(),
 });
 

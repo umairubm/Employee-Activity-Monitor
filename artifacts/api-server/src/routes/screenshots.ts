@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod/v4";
 import { db, screenshotsTable, devicesTable } from "@workspace/db";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt } from "drizzle-orm";
 import { ObjectNotFoundError, ObjectStorageService } from "../lib/objectStorage";
 import { requireRole } from "../middlewares/userAuth";
 
@@ -16,9 +16,34 @@ function parseLimit(raw: unknown, fallback: number, max: number): number {
 // GET /api/screenshots - list screenshot metadata (filter by device / flagged)
 router.get("/", async (req, res) => {
   try {
-    const { deviceId, group } = req.query as Record<string, string | undefined>;
+    const { deviceId, group, from, to } = req.query as Record<
+      string,
+      string | undefined
+    >;
     const flaggedOnly = req.query.flagged === "true";
     const limit = parseLimit(req.query.limit, 60, 200);
+
+    // `from`/`to` are optional, but if supplied they must be valid date-times.
+    let fromDate: Date | null = null;
+    let toDate: Date | null = null;
+    if (from !== undefined) {
+      fromDate = new Date(from);
+      if (Number.isNaN(fromDate.getTime())) {
+        res.status(400).json({ error: "Invalid `from`; expected ISO date-time" });
+        return;
+      }
+    }
+    if (to !== undefined) {
+      toDate = new Date(to);
+      if (Number.isNaN(toDate.getTime())) {
+        res.status(400).json({ error: "Invalid `to`; expected ISO date-time" });
+        return;
+      }
+    }
+    if (fromDate && toDate && fromDate.getTime() > toDate.getTime()) {
+      res.status(400).json({ error: "`from` must be on or before `to`" });
+      return;
+    }
 
     const filters = [
       deviceId ? eq(screenshotsTable.deviceId, deviceId) : undefined,
@@ -32,6 +57,8 @@ router.get("/", async (req, res) => {
               .where(eq(devicesTable.deviceGroup, group)),
           )
         : undefined,
+      fromDate ? gte(screenshotsTable.capturedAt, fromDate) : undefined,
+      toDate ? lt(screenshotsTable.capturedAt, toDate) : undefined,
     ].filter(Boolean);
 
     const rows = await db.query.screenshotsTable.findMany({

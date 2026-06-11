@@ -13,5 +13,13 @@ export type ListScreenshotsParams = {
    * Restrict to devices in this group
    */
   group?: string;
+  /**
+   * Only screenshots captured at or after this instant (inclusive)
+   */
+  from?: Date;
+  /**
+   * Only screenshots captured strictly before this instant (exclusive)
+   */
+  to?: Date;
   limit?: number;
 };

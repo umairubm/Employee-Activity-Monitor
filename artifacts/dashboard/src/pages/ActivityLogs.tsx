@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   useGetActivityRange,
   getGetActivityRangeQueryKey,
@@ -37,6 +37,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { format } from "date-fns";
 import { Search, MonitorSmartphone, LayoutGrid } from "lucide-react";
 import { useGroupFilter, ALL_GROUPS as ALL } from "@/hooks/use-group-filter";
+import { useDateFilter, dayBoundsIso, todayStr } from "@/hooks/use-date-filter";
+import { DateFilter } from "@/components/DateFilter";
 
 /* ----------------------------- types & helpers ---------------------------- */
 
@@ -400,25 +402,10 @@ export default function ActivityLogs() {
   const [groupFilter, setGroupFilter] = useGroupFilter();
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  // Browser-local day boundaries. Held in state and rolled over at the next
-  // local midnight so a long-lived tab keeps showing "today" without a reload.
-  const [dayStart, setDayStart] = useState(() => {
-    const s = new Date();
-    s.setHours(0, 0, 0, 0);
-    return s;
-  });
-  useEffect(() => {
-    const next = new Date(dayStart);
-    next.setDate(next.getDate() + 1);
-    const delay = next.getTime() - Date.now();
-    const timer = setTimeout(() => setDayStart(next), Math.max(0, delay) + 1000);
-    return () => clearTimeout(timer);
-  }, [dayStart]);
-  const { from, to } = useMemo(() => {
-    const end = new Date(dayStart);
-    end.setDate(end.getDate() + 1);
-    return { from: dayStart.toISOString(), to: end.toISOString() };
-  }, [dayStart]);
+  // Shared, persisted single-day filter (browser-local). The query window is
+  // the [00:00, next 00:00) bounds of the selected day.
+  const [dateFilter] = useDateFilter();
+  const { from, to } = useMemo(() => dayBoundsIso(dateFilter), [dateFilter]);
 
   const { data: devices, isLoading: devicesLoading } = useListDevices();
   const { data: categories } = useListCategories();
@@ -487,10 +474,12 @@ export default function ActivityLogs() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Activity Logs</h1>
           <p className="mt-1 text-muted-foreground">
-            Today's activity per user. Select a row for the full breakdown.
+            {dateFilter === todayStr() ? "Today's" : "Selected day's"} activity
+            per user. Select a row for the full breakdown.
           </p>
         </div>
-        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+          <DateFilter />
           <Select value={groupFilter} onValueChange={setGroupFilter}>
             <SelectTrigger className="w-full sm:w-44">
               <SelectValue placeholder="All groups" />

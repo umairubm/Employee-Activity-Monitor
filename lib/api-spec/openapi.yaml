@@ -406,6 +406,20 @@ paths:
           description: Restrict to devices in this group
           schema:
             type: string
+        - name: from
+          in: query
+          required: false
+          description: Only screenshots captured at or after this instant (inclusive)
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          description: Only screenshots captured strictly before this instant (exclusive)
+          schema:
+            type: string
+            format: date-time
         - name: limit
           in: query
           required: false
