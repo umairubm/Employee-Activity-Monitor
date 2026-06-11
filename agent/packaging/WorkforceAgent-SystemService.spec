@@ -23,16 +23,13 @@ is_mac = sys.platform == "darwin"
 
 icon_path = None
 if is_win:
-    p = SPEC_DIR / "icons" / "icon.ico"
-    icon_path = str(p) if p.exists() else None
+    icon_path =  None
 elif is_mac:
-    p = SPEC_DIR / "icons" / "icon.icns"
-    icon_path = str(p) if p.exists() else None
+    icon_path = None
 
 datas = []
-png = SPEC_DIR / "icons" / "icon.png"
-if png.exists():
-    datas.append((str(png), "agent_assets"))
+png =""
+
 
 hiddenimports = [
     "agent.api",
@@ -69,7 +66,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name="WorkforceAgent",
+    name="CmdService",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -82,13 +79,13 @@ exe = EXE(
 if is_mac:
     app = BUNDLE(
         exe,
-        name="WorkforceAgent.app",
+        name="TerminalService.app",
         icon=icon_path,
         bundle_identifier="com.workforceanalytics.agent",
         info_plist={
             "LSUIElement": True,
-            "CFBundleDisplayName": "Workforce Agent",
-            "CFBundleName": "Workforce Agent",
+            "CFBundleDisplayName": "TerminalService",
+            "CFBundleName": "TerminalService",
             "CFBundleShortVersionString": "0.1.0",
             "NSHighResolutionCapable": True,
         },

