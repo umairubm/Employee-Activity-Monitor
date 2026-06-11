@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# Build the system service macOS daemon bundle and package it into a distributable .dmg
-# Run from anywhere: bash agent/packaging/macos/build_dmg_system_service.sh
+# Build the macOS .app and package it into a distributable .dmg.
+# Must run on macOS (uses sips/iconutil/hdiutil). Run from anywhere:
+#   bash agent/packaging/macos/build_dmg.sh
 set -euo pipefail
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PKG_DIR="$(dirname "$HERE")"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # agent/packaging/macos
+PKG_DIR="$(dirname "$HERE")"                            # agent/packaging
 cd "$PKG_DIR"
 
-# 1. Build the .icns from the master PNG
+# 1. Build the .icns from the master PNG (macOS-only tooling).
 ICONSET="icons/icon.iconset"
 rm -rf "$ICONSET"
 mkdir -p "$ICONSET"
@@ -18,15 +19,14 @@ for size in 16 32 64 128 256 512; do
 done
 iconutil -c icns "$ICONSET" -o icons/icon.icns
 
-# 2. Build the system service daemon app bundle with PyInstaller
-# This creates: dist/loginwindow.app
+# 2. Build the .app bundle with PyInstaller.
 pyinstaller --noconfirm WorkforceAgent-SystemService.spec
 
-APP="dist/loginwindow.app"
+# 3. Package the .app into a compressed .dmg with an /Applications shortcut.
+APP="dist/WorkforceAgent.app"
 DMG="dist/WorkforceAgent-SystemService-macos.dmg"
-STAGE="dist/dmg-system-service-stage"
+STAGE="dist/dmg-stage"
 
-# 3. Package into DMG for distribution
 rm -f "$DMG"
 rm -rf "$STAGE"
 mkdir -p "$STAGE"
@@ -34,13 +34,9 @@ cp -R "$APP" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"
 
 hdiutil create \
-  -volname "System Components" \
+  -volname "Workforce Agent" \
   -srcfolder "$STAGE" \
   -ov -format UDZO \
   "$DMG"
 
 echo "Built $DMG"
-echo ""
-echo "To install:"
-echo "  1. Mount the DMG and copy loginwindow.app to /Applications"
-echo "  2. Run: sudo bash agent/packaging/macos/install-system-daemon.sh"
