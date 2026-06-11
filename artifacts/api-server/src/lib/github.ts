@@ -119,6 +119,59 @@ export function assetForPlatform(
   return release.assets.find((a) => a.name.toLowerCase().endsWith(ext));
 }
 
+/**
+ * Fetch recent published releases (newest first, drafts excluded). Used to
+ * resolve each platform's installer independently — a release that only updates
+ * one platform (e.g. macOS-only) must not hide a Windows build that is still
+ * the newest `.exe` published in an earlier release.
+ */
+export async function getReleases(perPage = 15): Promise<LatestRelease[]> {
+  const token = await getAccessToken();
+  const { owner, repo } = releaseRepo();
+  const res = await fetch(
+    `${GITHUB_API}/repos/${owner}/${repo}/releases?per_page=${perPage}`,
+    { headers: ghHeaders(token, "application/vnd.github+json") },
+  );
+  if (res.status === 404) return [];
+  if (!res.ok) {
+    throw new Error(`GitHub releases lookup failed (${res.status})`);
+  }
+  const data = (await res.json()) as Array<{
+    tag_name: string;
+    draft?: boolean;
+    assets?: Array<{ id: number; name: string; size: number; updated_at: string; url: string }>;
+  }>;
+  return data
+    .filter((r) => !r.draft)
+    .map((r) => ({
+      tag: r.tag_name,
+      assets: (r.assets ?? []).map((a) => ({
+        id: a.id,
+        name: a.name,
+        size: a.size,
+        updatedAt: a.updated_at,
+        apiUrl: a.url,
+      })),
+    }));
+}
+
+/**
+ * Find the newest release that actually publishes an installer for `platform`,
+ * scanning releases newest-first. Returns the asset plus the tag it came from.
+ */
+export function findPlatformAsset(
+  releases: LatestRelease[],
+  platform: string,
+): { asset: ReleaseAsset; tag: string } | undefined {
+  const ext = PLATFORM_EXT[platform];
+  if (!ext) return undefined;
+  for (const release of releases) {
+    const asset = release.assets.find((a) => a.name.toLowerCase().endsWith(ext));
+    if (asset) return { asset, tag: release.tag };
+  }
+  return undefined;
+}
+
 /** Stream a release asset's bytes through to the client as an attachment. */
 export async function streamAsset(asset: ReleaseAsset, res: Response): Promise<void> {
   const token = await getAccessToken();

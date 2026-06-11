@@ -25,11 +25,17 @@ there is an empty `agent/__init__.py` and a `packaging/launcher.py` entry that
 does `from agent.agent import main`; the spec sets `pathex=[repo_root]` and lists
 `agent.*` hidden imports.
 
-**Dashboard download flow:** the admin-gated `/api/downloads` route reads the
-latest GitHub Release via the Replit GitHub connector. The access token is
-fetched **fresh per request** from the connectors proxy (never cached). Metadata
-lookup degrades gracefully (returns `available:false`, never 500) when no release
-or no connection exists. Actual bytes stream through `/api/downloads/:platform`
-(`Readable.fromWeb`), kept out of OpenAPI (raw link, like the screenshots image
-endpoint). Release repo defaults to a hardcoded `owner/repo`, overridable with
-`GITHUB_RELEASE_REPO`.
+**Dashboard download flow:** the admin-gated `/api/downloads` route resolves each
+platform's installer **independently**, scanning recent GitHub Releases
+newest-first (`getReleases` + `findPlatformAsset`) and picking the newest release
+that actually contains that platform's asset (`.exe` / `.dmg`). Do NOT switch
+back to `/releases/latest` only — a release that updates just one platform (e.g.
+a macOS-only `agent-v0.2.0`) would otherwise hide the still-current Windows
+`.exe` published in an earlier tag, making the Windows download silently vanish.
+Each item reports its own release `tag`, so platforms can show different versions.
+The access token is fetched **fresh per request** from the connectors proxy
+(never cached). Metadata lookup degrades gracefully (returns `available:false`,
+never 500) when no release or no connection exists. Actual bytes stream through
+`/api/downloads/:platform` (`Readable.fromWeb`), kept out of OpenAPI (raw link,
+like the screenshots image endpoint). Release repo defaults to a hardcoded
+`owner/repo`, overridable with `GITHUB_RELEASE_REPO`.

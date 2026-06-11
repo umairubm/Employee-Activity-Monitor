@@ -3,17 +3,18 @@ import express, { type Express } from "express";
 import request from "supertest";
 import { requireRole } from "../src/middlewares/userAuth";
 import downloadsRouter from "../src/routes/downloads";
+import { getReleases, type LatestRelease } from "../src/lib/github";
 
 /**
  * Simulate "no release reachable" deterministically. The real
- * `getLatestRelease` hits GitHub, so its result depends on the live repo's
+ * `getReleases` hits GitHub, so its result depends on the live repo's
  * published releases and on whether a GitHub connection exists in the current
- * environment — neither is stable for a unit test. Mocking it to return `null`
+ * environment — neither is stable for a unit test. Mocking it to return `[]`
  * pins the "installers not yet available" path the tests below assert.
  */
 vi.mock("../src/lib/github", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/lib/github")>();
-  return { ...actual, getLatestRelease: vi.fn(async () => null) };
+  return { ...actual, getReleases: vi.fn(async () => []) };
 });
 
 /**
@@ -67,5 +68,38 @@ describe("downloads route", () => {
     const app = makeDownloadsApp("admin");
     const res = await request(app).get("/downloads/windows");
     expect(res.status).toBe(404);
+  });
+
+  it("resolves each platform from the newest release that has its installer", async () => {
+    // Newest release is macOS-only; the Windows .exe lives in an earlier tag.
+    // Each platform must resolve independently and report its own version.
+    const releases: LatestRelease[] = [
+      {
+        tag: "agent-v0.2.0",
+        assets: [
+          { id: 1, name: "WorkforceAgent-macos.dmg", size: 10, updatedAt: "2026-06-01T00:00:00Z", apiUrl: "u1" },
+        ],
+      },
+      {
+        tag: "agent-v0.1.7",
+        assets: [
+          { id: 2, name: "WorkforceAgent-Setup-windows.exe", size: 20, updatedAt: "2026-05-01T00:00:00Z", apiUrl: "u2" },
+          { id: 3, name: "WorkforceAgent-macos.dmg", size: 11, updatedAt: "2026-05-01T00:00:00Z", apiUrl: "u3" },
+        ],
+      },
+    ];
+    vi.mocked(getReleases).mockResolvedValueOnce(releases);
+
+    const app = makeDownloadsApp("admin");
+    const res = await request(app).get("/downloads");
+    expect(res.status).toBe(200);
+
+    const byPlatform = Object.fromEntries(res.body.items.map((i: any) => [i.platform, i]));
+    expect(byPlatform.windows.available).toBe(true);
+    expect(byPlatform.windows.version).toBe("agent-v0.1.7");
+    expect(byPlatform.windows.fileName).toBe("WorkforceAgent-Setup-windows.exe");
+    expect(byPlatform.windows.downloadUrl).toBe("/api/downloads/windows");
+    expect(byPlatform.macos.available).toBe(true);
+    expect(byPlatform.macos.version).toBe("agent-v0.2.0");
   });
 });

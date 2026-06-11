@@ -1,8 +1,8 @@
 import { Router, type IRouter } from "express";
 import { logger } from "../lib/logger";
 import {
-  getLatestRelease,
-  assetForPlatform,
+  getReleases,
+  findPlatformAsset,
   streamAsset,
   type LatestRelease,
 } from "../lib/github";
@@ -18,9 +18,9 @@ const PLATFORMS = [
 // the mount in routes/index.ts). Returns metadata per platform; the actual
 // bytes are served by GET /api/downloads/:platform.
 router.get("/", async (_req, res) => {
-  let release: LatestRelease | null = null;
+  let releases: LatestRelease[] = [];
   try {
-    release = await getLatestRelease();
+    releases = await getReleases();
   } catch (err) {
     // Missing connection / GitHub hiccup should not break the page — report the
     // installers as not-yet-available instead.
@@ -28,17 +28,17 @@ router.get("/", async (_req, res) => {
   }
 
   const items = PLATFORMS.map((p) => {
-    const asset = release ? assetForPlatform(release, p.platform) : undefined;
+    const found = findPlatformAsset(releases, p.platform);
     return {
       platform: p.platform,
       label: p.label,
       extension: p.extension,
-      available: Boolean(asset),
-      fileName: asset?.name ?? null,
-      sizeBytes: asset?.size ?? null,
-      version: asset ? release!.tag : null,
-      updatedAt: asset?.updatedAt ?? null,
-      downloadUrl: asset ? `/api/downloads/${p.platform}` : null,
+      available: Boolean(found),
+      fileName: found?.asset.name ?? null,
+      sizeBytes: found?.asset.size ?? null,
+      version: found?.tag ?? null,
+      updatedAt: found?.asset.updatedAt ?? null,
+      downloadUrl: found ? `/api/downloads/${p.platform}` : null,
     };
   });
 
@@ -53,13 +53,13 @@ router.get("/:platform", async (req, res) => {
     return;
   }
   try {
-    const release = await getLatestRelease();
-    const asset = release ? assetForPlatform(release, platform) : undefined;
-    if (!asset) {
+    const releases = await getReleases();
+    const found = findPlatformAsset(releases, platform);
+    if (!found) {
       res.status(404).json({ error: "Installer not published yet" });
       return;
     }
-    await streamAsset(asset, res);
+    await streamAsset(found.asset, res);
   } catch (error) {
     if (!res.headersSent) {
       res.status(502).json({ error: (error as Error).message });
