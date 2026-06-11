@@ -5,14 +5,15 @@ import {
   useGetDeviceCommands, 
   getGetDeviceCommandsQueryKey, 
   useIssueDeviceCommand,
-  useCancelDeviceCommand 
+  useCancelDeviceCommand,
+  useSetDeviceGroup
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { MonitorSmartphone, ShieldAlert, LogOut, Clock, ShieldCheck, Cpu, Ban } from "lucide-react";
+import { MonitorSmartphone, ShieldAlert, LogOut, Clock, ShieldCheck, Cpu, Ban, Users, Pencil } from "lucide-react";
 import { format } from "date-fns";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -26,7 +27,11 @@ export default function DeviceDetail({ id }: { id: string }) {
   const { data: commands, isLoading: isCommandsLoading } = useGetDeviceCommands(id, { query: { enabled: !!id, queryKey: getGetDeviceCommandsQueryKey(id) } });
   const issueCommand = useIssueDeviceCommand();
   const cancelCommand = useCancelDeviceCommand();
-  
+  const setDeviceGroup = useSetDeviceGroup();
+
+  const [groupDialogOpen, setGroupDialogOpen] = useState(false);
+  const [groupValue, setGroupValue] = useState("");
+
   const [commandDialogOpen, setCommandDialogOpen] = useState(false);
   const [commandType, setCommandType] = useState<'lock_screen' | 'logout_user' | null>(null);
   const [commandReason, setCommandReason] = useState("");
@@ -65,6 +70,26 @@ export default function DeviceDetail({ id }: { id: string }) {
       onError: (error: any) => {
         toast({ title: "Failed to issue command", description: error.message, variant: "destructive" });
       }
+    });
+  };
+
+  const openGroupDialog = () => {
+    setGroupValue(device?.deviceGroup ?? "");
+    setGroupDialogOpen(true);
+  };
+
+  const handleSaveGroup = () => {
+    const value = groupValue.trim();
+    if (!value) return;
+    setDeviceGroup.mutate({ id, data: { deviceGroup: value } }, {
+      onSuccess: () => {
+        setGroupDialogOpen(false);
+        queryClient.invalidateQueries({ queryKey: getGetDeviceQueryKey(id) });
+        toast({ title: "Group updated" });
+      },
+      onError: (error: any) => {
+        toast({ title: "Failed to update group", description: error.message, variant: "destructive" });
+      },
     });
   };
 
@@ -124,6 +149,34 @@ export default function DeviceDetail({ id }: { id: string }) {
           </Button>
         </div>
       </div>
+
+      <Dialog open={groupDialogOpen} onOpenChange={setGroupDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Assign Group</DialogTitle>
+            <DialogDescription>
+              Move this device into a team or group. Devices in the same group are
+              filtered and compared together across the dashboard.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Label htmlFor="device-group" className="mb-2 block">Group name</Label>
+            <Input
+              id="device-group"
+              placeholder="e.g. Engineering"
+              value={groupValue}
+              onChange={(e) => setGroupValue(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSaveGroup()}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setGroupDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleSaveGroup} disabled={setDeviceGroup.isPending || !groupValue.trim()}>
+              {setDeviceGroup.isPending ? "Saving..." : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={commandDialogOpen} onOpenChange={setCommandDialogOpen}>
         <DialogContent>
@@ -193,6 +246,18 @@ export default function DeviceDetail({ id }: { id: string }) {
             <CardTitle className="text-lg">Device Info</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="flex items-center justify-between gap-2 rounded-md bg-muted/40 border border-border p-3">
+              <div className="min-w-0">
+                <p className="text-muted-foreground text-xs mb-1 flex items-center gap-1.5">
+                  <Users className="h-3.5 w-3.5" /> Group
+                </p>
+                <Badge variant="secondary" className="font-normal">{device.deviceGroup}</Badge>
+              </div>
+              <Button variant="outline" size="sm" className="gap-1.5 shrink-0" onClick={openGroupDialog}>
+                <Pencil className="h-3.5 w-3.5" />
+                Edit
+              </Button>
+            </div>
             <div className="grid grid-cols-2 gap-y-4 gap-x-4 text-sm">
               <div>
                 <p className="text-muted-foreground mb-1">Operating System</p>
