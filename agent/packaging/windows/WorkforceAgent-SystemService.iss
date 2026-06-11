@@ -27,8 +27,7 @@ CreateUninstallRegKey=no
 DisableWelcomePage=yes
 DisableReadyPage=yes
 DisableFinishedPage=yes
-OutputDir=..
-dist
+OutputDir=..\dist
 OutputBaseFilename=WorkforceAgent-Setup-SystemService-windows
 SetupIconFile=..\icons\icon.ico
 Compression=lzma2
@@ -36,8 +35,6 @@ SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=admin
 ArchitecturesInstallIn64BitMode=x64compatible
-; Silent installation by default
-SilentInstall=no
 AllowNoIcons=yes
 
 [Languages]
