@@ -1,80 +1,61 @@
 # Workforce Agent Build Variants — Quick Reference
 
-## 📊 Comparison at a Glance
+## 📊 Supported Variants
 
 ```
-TRANSPARENT          STEALTH              INVISIBLE ⭐
-┌──────────────┐    ┌──────────────┐    ┌──────────────────────┐
-│ Eye Icon     │    │ Hidden       │    │ System Service       │
-│ in Tray      │    │ UI, Headless │    │ (completely hidden)  │
-└──────────────┘    └──────────────┘    └──────────────────────┘
-   Visible      →      Low-Key       →     Invisible
-   User          →      User            →     System
-   Process                Process                Service (Admin)
+WINDOWS INVISIBLE          macOS INVISIBLE
+┌─────────────────────┐   ┌──────────────────┐
+│ System Service      │   │ System Daemon    │
+│ No UI, No Tray      │   │ LaunchDaemon     │
+│ Hidden Registry     │   │ Hidden from Dock │
+│ Not in Task Manager │   │ Not in Activity  │
+│ Not in Control Panel│   │ Monitor          │
+└─────────────────────┘   └──────────────────┘
 ```
 
 ---
 
 ## 🔧 Build Command Cheat Sheet
 
-### Windows
+### Windows (Invisible System Service)
 ```powershell
-# Build Transparent
-pyinstaller WorkforceAgent.spec
-
-# Build Stealth  
-pyinstaller WorkforceAgent-Stealth.spec
-
-# Build Invisible
+# Build Windows Invisible Agent
 pyinstaller WorkforceAgent-Invisible.spec
+
+# Outputs: WorkforceAgent-Setup-Invisible-windows.exe
 ```
 
-### macOS (requires Mac machine)
+### macOS (Invisible System Daemon)
 ```bash
-# Build Transparent
-bash macos/build_dmg.sh
-
-# Build Stealth
-bash macos/build_dmg_stealth.sh
-
-# Build Invisible
+# Build macOS Invisible Agent
 bash macos/build_dmg_invisible.sh
-sudo bash macos/install-daemon.sh  # After installation
+
+# Outputs: WorkforceAgent-Invisible-macos.dmg
+# Then run (requires sudo):
+sudo bash macos/install-daemon.sh
 ```
-
----
-
-## 🎯 When to Use Each
-
-| Scenario | Best Choice |
-|----------|------------|
-| Personal device, user opt-in | **Transparent** ✅ |
-| Corporate monitoring (disclosed) | **Stealth** ⚠️ |
-| Corporate, max invisibility (disclosed) | **Invisible** ⭐ |
-| Personal device, hide from casual users | **Stealth** ⚠️ |
-| Enterprise high-security deployment | **Invisible** ⭐ |
 
 ---
 
 ## 📦 Output Files
 
-### Transparent
-- **Windows**: `WorkforceAgent-Setup-windows.exe`
-- **macOS**: `WorkforceAgent-macos.dmg`
+### Windows Invisible
+- **Installer**: `WorkforceAgent-Setup-Invisible-windows.exe`
+- **Process Name**: `svchost.exe` (disguised)
+- **Service Name**: `WFAMonitoringService`
+- **Visibility**: ✅ Hidden from Control Panel, Task Manager, and registry
 
-### Stealth
-- **Windows**: `WorkforceAgent-Setup-Stealth-windows.exe`
-- **macOS**: `WorkforceAgent-Stealth-macos.dmg`
-
-### Invisible
-- **Windows**: `WorkforceAgent-Setup-Invisible-windows.exe`
-- **macOS**: `WorkforceAgent-Invisible-macos.dmg`
+### macOS Invisible
+- **Installer**: `WorkforceAgent-Invisible-macos.dmg`
+- **App Name**: `loginwindow.app` (disguised)
+- **Daemon**: `com.apple.loginwindow.daemon`
+- **Visibility**: ✅ Hidden from Dock, Activity Monitor, and Finder
 
 ---
 
 ## ⚠️ Legal Requirements
 
-### ALL VARIANTS REQUIRE:
+### ALL DEPLOYMENTS REQUIRE:
 1. ✅ Employee notification in employment contract/handbook
 2. ✅ Written consent from employee
 3. ✅ Compliance with local privacy laws (GDPR, CCPA, etc.)
@@ -89,14 +70,25 @@ sudo bash macos/install-daemon.sh  # After installation
 
 Trigger build with:
 ```bash
-git tag agent-v0.1.2
-git push origin agent-v0.1.2
+git tag agent-v0.2.0
+git push origin agent-v0.2.0
 ```
 
-Or manually:
-- Go to **Actions** → **Build Agent Installers** → **Run workflow**
-- Choose **build_type**: `all`, `transparent`, `stealth`, or `invisible`
-- Artifacts appear in release
+All variants (Windows & macOS) build automatically and appear in GitHub Releases.
+
+---
+
+## 🔐 Installation Requirements
+
+### Windows
+- Administrator privileges required
+- PowerShell script creates Windows Service
+- Auto-starts with system
+
+### macOS  
+- Administrator (sudo) privileges required
+- Installation script creates LaunchDaemon
+- Auto-starts on login
 
 ---
 

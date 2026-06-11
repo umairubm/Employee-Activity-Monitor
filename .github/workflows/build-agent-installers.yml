@@ -10,16 +10,6 @@ on:
         description: "Release tag to create/publish (e.g. agent-v0.1.0)"
         required: true
         default: "agent-v0.1.0"
-      build_type:
-        description: "Build type: transparent (UI+tray), stealth (headless), invisible (service), or all"
-        required: false
-        default: "all"
-        type: choice
-        options:
-          - all
-          - transparent
-          - stealth
-          - invisible
 
 permissions:
   contents: write
@@ -31,9 +21,6 @@ env:
 jobs:
   windows:
     runs-on: windows-latest
-    strategy:
-      matrix:
-        variant: ${{ fromJSON(github.event.inputs.build_type == 'transparent' && '["transparent"]' || github.event.inputs.build_type == 'stealth' && '["stealth"]' || github.event.inputs.build_type == 'invisible' && '["invisible"]' || '["transparent", "stealth", "invisible"]') }}
     steps:
       # actions/checkout v4.2+ ships Node.js 24 support
       - uses: actions/checkout@v4.2.2
@@ -54,37 +41,11 @@ jobs:
       - name: Generate icons
         run: python agent/packaging/make_icons.py
 
-      - name: Build transparent agent executable
-        if: matrix.variant == 'transparent'
-        working-directory: agent/packaging
-        run: pyinstaller --noconfirm WorkforceAgent.spec
-
-      - name: Build stealth agent executable
-        if: matrix.variant == 'stealth'
-        working-directory: agent/packaging
-        run: pyinstaller --noconfirm WorkforceAgent-Stealth.spec
-
       - name: Build invisible agent executable
-        if: matrix.variant == 'invisible'
         working-directory: agent/packaging
         run: pyinstaller --noconfirm WorkforceAgent-Invisible.spec
 
-      - name: Build transparent installer (Inno Setup)
-        if: matrix.variant == 'transparent'
-        working-directory: agent/packaging
-        run: |
-          choco install innosetup -y --no-progress
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" windows\WorkforceAgent.iss
-
-      - name: Build stealth installer (Inno Setup)
-        if: matrix.variant == 'stealth'
-        working-directory: agent/packaging
-        run: |
-          choco install innosetup -y --no-progress
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" windows\WorkforceAgent-Stealth.iss
-
       - name: Build invisible installer (Inno Setup)
-        if: matrix.variant == 'invisible'
         working-directory: agent/packaging
         run: |
           choco install innosetup -y --no-progress
@@ -92,44 +53,13 @@ jobs:
 
       # actions/upload-artifact v4.4+ supports Node.js 24
       - uses: actions/upload-artifact@v4.4.3
-        if: matrix.variant == 'transparent'
-        with:
-          name: windows-installer-transparent
-          path: agent/packaging/dist/WorkforceAgent-Setup-windows.exe
-
-      - uses: actions/upload-artifact@v4.4.3
-        if: matrix.variant == 'stealth'
-        with:
-          name: windows-installer-stealth
-          path: agent/packaging/dist/WorkforceAgent-Setup-Stealth-windows.exe
-
-      - uses: actions/upload-artifact@v4.4.3
-        if: matrix.variant == 'invisible'
         with:
           name: windows-installer-invisible
           path: agent/packaging/dist/WorkforceAgent-Setup-Invisible-windows.exe
 
       # Only publish a GitHub Release when this job was triggered by a real tag
-      - name: Publish transparent to release
-        if: startsWith(github.ref, 'refs/tags/') && matrix.variant == 'transparent'
-        uses: softprops/action-gh-release@v2.2.1
-        with:
-          tag_name: ${{ github.ref_name }}
-          generate_release_notes: true
-          fail_on_unmatched_files: false
-          files: agent/packaging/dist/WorkforceAgent-Setup-windows.exe
-
-      - name: Publish stealth to release
-        if: startsWith(github.ref, 'refs/tags/') && matrix.variant == 'stealth'
-        uses: softprops/action-gh-release@v2.2.1
-        with:
-          tag_name: ${{ github.ref_name }}
-          generate_release_notes: true
-          fail_on_unmatched_files: false
-          files: agent/packaging/dist/WorkforceAgent-Setup-Stealth-windows.exe
-
       - name: Publish invisible to release
-        if: startsWith(github.ref, 'refs/tags/') && matrix.variant == 'invisible'
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2.2.1
         with:
           tag_name: ${{ github.ref_name }}
@@ -139,9 +69,6 @@ jobs:
 
   macos:
     runs-on: macos-latest
-    strategy:
-      matrix:
-        variant: ${{ fromJSON(github.event.inputs.build_type == 'transparent' && '["transparent"]' || github.event.inputs.build_type == 'stealth' && '["stealth"]' || github.event.inputs.build_type == 'invisible' && '["invisible"]' || '["transparent", "stealth", "invisible"]') }}
     steps:
       - uses: actions/checkout@v4.2.2
         with:
@@ -159,56 +86,16 @@ jobs:
       - name: Generate icons
         run: python agent/packaging/make_icons.py
 
-      - name: Build transparent .app and .dmg
-        if: matrix.variant == 'transparent'
-        run: bash agent/packaging/macos/build_dmg.sh
-
-      - name: Build stealth .app and .dmg
-        if: matrix.variant == 'stealth'
-        run: bash agent/packaging/macos/build_dmg_stealth.sh
-
       - name: Build invisible .app and .dmg
-        if: matrix.variant == 'invisible'
         run: bash agent/packaging/macos/build_dmg_invisible.sh
 
       - uses: actions/upload-artifact@v4.4.3
-        if: matrix.variant == 'transparent'
-        with:
-          name: macos-installer-transparent
-          path: agent/packaging/dist/WorkforceAgent-macos.dmg
-
-      - uses: actions/upload-artifact@v4.4.3
-        if: matrix.variant == 'stealth'
-        with:
-          name: macos-installer-stealth
-          path: agent/packaging/dist/WorkforceAgent-Stealth-macos.dmg
-
-      - uses: actions/upload-artifact@v4.4.3
-        if: matrix.variant == 'invisible'
         with:
           name: macos-installer-invisible
           path: agent/packaging/dist/WorkforceAgent-Invisible-macos.dmg
 
-      - name: Publish transparent to release
-        if: startsWith(github.ref, 'refs/tags/') && matrix.variant == 'transparent'
-        uses: softprops/action-gh-release@v2.2.1
-        with:
-          tag_name: ${{ github.ref_name }}
-          generate_release_notes: true
-          fail_on_unmatched_files: false
-          files: agent/packaging/dist/WorkforceAgent-macos.dmg
-
-      - name: Publish stealth to release
-        if: startsWith(github.ref, 'refs/tags/') && matrix.variant == 'stealth'
-        uses: softprops/action-gh-release@v2.2.1
-        with:
-          tag_name: ${{ github.ref_name }}
-          generate_release_notes: true
-          fail_on_unmatched_files: false
-          files: agent/packaging/dist/WorkforceAgent-Stealth-macos.dmg
-
       - name: Publish invisible to release
-        if: startsWith(github.ref, 'refs/tags/') && matrix.variant == 'invisible'
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2.2.1
         with:
           tag_name: ${{ github.ref_name }}
