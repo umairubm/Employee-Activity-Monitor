@@ -38,6 +38,7 @@ import type {
   EnrollmentTokenItem,
   FlagScreenshot200,
   GetActivityLogsParams,
+  GetActivityRangeParams,
   GetAttendanceRangeReportParams,
   GetAttendanceReportParams,
   GetGroupComparisonParams,
@@ -1319,6 +1320,105 @@ export function useGetActivityLogs<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetActivityLogsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Returns raw activity logs whose startedAt falls within [from, to). Used by the dashboard to aggregate a full day of activity client-side. Unlike /activity this is not capped at 200 rows.
+
+ * @summary Activity logs within a time range (for daily aggregation)
+ */
+export const getGetActivityRangeUrl = (params: GetActivityRangeParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/activity/range?${stringifiedParams}`
+    : `/api/activity/range`;
+};
+
+export const getActivityRange = async (
+  params: GetActivityRangeParams,
+  options?: RequestInit,
+): Promise<ActivityLogRecord[]> => {
+  return customFetch<ActivityLogRecord[]>(getGetActivityRangeUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetActivityRangeQueryKey = (
+  params?: GetActivityRangeParams,
+) => {
+  return [`/api/activity/range`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetActivityRangeQueryOptions = <
+  TData = Awaited<ReturnType<typeof getActivityRange>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetActivityRangeParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getActivityRange>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetActivityRangeQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getActivityRange>>
+  > = ({ signal }) => getActivityRange(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getActivityRange>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetActivityRangeQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getActivityRange>>
+>;
+export type GetActivityRangeQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Activity logs within a time range (for daily aggregation)
+ */
+
+export function useGetActivityRange<
+  TData = Awaited<ReturnType<typeof getActivityRange>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetActivityRangeParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getActivityRange>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetActivityRangeQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

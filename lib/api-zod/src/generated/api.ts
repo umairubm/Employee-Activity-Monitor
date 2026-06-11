@@ -379,6 +379,36 @@ export const GetActivityLogsResponseItem = zod.object({
 export const GetActivityLogsResponse = zod.array(GetActivityLogsResponseItem);
 
 /**
+ * Returns raw activity logs whose startedAt falls within [from, to). Used by the dashboard to aggregate a full day of activity client-side. Unlike /activity this is not capped at 200 rows.
+
+ * @summary Activity logs within a time range (for daily aggregation)
+ */
+export const GetActivityRangeQueryParams = zod.object({
+  from: zod.date().describe("Inclusive range start (ISO date-time)"),
+  to: zod.date().describe("Exclusive range end (ISO date-time)"),
+  group: zod.coerce
+    .string()
+    .optional()
+    .describe("Restrict to devices in this group"),
+  deviceId: zod.coerce.string().uuid().optional(),
+});
+
+export const GetActivityRangeResponseItem = zod.object({
+  id: zod.string().uuid(),
+  deviceId: zod.string().uuid(),
+  userId: zod.string().uuid().nullish(),
+  processName: zod.string(),
+  windowTitle: zod.string().nullish(),
+  categoryId: zod.string().uuid().nullish(),
+  startedAt: zod.coerce.date(),
+  endedAt: zod.coerce.date(),
+  durationSeconds: zod.number(),
+  idleSeconds: zod.number(),
+  createdAt: zod.coerce.date(),
+});
+export const GetActivityRangeResponse = zod.array(GetActivityRangeResponseItem);
+
+/**
  * @summary Get timeline view
  */
 export const GetTimelineQueryParams = zod.object({

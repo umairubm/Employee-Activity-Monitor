@@ -316,6 +316,51 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/ActivityLogRecord"
+  /activity/range:
+    get:
+      operationId: getActivityRange
+      tags: [activity]
+      summary: Activity logs within a time range (for daily aggregation)
+      description: >
+        Returns raw activity logs whose startedAt falls within [from, to). Used by
+        the dashboard to aggregate a full day of activity client-side. Unlike
+        /activity this is not capped at 200 rows.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          description: Inclusive range start (ISO date-time)
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: true
+          description: Exclusive range end (ISO date-time)
+          schema:
+            type: string
+            format: date-time
+        - name: group
+          in: query
+          required: false
+          description: Restrict to devices in this group
+          schema:
+            type: string
+        - name: deviceId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Activity logs in range
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ActivityLogRecord"
   /activity/timeline:
     get:
       operationId: getTimeline

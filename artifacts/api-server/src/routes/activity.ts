@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { activityLogsTable, devicesTable } from "@workspace/db";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lt } from "drizzle-orm";
 
 const router: IRouter = Router();
 
@@ -35,6 +35,52 @@ router.get("/", async (req, res) => {
       where: conditions.length ? and(...conditions) : undefined,
       limit,
       orderBy: [desc(activityLogsTable.startedAt)],
+    });
+    res.json(logs);
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// GET /api/activity/range - all logs within [from, to) for daily aggregation.
+// Not capped at 200 (the dashboard aggregates a full day client-side), but
+// bounded by a generous safety limit.
+router.get("/range", async (req, res) => {
+  try {
+    const { deviceId, group } = req.query as Record<string, string | undefined>;
+    const fromRaw = req.query.from;
+    const toRaw = req.query.to;
+    const from = typeof fromRaw === "string" ? new Date(fromRaw) : new Date(NaN);
+    const to = typeof toRaw === "string" ? new Date(toRaw) : new Date(NaN);
+    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+      res.status(400).json({ error: "Invalid `from`/`to`; expected ISO date-time" });
+      return;
+    }
+    if (from.getTime() > to.getTime()) {
+      res.status(400).json({ error: "`from` must be on or before `to`" });
+      return;
+    }
+
+    const conditions = [
+      gte(activityLogsTable.startedAt, from),
+      lt(activityLogsTable.startedAt, to),
+    ];
+    if (deviceId) conditions.push(eq(activityLogsTable.deviceId, deviceId));
+    if (group)
+      conditions.push(
+        inArray(
+          activityLogsTable.deviceId,
+          db
+            .select({ id: devicesTable.id })
+            .from(devicesTable)
+            .where(eq(devicesTable.deviceGroup, group)),
+        ),
+      );
+
+    const logs = await db.query.activityLogsTable.findMany({
+      where: and(...conditions),
+      limit: 10000,
+      orderBy: [asc(activityLogsTable.startedAt)],
     });
     res.json(logs);
   } catch (error) {

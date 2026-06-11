@@ -568,6 +568,22 @@ export type GetActivityLogsParams = {
   limit?: number;
 };
 
+export type GetActivityRangeParams = {
+  /**
+   * Inclusive range start (ISO date-time)
+   */
+  from: string;
+  /**
+   * Exclusive range end (ISO date-time)
+   */
+  to: string;
+  /**
+   * Restrict to devices in this group
+   */
+  group?: string;
+  deviceId?: string;
+};
+
 export type GetTimelineParams = {
   deviceId?: string;
 };

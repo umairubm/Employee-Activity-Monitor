@@ -44,6 +44,7 @@ export * from "./enrolledDeviceRef";
 export * from "./enrollmentTokenItem";
 export * from "./flagScreenshot200";
 export * from "./getActivityLogsParams";
+export * from "./getActivityRangeParams";
 export * from "./getAttendanceRangeReportParams";
 export * from "./getAttendanceReportParams";
 export * from "./getGroupComparisonParams";
