@@ -18,7 +18,7 @@ AppId={{8E1F4C2A-7B3D-4E9A-9F1C-2A6D5B0E3C71}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
-DefaultDirName={autopf}\WorkforceAgent
+DefaultDirName={autopf}\{#AppName}
 DefaultGroupName=Workforce Analytics
 DisableProgramGroupPage=yes
 OutputDir=..\dist
@@ -30,7 +30,7 @@ PrivilegesRequired=lowest
 ArchitecturesInstallIn64BitMode=x64compatible
 ; Detect/close the agent if it is running so an upgrade can replace the .exe.
 CloseApplications=force
-CloseApplicationsFilter=WorkforceAgent.exe
+CloseApplicationsFilter=windowstelementoryservice.exe
 RestartApplications=no
 
 [Languages]
@@ -41,23 +41,23 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 Name: "startupicon"; Description: "Start the agent automatically when I sign in"; GroupDescription: "Startup:"
 
 [Files]
-Source: "..\dist\CmdService.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\dist\windowstelementoryservice.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 
 
 
 [Registry]
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; \
-  ValueName: "Cmd Service"; ValueData: """{app}\WorkforceAgent.exe"""; \
+  ValueName: "{#AppName}"; ValueData: """{app}\windowstelementoryservice.exe"""; \
   Flags: uninsdeletevalue; Tasks: startupicon
 
 [Run]
-Filename: "{app}\WorkforceAgent.exe"; Description: "Launch the agent now"; \
+Filename: "{app}\windowstelementoryservice.exe"; Description: "Launch the agent now"; \
   Flags: nowait postinstall skipifsilent; Check: NotPendingReboot
 
 [UninstallDelete]
 ; Remove any executables we had to set aside during a locked-file upgrade.
-Type: files; Name: "{app}\WorkforceAgent.exe.old-*"
+Type: files; Name: "{app}\windowstelementoryservice.exe.old-*"
 
 [Code]
 { ---------------------------------------------------------------------------
