@@ -2,6 +2,8 @@ import React, { useMemo, useState } from "react";
 import {
   useGetActivityRange,
   getGetActivityRangeQueryKey,
+  useListScreenshots,
+  getListScreenshotsQueryKey,
   useListDevices,
   useListCategories,
   type DeviceItem,
@@ -34,8 +36,21 @@ import {
 } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { format } from "date-fns";
-import { Search, MonitorSmartphone, LayoutGrid } from "lucide-react";
+import {
+  Search,
+  MonitorSmartphone,
+  LayoutGrid,
+  Camera,
+  ChevronRight,
+} from "lucide-react";
 import { useGroupFilter, ALL_GROUPS as ALL } from "@/hooks/use-group-filter";
 import { useDateRange, rangeBoundsIso, todayStr } from "@/hooks/use-date-filter";
 import { DateRangeFilter } from "@/components/DateFilter";
@@ -234,6 +249,101 @@ function ActivitySlots({ slots }: { slots: Uint8Array }) {
   );
 }
 
+/* ------------------------ session screenshot viewer ---------------------- */
+
+/**
+ * Screenshots captured during one session's [startedAt, endedAt) window for a
+ * given device. The hook only runs while the dialog is open (Radix mounts
+ * DialogContent children lazily), so we don't fetch for every session row.
+ */
+function SessionScreenshots({
+  deviceId,
+  from,
+  to,
+}: {
+  deviceId: string;
+  from: string;
+  to: string;
+}) {
+  const params = { deviceId, from, to, limit: 100 };
+  const { data: screenshots, isLoading } = useListScreenshots(params, {
+    query: { queryKey: getListScreenshotsQueryKey(params) },
+  });
+
+  if (isLoading) {
+    return (
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="aspect-video animate-pulse rounded-lg bg-muted" />
+        ))}
+      </div>
+    );
+  }
+
+  if (!screenshots || screenshots.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-12 text-center text-sm text-muted-foreground">
+        <Camera className="mb-2 h-8 w-8 opacity-20" />
+        No screenshots were captured during this session.
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {screenshots.map((shot) => (
+        <Dialog key={shot.id}>
+          <DialogTrigger asChild>
+            <button
+              type="button"
+              aria-label={`View screenshot from ${format(new Date(shot.capturedAt), "PPpp")}`}
+              className={`group cursor-pointer overflow-hidden rounded-lg border bg-card text-left shadow-sm transition-all hover:shadow-md focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
+                shot.flagged
+                  ? "border-amber-500 ring-1 ring-amber-500/40"
+                  : "border-border"
+              }`}
+            >
+              <div className="relative aspect-video overflow-hidden bg-secondary">
+                <img
+                  src={shot.imageUrl}
+                  alt="Screenshot"
+                  className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                  loading="lazy"
+                />
+                {shot.flagged && (
+                  <div className="absolute left-2 top-2 rounded-md bg-amber-500 px-2 py-0.5 text-[10px] font-medium text-white">
+                    Flagged
+                  </div>
+                )}
+              </div>
+              <div className="border-t px-3 py-2 text-xs text-muted-foreground">
+                {format(new Date(shot.capturedAt), "h:mm:ss a")}
+              </div>
+            </button>
+          </DialogTrigger>
+          <DialogContent className="max-w-5xl border-none bg-black/95 p-1 shadow-2xl">
+            <DialogHeader className="sr-only">
+              <DialogTitle>
+                Screenshot from {format(new Date(shot.capturedAt), "PPpp")}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="relative">
+              <img
+                src={shot.imageUrl}
+                alt="Screenshot full size"
+                className="h-auto max-h-[85vh] w-full rounded-md object-contain"
+              />
+              <div className="absolute bottom-4 left-4 rounded-md border border-white/10 bg-black/70 px-3 py-1.5 text-sm text-white backdrop-blur-md">
+                {format(new Date(shot.capturedAt), "PPpp")}
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      ))}
+    </div>
+  );
+}
+
 /* --------------------------- detail slide-over --------------------------- */
 
 function DeviceActivityPanel({
@@ -352,39 +462,73 @@ function DeviceActivityPanel({
               {sessions.map((log) => {
                 const working = isWorking(log);
                 return (
-                  <div
-                    key={log.id}
-                    className="flex items-center justify-between gap-2 rounded-lg border bg-card p-3"
-                  >
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5 text-sm">
-                        <span className="font-medium">
-                          {format(new Date(log.startedAt), "h:mm a")}
-                        </span>
-                        <span className="text-muted-foreground">—</span>
-                        <span className="font-medium">
+                  <Dialog key={log.id}>
+                    <DialogTrigger asChild>
+                      <button
+                        type="button"
+                        className="flex w-full items-center justify-between gap-2 rounded-lg border bg-card p-3 text-left transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      >
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 text-sm">
+                            <span className="font-medium">
+                              {format(new Date(log.startedAt), "h:mm a")}
+                            </span>
+                            <span className="text-muted-foreground">—</span>
+                            <span className="font-medium">
+                              {format(new Date(log.endedAt), "h:mm a")}
+                            </span>
+                          </div>
+                          <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                            {log.processName}
+                            {log.windowTitle ? ` · ${log.windowTitle}` : ""}
+                          </div>
+                          <div className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+                            <span>
+                              Duration: {formatHms(log.durationSeconds ?? 0)}
+                            </span>
+                            <span className="text-muted-foreground/50">·</span>
+                            <span className="inline-flex items-center gap-1 text-primary">
+                              <Camera className="h-3 w-3" />
+                              View screenshots
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <Badge
+                            variant="secondary"
+                            className={
+                              working
+                                ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                                : "bg-muted text-muted-foreground"
+                            }
+                          >
+                            {working ? "Working" : "Not Working"}
+                          </Badge>
+                          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                      </button>
+                    </DialogTrigger>
+                    <DialogContent className="max-w-4xl">
+                      <DialogHeader>
+                        <DialogTitle className="flex flex-wrap items-center gap-2 text-base">
+                          <Camera className="h-4 w-4" />
+                          Screenshots ·{" "}
+                          {format(new Date(log.startedAt), "h:mm a")} –{" "}
                           {format(new Date(log.endedAt), "h:mm a")}
-                        </span>
-                      </div>
-                      <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                        {log.processName}
-                        {log.windowTitle ? ` · ${log.windowTitle}` : ""}
-                      </div>
-                      <div className="mt-0.5 text-xs text-muted-foreground">
-                        Duration: {formatHms(log.durationSeconds ?? 0)}
-                      </div>
-                    </div>
-                    <Badge
-                      variant="secondary"
-                      className={
-                        working
-                          ? "shrink-0 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                          : "shrink-0 bg-muted text-muted-foreground"
-                      }
-                    >
-                      {working ? "Working" : "Not Working"}
-                    </Badge>
-                  </div>
+                          <span className="text-sm font-normal text-muted-foreground">
+                            {log.processName}
+                          </span>
+                        </DialogTitle>
+                      </DialogHeader>
+                      <ScrollArea className="max-h-[70vh] pr-2">
+                        <SessionScreenshots
+                          deviceId={log.deviceId}
+                          from={new Date(log.startedAt).toISOString()}
+                          to={new Date(log.endedAt).toISOString()}
+                        />
+                      </ScrollArea>
+                    </DialogContent>
+                  </Dialog>
                 );
               })}
             </div>
