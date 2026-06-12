@@ -7,6 +7,7 @@ user direct control (pause / resume / view what's collected / quit).
 
 from __future__ import annotations
 
+import sys
 from typing import Callable
 
 
