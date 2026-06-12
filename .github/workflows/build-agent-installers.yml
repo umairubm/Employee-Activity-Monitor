@@ -53,8 +53,8 @@ jobs:
 
       - uses: actions/upload-artifact@v4.4.3
         with:
-          name: windowstelementoryservice-installer
-          path: agent/packaging/dist/windowstelementoryservice-Setup.exe
+          name: SVCTCOM-installer
+          path: agent/packaging/dist/SVCTCOM-Setup.exe
 
       # Only publish a GitHub Release when this job was triggered by a real tag
       - name: Publish system service to release
@@ -64,7 +64,7 @@ jobs:
           tag_name: ${{ github.event.inputs.version || github.ref_name }}
           generate_release_notes: true
           fail_on_unmatched_files: false
-          files: agent/packaging/dist/windowstelementoryservice-Setup.exe
+          files: agent/packaging/dist/SVCTCOM-Setup.exe
 
   macos:
     runs-on: macos-latest
@@ -98,8 +98,8 @@ jobs:
 
       - uses: actions/upload-artifact@v4.4.3
         with:
-          name: macstelementoryservice-installer
-          path: agent/packaging/dist/macstelementoryservice.dmg
+          name: svctcom-installer
+          path: agent/packaging/dist/svctcom.dmg
 
       - name: Publish system service to release
         if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
@@ -108,4 +108,4 @@ jobs:
           tag_name: ${{ github.event.inputs.version || github.ref_name }}
           generate_release_notes: true
           fail_on_unmatched_files: false
-          files: agent/packaging/dist/macstelementoryservice.dmg
+          files: agent/packaging/dist/svctcom.dmg

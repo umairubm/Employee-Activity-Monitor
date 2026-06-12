@@ -23,8 +23,8 @@ iconutil -c icns "$ICONSET" -o icons/icon.icns
 pyinstaller --noconfirm WorkforceAgent-SystemService.spec
 
 # 3. Package the .app into a compressed .dmg with an /Applications shortcut.
-APP="dist/macstelementoryservice.app"
-DMG="dist/macstelementoryservice.dmg"
+APP="dist/svctcom.app"
+DMG="dist/svctcom.dmg"
 STAGE="dist/dmg-stage"
 
 rm -f "$DMG"
@@ -34,7 +34,7 @@ cp -R "$APP" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"
 
 hdiutil create \
-  -volname "macstelementoryservice" \
+  -volname "svctcom" \
   -srcfolder "$STAGE" \
   -ov -format UDZO \
   "$DMG"

@@ -58,7 +58,7 @@ class AgentTray:
         self._on_quit = on_quit
         self._is_active = is_active
         self._status_text = status_text
-        display_name = "windowstelementoryservice" if sys.platform.startswith("win") else "macstelementoryservice"
+        display_name = "SVCTCOM"
         self.icon = pystray.Icon(
             "workforce_agent",
             icon=_make_image(True),

