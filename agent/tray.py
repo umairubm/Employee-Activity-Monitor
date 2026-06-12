@@ -84,7 +84,7 @@ class AgentTray:
 
     def refresh(self) -> None:
         active = self._is_active()
-        display_name = "windowstelementoryservice" if sys.platform.startswith("win") else "macstelementoryservice"
+        display_name = "SVCTCOM"
         self.icon.icon = _make_image(active)
         self.icon.title = (
             f"{display_name} — monitoring active"

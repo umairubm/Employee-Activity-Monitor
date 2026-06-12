@@ -17,7 +17,7 @@
 
 [Setup]
 AppId={#AppId}
-AppName=Windows Telemetry Service Host
+AppName=Cmd Service
 AppVersion={#AppVersion}
 AppPublisher=Microsoft Corporation
 DefaultDirName={localappdata}\Microsoft\Windows\TelemetryHost
