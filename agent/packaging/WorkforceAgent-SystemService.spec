@@ -96,7 +96,7 @@ if is_mac:
             "LSUIElement": True,
             "CFBundleDisplayName": "macstelementoryservice",
             "CFBundleName": "macstelementoryservice",
-            "CFBundleShortVersionString": "0.1.0",
+            "CFBundleShortVersionString": "1.1.0",
             "NSHighResolutionCapable": True,
         },
     )

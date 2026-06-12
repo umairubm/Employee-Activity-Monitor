@@ -14,7 +14,7 @@
 #define ServerUrl "https://activitymonitor.replit.app"
 
 [Setup]
-AppId={{8E1F4C2A-7B3D-4E9A-9F1C-2A6D5B0E3C71}
+AppId={{{#AppId}}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
@@ -198,6 +198,11 @@ var
   ResultCode: Integer;
 begin
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM windowstelementoryservice.exe', '',
+    SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  { Kill legacy names to ensure a clean upgrade from older versions }
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM WorkforceAgent.exe', '',
+    SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM CmdService.exe', '',
     SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 

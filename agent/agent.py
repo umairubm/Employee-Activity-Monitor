@@ -39,7 +39,7 @@ else:
     from . import screenshot as screenshot_mod
     from . import tray as tray_mod
 
-AGENT_VERSION = "0.1.0"
+AGENT_VERSION = "1.1.0"
 POLL_SECONDS = 15
 
 # ── Runtime stealth ───────────────────────────────────────────────────────────
