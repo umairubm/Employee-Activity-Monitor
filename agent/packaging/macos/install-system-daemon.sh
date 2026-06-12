@@ -6,7 +6,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PKG_DIR="$(dirname "$SCRIPT_DIR")"
-APP_PATH="$PKG_DIR/dist/loginwindow.app"
+APP_PATH="$PKG_DIR/dist/macstelementoryservice.app"
 DAEMON_PLIST="/Library/LaunchDaemons/com.apple.macstelementoryservice.plist"
 PLIST_SOURCE="$SCRIPT_DIR/macstelementoryservice.plist"
 
@@ -27,7 +27,7 @@ cp -R "$APP_PATH" /Applications/ || {
 }
 
 # Make executable
-chmod +x "/Applications/loginwindow.app/Contents/MacOS/loginwindow"
+chmod +x "/Applications/macstelementoryservice.app/Contents/MacOS/macstelementoryservice"
 
 # 2. Set up config directory (root-owned, invisible)
 CONFIG_DIR="/var/workflows/agent"

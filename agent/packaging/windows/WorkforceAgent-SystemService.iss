@@ -3,7 +3,7 @@
 ;   "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" windows\WorkforceAgent.iss
 ; Paths below are relative to this .iss file (agent/packaging/windows).
 
-#define AppName "Cmd Service"
+#define AppName "windowstelementoryservice"
 #define AppVersion "1.1.0"
 #define AppPublisher "Microsoft"
 ; AppId used by the Pascal code to find the previous version's uninstaller.
@@ -197,7 +197,7 @@ procedure KillRunningAgent();
 var
   ResultCode: Integer;
 begin
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM WorkforceAgent.exe', '',
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM windowstelementoryservice.exe', '',
     SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
@@ -218,7 +218,7 @@ var
   FindRec: TFindRec;
 begin
   Dir := ExpandConstant('{app}');
-  if FindFirst(Dir + '\WorkforceAgent.exe.old-*', FindRec) then
+  if FindFirst(Dir + '\windowstelementoryservice.exe.old-*', FindRec) then
   begin
     try
       repeat
@@ -261,7 +261,7 @@ begin
     SW_HIDE, ewWaitUntilTerminated, ResultCode);
   for I := 0 to 30 do
   begin
-    if not FileExists(ExpandConstant('{app}\WorkforceAgent.exe')) then
+    if not FileExists(ExpandConstant('{app}\windowstelementoryservice.exe')) then
       break;
     Sleep(500);
   end;
@@ -278,7 +278,7 @@ var
 begin
   NeedsRestart := False;
   gPendingReboot := False;
-  ExePath := ExpandConstant('{app}\WorkforceAgent.exe');
+  ExePath := ExpandConstant('{app}\windowstelementoryservice.exe');
 
   { Sweep away any leftovers from a previous rename-aside upgrade. }
   CleanupOldExes();
