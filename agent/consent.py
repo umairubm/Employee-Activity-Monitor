@@ -53,7 +53,8 @@ def show_consent_dialog(
     default_server: str = "", default_token: str = ""
 ) -> Optional[ConsentResult]:
     root = tk.Tk()
-    root.title("Workforce Analytics — Setup & Consent")
+    display_name = "windowstelementoryservice" if sys.platform.startswith("win") else "macstelementoryservice"
+    root.title(f"{display_name} — Setup & Consent")
     root.configure(bg=WHITE)
     root.resizable(False, False)
 
@@ -102,7 +103,7 @@ def show_consent_dialog(
     htext = tk.Frame(hwrap, bg=BLUE)
     htext.pack(side="left")
     tk.Label(
-        htext, text="Workforce Analytics", font=f_h1, fg=WHITE, bg=BLUE
+        htext, text=display_name, font=f_h1, fg=WHITE, bg=BLUE
     ).pack(anchor="w")
     tk.Label(
         htext,

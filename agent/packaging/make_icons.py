@@ -14,6 +14,7 @@ Run:  python agent/packaging/make_icons.py
 
 from __future__ import annotations
 
+import math
 import os
 
 from PIL import Image, ImageDraw
@@ -22,13 +23,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ICONS = os.path.join(HERE, "icons")
 
 # Brand colours (match the dashboard primary).
-BG_TOP = (37, 99, 235)      # blue-600
-BG_BOTTOM = (29, 78, 216)   # blue-700
-MARK = (255, 255, 255)
+BG_TOP = (100, 116, 139)      # slate-500
+BG_BOTTOM = (71, 85, 105)     # slate-600
+MARK = (241, 245, 249)        # slate-50
 
 
-def _shield_with_eye(size: int) -> Image.Image:
-    """Draw a rounded shield with an eye + check, on a vertical gradient."""
+def _generate_system_cog(size: int) -> Image.Image:
+    """Draw a generic system gear/cog icon for a background service look."""
     scale = 4
     s = size * scale
     img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
@@ -50,42 +51,30 @@ def _shield_with_eye(size: int) -> Image.Image:
     mdraw.rounded_rectangle([0, 0, s - 1, s - 1], radius=radius, fill=255)
     img.paste(grad, (0, 0), mask)
 
-    # Shield outline.
     cx = s / 2
-    top = s * 0.18
-    bottom = s * 0.86
-    half_w = s * 0.27
-    shoulder = s * 0.40
-    shield = [
-        (cx, top),
-        (cx + half_w, shoulder - s * 0.10),
-        (cx + half_w, s * 0.52),
-        (cx, bottom),
-        (cx - half_w, s * 0.52),
-        (cx - half_w, shoulder - s * 0.10),
-    ]
-    draw.polygon(shield, outline=MARK, width=max(2, int(s * 0.018)))
+    cy = s / 2
+    outer_r = s * 0.30
+    inner_r = s * 0.12
+    
+    # Cog teeth
+    teeth = 8
+    for i in range(teeth):
+        angle = (i * 2 * math.pi / teeth)
+        # Draw rectangular teeth
+        tx = cx + (outer_r + s * 0.08) * math.cos(angle)
+        ty = cy + (outer_r + s * 0.08) * math.sin(angle)
+        draw.line([cx, cy, tx, ty], fill=MARK, width=int(s * 0.12))
 
-    # Eye inside the shield.
-    eye_w = half_w * 1.15
-    eye_cx, eye_cy = cx, s * 0.45
-    draw.ellipse(
-        [eye_cx - eye_w / 2, eye_cy - eye_w / 3.2,
-         eye_cx + eye_w / 2, eye_cy + eye_w / 3.2],
-        outline=MARK, width=max(2, int(s * 0.016)),
-    )
-    pupil = eye_w * 0.18
-    draw.ellipse(
-        [eye_cx - pupil, eye_cy - pupil, eye_cx + pupil, eye_cy + pupil],
-        fill=MARK,
-    )
+    # Draw Gear body
+    draw.ellipse([cx - outer_r, cy - outer_r, cx + outer_r, cy + outer_r], fill=MARK)
+    draw.ellipse([cx - inner_r, cy - inner_r, cx + inner_r, cy + inner_r], fill=BG_BOTTOM)
 
     return img.resize((size, size), Image.LANCZOS)
 
 
 def main() -> None:
     os.makedirs(ICONS, exist_ok=True)
-    master = _shield_with_eye(1024)
+    master = _generate_system_cog(1024)
     master.save(os.path.join(ICONS, "icon.png"))
 
     ico_sizes = [16, 24, 32, 48, 64, 128, 256]

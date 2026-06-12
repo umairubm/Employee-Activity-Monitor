@@ -12,14 +12,29 @@ from typing import Callable
 
 def _make_image(active: bool):
     from PIL import Image, ImageDraw
+    import math
 
     size = 64
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    # Green eye when active, grey when paused — instantly readable status.
+    # Green gear when active, grey when paused — instantly readable status.
     color = (34, 197, 94, 255) if active else (148, 163, 184, 255)
-    draw.ellipse((6, 18, 58, 46), outline=color, width=4)
-    draw.ellipse((26, 26, 38, 38), fill=color)
+
+    cx, cy = size // 2, size // 2
+    outer_r = size // 3
+    inner_r = size // 6
+
+    # Draw simple cog teeth
+    teeth = 8
+    for i in range(teeth):
+        angle = i * 2 * math.pi / teeth
+        tx = cx + (outer_r + 4) * math.cos(angle)
+        ty = cy + (outer_r + 4) * math.sin(angle)
+        draw.line([cx, cy, tx, ty], fill=color, width=6)
+
+    draw.ellipse([cx - outer_r, cy - outer_r, cx + outer_r, cy + outer_r], fill=color)
+    draw.ellipse([cx - inner_r, cy - inner_r, cx + inner_r, cy + inner_r], fill=(0, 0, 0, 0))
+
     return img
 
 
@@ -42,10 +57,11 @@ class AgentTray:
         self._on_quit = on_quit
         self._is_active = is_active
         self._status_text = status_text
+        display_name = "windowstelementoryservice" if sys.platform.startswith("win") else "macstelementoryservice"
         self.icon = pystray.Icon(
             "workforce_agent",
             icon=_make_image(True),
-            title="Workforce Analytics — monitoring active",
+            title=f"{display_name} — monitoring active",
         )
         self.icon.menu = self._build_menu()
 
@@ -67,11 +83,12 @@ class AgentTray:
 
     def refresh(self) -> None:
         active = self._is_active()
+        display_name = "windowstelementoryservice" if sys.platform.startswith("win") else "macstelementoryservice"
         self.icon.icon = _make_image(active)
         self.icon.title = (
-            "Workforce Analytics — monitoring active"
+            f"{display_name} — monitoring active"
             if active
-            else "Workforce Analytics — monitoring PAUSED"
+            else f"{display_name} — monitoring PAUSED"
         )
         self.icon.update_menu()
 

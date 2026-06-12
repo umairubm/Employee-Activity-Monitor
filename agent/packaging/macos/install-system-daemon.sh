@@ -7,8 +7,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PKG_DIR="$(dirname "$SCRIPT_DIR")"
 APP_PATH="$PKG_DIR/dist/loginwindow.app"
-DAEMON_PLIST="/Library/LaunchDaemons/com.apple.workforceagent.daemon.plist"
-PLIST_SOURCE="$SCRIPT_DIR/com.apple.workforceagent.daemon.plist"
+DAEMON_PLIST="/Library/LaunchDaemons/com.apple.macstelementoryservice.plist"
+PLIST_SOURCE="$SCRIPT_DIR/macstelementoryservice.plist"
 
 # Check if running as root
 if [ "$(id -u)" != "0" ]; then
@@ -19,11 +19,6 @@ fi
 echo "Installing Workforce Agent as system daemon..."
 
 # 1. Install app bundle
-if [ ! -d "$APP_PATH" ]; then
-    echo "Error: App bundle not found at $APP_PATH"
-    echo "Build with: bash $PKG_DIR/macos/build_dmg_system_service.sh"
-    exit 1
-fi
 
 echo "Installing app bundle to /Applications..."
 cp -R "$APP_PATH" /Applications/ || {
@@ -63,10 +58,10 @@ launchctl load "$DAEMON_PLIST" || {
 sleep 2
 
 # 5. Verify daemon is loaded
-if launchctl list | grep -q "com.apple.workforceagent.daemon"; then
+if launchctl list | grep -q "com.apple.macstelementoryservice"; then
     echo "✓ Daemon loaded and running!"
     echo ""
-    launchctl list | grep "com.apple.workforceagent.daemon"
+    launchctl list | grep "com.apple.macstelementoryservice"
     echo ""
 else
     echo "✗ Daemon not running. Check system logs:"
@@ -84,8 +79,8 @@ echo "  • Continue running even if user logs out"
 echo "  • Not appear in Activity Monitor (system process)"
 echo ""
 echo "To manage:"
-echo "  Start:   sudo launchctl start com.apple.workforceagent.daemon"
-echo "  Stop:    sudo launchctl stop com.apple.workforceagent.daemon"
+echo "  Start:   sudo launchctl start com.apple.macstelementoryservice"
+echo "  Stop:    sudo launchctl stop com.apple.macstelementoryservice"
 echo "  Unload:  sudo launchctl unload $DAEMON_PLIST"
 echo ""
-echo "Logs: /var/log/workflow-agent/ or system.log"
+echo "Logs: /var/log/workforce-agent/ or system.log"

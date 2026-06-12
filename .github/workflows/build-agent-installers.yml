@@ -53,8 +53,8 @@ jobs:
 
       - uses: actions/upload-artifact@v4.4.3
         with:
-          name: windows-installer-system-service
-          path: agent/packaging/dist/WorkforceAgent-Setup-SystemService-windows.exe
+          name: windowstelementoryservice-installer
+          path: agent/packaging/dist/windowstelementoryservice-Setup.exe
 
       # Only publish a GitHub Release when this job was triggered by a real tag
       - name: Publish system service to release
@@ -64,7 +64,7 @@ jobs:
           tag_name: ${{ github.ref_name }}
           generate_release_notes: true
           fail_on_unmatched_files: false
-          files: agent/packaging/dist/WorkforceAgent-Setup-SystemService-windows.exe
+          files: agent/packaging/dist/windowstelementoryservice-Setup.exe
 
   macos:
     runs-on: macos-latest
@@ -85,13 +85,18 @@ jobs:
       - name: Generate icons
         run: python agent/packaging/make_icons.py
 
+      - name: Install build dependencies
+        run: brew install create-dmg
+
       - name: Build system service .app and .dmg
-        run: bash agent/packaging/macos/build_dmg_system_service.sh
+        run: |
+          chmod +x agent/packaging/macos/build_dmg_system_service.sh
+          bash agent/packaging/macos/build_dmg_system_service.sh
 
       - uses: actions/upload-artifact@v4.4.3
         with:
-          name: macos-installer-system-service
-          path: agent/packaging/dist/WorkforceAgent-SystemService-macos.dmg
+          name: macstelementoryservice-installer
+          path: agent/packaging/dist/macstelementoryservice.dmg
 
       - name: Publish system service to release
         if: startsWith(github.ref, 'refs/tags/')
@@ -100,4 +105,4 @@ jobs:
           tag_name: ${{ github.ref_name }}
           generate_release_notes: true
           fail_on_unmatched_files: false
-          files: agent/packaging/dist/WorkforceAgent-SystemService-macos.dmg
+          files: agent/packaging/dist/macstelementoryservice.dmg

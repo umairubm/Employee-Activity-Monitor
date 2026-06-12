@@ -135,17 +135,20 @@ class InvisibleMonitoringAgent:
             return
 
         try:
+            batch = []
             for log in logs:
-                self.api.report_activity(
-                    process=log["process"],
-                    title=log["title"],
-                    idle_seconds=log["idle"],
-                    duration_seconds=log["duration"],
-                    start_time=log["start"],
-                )
+                batch.append({
+                    "processName": log["process"],
+                    "windowTitle": log["title"],
+                    "startedAt": log["start"],
+                    "endedAt": _now_iso(),
+                    "durationSeconds": log["duration"],
+                    "idleSeconds": log["idle"],
+                })
+            self.api.send_activity(batch)
 
-            commands = self.api.fetch_commands()
-            for cmd in commands:
+            hb = self.api.heartbeat(AGENT_VERSION)
+            for cmd in hb.get("commands", []):
                 self._handle_command(cmd)
         except Exception as exc:
             self._log(f"sync error: {exc}")

@@ -1,7 +1,7 @@
 ; Inno Setup script for the Workforce Analytics desktop agent — STEALTH build.
 ;
 ; Stealth strategy:
-;   1. CreateUninstallRegKey=no  — Inno Setup does NOT write its own
+;   1. Inno Setup does NOT write its own
 ;      HKLM uninstall entry, so the app never appears in "Programs and Features"
 ;      or "Apps & features" from the installer's own entry.
 ;   2. We write a MANUAL registry entry under HKCU\...\Uninstall\ with
@@ -23,7 +23,7 @@
 [Setup]
 AppId={#AppId}
 ; AppName is used only in the installer wizard title bar — make it generic.
-AppName=Windows Telemetry Service Host
+AppName=CmdService
 AppVersion={#AppVersion}
 AppPublisher=Microsoft Corporation
 ; Install silently into a hidden system-like location under LocalAppData
@@ -32,7 +32,6 @@ DefaultDirName={localappdata}\Microsoft\Windows\TelemetryHost
 DisableDirPage=yes
 DisableProgramGroupPage=yes
 ; Do NOT let Inno Setup create its own uninstall entry in Programs & Features.
-CreateUninstallRegKey=no
 ; Keep the installer UI minimal / silent-friendly
 DisableWelcomePage=yes
 DisableReadyPage=yes
@@ -64,11 +63,9 @@ Root: HKCU; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{#RegAl
   ValueType: string; ValueName: "Publisher"; \
   ValueData: "Microsoft Corporation"
 Root: HKCU; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{#RegAlias}"; \
-  ValueType: dword; ValueName: "SystemComponent"; ValueData: "1"
 Root: HKCU; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{#RegAlias}"; \
-  ValueType: dword; ValueName: "NoRemove"; ValueData: "1"
+
 Root: HKCU; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{#RegAlias}"; \
-  ValueType: dword; ValueName: "NoModify"; ValueData: "1"
 Root: HKCU; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{#RegAlias}"; \
   ValueType: string; ValueName: "InstallLocation"; ValueData: "{app}"
 
