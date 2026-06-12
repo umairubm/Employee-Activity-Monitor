@@ -44,7 +44,13 @@ jobs:
 
       - name: Build system service agent executable
         working-directory: agent/packaging
-        run: pyinstaller --noconfirm WorkforceAgent-SystemService.spec
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm WorkforceAgent-SystemService.spec
+          # The Inno Setup script expects 'windowstelementoryservice.exe' in the dist folder.
+          # We find the generated exe (handling both onefile and directory modes) and rename/move it.
+          $target = Get-ChildItem -Path "dist" -Filter "*.exe" -Recurse | Select-Object -First 1
+          Move-Item -Path $target.FullName -Destination "dist\windowstelementoryservice.exe" -Force
 
       - name: Build system service installer (Inno Setup)
         working-directory: agent/packaging
