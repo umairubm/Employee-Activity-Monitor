@@ -54,6 +54,7 @@ import {
 import { useGroupFilter, ALL_GROUPS as ALL } from "@/hooks/use-group-filter";
 import { useDateRange, rangeBoundsIso, todayStr } from "@/hooks/use-date-filter";
 import { DateRangeFilter } from "@/components/DateFilter";
+import { ScreenshotLightbox } from "@/components/ScreenshotLightbox";
 
 /* ----------------------------- types & helpers ---------------------------- */
 
@@ -269,6 +270,7 @@ function SessionScreenshots({
   const { data: screenshots, isLoading } = useListScreenshots(params, {
     query: { queryKey: getListScreenshotsQueryKey(params) },
   });
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
 
   if (isLoading) {
     return (
@@ -290,57 +292,49 @@ function SessionScreenshots({
   }
 
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {screenshots.map((shot) => (
-        <Dialog key={shot.id}>
-          <DialogTrigger asChild>
-            <button
-              type="button"
-              aria-label={`View screenshot from ${format(new Date(shot.capturedAt), "PPpp")}`}
-              className={`group cursor-pointer overflow-hidden rounded-lg border bg-card text-left shadow-sm transition-all hover:shadow-md focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
-                shot.flagged
-                  ? "border-amber-500 ring-1 ring-amber-500/40"
-                  : "border-border"
-              }`}
-            >
-              <div className="relative aspect-video overflow-hidden bg-secondary">
-                <img
-                  src={shot.imageUrl}
-                  alt="Screenshot"
-                  className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                  loading="lazy"
-                />
-                {shot.flagged && (
-                  <div className="absolute left-2 top-2 rounded-md bg-amber-500 px-2 py-0.5 text-[10px] font-medium text-white">
-                    Flagged
-                  </div>
-                )}
-              </div>
-              <div className="border-t px-3 py-2 text-xs text-muted-foreground">
-                {format(new Date(shot.capturedAt), "h:mm:ss a")}
-              </div>
-            </button>
-          </DialogTrigger>
-          <DialogContent className="max-w-5xl border-none bg-black/95 p-1 shadow-2xl">
-            <DialogHeader className="sr-only">
-              <DialogTitle>
-                Screenshot from {format(new Date(shot.capturedAt), "PPpp")}
-              </DialogTitle>
-            </DialogHeader>
-            <div className="relative">
+    <>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {screenshots.map((shot, i) => (
+          <button
+            key={shot.id}
+            type="button"
+            onClick={() => setViewerIndex(i)}
+            aria-label={`View screenshot from ${format(new Date(shot.capturedAt), "PPpp")}`}
+            className={`group cursor-pointer overflow-hidden rounded-lg border bg-card text-left shadow-sm transition-all hover:shadow-md focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
+              shot.flagged
+                ? "border-amber-500 ring-1 ring-amber-500/40"
+                : "border-border"
+            }`}
+          >
+            <div className="relative aspect-video overflow-hidden bg-secondary">
               <img
                 src={shot.imageUrl}
-                alt="Screenshot full size"
-                className="h-auto max-h-[85vh] w-full rounded-md object-contain"
+                alt="Screenshot"
+                className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                loading="lazy"
               />
-              <div className="absolute bottom-4 left-4 rounded-md border border-white/10 bg-black/70 px-3 py-1.5 text-sm text-white backdrop-blur-md">
-                {format(new Date(shot.capturedAt), "PPpp")}
-              </div>
+              {shot.flagged && (
+                <div className="absolute left-2 top-2 rounded-md bg-amber-500 px-2 py-0.5 text-[10px] font-medium text-white">
+                  Flagged
+                </div>
+              )}
             </div>
-          </DialogContent>
-        </Dialog>
-      ))}
-    </div>
+            <div className="border-t px-3 py-2 text-xs text-muted-foreground">
+              {format(new Date(shot.capturedAt), "h:mm:ss a")}
+            </div>
+          </button>
+        ))}
+      </div>
+      <ScreenshotLightbox
+        screenshots={screenshots}
+        index={viewerIndex ?? 0}
+        onIndexChange={setViewerIndex}
+        open={viewerIndex !== null}
+        onOpenChange={(o) => {
+          if (!o) setViewerIndex(null);
+        }}
+      />
+    </>
   );
 }
 

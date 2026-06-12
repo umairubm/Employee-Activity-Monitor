@@ -6,3 +6,4 @@
 - [Drizzle partial unique indexes](drizzle-partial-unique-indexes.md) — upserts onto a partial unique index need `targetWhere`; `drizzle-kit push` ignores WHERE-predicate changes, so DROP/CREATE the index by hand.
 - [Activity Logs daily aggregation](activity-daily-aggregation.md) — Activity Logs screen aggregates a day of logs CLIENT-SIDE in browser-local tz via `/activity/range`; intentionally diverges from server-local `/reports`.
 - [Dashboard shared filters](dashboard-shared-filters.md) — no global header; group + a shared date RANGE (useDateRange/DateRangeFilter) share state via localStorage+window-event hooks across all date-aware pages (Attendance DayView stays single-day).
+- [Screenshot lightbox viewer](screenshot-lightbox.md) — one shared controlled arrow-key viewer for both screenshot surfaces (gallery + Activity Logs sessions); self-reconciles index; don't re-add bespoke per-thumbnail dialogs.
