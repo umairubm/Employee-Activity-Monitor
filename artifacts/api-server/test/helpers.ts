@@ -23,6 +23,12 @@ import {
 } from "@workspace/db";
 import devicesRouter from "../src/routes/devices";
 import attendanceRouter from "../src/routes/attendance";
+import timesheetsRouter from "../src/routes/timesheets";
+import projectsRouter from "../src/routes/projects";
+import tasksRouter from "../src/routes/tasks";
+import shiftsRouter from "../src/routes/shifts";
+import leaveRequestsRouter from "../src/routes/leaveRequests";
+import leaveBalancesRouter from "../src/routes/leaveBalances";
 import reportsRouter from "../src/routes/reports";
 import screenshotsRouter from "../src/routes/screenshots";
 import tokensRouter from "../src/routes/tokens";
@@ -51,6 +57,12 @@ export function makeApp(
   });
   app.use("/devices", devicesRouter);
   app.use("/attendance", attendanceRouter);
+  app.use("/timesheets", timesheetsRouter);
+  app.use("/projects", projectsRouter);
+  app.use("/tasks", tasksRouter);
+  app.use("/shifts", shiftsRouter);
+  app.use("/leave-requests", leaveRequestsRouter);
+  app.use("/leave-balances", leaveBalancesRouter);
   app.use("/reports", reportsRouter);
   app.use("/screenshots", screenshotsRouter);
   app.use("/tokens", tokensRouter);

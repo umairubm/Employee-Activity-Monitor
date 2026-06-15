@@ -13,4 +13,5 @@ export const AttendanceRangeDayDeviceStatus = {
   present: "present",
   half_day: "half_day",
   absent: "absent",
+  on_leave: "on_leave",
 } as const;

@@ -13,6 +13,7 @@ export interface AttendanceRangeRow {
   presentDays: number;
   halfDays: number;
   absentDays: number;
+  onLeaveDays: number;
   totalWorkedSeconds: number;
   avgWorkedSeconds: number;
 }

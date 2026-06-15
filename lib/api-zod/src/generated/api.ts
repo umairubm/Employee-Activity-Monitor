@@ -720,7 +720,13 @@ export const GetAttendanceReportResponse = zod.object({
         .describe(
           "Whether the day is a working day under this device's effective rule.",
         ),
-      status: zod.enum(["present", "half_day", "absent", "non_working"]),
+      status: zod.enum([
+        "present",
+        "half_day",
+        "absent",
+        "non_working",
+        "on_leave",
+      ]),
     }),
   ),
 });
@@ -750,6 +756,7 @@ export const GetAttendanceRangeReportResponse = zod.object({
       presentDays: zod.number(),
       halfDays: zod.number(),
       absentDays: zod.number(),
+      onLeaveDays: zod.number(),
       totalWorkedSeconds: zod.number(),
       avgWorkedSeconds: zod.number(),
     }),
@@ -768,19 +775,421 @@ export const GetAttendanceRangeReportResponse = zod.object({
       presentDevices: zod.number(),
       halfDayDevices: zod.number(),
       absentDevices: zod.number(),
+      onLeaveDevices: zod.number(),
       byDevice: zod
         .array(
           zod
             .object({
               deviceId: zod.string().uuid(),
               workedSeconds: zod.number(),
-              status: zod.enum(["present", "half_day", "absent"]),
+              status: zod.enum(["present", "half_day", "absent", "on_leave"]),
             })
             .describe("One device's worked time and status for a single day."),
         )
         .describe("Per-device worked seconds and status for this day."),
     }),
   ),
+});
+
+/**
+ * @summary Per-device worked hours bucketed by week or month
+ */
+export const GetTimesheetQueryParams = zod.object({
+  from: zod.coerce.string(),
+  to: zod.coerce.string(),
+  bucket: zod.enum(["week", "month"]).optional(),
+  group: zod.coerce
+    .string()
+    .optional()
+    .describe("Restrict to devices in this group"),
+});
+
+export const GetTimesheetResponse = zod.object({
+  from: zod.string(),
+  to: zod.string(),
+  bucket: zod.enum(["week", "month"]),
+  devices: zod.array(
+    zod.object({
+      deviceId: zod.string().uuid(),
+      systemName: zod.string(),
+      deviceGroup: zod.string(),
+      totalWorkedSeconds: zod.number(),
+      totalActiveSeconds: zod.number(),
+      totalIdleSeconds: zod.number(),
+      totalProductiveSeconds: zod.number(),
+      workingDays: zod.number(),
+      presentDays: zod.number(),
+      lateDays: zod.number(),
+      earlyLeaveDays: zod.number(),
+      buckets: zod.array(
+        zod.object({
+          key: zod.string(),
+          label: zod.string(),
+          startDay: zod.string(),
+          endDay: zod.string(),
+          workedSeconds: zod.number(),
+          activeSeconds: zod.number(),
+          idleSeconds: zod.number(),
+          productiveSeconds: zod.number(),
+          workingDays: zod.number(),
+          presentDays: zod.number(),
+          lateDays: zod.number(),
+          earlyLeaveDays: zod.number(),
+        }),
+      ),
+    }),
+  ),
+});
+
+/**
+ * @summary List projects with task aggregates
+ */
+export const ListProjectsQueryParams = zod.object({
+  status: zod.enum(["active", "on_hold", "completed", "archived"]).optional(),
+});
+
+export const ListProjectsResponseItem = zod.object({
+  id: zod.string().uuid(),
+  name: zod.string(),
+  description: zod.string().nullish(),
+  client: zod.string().nullish(),
+  status: zod.enum(["active", "on_hold", "completed", "archived"]),
+  color: zod.string().nullish(),
+  createdById: zod.string().uuid().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+  taskCount: zod.number(),
+  todoCount: zod.number(),
+  inProgressCount: zod.number(),
+  doneCount: zod.number(),
+  estimatedMinutes: zod.number(),
+  loggedMinutes: zod.number(),
+  completionPct: zod.number(),
+});
+export const ListProjectsResponse = zod.array(ListProjectsResponseItem);
+
+/**
+ * @summary Create a project
+ */
+export const CreateProjectBody = zod.object({
+  name: zod.string(),
+  description: zod.string().nullish(),
+  client: zod.string().nullish(),
+  status: zod.enum(["active", "on_hold", "completed", "archived"]).optional(),
+  color: zod.string().nullish(),
+});
+
+/**
+ * @summary Update a project
+ */
+export const UpdateProjectParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
+
+export const UpdateProjectBody = zod.object({
+  name: zod.string().optional(),
+  description: zod.string().nullish(),
+  client: zod.string().nullish(),
+  status: zod.enum(["active", "on_hold", "completed", "archived"]).optional(),
+  color: zod.string().nullish(),
+});
+
+export const UpdateProjectResponse = zod.object({
+  id: zod.string().uuid(),
+  name: zod.string(),
+  description: zod.string().nullish(),
+  client: zod.string().nullish(),
+  status: zod.enum(["active", "on_hold", "completed", "archived"]),
+  color: zod.string().nullish(),
+  createdById: zod.string().uuid().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+  taskCount: zod.number(),
+  todoCount: zod.number(),
+  inProgressCount: zod.number(),
+  doneCount: zod.number(),
+  estimatedMinutes: zod.number(),
+  loggedMinutes: zod.number(),
+  completionPct: zod.number(),
+});
+
+/**
+ * @summary Delete a project and its tasks
+ */
+export const DeleteProjectParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
+
+/**
+ * @summary List tasks for a project
+ */
+export const ListProjectTasksParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
+
+export const ListProjectTasksResponseItem = zod.object({
+  id: zod.string().uuid(),
+  projectId: zod.string().uuid(),
+  title: zod.string(),
+  description: zod.string().nullish(),
+  status: zod.enum(["todo", "in_progress", "done"]),
+  priority: zod.enum(["low", "medium", "high"]),
+  assignedUserId: zod.string().uuid().nullish(),
+  assignedUsername: zod.string().nullish(),
+  estimatedMinutes: zod.number(),
+  loggedMinutes: zod.number(),
+  dueDate: zod.string().nullish(),
+  completedAt: zod.coerce.date().nullish(),
+  createdById: zod.string().uuid().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+export const ListProjectTasksResponse = zod.array(ListProjectTasksResponseItem);
+
+/**
+ * @summary Create a task in a project
+ */
+export const CreateTaskParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
+
+export const CreateTaskBody = zod.object({
+  title: zod.string(),
+  description: zod.string().nullish(),
+  status: zod.enum(["todo", "in_progress", "done"]).optional(),
+  priority: zod.enum(["low", "medium", "high"]).optional(),
+  assignedUserId: zod.string().uuid().nullish(),
+  estimatedMinutes: zod.number().optional(),
+  dueDate: zod.string().nullish(),
+});
+
+/**
+ * @summary Update a task (status, assignment, logged time)
+ */
+export const UpdateTaskParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
+
+export const UpdateTaskBody = zod.object({
+  title: zod.string().optional(),
+  description: zod.string().nullish(),
+  status: zod.enum(["todo", "in_progress", "done"]).optional(),
+  priority: zod.enum(["low", "medium", "high"]).optional(),
+  assignedUserId: zod.string().uuid().nullish(),
+  estimatedMinutes: zod.number().optional(),
+  loggedMinutes: zod.number().optional(),
+  dueDate: zod.string().nullish(),
+});
+
+export const UpdateTaskResponse = zod.object({
+  id: zod.string().uuid(),
+  projectId: zod.string().uuid(),
+  title: zod.string(),
+  description: zod.string().nullish(),
+  status: zod.enum(["todo", "in_progress", "done"]),
+  priority: zod.enum(["low", "medium", "high"]),
+  assignedUserId: zod.string().uuid().nullish(),
+  assignedUsername: zod.string().nullish(),
+  estimatedMinutes: zod.number(),
+  loggedMinutes: zod.number(),
+  dueDate: zod.string().nullish(),
+  completedAt: zod.coerce.date().nullish(),
+  createdById: zod.string().uuid().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Delete a task
+ */
+export const DeleteTaskParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
+
+/**
+ * @summary List work shifts
+ */
+export const ListShiftsResponseItem = zod.object({
+  id: zod.string().uuid(),
+  name: zod.string(),
+  shiftType: zod.enum(["morning", "evening", "night"]),
+  startTime: zod.string(),
+  endTime: zod.string(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+export const ListShiftsResponse = zod.array(ListShiftsResponseItem);
+
+/**
+ * @summary Create a work shift
+ */
+export const CreateShiftBody = zod.object({
+  name: zod.string(),
+  shiftType: zod.enum(["morning", "evening", "night"]).optional(),
+  startTime: zod.string(),
+  endTime: zod.string(),
+});
+
+/**
+ * @summary Update a work shift
+ */
+export const UpdateShiftParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
+
+export const UpdateShiftBody = zod.object({
+  name: zod.string().optional(),
+  shiftType: zod.enum(["morning", "evening", "night"]).optional(),
+  startTime: zod.string().optional(),
+  endTime: zod.string().optional(),
+});
+
+export const UpdateShiftResponse = zod.object({
+  id: zod.string().uuid(),
+  name: zod.string(),
+  shiftType: zod.enum(["morning", "evening", "night"]),
+  startTime: zod.string(),
+  endTime: zod.string(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Delete a work shift
+ */
+export const DeleteShiftParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
+
+/**
+ * @summary List leave requests
+ */
+export const ListLeaveRequestsQueryParams = zod.object({
+  status: zod.enum(["pending", "approved", "rejected", "cancelled"]).optional(),
+  userId: zod.coerce.string().uuid().optional(),
+});
+
+export const ListLeaveRequestsResponseItem = zod.object({
+  id: zod.string().uuid(),
+  userId: zod.string().uuid(),
+  username: zod.string().nullish(),
+  leaveType: zod.enum(["annual", "sick", "casual", "unpaid"]),
+  startDate: zod.string(),
+  endDate: zod.string(),
+  days: zod.number(),
+  reason: zod.string().nullish(),
+  status: zod.enum(["pending", "approved", "rejected", "cancelled"]),
+  reviewedById: zod.string().uuid().nullish(),
+  reviewerUsername: zod.string().nullish(),
+  reviewedAt: zod.coerce.date().nullish(),
+  reviewNote: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+export const ListLeaveRequestsResponse = zod.array(
+  ListLeaveRequestsResponseItem,
+);
+
+/**
+ * @summary Apply for leave
+ */
+export const CreateLeaveRequestBody = zod.object({
+  userId: zod.string().uuid(),
+  leaveType: zod.enum(["annual", "sick", "casual", "unpaid"]).optional(),
+  startDate: zod.string(),
+  endDate: zod.string(),
+  reason: zod.string().nullish(),
+});
+
+/**
+ * @summary Delete a leave request
+ */
+export const DeleteLeaveRequestParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
+
+/**
+ * @summary Approve or reject a leave request
+ */
+export const ReviewLeaveRequestParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
+
+export const ReviewLeaveRequestBody = zod.object({
+  status: zod.enum(["approved", "rejected"]),
+  reviewNote: zod.string().nullish(),
+});
+
+export const ReviewLeaveRequestResponse = zod.object({
+  id: zod.string().uuid(),
+  userId: zod.string().uuid(),
+  username: zod.string().nullish(),
+  leaveType: zod.enum(["annual", "sick", "casual", "unpaid"]),
+  startDate: zod.string(),
+  endDate: zod.string(),
+  days: zod.number(),
+  reason: zod.string().nullish(),
+  status: zod.enum(["pending", "approved", "rejected", "cancelled"]),
+  reviewedById: zod.string().uuid().nullish(),
+  reviewerUsername: zod.string().nullish(),
+  reviewedAt: zod.coerce.date().nullish(),
+  reviewNote: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary List leave balances
+ */
+export const ListLeaveBalancesQueryParams = zod.object({
+  userId: zod.coerce.string().uuid().optional(),
+  year: zod.coerce.number().optional(),
+});
+
+export const ListLeaveBalancesResponseItem = zod.object({
+  id: zod.string().uuid(),
+  userId: zod.string().uuid(),
+  username: zod.string().nullish(),
+  year: zod.number(),
+  leaveType: zod.enum(["annual", "sick", "casual", "unpaid"]),
+  allocatedDays: zod.number(),
+  usedDays: zod.number(),
+  remainingDays: zod.number(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+export const ListLeaveBalancesResponse = zod.array(
+  ListLeaveBalancesResponseItem,
+);
+
+/**
+ * @summary Create or update a leave balance allocation
+ */
+export const UpsertLeaveBalanceBody = zod.object({
+  userId: zod.string().uuid(),
+  year: zod.number(),
+  leaveType: zod.enum(["annual", "sick", "casual", "unpaid"]),
+  allocatedDays: zod.number(),
+});
+
+export const UpsertLeaveBalanceResponse = zod.object({
+  id: zod.string().uuid(),
+  userId: zod.string().uuid(),
+  username: zod.string().nullish(),
+  year: zod.number(),
+  leaveType: zod.enum(["annual", "sick", "casual", "unpaid"]),
+  allocatedDays: zod.number(),
+  usedDays: zod.number(),
+  remainingDays: zod.number(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Delete a leave balance allocation
+ */
+export const DeleteLeaveBalanceParams = zod.object({
+  id: zod.coerce.string().uuid(),
 });
 
 /**

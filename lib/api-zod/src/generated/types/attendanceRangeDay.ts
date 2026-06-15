@@ -17,6 +17,7 @@ export interface AttendanceRangeDay {
   presentDevices: number;
   halfDayDevices: number;
   absentDevices: number;
+  onLeaveDevices: number;
   /** Per-device worked seconds and status for this day. */
   byDevice: AttendanceRangeDayDevice[];
 }

@@ -367,6 +367,7 @@ export const AttendanceRowStatus = {
   half_day: "half_day",
   absent: "absent",
   non_working: "non_working",
+  on_leave: "on_leave",
 } as const;
 
 export interface AttendanceRow {
@@ -400,6 +401,7 @@ export interface AttendanceRangeRow {
   presentDays: number;
   halfDays: number;
   absentDays: number;
+  onLeaveDays: number;
   totalWorkedSeconds: number;
   avgWorkedSeconds: number;
 }
@@ -411,6 +413,7 @@ export const AttendanceRangeDayDeviceStatus = {
   present: "present",
   half_day: "half_day",
   absent: "absent",
+  on_leave: "on_leave",
 } as const;
 
 /**
@@ -432,6 +435,7 @@ export interface AttendanceRangeDay {
   presentDevices: number;
   halfDayDevices: number;
   absentDevices: number;
+  onLeaveDevices: number;
   /** Per-device worked seconds and status for this day. */
   byDevice: AttendanceRangeDayDevice[];
 }
@@ -443,6 +447,400 @@ export interface AttendanceRangeReport {
   workingDays: number;
   devices: AttendanceRangeRow[];
   daily: AttendanceRangeDay[];
+}
+
+export type TimesheetReportBucket =
+  (typeof TimesheetReportBucket)[keyof typeof TimesheetReportBucket];
+
+export const TimesheetReportBucket = {
+  week: "week",
+  month: "month",
+} as const;
+
+export interface TimesheetBucket {
+  key: string;
+  label: string;
+  startDay: string;
+  endDay: string;
+  workedSeconds: number;
+  activeSeconds: number;
+  idleSeconds: number;
+  productiveSeconds: number;
+  workingDays: number;
+  presentDays: number;
+  lateDays: number;
+  earlyLeaveDays: number;
+}
+
+export interface TimesheetDevice {
+  deviceId: string;
+  systemName: string;
+  deviceGroup: string;
+  totalWorkedSeconds: number;
+  totalActiveSeconds: number;
+  totalIdleSeconds: number;
+  totalProductiveSeconds: number;
+  workingDays: number;
+  presentDays: number;
+  lateDays: number;
+  earlyLeaveDays: number;
+  buckets: TimesheetBucket[];
+}
+
+export interface TimesheetReport {
+  from: string;
+  to: string;
+  bucket: TimesheetReportBucket;
+  devices: TimesheetDevice[];
+}
+
+export type ProjectItemStatus =
+  (typeof ProjectItemStatus)[keyof typeof ProjectItemStatus];
+
+export const ProjectItemStatus = {
+  active: "active",
+  on_hold: "on_hold",
+  completed: "completed",
+  archived: "archived",
+} as const;
+
+export interface ProjectItem {
+  id: string;
+  name: string;
+  /** @nullable */
+  description?: string | null;
+  /** @nullable */
+  client?: string | null;
+  status: ProjectItemStatus;
+  /** @nullable */
+  color?: string | null;
+  /** @nullable */
+  createdById?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  taskCount: number;
+  todoCount: number;
+  inProgressCount: number;
+  doneCount: number;
+  estimatedMinutes: number;
+  loggedMinutes: number;
+  completionPct: number;
+}
+
+export type CreateProjectRequestStatus =
+  (typeof CreateProjectRequestStatus)[keyof typeof CreateProjectRequestStatus];
+
+export const CreateProjectRequestStatus = {
+  active: "active",
+  on_hold: "on_hold",
+  completed: "completed",
+  archived: "archived",
+} as const;
+
+export interface CreateProjectRequest {
+  name: string;
+  /** @nullable */
+  description?: string | null;
+  /** @nullable */
+  client?: string | null;
+  status?: CreateProjectRequestStatus;
+  /** @nullable */
+  color?: string | null;
+}
+
+export type UpdateProjectRequestStatus =
+  (typeof UpdateProjectRequestStatus)[keyof typeof UpdateProjectRequestStatus];
+
+export const UpdateProjectRequestStatus = {
+  active: "active",
+  on_hold: "on_hold",
+  completed: "completed",
+  archived: "archived",
+} as const;
+
+export interface UpdateProjectRequest {
+  name?: string;
+  /** @nullable */
+  description?: string | null;
+  /** @nullable */
+  client?: string | null;
+  status?: UpdateProjectRequestStatus;
+  /** @nullable */
+  color?: string | null;
+}
+
+export type TaskItemStatus =
+  (typeof TaskItemStatus)[keyof typeof TaskItemStatus];
+
+export const TaskItemStatus = {
+  todo: "todo",
+  in_progress: "in_progress",
+  done: "done",
+} as const;
+
+export type TaskItemPriority =
+  (typeof TaskItemPriority)[keyof typeof TaskItemPriority];
+
+export const TaskItemPriority = {
+  low: "low",
+  medium: "medium",
+  high: "high",
+} as const;
+
+export interface TaskItem {
+  id: string;
+  projectId: string;
+  title: string;
+  /** @nullable */
+  description?: string | null;
+  status: TaskItemStatus;
+  priority: TaskItemPriority;
+  /** @nullable */
+  assignedUserId?: string | null;
+  /** @nullable */
+  assignedUsername?: string | null;
+  estimatedMinutes: number;
+  loggedMinutes: number;
+  /** @nullable */
+  dueDate?: string | null;
+  /** @nullable */
+  completedAt?: string | null;
+  /** @nullable */
+  createdById?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CreateTaskRequestStatus =
+  (typeof CreateTaskRequestStatus)[keyof typeof CreateTaskRequestStatus];
+
+export const CreateTaskRequestStatus = {
+  todo: "todo",
+  in_progress: "in_progress",
+  done: "done",
+} as const;
+
+export type CreateTaskRequestPriority =
+  (typeof CreateTaskRequestPriority)[keyof typeof CreateTaskRequestPriority];
+
+export const CreateTaskRequestPriority = {
+  low: "low",
+  medium: "medium",
+  high: "high",
+} as const;
+
+export interface CreateTaskRequest {
+  title: string;
+  /** @nullable */
+  description?: string | null;
+  status?: CreateTaskRequestStatus;
+  priority?: CreateTaskRequestPriority;
+  /** @nullable */
+  assignedUserId?: string | null;
+  estimatedMinutes?: number;
+  /** @nullable */
+  dueDate?: string | null;
+}
+
+export type UpdateTaskRequestStatus =
+  (typeof UpdateTaskRequestStatus)[keyof typeof UpdateTaskRequestStatus];
+
+export const UpdateTaskRequestStatus = {
+  todo: "todo",
+  in_progress: "in_progress",
+  done: "done",
+} as const;
+
+export type UpdateTaskRequestPriority =
+  (typeof UpdateTaskRequestPriority)[keyof typeof UpdateTaskRequestPriority];
+
+export const UpdateTaskRequestPriority = {
+  low: "low",
+  medium: "medium",
+  high: "high",
+} as const;
+
+export interface UpdateTaskRequest {
+  title?: string;
+  /** @nullable */
+  description?: string | null;
+  status?: UpdateTaskRequestStatus;
+  priority?: UpdateTaskRequestPriority;
+  /** @nullable */
+  assignedUserId?: string | null;
+  estimatedMinutes?: number;
+  loggedMinutes?: number;
+  /** @nullable */
+  dueDate?: string | null;
+}
+
+export type ShiftItemShiftType =
+  (typeof ShiftItemShiftType)[keyof typeof ShiftItemShiftType];
+
+export const ShiftItemShiftType = {
+  morning: "morning",
+  evening: "evening",
+  night: "night",
+} as const;
+
+export interface ShiftItem {
+  id: string;
+  name: string;
+  shiftType: ShiftItemShiftType;
+  startTime: string;
+  endTime: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CreateShiftRequestShiftType =
+  (typeof CreateShiftRequestShiftType)[keyof typeof CreateShiftRequestShiftType];
+
+export const CreateShiftRequestShiftType = {
+  morning: "morning",
+  evening: "evening",
+  night: "night",
+} as const;
+
+export interface CreateShiftRequest {
+  name: string;
+  shiftType?: CreateShiftRequestShiftType;
+  startTime: string;
+  endTime: string;
+}
+
+export type UpdateShiftRequestShiftType =
+  (typeof UpdateShiftRequestShiftType)[keyof typeof UpdateShiftRequestShiftType];
+
+export const UpdateShiftRequestShiftType = {
+  morning: "morning",
+  evening: "evening",
+  night: "night",
+} as const;
+
+export interface UpdateShiftRequest {
+  name?: string;
+  shiftType?: UpdateShiftRequestShiftType;
+  startTime?: string;
+  endTime?: string;
+}
+
+export type LeaveRequestItemLeaveType =
+  (typeof LeaveRequestItemLeaveType)[keyof typeof LeaveRequestItemLeaveType];
+
+export const LeaveRequestItemLeaveType = {
+  annual: "annual",
+  sick: "sick",
+  casual: "casual",
+  unpaid: "unpaid",
+} as const;
+
+export type LeaveRequestItemStatus =
+  (typeof LeaveRequestItemStatus)[keyof typeof LeaveRequestItemStatus];
+
+export const LeaveRequestItemStatus = {
+  pending: "pending",
+  approved: "approved",
+  rejected: "rejected",
+  cancelled: "cancelled",
+} as const;
+
+export interface LeaveRequestItem {
+  id: string;
+  userId: string;
+  /** @nullable */
+  username?: string | null;
+  leaveType: LeaveRequestItemLeaveType;
+  startDate: string;
+  endDate: string;
+  days: number;
+  /** @nullable */
+  reason?: string | null;
+  status: LeaveRequestItemStatus;
+  /** @nullable */
+  reviewedById?: string | null;
+  /** @nullable */
+  reviewerUsername?: string | null;
+  /** @nullable */
+  reviewedAt?: string | null;
+  /** @nullable */
+  reviewNote?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CreateLeaveRequestLeaveType =
+  (typeof CreateLeaveRequestLeaveType)[keyof typeof CreateLeaveRequestLeaveType];
+
+export const CreateLeaveRequestLeaveType = {
+  annual: "annual",
+  sick: "sick",
+  casual: "casual",
+  unpaid: "unpaid",
+} as const;
+
+export interface CreateLeaveRequest {
+  userId: string;
+  leaveType?: CreateLeaveRequestLeaveType;
+  startDate: string;
+  endDate: string;
+  /** @nullable */
+  reason?: string | null;
+}
+
+export type ReviewLeaveRequestStatus =
+  (typeof ReviewLeaveRequestStatus)[keyof typeof ReviewLeaveRequestStatus];
+
+export const ReviewLeaveRequestStatus = {
+  approved: "approved",
+  rejected: "rejected",
+} as const;
+
+export interface ReviewLeaveRequest {
+  status: ReviewLeaveRequestStatus;
+  /** @nullable */
+  reviewNote?: string | null;
+}
+
+export type LeaveBalanceItemLeaveType =
+  (typeof LeaveBalanceItemLeaveType)[keyof typeof LeaveBalanceItemLeaveType];
+
+export const LeaveBalanceItemLeaveType = {
+  annual: "annual",
+  sick: "sick",
+  casual: "casual",
+  unpaid: "unpaid",
+} as const;
+
+export interface LeaveBalanceItem {
+  id: string;
+  userId: string;
+  /** @nullable */
+  username?: string | null;
+  year: number;
+  leaveType: LeaveBalanceItemLeaveType;
+  allocatedDays: number;
+  usedDays: number;
+  remainingDays: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type UpsertLeaveBalanceRequestLeaveType =
+  (typeof UpsertLeaveBalanceRequestLeaveType)[keyof typeof UpsertLeaveBalanceRequestLeaveType];
+
+export const UpsertLeaveBalanceRequestLeaveType = {
+  annual: "annual",
+  sick: "sick",
+  casual: "casual",
+  unpaid: "unpaid",
+} as const;
+
+export interface UpsertLeaveBalanceRequest {
+  userId: string;
+  year: number;
+  leaveType: UpsertLeaveBalanceRequestLeaveType;
+  allocatedDays: number;
 }
 
 export interface EnrolledDeviceRef {
@@ -680,6 +1078,67 @@ export type GetAttendanceRangeReportParams = {
    * Restrict to devices in this group
    */
   group?: string;
+};
+
+export type GetTimesheetParams = {
+  /**
+   * Range start day in YYYY-MM-DD format (inclusive)
+   */
+  from: string;
+  /**
+   * Range end day in YYYY-MM-DD format (inclusive)
+   */
+  to: string;
+  /**
+   * Aggregation granularity; defaults to week
+   */
+  bucket?: GetTimesheetBucket;
+  /**
+   * Restrict to devices in this group
+   */
+  group?: string;
+};
+
+export type GetTimesheetBucket =
+  (typeof GetTimesheetBucket)[keyof typeof GetTimesheetBucket];
+
+export const GetTimesheetBucket = {
+  week: "week",
+  month: "month",
+} as const;
+
+export type ListProjectsParams = {
+  status?: ListProjectsStatus;
+};
+
+export type ListProjectsStatus =
+  (typeof ListProjectsStatus)[keyof typeof ListProjectsStatus];
+
+export const ListProjectsStatus = {
+  active: "active",
+  on_hold: "on_hold",
+  completed: "completed",
+  archived: "archived",
+} as const;
+
+export type ListLeaveRequestsParams = {
+  status?: ListLeaveRequestsStatus;
+  userId?: string;
+};
+
+export type ListLeaveRequestsStatus =
+  (typeof ListLeaveRequestsStatus)[keyof typeof ListLeaveRequestsStatus];
+
+export const ListLeaveRequestsStatus = {
+  pending: "pending",
+  approved: "approved",
+  rejected: "rejected",
+  cancelled: "cancelled",
+} as const;
+
+export type ListLeaveBalancesParams = {
+  userId?: string;
+  year?: number;
 };
 
 export type SyncActivity200 = {

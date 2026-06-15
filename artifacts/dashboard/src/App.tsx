@@ -15,6 +15,10 @@ import DeviceDetail from "@/pages/DeviceDetail";
 import ActivityLogs from "@/pages/ActivityLogs";
 import Screenshots from "@/pages/Screenshots";
 import Attendance from "@/pages/Attendance";
+import Timesheets from "@/pages/Timesheets";
+import Projects from "@/pages/Projects";
+import Shifts from "@/pages/Shifts";
+import Leave from "@/pages/Leave";
 import Categories from "@/pages/Categories";
 import Tokens from "@/pages/Tokens";
 import Settings from "@/pages/Settings";
@@ -97,6 +101,18 @@ function Router() {
       </Route>
       <Route path="/attendance">
         {(params) => <ProtectedRoute component={Attendance} />}
+      </Route>
+      <Route path="/timesheets">
+        {(params) => <ProtectedRoute component={Timesheets} />}
+      </Route>
+      <Route path="/projects">
+        {(params) => <ProtectedRoute component={Projects} />}
+      </Route>
+      <Route path="/shifts">
+        {(params) => <ProtectedRoute component={Shifts} />}
+      </Route>
+      <Route path="/leave">
+        {(params) => <ProtectedRoute component={Leave} />}
       </Route>
       <Route path="/categories">
         {(params) => <ProtectedRoute component={Categories} />}

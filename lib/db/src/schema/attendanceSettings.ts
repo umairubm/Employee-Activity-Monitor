@@ -11,6 +11,7 @@ import { relations, sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { devicesTable } from "./devices";
+import { shiftsTable } from "./shifts";
 
 /**
  * Attendance rules resolved with a most-specific-wins precedence:
@@ -28,6 +29,11 @@ export const attendanceSettingsTable = pgTable("attendance_settings", {
   // exclusive with deviceId: a device override sets deviceId, a group override
   // sets deviceGroup, the global default sets neither.
   deviceGroup: text("device_group"),
+  // Optional shift attached to this rule. When set, the shift's start time
+  // overrides `workStartTime` for late-arrival detection (resolved in lib).
+  shiftId: uuid("shift_id").references(() => shiftsTable.id, {
+    onDelete: "set null",
+  }),
   workStartTime: text("work_start_time").notNull().default("09:00"),
   halfDayThresholdHours: real("half_day_threshold_hours").notNull().default(4),
   requiredHoursNormal: real("required_hours_normal").notNull().default(7.5),

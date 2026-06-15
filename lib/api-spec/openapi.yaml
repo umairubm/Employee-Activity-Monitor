@@ -690,6 +690,365 @@ paths:
               schema:
                 $ref: "#/components/schemas/AttendanceRangeReport"
 
+  /timesheets:
+    get:
+      operationId: getTimesheet
+      tags: [timesheets]
+      summary: Per-device worked hours bucketed by week or month
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            description: Range start day in YYYY-MM-DD format (inclusive)
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            description: Range end day in YYYY-MM-DD format (inclusive)
+        - name: bucket
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [week, month]
+            description: Aggregation granularity; defaults to week
+        - name: group
+          in: query
+          required: false
+          description: Restrict to devices in this group
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Timesheet report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimesheetReport"
+
+  /projects:
+    get:
+      operationId: listProjects
+      tags: [projects]
+      summary: List projects with task aggregates
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [active, on_hold, completed, archived]
+      responses:
+        "200":
+          description: Projects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProjectItem"
+    post:
+      operationId: createProject
+      tags: [projects]
+      summary: Create a project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProjectRequest"
+      responses:
+        "201":
+          description: Project created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectItem"
+  /projects/{id}:
+    patch:
+      operationId: updateProject
+      tags: [projects]
+      summary: Update a project
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProjectRequest"
+      responses:
+        "200":
+          description: Updated project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectItem"
+    delete:
+      operationId: deleteProject
+      tags: [projects]
+      summary: Delete a project and its tasks
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Deleted
+  /projects/{id}/tasks:
+    get:
+      operationId: listProjectTasks
+      tags: [projects]
+      summary: List tasks for a project
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Tasks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TaskItem"
+    post:
+      operationId: createTask
+      tags: [projects]
+      summary: Create a task in a project
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTaskRequest"
+      responses:
+        "201":
+          description: Task created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskItem"
+  /tasks/{id}:
+    patch:
+      operationId: updateTask
+      tags: [tasks]
+      summary: Update a task (status, assignment, logged time)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTaskRequest"
+      responses:
+        "200":
+          description: Updated task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskItem"
+    delete:
+      operationId: deleteTask
+      tags: [tasks]
+      summary: Delete a task
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Deleted
+
+  /shifts:
+    get:
+      operationId: listShifts
+      tags: [shifts]
+      summary: List work shifts
+      responses:
+        "200":
+          description: Shifts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ShiftItem"
+    post:
+      operationId: createShift
+      tags: [shifts]
+      summary: Create a work shift
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateShiftRequest"
+      responses:
+        "201":
+          description: Shift created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShiftItem"
+  /shifts/{id}:
+    patch:
+      operationId: updateShift
+      tags: [shifts]
+      summary: Update a work shift
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateShiftRequest"
+      responses:
+        "200":
+          description: Updated shift
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShiftItem"
+    delete:
+      operationId: deleteShift
+      tags: [shifts]
+      summary: Delete a work shift
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Deleted
+  /leave-requests:
+    get:
+      operationId: listLeaveRequests
+      tags: [leave]
+      summary: List leave requests
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [pending, approved, rejected, cancelled]
+        - name: userId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Leave requests
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LeaveRequestItem"
+    post:
+      operationId: createLeaveRequest
+      tags: [leave]
+      summary: Apply for leave
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateLeaveRequest"
+      responses:
+        "201":
+          description: Leave request created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeaveRequestItem"
+  /leave-requests/{id}:
+    delete:
+      operationId: deleteLeaveRequest
+      tags: [leave]
+      summary: Delete a leave request
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Deleted
+  /leave-requests/{id}/review:
+    post:
+      operationId: reviewLeaveRequest
+      tags: [leave]
+      summary: Approve or reject a leave request
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReviewLeaveRequest"
+      responses:
+        "200":
+          description: Reviewed leave request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeaveRequestItem"
+  /leave-balances:
+    get:
+      operationId: listLeaveBalances
+      tags: [leave]
+      summary: List leave balances
+      parameters:
+        - name: userId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: year
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Leave balances
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LeaveBalanceItem"
+    post:
+      operationId: upsertLeaveBalance
+      tags: [leave]
+      summary: Create or update a leave balance allocation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertLeaveBalanceRequest"
+      responses:
+        "200":
+          description: Leave balance
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeaveBalanceItem"
+  /leave-balances/{id}:
+    delete:
+      operationId: deleteLeaveBalance
+      tags: [leave]
+      summary: Delete a leave balance allocation
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Deleted
+
   /categories:
     get:
       operationId: listCategories
@@ -1389,7 +1748,7 @@ components:
           description: Whether the day is a working day under this device's effective rule.
         status:
           type: string
-          enum: [present, half_day, absent, non_working]
+          enum: [present, half_day, absent, non_working, on_leave]
       required:
         - deviceId
         - systemName
@@ -1431,6 +1790,8 @@ components:
           type: integer
         absentDays:
           type: integer
+        onLeaveDays:
+          type: integer
         totalWorkedSeconds:
           type: integer
         avgWorkedSeconds:
@@ -1442,6 +1803,7 @@ components:
         - presentDays
         - halfDays
         - absentDays
+        - onLeaveDays
         - totalWorkedSeconds
         - avgWorkedSeconds
     AttendanceRangeDayDevice:
@@ -1455,7 +1817,7 @@ components:
           type: integer
         status:
           type: string
-          enum: [present, half_day, absent]
+          enum: [present, half_day, absent, on_leave]
       required:
         - deviceId
         - workedSeconds
@@ -1478,6 +1840,8 @@ components:
           type: integer
         absentDevices:
           type: integer
+        onLeaveDevices:
+          type: integer
         byDevice:
           type: array
           description: Per-device worked seconds and status for this day.
@@ -1490,6 +1854,7 @@ components:
         - presentDevices
         - halfDayDevices
         - absentDevices
+        - onLeaveDevices
         - byDevice
     AttendanceRangeReport:
       type: object
@@ -1511,6 +1876,463 @@ components:
           items:
             $ref: "#/components/schemas/AttendanceRangeDay"
       required: [from, to, days, workingDays, devices, daily]
+    TimesheetReport:
+      type: object
+      properties:
+        from:
+          type: string
+        to:
+          type: string
+        bucket:
+          type: string
+          enum: [week, month]
+        devices:
+          type: array
+          items:
+            $ref: "#/components/schemas/TimesheetDevice"
+      required: [from, to, bucket, devices]
+    TimesheetDevice:
+      type: object
+      properties:
+        deviceId:
+          type: string
+          format: uuid
+        systemName:
+          type: string
+        deviceGroup:
+          type: string
+        totalWorkedSeconds:
+          type: number
+        totalActiveSeconds:
+          type: number
+        totalIdleSeconds:
+          type: number
+        totalProductiveSeconds:
+          type: number
+        workingDays:
+          type: integer
+        presentDays:
+          type: integer
+        lateDays:
+          type: integer
+        earlyLeaveDays:
+          type: integer
+        buckets:
+          type: array
+          items:
+            $ref: "#/components/schemas/TimesheetBucket"
+      required:
+        - deviceId
+        - systemName
+        - deviceGroup
+        - totalWorkedSeconds
+        - totalActiveSeconds
+        - totalIdleSeconds
+        - totalProductiveSeconds
+        - workingDays
+        - presentDays
+        - lateDays
+        - earlyLeaveDays
+        - buckets
+    TimesheetBucket:
+      type: object
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        startDay:
+          type: string
+        endDay:
+          type: string
+        workedSeconds:
+          type: number
+        activeSeconds:
+          type: number
+        idleSeconds:
+          type: number
+        productiveSeconds:
+          type: number
+        workingDays:
+          type: integer
+        presentDays:
+          type: integer
+        lateDays:
+          type: integer
+        earlyLeaveDays:
+          type: integer
+      required:
+        - key
+        - label
+        - startDay
+        - endDay
+        - workedSeconds
+        - activeSeconds
+        - idleSeconds
+        - productiveSeconds
+        - workingDays
+        - presentDays
+        - lateDays
+        - earlyLeaveDays
+    ProjectItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: [string, "null"]
+        client:
+          type: [string, "null"]
+        status:
+          type: string
+          enum: [active, on_hold, completed, archived]
+        color:
+          type: [string, "null"]
+        createdById:
+          type: [string, "null"]
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        taskCount:
+          type: integer
+        todoCount:
+          type: integer
+        inProgressCount:
+          type: integer
+        doneCount:
+          type: integer
+        estimatedMinutes:
+          type: integer
+        loggedMinutes:
+          type: integer
+        completionPct:
+          type: integer
+      required:
+        - id
+        - name
+        - status
+        - createdAt
+        - updatedAt
+        - taskCount
+        - todoCount
+        - inProgressCount
+        - doneCount
+        - estimatedMinutes
+        - loggedMinutes
+        - completionPct
+    CreateProjectRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: [string, "null"]
+        client:
+          type: [string, "null"]
+        status:
+          type: string
+          enum: [active, on_hold, completed, archived]
+        color:
+          type: [string, "null"]
+      required: [name]
+    UpdateProjectRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: [string, "null"]
+        client:
+          type: [string, "null"]
+        status:
+          type: string
+          enum: [active, on_hold, completed, archived]
+        color:
+          type: [string, "null"]
+    TaskItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        projectId:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: [string, "null"]
+        status:
+          type: string
+          enum: [todo, in_progress, done]
+        priority:
+          type: string
+          enum: [low, medium, high]
+        assignedUserId:
+          type: [string, "null"]
+          format: uuid
+        assignedUsername:
+          type: [string, "null"]
+        estimatedMinutes:
+          type: integer
+        loggedMinutes:
+          type: integer
+        dueDate:
+          type: [string, "null"]
+        completedAt:
+          type: [string, "null"]
+          format: date-time
+        createdById:
+          type: [string, "null"]
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - projectId
+        - title
+        - status
+        - priority
+        - estimatedMinutes
+        - loggedMinutes
+        - createdAt
+        - updatedAt
+    CreateTaskRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: [string, "null"]
+        status:
+          type: string
+          enum: [todo, in_progress, done]
+        priority:
+          type: string
+          enum: [low, medium, high]
+        assignedUserId:
+          type: [string, "null"]
+          format: uuid
+        estimatedMinutes:
+          type: integer
+        dueDate:
+          type: [string, "null"]
+      required: [title]
+    UpdateTaskRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: [string, "null"]
+        status:
+          type: string
+          enum: [todo, in_progress, done]
+        priority:
+          type: string
+          enum: [low, medium, high]
+        assignedUserId:
+          type: [string, "null"]
+          format: uuid
+        estimatedMinutes:
+          type: integer
+        loggedMinutes:
+          type: integer
+        dueDate:
+          type: [string, "null"]
+    ShiftItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        shiftType:
+          type: string
+          enum: [morning, evening, night]
+        startTime:
+          type: string
+        endTime:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - shiftType
+        - startTime
+        - endTime
+        - createdAt
+        - updatedAt
+    CreateShiftRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        shiftType:
+          type: string
+          enum: [morning, evening, night]
+        startTime:
+          type: string
+        endTime:
+          type: string
+      required: [name, startTime, endTime]
+    UpdateShiftRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        shiftType:
+          type: string
+          enum: [morning, evening, night]
+        startTime:
+          type: string
+        endTime:
+          type: string
+    LeaveRequestItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        username:
+          type: [string, "null"]
+        leaveType:
+          type: string
+          enum: [annual, sick, casual, unpaid]
+        startDate:
+          type: string
+        endDate:
+          type: string
+        days:
+          type: integer
+        reason:
+          type: [string, "null"]
+        status:
+          type: string
+          enum: [pending, approved, rejected, cancelled]
+        reviewedById:
+          type: [string, "null"]
+          format: uuid
+        reviewerUsername:
+          type: [string, "null"]
+        reviewedAt:
+          type: [string, "null"]
+          format: date-time
+        reviewNote:
+          type: [string, "null"]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - userId
+        - leaveType
+        - startDate
+        - endDate
+        - days
+        - status
+        - createdAt
+        - updatedAt
+    CreateLeaveRequest:
+      type: object
+      properties:
+        userId:
+          type: string
+          format: uuid
+        leaveType:
+          type: string
+          enum: [annual, sick, casual, unpaid]
+        startDate:
+          type: string
+        endDate:
+          type: string
+        reason:
+          type: [string, "null"]
+      required: [userId, startDate, endDate]
+    ReviewLeaveRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [approved, rejected]
+        reviewNote:
+          type: [string, "null"]
+      required: [status]
+    LeaveBalanceItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        username:
+          type: [string, "null"]
+        year:
+          type: integer
+        leaveType:
+          type: string
+          enum: [annual, sick, casual, unpaid]
+        allocatedDays:
+          type: number
+        usedDays:
+          type: number
+        remainingDays:
+          type: number
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - userId
+        - year
+        - leaveType
+        - allocatedDays
+        - usedDays
+        - remainingDays
+        - createdAt
+        - updatedAt
+    UpsertLeaveBalanceRequest:
+      type: object
+      properties:
+        userId:
+          type: string
+          format: uuid
+        year:
+          type: integer
+        leaveType:
+          type: string
+          enum: [annual, sick, casual, unpaid]
+        allocatedDays:
+          type: number
+      required: [userId, year, leaveType, allocatedDays]
     EnrollmentTokenItem:
       type: object
       properties:

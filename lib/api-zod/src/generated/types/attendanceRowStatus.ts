@@ -14,4 +14,5 @@ export const AttendanceRowStatus = {
   half_day: "half_day",
   absent: "absent",
   non_working: "non_working",
+  on_leave: "on_leave",
 } as const;

@@ -7,109 +7,23 @@ import {
   attendanceSettingsTable,
   type AttendanceSettings,
 } from "@workspace/db";
-import { and, asc, eq, gte, isNotNull, isNull, lt, sql } from "drizzle-orm";
+import { and, asc, eq, gte, lt, sql } from "drizzle-orm";
 import { requireRole } from "../middlewares/userAuth";
+import {
+  DEFAULT_SETTINGS,
+  MAX_RANGE_DAYS,
+  eachDayUTC,
+  getGlobalSettings,
+  isWorkingDay,
+  loadApprovedLeaveDays,
+  loadOverrides,
+  parseDateParam,
+  parseExplicitDate,
+  requiredHoursFor,
+  resolveForDevice,
+} from "../lib/attendance";
 
 const router: IRouter = Router();
-
-const DEFAULT_SETTINGS = {
-  workStartTime: "09:00",
-  halfDayThresholdHours: 4,
-  requiredHoursNormal: 7.5,
-  requiredHoursFriday: 7.0,
-  workingDays: [1, 2, 3, 4, 5],
-  holidays: [] as string[],
-};
-
-/**
- * A calendar day counts as a working day when its weekday is configured as a
- * working day AND it is not listed as a company holiday. Non-working days are
- * excluded from attendance classification and from worked-hours averages.
- */
-function isWorkingDay(
-  day: string,
-  weekday: number,
-  settings: AttendanceSettings,
-): boolean {
-  if (!settings.workingDays.includes(weekday)) return false;
-  if (settings.holidays.includes(day)) return false;
-  return true;
-}
-
-/**
- * Load the single global attendance-settings row, creating defaults if absent.
- * Concurrency-safe: a partial unique index on (device_id IS NULL AND
- * device_group IS NULL) guarantees a single global row, and `onConflictDoNothing`
- * makes the seed insert idempotent.
- */
-async function getGlobalSettings(): Promise<AttendanceSettings> {
-  await db
-    .insert(attendanceSettingsTable)
-    .values({ deviceId: null, deviceGroup: null, ...DEFAULT_SETTINGS })
-    .onConflictDoNothing();
-
-  const [row] = await db
-    .select()
-    .from(attendanceSettingsTable)
-    .where(
-      and(
-        isNull(attendanceSettingsTable.deviceId),
-        isNull(attendanceSettingsTable.deviceGroup),
-      ),
-    )
-    .orderBy(asc(attendanceSettingsTable.createdAt))
-    .limit(1);
-  return row;
-}
-
-/**
- * Load every override row (per-device and per-team) and index them for fast
- * lookup. Device overrides set `deviceId`; group overrides set `deviceGroup`.
- */
-async function loadOverrides(): Promise<{
-  byDevice: Map<string, AttendanceSettings>;
-  byGroup: Map<string, AttendanceSettings>;
-}> {
-  const rows = await db
-    .select()
-    .from(attendanceSettingsTable)
-    .where(
-      sql`${attendanceSettingsTable.deviceId} is not null or ${attendanceSettingsTable.deviceGroup} is not null`,
-    );
-  const byDevice = new Map<string, AttendanceSettings>();
-  const byGroup = new Map<string, AttendanceSettings>();
-  for (const row of rows) {
-    if (row.deviceId) byDevice.set(row.deviceId, row);
-    else if (row.deviceGroup) byGroup.set(row.deviceGroup, row);
-  }
-  return { byDevice, byGroup };
-}
-
-/**
- * Resolve the effective rule for a device with most-specific-wins precedence:
- * device override → its team/group override → global default.
- */
-function resolveForDevice(
-  device: { id: string; deviceGroup: string },
-  global: AttendanceSettings,
-  overrides: {
-    byDevice: Map<string, AttendanceSettings>;
-    byGroup: Map<string, AttendanceSettings>;
-  },
-): AttendanceSettings {
-  return (
-    overrides.byDevice.get(device.id) ??
-    overrides.byGroup.get(device.deviceGroup) ??
-    global
-  );
-}
-
-/** Required hours for a weekday under the given rule (Friday vs normal). */
-function requiredHoursFor(weekday: number, settings: AttendanceSettings): number {
-  return weekday === 5
-    ? settings.requiredHoursFriday
-    : settings.requiredHoursNormal;
-}
 
 // GET /api/attendance/settings - global attendance rules
 router.get("/settings", async (_req, res) => {
@@ -330,47 +244,6 @@ router.delete(
   },
 );
 
-function todayString(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
-    d.getDate(),
-  ).padStart(2, "0")}`;
-}
-
-/** Returns a valid YYYY-MM-DD string, or null if the input is malformed. */
-function parseDateParam(raw: unknown): string | null {
-  if (raw === undefined || raw === "") return todayString();
-  if (typeof raw !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null;
-  const d = new Date(`${raw}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return null;
-  // Reject impossible calendar dates (e.g. 2026-02-30 rolls over to March).
-  const roundTrip = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(
-    2,
-    "0",
-  )}-${String(d.getDate()).padStart(2, "0")}`;
-  return roundTrip === raw ? raw : null;
-}
-
-/** Parses a required explicit YYYY-MM-DD param; returns null if missing/malformed. */
-function parseExplicitDate(raw: unknown): string | null {
-  if (typeof raw !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null;
-  const d = new Date(`${raw}T00:00:00Z`);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toISOString().slice(0, 10) === raw ? raw : null;
-}
-
-const MAX_RANGE_DAYS = 366;
-
-/** Inclusive list of YYYY-MM-DD day strings (UTC) between `from` and `to`. */
-function eachDayUTC(from: string, to: string): string[] {
-  const days: string[] = [];
-  const end = Date.parse(`${to}T00:00:00Z`);
-  for (let t = Date.parse(`${from}T00:00:00Z`); t <= end; t += 86400000) {
-    days.push(new Date(t).toISOString().slice(0, 10));
-  }
-  return days;
-}
-
 // GET /api/attendance/range?from=YYYY-MM-DD&to=YYYY-MM-DD
 // Per-device attendance summary aggregated across a date range.
 router.get("/range", async (req, res) => {
@@ -405,6 +278,7 @@ router.get("/range", async (req, res) => {
 
     const settings = await getGlobalSettings();
     const overrides = await loadOverrides();
+    const leaveByUser = await loadApprovedLeaveDays(from, to);
 
     // Weekday per day is shared across devices; the working-day decision and
     // required hours are resolved per device against its effective rule.
@@ -423,10 +297,14 @@ router.get("/range", async (req, res) => {
         id: devicesTable.id,
         systemName: devicesTable.systemName,
         deviceGroup: devicesTable.deviceGroup,
+        assignedUserId: devicesTable.assignedUserId,
       })
       .from(devicesTable)
       .where(group ? eq(devicesTable.deviceGroup, group) : undefined)
       .orderBy(asc(devicesTable.systemName));
+
+    const leaveDaysFor = (assignedUserId: string | null): Set<string> =>
+      (assignedUserId && leaveByUser.get(assignedUserId)) || new Set<string>();
 
     const effByDevice = new Map<string, AttendanceSettings>(
       devices.map((d) => [d.id, resolveForDevice(d, settings, overrides)]),
@@ -463,9 +341,11 @@ router.get("/range", async (req, res) => {
     const rows = devices.map((device) => {
       const eff = effByDevice.get(device.id) ?? settings;
       const perDay = workedByDevice.get(device.id);
+      const leaveDays = leaveDaysFor(device.assignedUserId);
       let presentDays = 0;
       let halfDays = 0;
       let absentDays = 0;
+      let onLeaveDays = 0;
       let totalWorkedSeconds = 0;
       // Working days are resolved against this device's effective rule, so the
       // average denominator is the device's own count, not a shared global one.
@@ -478,6 +358,12 @@ router.get("/range", async (req, res) => {
         totalWorkedSeconds += workedSeconds;
         const weekday = weekdayByDay.get(day) ?? 0;
         if (!isWorkingDay(day, weekday, eff)) continue;
+        // Approved leave on a working day is excluded from the present/half/
+        // absent counts and the average denominator, then tallied separately.
+        if (leaveDays.has(day)) {
+          onLeaveDays += 1;
+          continue;
+        }
         deviceWorkingDays += 1;
         const workedHours = workedSeconds / 3600;
         const requiredHours = requiredHoursFor(weekday, eff);
@@ -493,6 +379,7 @@ router.get("/range", async (req, res) => {
         presentDays,
         halfDays,
         absentDays,
+        onLeaveDays,
         totalWorkedSeconds,
         avgWorkedSeconds:
           deviceWorkingDays > 0
@@ -510,10 +397,11 @@ router.get("/range", async (req, res) => {
       let presentDevices = 0;
       let halfDayDevices = 0;
       let absentDevices = 0;
+      let onLeaveDevices = 0;
       const byDevice: {
         deviceId: string;
         workedSeconds: number;
-        status: "present" | "half_day" | "absent";
+        status: "present" | "half_day" | "absent" | "on_leave";
       }[] = [];
 
       for (const device of devices) {
@@ -524,6 +412,12 @@ router.get("/range", async (req, res) => {
         // weekends and holidays per the device's rule are not counted.
         workedSeconds += ws;
         if (!isWorkingDay(day, weekday, eff)) continue;
+        // Approved leave takes precedence over hours-based classification.
+        if (leaveDaysFor(device.assignedUserId).has(day)) {
+          onLeaveDevices += 1;
+          byDevice.push({ deviceId: device.id, workedSeconds: ws, status: "on_leave" });
+          continue;
+        }
         const workedHours = ws / 3600;
         const requiredHours = requiredHoursFor(weekday, eff);
         let status: "present" | "half_day" | "absent";
@@ -547,6 +441,7 @@ router.get("/range", async (req, res) => {
         presentDevices,
         halfDayDevices,
         absentDevices,
+        onLeaveDevices,
         byDevice,
       };
     });
@@ -583,6 +478,7 @@ router.get("/", async (req, res) => {
 
     const settings = await getGlobalSettings();
     const overrides = await loadOverrides();
+    const leaveByUser = await loadApprovedLeaveDays(date, date);
     // Top-level fields reflect the global rule; each device row below is
     // classified against its own effective rule (device → group → global).
     const workingDay = isWorkingDay(date, weekday, settings);
@@ -593,6 +489,7 @@ router.get("/", async (req, res) => {
         id: devicesTable.id,
         systemName: devicesTable.systemName,
         deviceGroup: devicesTable.deviceGroup,
+        assignedUserId: devicesTable.assignedUserId,
       })
       .from(devicesTable)
       .where(group ? eq(devicesTable.deviceGroup, group) : undefined)
@@ -629,8 +526,15 @@ router.get("/", async (req, res) => {
       // this keeps the single-day report consistent with the range report,
       // which excludes the same days from present/half/absent counts. The
       // working-day calendar and thresholds come from the device's own rule.
-      let status: "present" | "half_day" | "absent" | "non_working";
+      // Approved leave (via the device's assigned user) takes precedence over
+      // the hours-based classification on a working day.
+      const onLeave =
+        deviceWorkingDay &&
+        !!device.assignedUserId &&
+        (leaveByUser.get(device.assignedUserId)?.has(date) ?? false);
+      let status: "present" | "half_day" | "absent" | "non_working" | "on_leave";
       if (!deviceWorkingDay) status = "non_working";
+      else if (onLeave) status = "on_leave";
       else if (workedHours >= deviceRequiredHours) status = "present";
       else if (workedHours >= eff.halfDayThresholdHours) status = "half_day";
       else status = "absent";

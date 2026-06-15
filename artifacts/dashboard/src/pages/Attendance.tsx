@@ -48,6 +48,7 @@ const STATUS_STYLE: Record<string, string> = {
   half_day: "bg-amber-500/15 text-amber-700 border-amber-500/20",
   absent: "bg-muted text-muted-foreground",
   non_working: "bg-sky-500/10 text-sky-700 border-sky-500/20",
+  on_leave: "bg-violet-500/15 text-violet-700 border-violet-500/20",
 };
 
 const CHART_CONFIG = {
@@ -59,6 +60,7 @@ const STATUS_FILL: Record<string, string> = {
   present: "hsl(var(--chart-2))",
   half_day: "hsl(var(--chart-4))",
   absent: "hsl(var(--muted-foreground))",
+  on_leave: "hsl(var(--chart-5))",
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -66,6 +68,7 @@ const STATUS_LABEL: Record<string, string> = {
   half_day: "Half-day",
   absent: "Absent",
   non_working: "Non-working",
+  on_leave: "On leave",
 };
 
 const WEEKDAYS = [
@@ -111,7 +114,7 @@ function DayView() {
   });
 
   const counts = useMemo(() => {
-    const c = { present: 0, half_day: 0, absent: 0, non_working: 0 };
+    const c = { present: 0, half_day: 0, absent: 0, non_working: 0, on_leave: 0 };
     report?.devices.forEach((d) => {
       if (d.status in c) c[d.status as keyof typeof c] += 1;
     });
@@ -256,11 +259,12 @@ function RangeView() {
   });
 
   const totals = useMemo(() => {
-    const t = { present: 0, half_day: 0, absent: 0, worked: 0 };
+    const t = { present: 0, half_day: 0, absent: 0, on_leave: 0, worked: 0 };
     report?.devices.forEach((d) => {
       t.present += d.presentDays;
       t.half_day += d.halfDays;
       t.absent += d.absentDays;
+      t.on_leave += d.onLeaveDays;
       t.worked += d.totalWorkedSeconds;
     });
     return t;
@@ -309,6 +313,7 @@ function RangeView() {
       "Days present",
       "Half-days",
       "Days absent",
+      "Days on leave",
       "Total worked (hours)",
       "Avg worked/day (hours)",
     ];
@@ -318,6 +323,7 @@ function RangeView() {
       d.presentDays,
       d.halfDays,
       d.absentDays,
+      d.onLeaveDays,
       (d.totalWorkedSeconds / 3600).toFixed(2),
       (d.avgWorkedSeconds / 3600).toFixed(2),
     ]);
@@ -467,7 +473,7 @@ function RangeView() {
               </ChartContainer>
               {singleDevice && (
                 <div className="mt-3 flex flex-wrap items-center justify-center gap-4 text-xs text-muted-foreground">
-                  {(["present", "half_day", "absent"] as const).map((s) => (
+                  {(["present", "half_day", "absent", "on_leave"] as const).map((s) => (
                     <span key={s} className="flex items-center gap-1.5">
                       <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: STATUS_FILL[s] }} />
                       {STATUS_LABEL[s]}
@@ -497,19 +503,20 @@ function RangeView() {
                 <TableHead className="text-right">Present</TableHead>
                 <TableHead className="text-right">Half-day</TableHead>
                 <TableHead className="text-right">Absent</TableHead>
+                <TableHead className="text-right">On leave</TableHead>
                 <TableHead className="text-right">Total worked</TableHead>
                 <TableHead className="text-right">Avg / day</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {!valid ? (
-                <TableRow><TableCell colSpan={7} className="h-32 text-center text-muted-foreground">Choose a valid date range.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={8} className="h-32 text-center text-muted-foreground">Choose a valid date range.</TableCell></TableRow>
               ) : isLoading ? (
-                <TableRow><TableCell colSpan={7} className="h-32 text-center text-muted-foreground">Loading...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={8} className="h-32 text-center text-muted-foreground">Loading...</TableCell></TableRow>
               ) : isError ? (
-                <TableRow><TableCell colSpan={7} className="h-32 text-center text-destructive">{(error as Error)?.message ?? "Failed to load report."}</TableCell></TableRow>
+                <TableRow><TableCell colSpan={8} className="h-32 text-center text-destructive">{(error as Error)?.message ?? "Failed to load report."}</TableCell></TableRow>
               ) : report?.devices.length === 0 ? (
-                <TableRow><TableCell colSpan={7} className="h-32 text-center text-muted-foreground">No devices enrolled.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={8} className="h-32 text-center text-muted-foreground">No devices enrolled.</TableCell></TableRow>
               ) : (
                 report?.devices.map((row) => (
                   <TableRow key={row.deviceId}>
@@ -518,6 +525,7 @@ function RangeView() {
                     <TableCell className="text-right tabular-nums text-emerald-700">{row.presentDays}</TableCell>
                     <TableCell className="text-right tabular-nums text-amber-700">{row.halfDays}</TableCell>
                     <TableCell className="text-right tabular-nums text-muted-foreground">{row.absentDays}</TableCell>
+                    <TableCell className="text-right tabular-nums text-violet-700">{row.onLeaveDays}</TableCell>
                     <TableCell className="text-right tabular-nums text-sm">{fmtHours(row.totalWorkedSeconds)}</TableCell>
                     <TableCell className="text-right tabular-nums text-sm">{fmtHours(row.avgWorkedSeconds)}</TableCell>
                   </TableRow>
