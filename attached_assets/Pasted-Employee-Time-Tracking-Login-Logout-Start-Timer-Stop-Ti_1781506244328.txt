@@ -1,0 +1,115 @@
+Employee Time Tracking
+Login / Logout
+Start Timer
+Stop Timer
+Manual Time Entry
+Timesheets
+Daily Working Hours
+Weekly Working Hours
+Monthly Working Hours
+Attendance Management
+Check-In
+Check-Out
+Late Arrival Tracking
+Early Leave Tracking
+Attendance Reports
+Screenshot Monitoring
+Automatic Screenshots
+Random Screenshots
+Blur Sensitive Information Option
+Screenshot History
+Activity Tracking
+Keyboard Activity
+Mouse Activity
+Idle Time Detection
+Active vs Idle Time Reports
+Project & Task Management
+Create Projects
+Assign Projects
+Create Tasks
+Assign Tasks
+Task Completion Tracking
+Reporting Dashboard
+Employee Productivity Report
+Attendance Report
+Project Time Report
+Daily Activity Report
+Website Monitoring
+Visited Websites
+Time Spent Per Website
+Productive / Unproductive Websites
+Website Usage Reports
+Application Monitoring
+Software Usage Tracking
+Time Spent Per Application
+Most Used Applications
+Example:
+Chrome = 3 Hours
+Photoshop = 2 Hours
+Unity = 5 Hours
+Productivity Score
+System automatically calculate kare:
+Productive Time
+Neutral Time
+Unproductive Time
+Example:
+Unity = Productive
+Visual Studio = Productive
+Facebook = Unproductive
+TikTok = Unproductive
+Timeline View
+Pure din ka timeline:
+9:00 AM Login
+9:05 AM Unity
+10:30 AM Chrome
+11:00 AM Idle
+etc.
+Screen Recording
+Full Screen Recording
+Selective Recording
+Video Playback
+Live Monitoring
+Manager live employee screen dekh sakta hai.
+Remote Workforce Monitoring
+Work From Home Tracking
+Online Status
+Offline Status
+Team Dashboard
+Who is Online
+Who is Working
+Who is Idle
+Real-Time Alerts
+Alerts when:
+Employee Idle > 15 Minutes
+Employee Late
+Employee Not Tracking Time
+Productivity Low
+Payroll Integration
+Hours automatically salary mein convert.
+Example:
+Hourly Rate
+Overtime
+Deductions
+Payroll Reports
+Invoice Generation
+Freelancers aur agencies ke liye.
+Leave Management
+Apply Leave
+Approve Leave
+Leave Balance
+Shift Management
+Morning Shift
+Evening Shift
+Night Shift
+AI Productivity Analysis
+AI bataaye:
+Employee kis cheez mein time waste kar raha hai.
+Kis project par zyada time lag raha hai.
+Kis employee ki performance improve ho rahi hai.
+AI Daily Summary
+Automatically generate:
+“Umair worked 8.5 hours today. Most time spent on Shopping Spout CRM project. Productivity score 87%. Idle time 35 minutes.”
+AI Manager Assistant
+Manager poochay:
+“Who was most productive this week?”
+AI direct jawab de.
