@@ -12,6 +12,7 @@ import {
   createDevice,
   makeApp,
   seedActivity,
+  seedActivityAt,
   setGlobalSettings,
 } from "./helpers";
 
@@ -26,8 +27,14 @@ function uniqueGroup(): string {
   return g;
 }
 
+// Late/midday thresholds chosen so the seedActivity default first log at 10:00
+// (and the long blocks it produces) never trips the time-based half-day rules —
+// these suites isolate the HOURS-based classification. The time-rule suite below
+// overrides these per-test.
 const RULES = {
   workStartTime: "09:00",
+  halfDayLateThreshold: "10:30",
+  halfDayMiddayCutoff: "11:00",
   halfDayThresholdHours: 4,
   requiredHoursNormal: 7.5,
   requiredHoursFriday: 7.0,
@@ -37,6 +44,8 @@ const RULES = {
 
 const SETTINGS = {
   workStartTime: "09:00",
+  halfDayLateThreshold: "10:30",
+  halfDayMiddayCutoff: "11:00",
   halfDayThresholdHours: 4,
   requiredHoursNormal: 7.5,
   requiredHoursFriday: 7.0,
@@ -142,6 +151,92 @@ describe("Friday vs normal required hours", () => {
       (r: any) => r.deviceId === device.id,
     );
     expect(normalRow.status).toBe("half_day");
+  });
+});
+
+describe("time-based half-day triggers (late arrival / early leave)", () => {
+  it("marks a full-hours day half_day when the first activity is late", async () => {
+    // Late after 09:30; disable the early trigger by setting midday to 00:00.
+    await setGlobalSettings({
+      ...SETTINGS,
+      halfDayLateThreshold: "09:30",
+      halfDayMiddayCutoff: "00:00",
+    });
+    const device = await newDevice();
+    // 8h (≥ required 7.5) but first activity at 10:00 (after 09:30) → late.
+    await seedActivityAt(device.id, new Date(`${NORMAL_DAY}T10:00:00Z`), 8 * 3600);
+
+    const res = await request(app).get(`/attendance?date=${NORMAL_DAY}`);
+    const row = res.body.devices.find((r: any) => r.deviceId === device.id);
+    expect(row.status).toBe("half_day");
+    expect(row.workedSeconds).toBe(8 * 3600);
+  });
+
+  it("does not mark late when first activity is exactly at the threshold", async () => {
+    await setGlobalSettings({
+      ...SETTINGS,
+      halfDayLateThreshold: "10:00",
+      halfDayMiddayCutoff: "00:00",
+    });
+    const device = await newDevice();
+    // First activity at 10:00 == threshold (strict >, so not late) → present.
+    await seedActivityAt(device.id, new Date(`${NORMAL_DAY}T10:00:00Z`), 8 * 3600);
+
+    const res = await request(app).get(`/attendance?date=${NORMAL_DAY}`);
+    const row = res.body.devices.find((r: any) => r.deviceId === device.id);
+    expect(row.status).toBe("present");
+  });
+
+  it("marks a full-hours day half_day when the last activity is before midday", async () => {
+    // Leave before 12:30; disable the late trigger by setting late to 23:59.
+    await setGlobalSettings({
+      ...SETTINGS,
+      halfDayLateThreshold: "23:59",
+      halfDayMiddayCutoff: "12:30",
+    });
+    const device = await newDevice();
+    // 8h worked but 04:00–12:00, so last activity (12:00) is before 12:30 → early.
+    await seedActivityAt(device.id, new Date(`${NORMAL_DAY}T04:00:00Z`), 8 * 3600);
+
+    const res = await request(app).get(`/attendance?date=${NORMAL_DAY}`);
+    const row = res.body.devices.find((r: any) => r.deviceId === device.id);
+    expect(row.status).toBe("half_day");
+    expect(row.workedSeconds).toBe(8 * 3600);
+  });
+
+  it("stays present when on time, staying past midday, with enough hours", async () => {
+    await setGlobalSettings({
+      ...SETTINGS,
+      halfDayLateThreshold: "09:30",
+      halfDayMiddayCutoff: "12:30",
+    });
+    const device = await newDevice();
+    // 09:00 start, 8h → last activity 17:00; on time and past midday → present.
+    await seedActivityAt(device.id, new Date(`${NORMAL_DAY}T09:00:00Z`), 8 * 3600);
+
+    const res = await request(app).get(`/attendance?date=${NORMAL_DAY}`);
+    const row = res.body.devices.find((r: any) => r.deviceId === device.id);
+    expect(row.status).toBe("present");
+  });
+
+  it("applies the same time triggers on the range report", async () => {
+    await setGlobalSettings({
+      ...SETTINGS,
+      halfDayLateThreshold: "09:30",
+      halfDayMiddayCutoff: "00:00",
+    });
+    const device = await newDevice();
+    await seedActivityAt(device.id, new Date(`${NORMAL_DAY}T10:00:00Z`), 8 * 3600);
+
+    const res = await request(app).get(
+      `/attendance/range?from=${NORMAL_DAY}&to=${NORMAL_DAY}`,
+    );
+    expect(res.status).toBe(200);
+    const summary = res.body.devices.find((r: any) => r.deviceId === device.id);
+    expect(summary).toBeDefined();
+    const day = res.body.daily.find((d: any) => d.day === NORMAL_DAY);
+    const cell = day.byDevice.find((b: any) => b.deviceId === device.id);
+    expect(cell.status).toBe("half_day");
   });
 });
 

@@ -8,6 +8,10 @@
 
 export interface AttendanceSettingsUpdate {
   workStartTime: string;
+  /** Arrive-after cutoff (HH:MM) that downgrades a day to half-day. */
+  halfDayLateThreshold: string;
+  /** Leave-before cutoff (HH:MM) that downgrades a day to half-day. */
+  halfDayMiddayCutoff: string;
   halfDayThresholdHours: number;
   requiredHoursNormal: number;
   requiredHoursFriday: number;

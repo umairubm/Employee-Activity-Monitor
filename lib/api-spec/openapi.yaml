@@ -1569,6 +1569,12 @@ components:
           format: uuid
         workStartTime:
           type: string
+        halfDayLateThreshold:
+          type: string
+          description: Arrive-after cutoff (HH:MM) that downgrades a day to half-day.
+        halfDayMiddayCutoff:
+          type: string
+          description: Leave-before cutoff (HH:MM) that downgrades a day to half-day.
         halfDayThresholdHours:
           type: number
         requiredHoursNormal:
@@ -1594,6 +1600,8 @@ components:
       required:
         - id
         - workStartTime
+        - halfDayLateThreshold
+        - halfDayMiddayCutoff
         - halfDayThresholdHours
         - requiredHoursNormal
         - requiredHoursFriday
@@ -1604,6 +1612,12 @@ components:
       properties:
         workStartTime:
           type: string
+        halfDayLateThreshold:
+          type: string
+          description: Arrive-after cutoff (HH:MM) that downgrades a day to half-day.
+        halfDayMiddayCutoff:
+          type: string
+          description: Leave-before cutoff (HH:MM) that downgrades a day to half-day.
         halfDayThresholdHours:
           type: number
         requiredHoursNormal:
@@ -1622,6 +1636,8 @@ components:
             type: string
       required:
         - workStartTime
+        - halfDayLateThreshold
+        - halfDayMiddayCutoff
         - halfDayThresholdHours
         - requiredHoursNormal
         - requiredHoursFriday
@@ -1645,6 +1661,12 @@ components:
           description: System name for device-scoped overrides.
         workStartTime:
           type: string
+        halfDayLateThreshold:
+          type: string
+          description: Arrive-after cutoff (HH:MM) that downgrades a day to half-day.
+        halfDayMiddayCutoff:
+          type: string
+          description: Leave-before cutoff (HH:MM) that downgrades a day to half-day.
         halfDayThresholdHours:
           type: number
         requiredHoursNormal:
@@ -1669,6 +1691,8 @@ components:
         - id
         - scope
         - workStartTime
+        - halfDayLateThreshold
+        - halfDayMiddayCutoff
         - halfDayThresholdHours
         - requiredHoursNormal
         - requiredHoursFriday
@@ -1692,6 +1716,12 @@ components:
           description: Required when scope is "group".
         workStartTime:
           type: string
+        halfDayLateThreshold:
+          type: string
+          description: Arrive-after cutoff (HH:MM) that downgrades a day to half-day.
+        halfDayMiddayCutoff:
+          type: string
+          description: Leave-before cutoff (HH:MM) that downgrades a day to half-day.
         halfDayThresholdHours:
           type: number
         requiredHoursNormal:
@@ -1709,6 +1739,8 @@ components:
       required:
         - scope
         - workStartTime
+        - halfDayLateThreshold
+        - halfDayMiddayCutoff
         - halfDayThresholdHours
         - requiredHoursNormal
         - requiredHoursFriday

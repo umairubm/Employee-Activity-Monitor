@@ -123,6 +123,52 @@ export async function spanSecondsByKey(opts: {
   return map;
 }
 
+/**
+ * First-activity and last-activity minute-of-day (UTC) per partition key. Used by
+ * attendance to detect late arrival (first activity after the threshold) and
+ * early leave (no activity at/after the midday cutoff). Minutes are measured from
+ * UTC midnight so they line up with the UTC day buckets the attendance routes use.
+ *
+ * @returns Map of partition key (text) -> { firstMinutes, lastMinutes }.
+ */
+export async function dayTimeBoundsByKey(opts: {
+  rangeStart: Date;
+  rangeEnd: Date;
+  /** SQL expression producing the (text) partition key, e.g. device+day. */
+  keyExpr: SQL;
+  /** Optional extra WHERE (e.g. a device/group filter). */
+  extraWhere?: SQL;
+}): Promise<Map<string, { firstMinutes: number; lastMinutes: number }>> {
+  const { rangeStart, rangeEnd, keyExpr, extraWhere } = opts;
+  const base = and(
+    gte(activityLogsTable.startedAt, rangeStart),
+    lt(activityLogsTable.startedAt, rangeEnd),
+  );
+  const whereClause = extraWhere ? and(base, extraWhere) : base;
+
+  const result = await db.execute(sql`
+    SELECT ${keyExpr}::text AS k,
+           (extract(epoch FROM (min(${activityLogsTable.startedAt}) AT TIME ZONE 'UTC')::time) / 60)::int AS first_min,
+           (extract(epoch FROM (max(${activityLogsTable.endedAt}) AT TIME ZONE 'UTC')::time) / 60)::int AS last_min
+    FROM ${activityLogsTable}
+    WHERE ${whereClause}
+    GROUP BY ${keyExpr}
+  `);
+
+  const map = new Map<string, { firstMinutes: number; lastMinutes: number }>();
+  for (const row of result.rows as Array<{
+    k: string;
+    first_min: number | string | null;
+    last_min: number | string | null;
+  }>) {
+    map.set(String(row.k), {
+      firstMinutes: row.first_min === null ? 0 : Number(row.first_min),
+      lastMinutes: row.last_min === null ? 0 : Number(row.last_min),
+    });
+  }
+  return map;
+}
+
 export interface NaiveTime {
   workedSeconds: number;
   idleSeconds: number;

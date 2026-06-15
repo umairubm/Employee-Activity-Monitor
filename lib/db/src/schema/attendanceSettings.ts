@@ -35,6 +35,16 @@ export const attendanceSettingsTable = pgTable("attendance_settings", {
     onDelete: "set null",
   }),
   workStartTime: text("work_start_time").notNull().default("09:00"),
+  // Late-arrival cutoff for half-day: if a device's FIRST activity on a working
+  // day lands strictly after this "HH:MM", the day is downgraded to half-day.
+  halfDayLateThreshold: text("half_day_late_threshold")
+    .notNull()
+    .default("09:30"),
+  // Early-leave cutoff for half-day: if a device has NO activity at or after this
+  // "HH:MM" (its last activity is before it), the day is downgraded to half-day.
+  halfDayMiddayCutoff: text("half_day_midday_cutoff")
+    .notNull()
+    .default("12:30"),
   halfDayThresholdHours: real("half_day_threshold_hours").notNull().default(4),
   requiredHoursNormal: real("required_hours_normal").notNull().default(7.5),
   requiredHoursFriday: real("required_hours_friday").notNull().default(7.0),

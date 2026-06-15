@@ -15,6 +15,8 @@ import { and, asc, eq, isNull, lte, gte, sql } from "drizzle-orm";
 
 export const DEFAULT_SETTINGS = {
   workStartTime: "09:00",
+  halfDayLateThreshold: "09:30",
+  halfDayMiddayCutoff: "12:30",
   halfDayThresholdHours: 4,
   requiredHoursNormal: 7.5,
   requiredHoursFriday: 7.0,
@@ -227,4 +229,46 @@ export function eachDayUTC(from: string, to: string): string[] {
 export function hhmmToMinutes(hhmm: string): number {
   const [h, m] = hhmm.split(":").map((s) => parseInt(s, 10));
   return (h || 0) * 60 + (m || 0);
+}
+
+/**
+ * Classify a single WORKING day for one device (callers handle non-working days
+ * and approved leave separately). The rule COMBINES the hours-based floor with
+ * two time-based half-day triggers:
+ *
+ *   - absent      : no activity, or worked below the half-day hours floor.
+ *   - half_day    : worked enough to clear the floor, but EITHER worked below the
+ *                   required hours, OR arrived late (first activity strictly
+ *                   after `halfDayLateThreshold`), OR left early (no activity at
+ *                   or after `halfDayMiddayCutoff`).
+ *   - present     : cleared required hours AND on time AND stayed past midday.
+ *
+ * Activity minute-of-day inputs are minutes-since-UTC-midnight (matching how the
+ * attendance routes bucket days); pass null when the time is unknown so that
+ * trigger is skipped rather than firing on missing data.
+ */
+export function classifyWorkingDay(opts: {
+  workedSeconds: number;
+  requiredHours: number;
+  settings: Pick<
+    AttendanceSettings,
+    "halfDayThresholdHours" | "halfDayLateThreshold" | "halfDayMiddayCutoff"
+  >;
+  firstActivityMinutes: number | null;
+  lastActivityMinutes: number | null;
+}): "present" | "half_day" | "absent" {
+  const { workedSeconds, requiredHours, settings } = opts;
+  if (workedSeconds <= 0) return "absent";
+  const workedHours = workedSeconds / 3600;
+  if (workedHours < settings.halfDayThresholdHours) return "absent";
+
+  const late =
+    opts.firstActivityMinutes !== null &&
+    opts.firstActivityMinutes > hhmmToMinutes(settings.halfDayLateThreshold);
+  const early =
+    opts.lastActivityMinutes !== null &&
+    opts.lastActivityMinutes < hhmmToMinutes(settings.halfDayMiddayCutoff);
+
+  if (workedHours < requiredHours || late || early) return "half_day";
+  return "present";
 }

@@ -588,6 +588,8 @@ export default function Attendance() {
   const [scopeValue, setScopeValue] = useState<string>(GLOBAL_SCOPE);
   const [form, setForm] = useState({
     workStartTime: "09:00",
+    halfDayLateThreshold: "09:30",
+    halfDayMiddayCutoff: "12:30",
     halfDayThresholdHours: "4",
     requiredHoursNormal: "7.5",
     requiredHoursFriday: "7",
@@ -614,6 +616,8 @@ export default function Attendance() {
 
   type Rules = {
     workStartTime: string;
+    halfDayLateThreshold: string;
+    halfDayMiddayCutoff: string;
     halfDayThresholdHours: number;
     requiredHoursNormal: number;
     requiredHoursFriday: number;
@@ -624,6 +628,8 @@ export default function Attendance() {
   const loadRulesIntoForm = (r: Rules) => {
     setForm({
       workStartTime: r.workStartTime,
+      halfDayLateThreshold: r.halfDayLateThreshold,
+      halfDayMiddayCutoff: r.halfDayMiddayCutoff,
       halfDayThresholdHours: String(r.halfDayThresholdHours),
       requiredHoursNormal: String(r.requiredHoursNormal),
       requiredHoursFriday: String(r.requiredHoursFriday),
@@ -688,6 +694,8 @@ export default function Attendance() {
     if (holidays === null) return;
     const rules = {
       workStartTime: form.workStartTime,
+      halfDayLateThreshold: form.halfDayLateThreshold,
+      halfDayMiddayCutoff: form.halfDayMiddayCutoff,
       halfDayThresholdHours: Number(form.halfDayThresholdHours),
       requiredHoursNormal: Number(form.requiredHoursNormal),
       requiredHoursFriday: Number(form.requiredHoursFriday),
@@ -838,6 +846,16 @@ export default function Attendance() {
               <div className="space-y-1">
                 <Label htmlFor="halfDay">Half-day threshold (hrs)</Label>
                 <Input id="halfDay" type="number" step="0.5" min="0" max="24" value={form.halfDayThresholdHours} onChange={(e) => setForm((f) => ({ ...f, halfDayThresholdHours: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="lateThreshold">Late after (half-day)</Label>
+                <Input id="lateThreshold" type="time" value={form.halfDayLateThreshold} onChange={(e) => setForm((f) => ({ ...f, halfDayLateThreshold: e.target.value }))} />
+                <p className="text-xs text-muted-foreground">First activity after this time = half-day.</p>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="middayCutoff">Leave before (half-day)</Label>
+                <Input id="middayCutoff" type="time" value={form.halfDayMiddayCutoff} onChange={(e) => setForm((f) => ({ ...f, halfDayMiddayCutoff: e.target.value }))} />
+                <p className="text-xs text-muted-foreground">No activity at/after this time = half-day.</p>
               </div>
               <div className="space-y-1">
                 <Label htmlFor="reqNormal">Required hours (normal)</Label>

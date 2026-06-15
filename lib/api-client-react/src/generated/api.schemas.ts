@@ -279,6 +279,10 @@ export interface AttendanceSettingsItem {
   /** @nullable */
   deviceId?: string | null;
   workStartTime: string;
+  /** Arrive-after cutoff (HH:MM) that downgrades a day to half-day. */
+  halfDayLateThreshold: string;
+  /** Leave-before cutoff (HH:MM) that downgrades a day to half-day. */
+  halfDayMiddayCutoff: string;
   halfDayThresholdHours: number;
   requiredHoursNormal: number;
   requiredHoursFriday: number;
@@ -292,6 +296,10 @@ export interface AttendanceSettingsItem {
 
 export interface AttendanceSettingsUpdate {
   workStartTime: string;
+  /** Arrive-after cutoff (HH:MM) that downgrades a day to half-day. */
+  halfDayLateThreshold: string;
+  /** Leave-before cutoff (HH:MM) that downgrades a day to half-day. */
+  halfDayMiddayCutoff: string;
   halfDayThresholdHours: number;
   requiredHoursNormal: number;
   requiredHoursFriday: number;
@@ -325,6 +333,10 @@ export interface AttendanceOverrideItem {
    */
   deviceName?: string | null;
   workStartTime: string;
+  /** Arrive-after cutoff (HH:MM) that downgrades a day to half-day. */
+  halfDayLateThreshold: string;
+  /** Leave-before cutoff (HH:MM) that downgrades a day to half-day. */
+  halfDayMiddayCutoff: string;
   halfDayThresholdHours: number;
   requiredHoursNormal: number;
   requiredHoursFriday: number;
@@ -352,6 +364,10 @@ export interface AttendanceOverrideUpsert {
   /** Required when scope is "group". */
   deviceGroup?: string;
   workStartTime: string;
+  /** Arrive-after cutoff (HH:MM) that downgrades a day to half-day. */
+  halfDayLateThreshold: string;
+  /** Leave-before cutoff (HH:MM) that downgrades a day to half-day. */
+  halfDayMiddayCutoff: string;
   halfDayThresholdHours: number;
   requiredHoursNormal: number;
   requiredHoursFriday: number;

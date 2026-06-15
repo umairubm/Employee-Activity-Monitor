@@ -8,11 +8,17 @@ import {
   type AttendanceSettings,
 } from "@workspace/db";
 import { and, asc, eq, gte, inArray, lt, sql } from "drizzle-orm";
-import { coveredSecondsByKey, spanSecondsByKey, correctOverlap } from "../lib/activityTime";
+import {
+  coveredSecondsByKey,
+  spanSecondsByKey,
+  dayTimeBoundsByKey,
+  correctOverlap,
+} from "../lib/activityTime";
 import { requireRole } from "../middlewares/userAuth";
 import {
   DEFAULT_SETTINGS,
   MAX_RANGE_DAYS,
+  classifyWorkingDay,
   eachDayUTC,
   getGlobalSettings,
   isWorkingDay,
@@ -23,6 +29,20 @@ import {
   requiredHoursFor,
   resolveForDevice,
 } from "../lib/attendance";
+
+const HHMM = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Expected HH:MM");
+
+/**
+ * Minutes-since-UTC-midnight for a timestamp value (Date or ISO string), or null
+ * when absent. Used by the single-day report to derive a device's first/last
+ * activity time-of-day for late-arrival / early-leave half-day detection.
+ */
+function utcMinutesOfDay(ts: string | Date | null): number | null {
+  if (ts === null) return null;
+  const d = ts instanceof Date ? ts : new Date(ts);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.getUTCHours() * 60 + d.getUTCMinutes();
+}
 
 const router: IRouter = Router();
 
@@ -36,9 +56,9 @@ router.get("/settings", async (_req, res) => {
 });
 
 const updateSettingsSchema = z.object({
-  workStartTime: z
-    .string()
-    .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Expected HH:MM"),
+  workStartTime: HHMM,
+  halfDayLateThreshold: HHMM,
+  halfDayMiddayCutoff: HHMM,
   halfDayThresholdHours: z.number().min(0).max(24),
   requiredHoursNormal: z.number().min(0).max(24),
   requiredHoursFriday: z.number().min(0).max(24),
@@ -97,6 +117,8 @@ router.get("/overrides", async (_req, res) => {
         deviceId: attendanceSettingsTable.deviceId,
         deviceGroup: attendanceSettingsTable.deviceGroup,
         workStartTime: attendanceSettingsTable.workStartTime,
+        halfDayLateThreshold: attendanceSettingsTable.halfDayLateThreshold,
+        halfDayMiddayCutoff: attendanceSettingsTable.halfDayMiddayCutoff,
         halfDayThresholdHours: attendanceSettingsTable.halfDayThresholdHours,
         requiredHoursNormal: attendanceSettingsTable.requiredHoursNormal,
         requiredHoursFriday: attendanceSettingsTable.requiredHoursFriday,
@@ -128,9 +150,9 @@ router.get("/overrides", async (_req, res) => {
 });
 
 const overrideRulesSchema = {
-  workStartTime: z
-    .string()
-    .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Expected HH:MM"),
+  workStartTime: HHMM,
+  halfDayLateThreshold: HHMM,
+  halfDayMiddayCutoff: HHMM,
   halfDayThresholdHours: z.number().min(0).max(24),
   requiredHoursNormal: z.number().min(0).max(24),
   requiredHoursFriday: z.number().min(0).max(24),
@@ -169,6 +191,8 @@ router.put(
       const data = parsed.data;
       const rules = {
         workStartTime: data.workStartTime,
+        halfDayLateThreshold: data.halfDayLateThreshold,
+        halfDayMiddayCutoff: data.halfDayMiddayCutoff,
         halfDayThresholdHours: data.halfDayThresholdHours,
         requiredHoursNormal: data.requiredHoursNormal,
         requiredHoursFriday: data.requiredHoursFriday,
@@ -314,19 +338,29 @@ router.get("/range", async (req, res) => {
     // Worked seconds per device+day are the first→last span (first push to last
     // upload), keyed "deviceId|YYYY-MM-DD". The span includes between-session
     // gaps, so attendance reflects the full presence window for the day.
+    const keyExpr = sql`${activityLogsTable.deviceId}::text || '|' || to_char(${activityLogsTable.startedAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD')`;
+    const keyExtraWhere = group
+      ? inArray(
+          activityLogsTable.deviceId,
+          db
+            .select({ id: devicesTable.id })
+            .from(devicesTable)
+            .where(eq(devicesTable.deviceGroup, group)),
+        )
+      : undefined;
     const spanByKey = await spanSecondsByKey({
       rangeStart,
       rangeEnd,
-      keyExpr: sql`${activityLogsTable.deviceId}::text || '|' || to_char(${activityLogsTable.startedAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD')`,
-      extraWhere: group
-        ? inArray(
-            activityLogsTable.deviceId,
-            db
-              .select({ id: devicesTable.id })
-              .from(devicesTable)
-              .where(eq(devicesTable.deviceGroup, group)),
-          )
-        : undefined,
+      keyExpr,
+      extraWhere: keyExtraWhere,
+    });
+    // First/last activity minute-of-day (UTC) per device+day, for late-arrival
+    // and early-leave half-day detection.
+    const boundsByKey = await dayTimeBoundsByKey({
+      rangeStart,
+      rangeEnd,
+      keyExpr,
+      extraWhere: keyExtraWhere,
     });
 
     // device id -> (day -> worked seconds)
@@ -343,9 +377,27 @@ router.get("/range", async (req, res) => {
       perDay.set(day, span);
     }
 
+    // device id -> (day -> { firstMinutes, lastMinutes })
+    const boundsByDevice = new Map<
+      string,
+      Map<string, { firstMinutes: number; lastMinutes: number }>
+    >();
+    for (const [key, bounds] of boundsByKey) {
+      const sep = key.indexOf("|");
+      const deviceId = key.slice(0, sep);
+      const day = key.slice(sep + 1);
+      let perDay = boundsByDevice.get(deviceId);
+      if (!perDay) {
+        perDay = new Map();
+        boundsByDevice.set(deviceId, perDay);
+      }
+      perDay.set(day, bounds);
+    }
+
     const rows = devices.map((device) => {
       const eff = effByDevice.get(device.id) ?? settings;
       const perDay = workedByDevice.get(device.id);
+      const boundsPerDay = boundsByDevice.get(device.id);
       const leaveDays = leaveDaysFor(device.assignedUserId);
       let presentDays = 0;
       let halfDays = 0;
@@ -370,10 +422,16 @@ router.get("/range", async (req, res) => {
           continue;
         }
         deviceWorkingDays += 1;
-        const workedHours = workedSeconds / 3600;
-        const requiredHours = requiredHoursFor(weekday, eff);
-        if (workedHours >= requiredHours) presentDays += 1;
-        else if (workedHours >= eff.halfDayThresholdHours) halfDays += 1;
+        const bounds = boundsPerDay?.get(day);
+        const status = classifyWorkingDay({
+          workedSeconds,
+          requiredHours: requiredHoursFor(weekday, eff),
+          settings: eff,
+          firstActivityMinutes: bounds?.firstMinutes ?? null,
+          lastActivityMinutes: bounds?.lastMinutes ?? null,
+        });
+        if (status === "present") presentDays += 1;
+        else if (status === "half_day") halfDays += 1;
         else absentDays += 1;
       }
 
@@ -423,19 +481,17 @@ router.get("/range", async (req, res) => {
           byDevice.push({ deviceId: device.id, workedSeconds: ws, status: "on_leave" });
           continue;
         }
-        const workedHours = ws / 3600;
-        const requiredHours = requiredHoursFor(weekday, eff);
-        let status: "present" | "half_day" | "absent";
-        if (workedHours >= requiredHours) {
-          presentDevices += 1;
-          status = "present";
-        } else if (workedHours >= eff.halfDayThresholdHours) {
-          halfDayDevices += 1;
-          status = "half_day";
-        } else {
-          absentDevices += 1;
-          status = "absent";
-        }
+        const bounds = boundsByDevice.get(device.id)?.get(day);
+        const status = classifyWorkingDay({
+          workedSeconds: ws,
+          requiredHours: requiredHoursFor(weekday, eff),
+          settings: eff,
+          firstActivityMinutes: bounds?.firstMinutes ?? null,
+          lastActivityMinutes: bounds?.lastMinutes ?? null,
+        });
+        if (status === "present") presentDevices += 1;
+        else if (status === "half_day") halfDayDevices += 1;
+        else absentDevices += 1;
         byDevice.push({ deviceId: device.id, workedSeconds: ws, status });
       }
 
@@ -476,9 +532,13 @@ router.get("/", async (req, res) => {
       typeof req.query.group === "string" && req.query.group !== ""
         ? req.query.group
         : undefined;
-    const dayStart = new Date(`${date}T00:00:00`);
+    // Bucket the day in UTC to match the range report and the UTC minute-of-day
+    // used for late-arrival / early-leave classification below. (A non-UTC
+    // server timezone would otherwise make single-day and range reports diverge
+    // around midnight.)
+    const dayStart = new Date(`${date}T00:00:00Z`);
     const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
-    const weekday = dayStart.getDay();
+    const weekday = dayStart.getUTCDay();
     const isFriday = weekday === 5;
 
     const settings = await getGlobalSettings();
@@ -577,9 +637,14 @@ router.get("/", async (req, res) => {
       let status: "present" | "half_day" | "absent" | "non_working" | "on_leave";
       if (!deviceWorkingDay) status = "non_working";
       else if (onLeave) status = "on_leave";
-      else if (workedHours >= deviceRequiredHours) status = "present";
-      else if (workedHours >= eff.halfDayThresholdHours) status = "half_day";
-      else status = "absent";
+      else
+        status = classifyWorkingDay({
+          workedSeconds,
+          requiredHours: deviceRequiredHours,
+          settings: eff,
+          firstActivityMinutes: utcMinutesOfDay(a?.checkIn ?? null),
+          lastActivityMinutes: utcMinutesOfDay(a?.lastSeen ?? null),
+        });
 
       return {
         deviceId: device.id,

@@ -556,6 +556,12 @@ export const GetAttendanceSettingsResponse = zod.object({
   id: zod.string().uuid(),
   deviceId: zod.string().uuid().nullish(),
   workStartTime: zod.string(),
+  halfDayLateThreshold: zod
+    .string()
+    .describe("Arrive-after cutoff (HH:MM) that downgrades a day to half-day."),
+  halfDayMiddayCutoff: zod
+    .string()
+    .describe("Leave-before cutoff (HH:MM) that downgrades a day to half-day."),
   halfDayThresholdHours: zod.number(),
   requiredHoursNormal: zod.number(),
   requiredHoursFriday: zod.number(),
@@ -574,6 +580,12 @@ export const GetAttendanceSettingsResponse = zod.object({
  */
 export const UpdateAttendanceSettingsBody = zod.object({
   workStartTime: zod.string(),
+  halfDayLateThreshold: zod
+    .string()
+    .describe("Arrive-after cutoff (HH:MM) that downgrades a day to half-day."),
+  halfDayMiddayCutoff: zod
+    .string()
+    .describe("Leave-before cutoff (HH:MM) that downgrades a day to half-day."),
   halfDayThresholdHours: zod.number(),
   requiredHoursNormal: zod.number(),
   requiredHoursFriday: zod.number(),
@@ -591,6 +603,12 @@ export const UpdateAttendanceSettingsResponse = zod.object({
   id: zod.string().uuid(),
   deviceId: zod.string().uuid().nullish(),
   workStartTime: zod.string(),
+  halfDayLateThreshold: zod
+    .string()
+    .describe("Arrive-after cutoff (HH:MM) that downgrades a day to half-day."),
+  halfDayMiddayCutoff: zod
+    .string()
+    .describe("Leave-before cutoff (HH:MM) that downgrades a day to half-day."),
   halfDayThresholdHours: zod.number(),
   requiredHoursNormal: zod.number(),
   requiredHoursFriday: zod.number(),
@@ -618,6 +636,16 @@ export const GetAttendanceOverridesResponseItem = zod
       .nullish()
       .describe("System name for device-scoped overrides."),
     workStartTime: zod.string(),
+    halfDayLateThreshold: zod
+      .string()
+      .describe(
+        "Arrive-after cutoff (HH:MM) that downgrades a day to half-day.",
+      ),
+    halfDayMiddayCutoff: zod
+      .string()
+      .describe(
+        "Leave-before cutoff (HH:MM) that downgrades a day to half-day.",
+      ),
     halfDayThresholdHours: zod.number(),
     requiredHoursNormal: zod.number(),
     requiredHoursFriday: zod.number(),
@@ -647,6 +675,16 @@ export const UpsertAttendanceOverrideBody = zod
       .optional()
       .describe('Required when scope is \"group\".'),
     workStartTime: zod.string(),
+    halfDayLateThreshold: zod
+      .string()
+      .describe(
+        "Arrive-after cutoff (HH:MM) that downgrades a day to half-day.",
+      ),
+    halfDayMiddayCutoff: zod
+      .string()
+      .describe(
+        "Leave-before cutoff (HH:MM) that downgrades a day to half-day.",
+      ),
     halfDayThresholdHours: zod.number(),
     requiredHoursNormal: zod.number(),
     requiredHoursFriday: zod.number(),
@@ -668,6 +706,16 @@ export const UpsertAttendanceOverrideResponse = zod
       .nullish()
       .describe("System name for device-scoped overrides."),
     workStartTime: zod.string(),
+    halfDayLateThreshold: zod
+      .string()
+      .describe(
+        "Arrive-after cutoff (HH:MM) that downgrades a day to half-day.",
+      ),
+    halfDayMiddayCutoff: zod
+      .string()
+      .describe(
+        "Leave-before cutoff (HH:MM) that downgrades a day to half-day.",
+      ),
     halfDayThresholdHours: zod.number(),
     requiredHoursNormal: zod.number(),
     requiredHoursFriday: zod.number(),
