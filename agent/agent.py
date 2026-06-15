@@ -371,6 +371,17 @@ def ensure_enrolled() -> config_mod.AgentConfig | None:
 
 
 def main() -> int:
+    # Enforce a single agent per machine. A second instance would log the same
+    # foreground activity concurrently, producing overlapping intervals that
+    # double-count worked time across every report.
+    lock = config_mod.acquire_single_instance_lock()
+    if lock is None:
+        print(
+            "[agent] another Workforce Agent is already running on this "
+            "computer; exiting.",
+            file=sys.stderr,
+        )
+        return 0
     cfg = ensure_enrolled()
     if cfg is None:
         return 0

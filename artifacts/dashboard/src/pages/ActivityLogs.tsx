@@ -158,12 +158,41 @@ function minutesIntoDay(d: Date): number {
   return d.getHours() * 60 + d.getMinutes();
 }
 
+/**
+ * Wall-clock seconds covered by the UNION of [start, end] intervals. When more
+ * than one agent instance runs on a PC they log the same time concurrently, so a
+ * naive sum of durations double-counts; merging the intervals yields the real
+ * covered time. Mirrors the server-side `coveredSecondsByKey`.
+ */
+function mergedCoveredSeconds(intervals: Array<[number, number]>): number {
+  if (intervals.length === 0) return 0;
+  const sorted = [...intervals].sort((a, b) => a[0] - b[0]);
+  let total = 0;
+  let [curStart, curEnd] = sorted[0]!;
+  for (let i = 1; i < sorted.length; i++) {
+    const [s, e] = sorted[i]!;
+    if (s > curEnd) {
+      total += curEnd - curStart;
+      curStart = s;
+      curEnd = e;
+    } else if (e > curEnd) {
+      curEnd = e;
+    }
+  }
+  total += curEnd - curStart;
+  return Math.round(total / 1000);
+}
+
 /** Aggregate one device's day of logs. */
 function aggregateLogs(
   logs: ActivityLogRecord[],
   classOf: (log: ActivityLogRecord) => Classification,
 ): DeviceAgg {
   const agg = emptyAgg();
+  // Naive sums; corrected for overlapping duplicate-agent logs after the loop.
+  let naiveTotal = 0;
+  let naiveActive = 0;
+  const intervals: Array<[number, number]> = [];
   for (const log of logs) {
     const started = new Date(log.startedAt);
     const ended = new Date(log.endedAt);
@@ -172,8 +201,9 @@ function aggregateLogs(
     const idle = log.idleSeconds ?? 0;
     const active = Math.max(0, duration - idle);
 
-    agg.totalSeconds += duration;
-    agg.activeSeconds += active;
+    naiveTotal += duration;
+    naiveActive += active;
+    intervals.push([started.getTime(), ended.getTime()]);
 
     if (!agg.startedAt || started < agg.startedAt) agg.startedAt = started;
     if (!agg.endedAt || ended > agg.endedAt) agg.endedAt = ended;
@@ -218,6 +248,15 @@ function aggregateLogs(
       if (cur === 0 || code < cur) agg.slots[i] = code;
     }
   }
+
+  // Correct overlapping duplicate-agent logs: total time is the real merged
+  // wall-clock coverage; active time is scaled by the same ratio. With no
+  // overlap, covered === naiveTotal and both values are unchanged.
+  const covered = mergedCoveredSeconds(intervals);
+  const total = naiveTotal > 0 ? Math.min(covered, naiveTotal) : 0;
+  const ratio = naiveTotal > 0 ? total / naiveTotal : 0;
+  agg.totalSeconds = total;
+  agg.activeSeconds = Math.min(total, Math.round(naiveActive * ratio));
   return agg;
 }
 

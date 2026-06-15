@@ -51,8 +51,64 @@ const CONFIG_DIR = path.join(os.homedir(), ".active-tracker");
 const CREDS_FILE = path.join(CONFIG_DIR, "credentials.json");
 const OFFLINE_DB_FILE = path.join(CONFIG_DIR, "offline-queue.json");
 const LOCAL_CONFIG_FILE = path.join(__dirname, "tracker.config.json");
+const LOCK_FILE = path.join(CONFIG_DIR, "agent.lock");
 
 fs.mkdirSync(CONFIG_DIR, { recursive: true });
+
+// ── Single-instance lock ──────────────────────────────────────────────────────
+// Two agents on one machine would each log the same foreground activity
+// concurrently, producing overlapping intervals that double-count worked time in
+// every report. We hold an exclusive lock so exactly one agent runs per PC.
+// `wx` (O_EXCL create) fails if the file exists; a stale lock from a crashed
+// process is detected via the recorded PID and reclaimed.
+function pidIsAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    // ESRCH = no such process; EPERM = exists but not ours (still alive).
+    return err.code === "EPERM";
+  }
+}
+
+function acquireSingleInstanceLock() {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const fd = fs.openSync(LOCK_FILE, "wx");
+      fs.writeSync(fd, String(process.pid));
+      fs.closeSync(fd);
+      const release = () => {
+        try {
+          fs.unlinkSync(LOCK_FILE);
+        } catch {
+          /* ignore */
+        }
+      };
+      process.on("exit", release);
+      process.on("SIGINT", () => process.exit(0));
+      process.on("SIGTERM", () => process.exit(0));
+      return true;
+    } catch (err) {
+      if (err.code !== "EEXIST") throw err;
+      // Lock exists — reclaim it only if the owner process is gone.
+      let stalePid = NaN;
+      try {
+        stalePid = parseInt(fs.readFileSync(LOCK_FILE, "utf-8").trim(), 10);
+      } catch {
+        /* unreadable — treat as stale below */
+      }
+      if (Number.isInteger(stalePid) && pidIsAlive(stalePid)) {
+        return false; // another live agent owns the lock
+      }
+      try {
+        fs.unlinkSync(LOCK_FILE); // stale; remove and retry once
+      } catch {
+        return false;
+      }
+    }
+  }
+  return false;
+}
 
 // ── Resolve server base URL (no trailing slash, no /api) ──────────────────────
 function loadLocalConfig() {
@@ -822,6 +878,16 @@ async function runScreenshotCycle() {
 async function main() {
   console.log("🚀 Active Tracker (secure client) starting...");
   console.log(`🔗 Server: ${SERVER_BASE}`);
+
+  // Enforce a single agent per machine; a second instance would log the same
+  // activity concurrently and double-count worked time in every report.
+  if (!acquireSingleInstanceLock()) {
+    console.log(
+      "⚠️  Another Active Tracker is already running on this computer; exiting."
+    );
+    process.exit(0);
+    return;
+  }
 
   const enrolled = await ensureEnrolled();
   if (!enrolled) {

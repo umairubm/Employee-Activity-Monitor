@@ -9,6 +9,7 @@ import {
   createDevice,
   makeApp,
   seedActivity,
+  seedActivityAt,
 } from "./helpers";
 
 /**
@@ -189,6 +190,28 @@ describe("GET /api/reports/leaderboard", () => {
     expect(row.productiveSeconds).toBe(3600);
     expect(row.totalSeconds).toBe(4800);
     expect(row.score).toBe(75);
+  });
+
+  it("dedupes overlapping duplicate-agent logs to real coverage", async () => {
+    const group = `lb-overlap-${randomUUID()}`;
+    const productive = await newCategory("productive");
+    const device = await newDevice(group);
+    // Two agent instances each log the SAME 10:00–11:00 hour (3600s). Naive sum
+    // = 7200s but the real covered window is one hour = 3600s.
+    const start = new Date("2024-03-11T10:00:00Z");
+    await seedActivityAt(device.id, start, 3600, 0, productive.id);
+    await seedActivityAt(device.id, start, 3600, 0, productive.id);
+
+    const res = await request(featureApp)
+      .get("/reports/leaderboard")
+      .query({ group, from: "2024-03-11", to: "2024-03-11" });
+    expect(res.status).toBe(200);
+
+    const row = res.body.find((r: any) => r.deviceId === device.id);
+    expect(row, "device missing from leaderboard").toBeDefined();
+    expect(row.totalSeconds).toBe(3600);
+    expect(row.productiveSeconds).toBe(3600);
+    expect(row.score).toBe(100);
   });
 
   it("rejects an inverted range with 400", async () => {

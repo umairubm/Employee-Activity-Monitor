@@ -10,7 +10,13 @@ import {
   pool,
 } from "@workspace/db";
 import app from "../src/app";
-import { createCategory, createDevice, makeApp, seedActivity } from "./helpers";
+import {
+  createCategory,
+  createDevice,
+  makeApp,
+  seedActivity,
+  seedActivityAt,
+} from "./helpers";
 
 /**
  * Tests for GET /api/timesheets. The handler returns one row per device per
@@ -110,10 +116,12 @@ describe("GET /api/timesheets", () => {
     expect(mon.productiveSeconds).toBe(3600);
     expect(mon.unproductiveSeconds).toBe(1200);
     expect(mon.undefinedSeconds).toBe(0);
-    // First activity 10:00 UTC, last activity end = 10:00 + 3600s = 11:00 UTC.
+    // Logs are sequential: 10:00–11:00 (productive) then 11:00–11:20
+    // (unproductive). First activity 10:00 UTC, last activity end 11:20 UTC,
+    // and the most recent log starts at 11:00 UTC.
     expect(mon.firstActivity).toContain("T10:00:00");
-    expect(mon.lastActivity).toContain("T11:00:00");
-    expect(mon.lastActivityLog).toContain("T10:00:00");
+    expect(mon.lastActivity).toContain("T11:20:00");
+    expect(mon.lastActivityLog).toContain("T11:00:00");
 
     // Both seeded days are late and end before 17:00 => early-leave.
     expect(res.body.totals.lateDays).toBe(2);
@@ -187,6 +195,44 @@ describe("GET /api/timesheets", () => {
       .query({ from: "2024-03-11", to: "2024-03-11", group });
     expect(res.status).toBe(200);
     expect(res.body.totals.earlyLeaveDays).toBe(0);
+  });
+
+  it("dedupes overlapping duplicate-agent logs to real wall-clock coverage", async () => {
+    const group = `ts-overlap-${randomUUID()}`;
+    const device = await newDevice(group);
+    const productive = await createCategory("productive");
+    createdCategoryIds.push(productive.id);
+    await setDeviceRule(device.id, {
+      workStartTime: "09:00",
+      requiredHoursNormal: 8,
+      requiredHoursFriday: 8,
+    });
+
+    // Two agent instances each log the SAME 10:00–11:00 UTC hour (3600s) plus an
+    // overlapping 10:30–11:30 hour. Naive sum = 4 x 3600 = 14400s, but the real
+    // covered window is 10:00–11:30 = 5400s. Idle (600s on one log) scales by
+    // 5400/14400 = 0.375 => 225s.
+    const base = new Date("2024-03-11T10:00:00Z");
+    const half = new Date("2024-03-11T10:30:00Z");
+    await seedActivityAt(device.id, base, 3600, 600, productive.id);
+    await seedActivityAt(device.id, base, 3600, 0, productive.id);
+    await seedActivityAt(device.id, half, 3600, 0, productive.id);
+    await seedActivityAt(device.id, half, 3600, 0, productive.id);
+
+    const res = await request(featureApp)
+      .get("/timesheets")
+      .query({ from: "2024-03-11", to: "2024-03-11", group });
+    expect(res.status).toBe(200);
+
+    const row = res.body.rows.find(
+      (r: any) => r.deviceId === device.id && r.date === "2024-03-11",
+    );
+    expect(row.totalSeconds).toBe(5400);
+    expect(row.productiveSeconds).toBe(5400);
+    expect(row.idleSeconds).toBe(225);
+    expect(row.activeSeconds).toBe(5175);
+    expect(res.body.totals.workedSeconds).toBe(5400);
+    expect(res.body.totals.idleSeconds).toBe(225);
   });
 
   it("rejects an inverted range with 400", async () => {

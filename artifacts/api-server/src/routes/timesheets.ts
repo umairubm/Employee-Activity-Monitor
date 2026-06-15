@@ -7,7 +7,8 @@ import {
   appCategoriesTable,
   type AttendanceSettings,
 } from "@workspace/db";
-import { and, asc, eq, gte, lt, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, lt, sql } from "drizzle-orm";
+import { coveredSecondsByKey, correctOverlap } from "../lib/activityTime";
 import {
   MAX_RANGE_DAYS,
   applyShiftStartTime,
@@ -164,6 +165,23 @@ router.get("/", async (req, res) => {
       });
     }
 
+    // Real wall-clock coverage per device+day (overlapping duplicate-agent logs
+    // merged), keyed "deviceId|YYYY-MM-DD" to match the row loop below.
+    const coveredByKey = await coveredSecondsByKey({
+      rangeStart,
+      rangeEnd,
+      keyExpr: sql`${activityLogsTable.deviceId}::text || '|' || to_char(${activityLogsTable.startedAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD')`,
+      extraWhere: group
+        ? inArray(
+            activityLogsTable.deviceId,
+            db
+              .select({ id: devicesTable.id })
+              .from(devicesTable)
+              .where(eq(devicesTable.deviceGroup, group)),
+          )
+        : undefined,
+    });
+
     const weekdayByDay = new Map<string, number>();
     for (const day of dayList) {
       weekdayByDay.set(day, new Date(`${day}T00:00:00Z`).getUTCDay());
@@ -215,8 +233,10 @@ router.get("/", async (req, res) => {
         // can't represent it, so early-leave is not flagged for that day.
         const earlyLeaveComparable = expectedEndMin <= 24 * 60;
 
-        const idle = act.idleSeconds;
-        const active = Math.max(0, act.workedSeconds - idle);
+        // Correct for overlapping duplicate-agent logs: scale the naive sums
+        // down to the real wall-clock coverage for this device+day.
+        const covered = coveredByKey.get(`${device.id}|${day}`) ?? 0;
+        const t = correctOverlap(act, covered);
 
         rows.push({
           date: day,
@@ -227,19 +247,19 @@ router.get("/", async (req, res) => {
           firstActivity: act.firstActivity,
           lastActivity: act.lastActivity,
           lastActivityLog: act.lastActivityLog,
-          productiveSeconds: act.productiveSeconds,
-          unproductiveSeconds: act.unproductiveSeconds,
-          neutralSeconds: act.neutralSeconds,
-          undefinedSeconds: act.undefinedSeconds,
-          totalSeconds: act.workedSeconds,
-          activeSeconds: active,
-          idleSeconds: idle,
+          productiveSeconds: t.productiveSeconds,
+          unproductiveSeconds: t.unproductiveSeconds,
+          neutralSeconds: t.neutralSeconds,
+          undefinedSeconds: t.undefinedSeconds,
+          totalSeconds: t.totalSeconds,
+          activeSeconds: t.activeSeconds,
+          idleSeconds: t.idleSeconds,
         });
 
-        totals.workedSeconds += act.workedSeconds;
-        totals.activeSeconds += active;
-        totals.idleSeconds += idle;
-        totals.productiveSeconds += act.productiveSeconds;
+        totals.workedSeconds += t.totalSeconds;
+        totals.activeSeconds += t.activeSeconds;
+        totals.idleSeconds += t.idleSeconds;
+        totals.productiveSeconds += t.productiveSeconds;
 
         // Late / early-leave only make sense on working days with activity.
         if (working) {

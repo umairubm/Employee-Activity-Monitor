@@ -111,6 +111,8 @@ export async function createDevice(
  * contributes `workedSeconds` of worked time (and optionally idle time). The
  * attendance report buckets by `started_at` within `[date 00:00, +24h)`.
  */
+const nextStartByDeviceDay = new Map<string, number>();
+
 export async function seedActivity(
   deviceId: string,
   dateStr: string,
@@ -118,7 +120,41 @@ export async function seedActivity(
   idleSeconds = 0,
   categoryId: string | null = null,
 ): Promise<void> {
-  const start = new Date(`${dateStr}T10:00:00`);
+  // Stagger successive logs on the same device+day so they are SEQUENTIAL and
+  // non-overlapping (a device never runs two foreground apps at once). The first
+  // log of a day starts at 10:00; each later one starts where the prior ended.
+  // This keeps the interval-merge correction a no-op for normal test data, so
+  // overlaps only appear when a test seeds them deliberately (seedActivityAt).
+  const key = `${deviceId}|${dateStr}`;
+  const startMs =
+    nextStartByDeviceDay.get(key) ?? new Date(`${dateStr}T10:00:00`).getTime();
+  const start = new Date(startMs);
+  const end = new Date(startMs + workedSeconds * 1000);
+  nextStartByDeviceDay.set(key, end.getTime());
+  await db.insert(activityLogsTable).values({
+    deviceId,
+    processName: "test-process",
+    windowTitle: "test window",
+    categoryId,
+    startedAt: start,
+    endedAt: end,
+    durationSeconds: workedSeconds,
+    idleSeconds,
+  });
+}
+
+/**
+ * Seed one activity-log row with an explicit start time + duration, used to
+ * build OVERLAPPING intervals (as produced by duplicate agent instances) that
+ * the interval-merge correction must dedupe.
+ */
+export async function seedActivityAt(
+  deviceId: string,
+  start: Date,
+  workedSeconds: number,
+  idleSeconds = 0,
+  categoryId: string | null = null,
+): Promise<void> {
   const end = new Date(start.getTime() + workedSeconds * 1000);
   await db.insert(activityLogsTable).values({
     deviceId,

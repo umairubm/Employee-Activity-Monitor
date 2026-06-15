@@ -18,6 +18,7 @@ import {
   lt,
   sql,
 } from "drizzle-orm";
+import { coveredSecondsByKey, correctOverlap } from "../lib/activityTime";
 
 const router: IRouter = Router();
 
@@ -128,10 +129,19 @@ router.get("/summary", async (req, res) => {
           ),
       ]);
 
-    const breakdownRows = await db
+    // Per-device naive sums; corrected for overlapping duplicate-agent logs
+    // below (interval-merge per device), then summed into the dashboard totals.
+    const sumWhen = (cls: string) =>
+      sql<number>`coalesce(sum(case when ${appCategoriesTable.classification} = ${cls} then ${activityLogsTable.durationSeconds} else 0 end), 0)`;
+    const perDeviceRows = await db
       .select({
-        classification: sql<string>`coalesce(${appCategoriesTable.classification}, 'undefined')`,
-        seconds: sql<number>`coalesce(sum(${activityLogsTable.durationSeconds}), 0)`,
+        deviceId: activityLogsTable.deviceId,
+        workedSeconds: sql<number>`coalesce(sum(${activityLogsTable.durationSeconds}), 0)`,
+        idleSeconds: sql<number>`coalesce(sum(${activityLogsTable.idleSeconds}), 0)`,
+        productiveSeconds: sumWhen("productive"),
+        unproductiveSeconds: sumWhen("unproductive"),
+        neutralSeconds: sumWhen("neutral"),
+        undefinedSeconds: sql<number>`coalesce(sum(case when ${appCategoriesTable.classification} = 'undefined' or ${appCategoriesTable.classification} is null then ${activityLogsTable.durationSeconds} else 0 end), 0)`,
       })
       .from(activityLogsTable)
       .leftJoin(
@@ -150,7 +160,14 @@ router.get("/summary", async (req, res) => {
               lt(activityLogsTable.startedAt, rangeEnd),
             ),
       )
-      .groupBy(sql`coalesce(${appCategoriesTable.classification}, 'undefined')`);
+      .groupBy(activityLogsTable.deviceId);
+
+    const coveredByDevice = await coveredSecondsByKey({
+      rangeStart,
+      rangeEnd,
+      keyExpr: sql`${activityLogsTable.deviceId}::text`,
+      extraWhere: activityGroupFilter,
+    });
 
     const activityToday = {
       productiveSeconds: 0,
@@ -159,16 +176,21 @@ router.get("/summary", async (req, res) => {
       undefinedSeconds: 0,
       totalSeconds: 0,
     };
-    for (const row of breakdownRows) {
-      const secs = Number(row.seconds);
-      activityToday.totalSeconds += secs;
-      if (row.classification === "productive")
-        activityToday.productiveSeconds = secs;
-      else if (row.classification === "unproductive")
-        activityToday.unproductiveSeconds = secs;
-      else if (row.classification === "neutral")
-        activityToday.neutralSeconds = secs;
-      else activityToday.undefinedSeconds = secs;
+    for (const row of perDeviceRows) {
+      const naive = {
+        workedSeconds: Number(row.workedSeconds),
+        idleSeconds: Number(row.idleSeconds),
+        productiveSeconds: Number(row.productiveSeconds),
+        unproductiveSeconds: Number(row.unproductiveSeconds),
+        neutralSeconds: Number(row.neutralSeconds),
+        undefinedSeconds: Number(row.undefinedSeconds),
+      };
+      const t = correctOverlap(naive, coveredByDevice.get(row.deviceId) ?? 0);
+      activityToday.productiveSeconds += t.productiveSeconds;
+      activityToday.unproductiveSeconds += t.unproductiveSeconds;
+      activityToday.neutralSeconds += t.neutralSeconds;
+      activityToday.undefinedSeconds += t.undefinedSeconds;
+      activityToday.totalSeconds += t.totalSeconds;
     }
 
     res.json({
@@ -232,10 +254,38 @@ router.get("/leaderboard", async (req, res) => {
       )
       .groupBy(activityLogsTable.deviceId, devicesTable.systemName);
 
+    // Correct each device's naive sums for overlapping duplicate-agent logs.
+    const coveredByDevice = await coveredSecondsByKey({
+      rangeStart,
+      rangeEnd,
+      keyExpr: sql`${activityLogsTable.deviceId}::text`,
+      extraWhere: group
+        ? inArray(
+            activityLogsTable.deviceId,
+            db
+              .select({ id: devicesTable.id })
+              .from(devicesTable)
+              .where(eq(devicesTable.deviceGroup, group)),
+          )
+        : undefined,
+    });
+
     const leaderboard = rows
       .map((r) => {
-        const productiveSeconds = Number(r.productiveSeconds);
-        const totalSeconds = Number(r.totalSeconds);
+        const workedSeconds = Number(r.totalSeconds);
+        const t = correctOverlap(
+          {
+            workedSeconds,
+            idleSeconds: 0,
+            productiveSeconds: Number(r.productiveSeconds),
+            unproductiveSeconds: 0,
+            neutralSeconds: 0,
+            undefinedSeconds: 0,
+          },
+          coveredByDevice.get(r.deviceId) ?? 0,
+        );
+        const productiveSeconds = t.productiveSeconds;
+        const totalSeconds = t.totalSeconds;
         return {
           deviceId: r.deviceId,
           systemName: r.systemName,
@@ -284,9 +334,11 @@ router.get("/group-comparison", async (req, res) => {
         })
         .from(devicesTable)
         .groupBy(devicesTable.deviceGroup),
-      // Per-group activity totals within the range.
+      // Per-device activity totals within the range (aggregated to groups in JS
+      // after correcting each device for overlapping duplicate-agent logs).
       db
         .select({
+          deviceId: activityLogsTable.deviceId,
           group: devicesTable.deviceGroup,
           productiveSeconds: sql<number>`coalesce(sum(case when ${appCategoriesTable.classification} = 'productive' then ${activityLogsTable.durationSeconds} else 0 end), 0)`,
           totalSeconds: sql<number>`coalesce(sum(${activityLogsTable.durationSeconds}), 0)`,
@@ -303,18 +355,38 @@ router.get("/group-comparison", async (req, res) => {
             lt(activityLogsTable.startedAt, rangeEnd),
           ),
         )
-        .groupBy(devicesTable.deviceGroup),
+        .groupBy(activityLogsTable.deviceId, devicesTable.deviceGroup),
     ]);
+
+    const coveredByDevice = await coveredSecondsByKey({
+      rangeStart,
+      rangeEnd,
+      keyExpr: sql`${activityLogsTable.deviceId}::text`,
+    });
 
     const activityByGroup = new Map<
       string,
       { productiveSeconds: number; totalSeconds: number }
     >();
     for (const row of activityRows) {
-      activityByGroup.set(row.group, {
-        productiveSeconds: Number(row.productiveSeconds),
-        totalSeconds: Number(row.totalSeconds),
-      });
+      const t = correctOverlap(
+        {
+          workedSeconds: Number(row.totalSeconds),
+          idleSeconds: 0,
+          productiveSeconds: Number(row.productiveSeconds),
+          unproductiveSeconds: 0,
+          neutralSeconds: 0,
+          undefinedSeconds: 0,
+        },
+        coveredByDevice.get(row.deviceId) ?? 0,
+      );
+      const acc = activityByGroup.get(row.group) ?? {
+        productiveSeconds: 0,
+        totalSeconds: 0,
+      };
+      acc.productiveSeconds += t.productiveSeconds;
+      acc.totalSeconds += t.totalSeconds;
+      activityByGroup.set(row.group, acc);
     }
 
     const comparison = groupRows
