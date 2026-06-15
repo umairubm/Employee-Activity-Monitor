@@ -1764,8 +1764,17 @@ components:
           format: date-time
         workedSeconds:
           type: integer
+        activeSeconds:
+          type: integer
+          description: Real foreground activity (overlap-merged, micro-idle removed) within the day.
         idleSeconds:
           type: integer
+        productiveSeconds:
+          type: integer
+          description: Active time classified as productive.
+        unproductiveSeconds:
+          type: integer
+          description: Active time classified as unproductive.
         requiredHours:
           type: number
         isWorkingDay:
@@ -1779,7 +1788,10 @@ components:
         - systemName
         - deviceGroup
         - workedSeconds
+        - activeSeconds
         - idleSeconds
+        - productiveSeconds
+        - unproductiveSeconds
         - requiredHours
         - isWorkingDay
         - status

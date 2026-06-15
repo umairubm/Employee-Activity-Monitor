@@ -9,6 +9,7 @@ import {
   pool,
 } from "@workspace/db";
 import {
+  createCategory,
   createDevice,
   makeApp,
   seedActivity,
@@ -237,6 +238,53 @@ describe("time-based half-day triggers (late arrival / early leave)", () => {
     const day = res.body.daily.find((d: any) => d.day === NORMAL_DAY);
     const cell = day.byDevice.find((b: any) => b.deviceId === device.id);
     expect(cell.status).toBe("half_day");
+  });
+});
+
+describe("daily productivity breakdown", () => {
+  it("reports active, productive and unproductive seconds per device", async () => {
+    const device = await newDevice();
+    const productive = await createCategory("productive");
+    const unproductive = await createCategory("unproductive");
+    // Sequential, non-overlapping logs: 3h productive then 1h unproductive.
+    await seedActivity(device.id, NORMAL_DAY, 3 * 3600, 0, productive.id);
+    await seedActivity(device.id, NORMAL_DAY, 1 * 3600, 0, unproductive.id);
+
+    const res = await request(app).get(`/attendance?date=${NORMAL_DAY}`);
+    expect(res.status).toBe(200);
+    const row = res.body.devices.find((r: any) => r.deviceId === device.id);
+    expect(row.activeSeconds).toBe(4 * 3600);
+    expect(row.productiveSeconds).toBe(3 * 3600);
+    expect(row.unproductiveSeconds).toBe(1 * 3600);
+  });
+
+  it("counts unclassified activity as neither productive nor unproductive", async () => {
+    const device = await newDevice();
+    await seedActivity(device.id, NORMAL_DAY, 2 * 3600);
+
+    const res = await request(app).get(`/attendance?date=${NORMAL_DAY}`);
+    const row = res.body.devices.find((r: any) => r.deviceId === device.id);
+    expect(row.activeSeconds).toBe(2 * 3600);
+    expect(row.productiveSeconds).toBe(0);
+    expect(row.unproductiveSeconds).toBe(0);
+  });
+
+  it("ratio-scales productivity to the overlap-merged coverage", async () => {
+    const device = await newDevice();
+    const productive = await createCategory("productive");
+    const unproductive = await createCategory("unproductive");
+    // Overlapping duplicate-agent logs: productive 10:00–12:00 and unproductive
+    // 11:00–13:00. Naive worked = 4h, but the covered union is 10:00–13:00 = 3h,
+    // so ratio = 0.75 and each class scales to 1.5h, summing to the 3h union.
+    await seedActivityAt(device.id, new Date(`${NORMAL_DAY}T10:00:00Z`), 2 * 3600, 0, productive.id);
+    await seedActivityAt(device.id, new Date(`${NORMAL_DAY}T11:00:00Z`), 2 * 3600, 0, unproductive.id);
+
+    const res = await request(app).get(`/attendance?date=${NORMAL_DAY}`);
+    const row = res.body.devices.find((r: any) => r.deviceId === device.id);
+    expect(row.activeSeconds).toBe(3 * 3600);
+    expect(row.productiveSeconds).toBe(1.5 * 3600);
+    expect(row.unproductiveSeconds).toBe(1.5 * 3600);
+    expect(row.productiveSeconds + row.unproductiveSeconds).toBe(row.activeSeconds);
   });
 });
 

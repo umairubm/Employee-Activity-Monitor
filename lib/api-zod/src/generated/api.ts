@@ -761,7 +761,18 @@ export const GetAttendanceReportResponse = zod.object({
       checkIn: zod.coerce.date().nullish(),
       lastActivity: zod.coerce.date().nullish(),
       workedSeconds: zod.number(),
+      activeSeconds: zod
+        .number()
+        .describe(
+          "Real foreground activity (overlap-merged, micro-idle removed) within the day.",
+        ),
       idleSeconds: zod.number(),
+      productiveSeconds: zod
+        .number()
+        .describe("Active time classified as productive."),
+      unproductiveSeconds: zod
+        .number()
+        .describe("Active time classified as unproductive."),
       requiredHours: zod.number(),
       isWorkingDay: zod
         .boolean()

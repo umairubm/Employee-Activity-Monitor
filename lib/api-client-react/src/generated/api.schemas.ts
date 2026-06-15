@@ -395,7 +395,13 @@ export interface AttendanceRow {
   /** @nullable */
   lastActivity?: string | null;
   workedSeconds: number;
+  /** Real foreground activity (overlap-merged, micro-idle removed) within the day. */
+  activeSeconds: number;
   idleSeconds: number;
+  /** Active time classified as productive. */
+  productiveSeconds: number;
+  /** Active time classified as unproductive. */
+  unproductiveSeconds: number;
   requiredHours: number;
   /** Whether the day is a working day under this device's effective rule. */
   isWorkingDay: boolean;

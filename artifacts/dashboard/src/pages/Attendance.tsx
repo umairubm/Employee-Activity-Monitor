@@ -200,14 +200,17 @@ function DayView() {
                 <TableHead>Group</TableHead>
                 <TableHead>Check-in</TableHead>
                 <TableHead>Worked</TableHead>
+                <TableHead className="text-right">Active time</TableHead>
+                <TableHead className="text-right">Productive</TableHead>
+                <TableHead className="text-right">Unproductive</TableHead>
                 <TableHead>Status</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={5} className="h-32 text-center text-muted-foreground">Loading...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={8} className="h-32 text-center text-muted-foreground">Loading...</TableCell></TableRow>
               ) : report?.devices.length === 0 ? (
-                <TableRow><TableCell colSpan={5} className="h-32 text-center text-muted-foreground">No devices enrolled.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={8} className="h-32 text-center text-muted-foreground">No devices enrolled.</TableCell></TableRow>
               ) : (
                 report?.devices.map((row) => (
                   <TableRow key={row.deviceId}>
@@ -217,6 +220,9 @@ function DayView() {
                       {row.checkIn ? format(new Date(row.checkIn), "HH:mm") : "-"}
                     </TableCell>
                     <TableCell className="text-sm">{fmtHours(row.workedSeconds)}</TableCell>
+                    <TableCell className="text-right tabular-nums text-sm">{fmtHours(row.activeSeconds)}</TableCell>
+                    <TableCell className="text-right tabular-nums text-sm text-emerald-700">{fmtHours(row.productiveSeconds)}</TableCell>
+                    <TableCell className="text-right tabular-nums text-sm text-rose-700">{fmtHours(row.unproductiveSeconds)}</TableCell>
                     <TableCell>
                       <Badge variant="outline" className={STATUS_STYLE[row.status]}>
                         {STATUS_LABEL[row.status] ?? row.status}

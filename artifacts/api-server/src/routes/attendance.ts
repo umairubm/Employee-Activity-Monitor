@@ -4,6 +4,7 @@ import {
   db,
   devicesTable,
   activityLogsTable,
+  appCategoriesTable,
   attendanceSettingsTable,
   type AttendanceSettings,
 } from "@workspace/db";
@@ -560,6 +561,11 @@ router.get("/", async (req, res) => {
       .where(group ? eq(devicesTable.deviceGroup, group) : undefined)
       .orderBy(asc(devicesTable.systemName));
 
+    // Productivity sums join app_categories; unclassified / undefined logs fall
+    // into `undefinedSeconds`. correctOverlap (below) scales these to the real
+    // overlap-merged coverage so the four classes sum to active time.
+    const sumWhen = (cls: string) =>
+      sql<number>`coalesce(sum(case when ${appCategoriesTable.classification} = ${cls} then ${activityLogsTable.durationSeconds} else 0 end), 0)`;
     const activity = await db
       .select({
         deviceId: activityLogsTable.deviceId,
@@ -567,8 +573,16 @@ router.get("/", async (req, res) => {
         lastSeen: sql<string | null>`max(${activityLogsTable.endedAt})`,
         workedSeconds: sql<number>`coalesce(sum(${activityLogsTable.durationSeconds}), 0)`,
         idleSeconds: sql<number>`coalesce(sum(${activityLogsTable.idleSeconds}), 0)`,
+        productiveSeconds: sumWhen("productive"),
+        unproductiveSeconds: sumWhen("unproductive"),
+        neutralSeconds: sumWhen("neutral"),
+        undefinedSeconds: sql<number>`coalesce(sum(case when ${appCategoriesTable.classification} = 'undefined' or ${appCategoriesTable.classification} is null then ${activityLogsTable.durationSeconds} else 0 end), 0)`,
       })
       .from(activityLogsTable)
+      .leftJoin(
+        appCategoriesTable,
+        eq(activityLogsTable.categoryId, appCategoriesTable.id),
+      )
       .where(
         and(
           gte(activityLogsTable.startedAt, dayStart),
@@ -613,10 +627,10 @@ router.get("/", async (req, res) => {
         {
           workedSeconds: a ? Number(a.workedSeconds) : 0,
           idleSeconds: a ? Number(a.idleSeconds) : 0,
-          productiveSeconds: 0,
-          unproductiveSeconds: 0,
-          neutralSeconds: 0,
-          undefinedSeconds: 0,
+          productiveSeconds: a ? Number(a.productiveSeconds) : 0,
+          unproductiveSeconds: a ? Number(a.unproductiveSeconds) : 0,
+          neutralSeconds: a ? Number(a.neutralSeconds) : 0,
+          undefinedSeconds: a ? Number(a.undefinedSeconds) : 0,
         },
         coveredByDevice.get(device.id) ?? 0,
         spanByDevice.get(device.id) ?? 0,
@@ -653,7 +667,10 @@ router.get("/", async (req, res) => {
         checkIn: a?.checkIn ?? null,
         lastActivity: a?.lastSeen ?? null,
         workedSeconds,
+        activeSeconds: t.activeSeconds,
         idleSeconds: t.idleSeconds,
+        productiveSeconds: t.productiveSeconds,
+        unproductiveSeconds: t.unproductiveSeconds,
         requiredHours: deviceRequiredHours,
         isWorkingDay: deviceWorkingDay,
         status,
