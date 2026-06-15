@@ -5,7 +5,6 @@
  * API specification for Workforce Analytics & IT Management
  * OpenAPI spec version: 0.1.0
  */
-import type { GetTimesheetBucket } from "./getTimesheetBucket";
 
 export type GetTimesheetParams = {
   /**
@@ -16,10 +15,6 @@ export type GetTimesheetParams = {
    * Range end day in YYYY-MM-DD format (inclusive)
    */
   to: string;
-  /**
-   * Aggregation granularity; defaults to week
-   */
-  bucket?: GetTimesheetBucket;
   /**
    * Restrict to devices in this group
    */

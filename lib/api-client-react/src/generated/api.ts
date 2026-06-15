@@ -2625,7 +2625,7 @@ export function useGetAttendanceRangeReport<
 }
 
 /**
- * @summary Per-device worked hours bucketed by week or month
+ * @summary Per-device, per-day work metrics with range totals
  */
 export const getGetTimesheetUrl = (params: GetTimesheetParams) => {
   const normalizedParams = new URLSearchParams();
@@ -2692,7 +2692,7 @@ export type GetTimesheetQueryResult = NonNullable<
 export type GetTimesheetQueryError = ErrorType<unknown>;
 
 /**
- * @summary Per-device worked hours bucketed by week or month
+ * @summary Per-device, per-day work metrics with range totals
  */
 
 export function useGetTimesheet<

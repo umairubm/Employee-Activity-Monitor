@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import {
   useGetTimesheet,
   getGetTimesheetQueryKey,
@@ -11,9 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent, type ChartConfig } from "@/components/ui/chart";
-import { CartesianGrid, XAxis, YAxis, Bar, BarChart } from "recharts";
-import { Clock, Download, CalendarClock, TimerOff, LogOut } from "lucide-react";
+import { Clock, Download, CalendarClock, LogOut } from "lucide-react";
 import { useGroupFilter, ALL_GROUPS as ALL } from "@/hooks/use-group-filter";
 import { useDateRange, daysAgoStr } from "@/hooks/use-date-filter";
 
@@ -23,11 +21,52 @@ function fmtHours(seconds: number): string {
   return `${h}h ${m}m`;
 }
 
-const CHART_CONFIG = {
-  workedHours: { label: "Worked", color: "hsl(var(--chart-1))" },
-  productiveHours: { label: "Productive", color: "hsl(var(--chart-2))" },
-  idleHours: { label: "Idle", color: "hsl(var(--chart-4))" },
-} satisfies ChartConfig;
+/** Short duration like "5m 11s" / "2h 22m 22s" / "0s". */
+function fmtDuration(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}h ${m}m ${sec}s`;
+  if (m > 0) return `${m}m ${sec}s`;
+  return `${sec}s`;
+}
+
+function fmtTime(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+function fmtDateTime(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString("en-US", {
+    month: "2-digit",
+    day: "2-digit",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+function fmtDay(day: string): string {
+  const d = new Date(`${day}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return day;
+  return d.toLocaleDateString("en-US", {
+    month: "2-digit",
+    day: "2-digit",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
 
 function downloadCsv(filename: string, rows: (string | number)[][]) {
   const escape = (v: string | number) => {
@@ -48,9 +87,7 @@ function downloadCsv(filename: string, rows: (string | number)[][]) {
 
 export default function Timesheets() {
   const [{ from, to }, setRange] = useDateRange();
-  const [bucket, setBucket] = useState<"week" | "month">("week");
   const [groupFilter, setGroupFilter] = useGroupFilter();
-  const [selectedDeviceId, setSelectedDeviceId] = useState("all");
   const { data: allDevices } = useListDevices();
 
   const groups = useMemo(() => {
@@ -59,111 +96,50 @@ export default function Timesheets() {
     return Array.from(set).sort();
   }, [allDevices]);
 
-  React.useEffect(() => {
-    setSelectedDeviceId("all");
-  }, [groupFilter]);
-
   const valid = from <= to;
   const params = {
     from,
     to,
-    bucket,
     ...(groupFilter !== ALL ? { group: groupFilter } : {}),
   };
   const { data: report, isLoading, isError, error } = useGetTimesheet(params, {
     query: { queryKey: getGetTimesheetQueryKey(params), enabled: valid },
   });
 
-  const devices = report?.devices ?? [];
-  const singleDevice = selectedDeviceId !== "all";
-
-  const totals = useMemo(() => {
-    const t = {
-      worked: 0,
-      active: 0,
-      idle: 0,
-      productive: 0,
-      lateDays: 0,
-      earlyLeaveDays: 0,
-    };
-    for (const d of devices) {
-      t.worked += d.totalWorkedSeconds;
-      t.active += d.totalActiveSeconds;
-      t.idle += d.totalIdleSeconds;
-      t.productive += d.totalProductiveSeconds;
-      t.lateDays += d.lateDays;
-      t.earlyLeaveDays += d.earlyLeaveDays;
-    }
-    return t;
-  }, [devices]);
-
-  // Bucketed chart data: either aggregated across all devices, or one device.
-  const chartData = useMemo(() => {
-    const acc = new Map<
-      string,
-      { label: string; worked: number; productive: number; idle: number }
-    >();
-    const source = singleDevice
-      ? devices.filter((d) => d.deviceId === selectedDeviceId)
-      : devices;
-    for (const d of source) {
-      for (const b of d.buckets) {
-        const cur = acc.get(b.key) ?? {
-          label: b.label,
-          worked: 0,
-          productive: 0,
-          idle: 0,
-        };
-        cur.worked += b.workedSeconds;
-        cur.productive += b.productiveSeconds;
-        cur.idle += b.idleSeconds;
-        acc.set(b.key, cur);
-      }
-    }
-    return Array.from(acc.entries())
-      .sort((a, c) => (a[0] < c[0] ? -1 : a[0] > c[0] ? 1 : 0))
-      .map(([, v]) => ({
-        label: v.label,
-        workedHours: Number((v.worked / 3600).toFixed(2)),
-        productiveHours: Number((v.productive / 3600).toFixed(2)),
-        idleHours: Number((v.idle / 3600).toFixed(2)),
-      }));
-  }, [devices, singleDevice, selectedDeviceId]);
+  const rows = report?.rows ?? [];
+  const totals = report?.totals;
 
   const exportCsv = () => {
     if (!report) return;
     const header = [
-      "Device",
-      "Group",
-      "Period",
-      "Worked (hours)",
-      "Active (hours)",
-      "Idle (hours)",
-      "Productive (hours)",
-      "Working days",
-      "Present days",
-      "Late days",
-      "Early-leave days",
+      "Date",
+      "Groups",
+      "Computer",
+      "User",
+      "First Activity",
+      "Last Activity",
+      "Last Activity Log",
+      "Productive",
+      "Unproductive",
+      "Undefined",
+      "Total Time",
+      "Active Time",
     ];
-    const body: (string | number)[][] = [];
-    for (const d of devices) {
-      for (const b of d.buckets) {
-        body.push([
-          d.systemName,
-          d.deviceGroup,
-          b.label,
-          (b.workedSeconds / 3600).toFixed(2),
-          (b.activeSeconds / 3600).toFixed(2),
-          (b.idleSeconds / 3600).toFixed(2),
-          (b.productiveSeconds / 3600).toFixed(2),
-          b.workingDays,
-          b.presentDays,
-          b.lateDays,
-          b.earlyLeaveDays,
-        ]);
-      }
-    }
-    downloadCsv(`timesheet-${from}_to_${to}-${bucket}.csv`, [header, ...body]);
+    const body: (string | number)[][] = rows.map((r) => [
+      fmtDay(r.date),
+      r.deviceGroup,
+      r.systemName,
+      r.username ?? "",
+      fmtTime(r.firstActivity),
+      fmtTime(r.lastActivity),
+      fmtDateTime(r.lastActivityLog),
+      fmtDuration(r.productiveSeconds),
+      fmtDuration(r.unproductiveSeconds),
+      fmtDuration(r.undefinedSeconds),
+      fmtDuration(r.totalSeconds),
+      fmtDuration(r.activeSeconds),
+    ]);
+    downloadCsv(`timesheet-${from}_to_${to}.csv`, [header, ...body]);
   };
 
   return (
@@ -174,8 +150,9 @@ export default function Timesheets() {
           Timesheets
         </h1>
         <p className="text-sm text-muted-foreground">
-          Worked, active and idle hours per device, bucketed by week or month,
-          with late-arrival and early-leave counts derived from each device's
+          Daily work metrics per device — first and last activity, productive,
+          unproductive and undefined time, total and active time, with
+          late-arrival and early-leave counts derived from each device's
           attendance rule.
         </p>
       </div>
@@ -196,32 +173,6 @@ export default function Timesheets() {
               </SelectContent>
             </Select>
           </div>
-          <div>
-            <Label htmlFor="ts-device" className="text-xs text-muted-foreground mb-1 block">Device (chart)</Label>
-            <Select value={selectedDeviceId} onValueChange={setSelectedDeviceId}>
-              <SelectTrigger id="ts-device" className="w-full sm:w-44">
-                <SelectValue placeholder="All devices" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All devices</SelectItem>
-                {devices.map((d) => (
-                  <SelectItem key={d.deviceId} value={d.deviceId}>{d.systemName}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label htmlFor="ts-bucket" className="text-xs text-muted-foreground mb-1 block">Bucket</Label>
-            <Select value={bucket} onValueChange={(v) => setBucket(v as "week" | "month")}>
-              <SelectTrigger id="ts-bucket" className="w-full sm:w-32">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="week">Weekly</SelectItem>
-                <SelectItem value="month">Monthly</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
         </div>
         <div className="flex flex-wrap items-end gap-2">
           <div>
@@ -236,7 +187,7 @@ export default function Timesheets() {
               onChange={(e) => setRange({ to: e.target.value || from })}
               className="w-40" />
           </div>
-          <Button variant="outline" onClick={exportCsv} disabled={!report || devices.length === 0}>
+          <Button variant="outline" onClick={exportCsv} disabled={!report || rows.length === 0}>
             <Download className="h-4 w-4 mr-2" />
             Export CSV
           </Button>
@@ -244,7 +195,7 @@ export default function Timesheets() {
       </div>
 
       {!valid && (
-        <p className="text-sm text-destructive">“From” must be on or before “To”.</p>
+        <p className="text-sm text-destructive">"From" must be on or before "To".</p>
       )}
       {isError && (
         <p className="text-sm text-destructive">
@@ -254,115 +205,79 @@ export default function Timesheets() {
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <Card><CardContent className="p-4">
-          <p className="text-xs text-muted-foreground">Total worked</p>
-          <p className="text-2xl font-bold">{fmtHours(totals.worked)}</p>
+          <p className="text-xs text-muted-foreground">Total time</p>
+          <p className="text-2xl font-bold">{fmtHours(totals?.workedSeconds ?? 0)}</p>
         </CardContent></Card>
         <Card><CardContent className="p-4">
-          <p className="text-xs text-muted-foreground">Active (worked − idle)</p>
-          <p className="text-2xl font-bold text-emerald-600">{fmtHours(totals.active)}</p>
+          <p className="text-xs text-muted-foreground">Active time</p>
+          <p className="text-2xl font-bold text-emerald-600">{fmtHours(totals?.activeSeconds ?? 0)}</p>
         </CardContent></Card>
         <Card><CardContent className="p-4">
           <p className="text-xs text-muted-foreground flex items-center gap-1">
             <CalendarClock className="h-3.5 w-3.5" /> Late arrivals
           </p>
-          <p className="text-2xl font-bold text-amber-600">{totals.lateDays}</p>
+          <p className="text-2xl font-bold text-amber-600">{totals?.lateDays ?? 0}</p>
         </CardContent></Card>
         <Card><CardContent className="p-4">
           <p className="text-xs text-muted-foreground flex items-center gap-1">
             <LogOut className="h-3.5 w-3.5" /> Early leaves
           </p>
-          <p className="text-2xl font-bold text-orange-600">{totals.earlyLeaveDays}</p>
+          <p className="text-2xl font-bold text-orange-600">{totals?.earlyLeaveDays ?? 0}</p>
         </CardContent></Card>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">
-            {bucket === "week" ? "Weekly" : "Monthly"} hours
-            {singleDevice && (
-              <span className="text-muted-foreground font-normal">
-                {" "}— {devices.find((d) => d.deviceId === selectedDeviceId)?.systemName}
-              </span>
-            )}
-          </CardTitle>
+          <CardTitle className="text-lg">Daily work metrics</CardTitle>
           <CardDescription>
-            Worked, productive and idle hours per {bucket}.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {chartData.length === 0 ? (
-            <div className="h-56 flex items-center justify-center text-muted-foreground text-sm">
-              {isLoading ? "Loading..." : "No activity in this range."}
-            </div>
-          ) : (
-            <ChartContainer config={CHART_CONFIG} className="h-72 w-full">
-              <BarChart data={chartData}>
-                <CartesianGrid vertical={false} />
-                <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} />
-                <YAxis tickLine={false} axisLine={false} width={32} />
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <ChartLegend content={<ChartLegendContent />} />
-                <Bar dataKey="workedHours" fill="var(--color-workedHours)" radius={4} />
-                <Bar dataKey="productiveHours" fill="var(--color-productiveHours)" radius={4} />
-                <Bar dataKey="idleHours" fill="var(--color-idleHours)" radius={4} />
-              </BarChart>
-            </ChartContainer>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Per-device summary</CardTitle>
-          <CardDescription>
-            Totals across {report?.from ?? from} → {report?.to ?? to}.
+            One row per device per active day across {report?.from ?? from} → {report?.to ?? to}.
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Device</TableHead>
-                <TableHead>Group</TableHead>
-                <TableHead className="text-right">Worked</TableHead>
-                <TableHead className="text-right">Active</TableHead>
-                <TableHead className="text-right">Idle</TableHead>
-                <TableHead className="text-right">Productive</TableHead>
-                <TableHead className="text-right">Present</TableHead>
-                <TableHead className="text-right">Late</TableHead>
-                <TableHead className="text-right">Early</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isLoading ? (
-                <TableRow><TableCell colSpan={9} className="h-32 text-center text-muted-foreground">Loading...</TableCell></TableRow>
-              ) : devices.length === 0 ? (
-                <TableRow><TableCell colSpan={9} className="h-32 text-center text-muted-foreground">No devices in this range.</TableCell></TableRow>
-              ) : (
-                devices.map((d) => (
-                  <TableRow key={d.deviceId}>
-                    <TableCell className="font-medium">{d.systemName}</TableCell>
-                    <TableCell><Badge variant="secondary" className="font-normal">{d.deviceGroup}</Badge></TableCell>
-                    <TableCell className="text-right text-sm">{fmtHours(d.totalWorkedSeconds)}</TableCell>
-                    <TableCell className="text-right text-sm text-emerald-600">{fmtHours(d.totalActiveSeconds)}</TableCell>
-                    <TableCell className="text-right text-sm text-muted-foreground">{fmtHours(d.totalIdleSeconds)}</TableCell>
-                    <TableCell className="text-right text-sm">{fmtHours(d.totalProductiveSeconds)}</TableCell>
-                    <TableCell className="text-right text-sm">{d.presentDays}/{d.workingDays}</TableCell>
-                    <TableCell className="text-right">
-                      {d.lateDays > 0 ? (
-                        <Badge variant="outline" className="bg-amber-500/15 text-amber-700 border-amber-500/20">{d.lateDays}</Badge>
-                      ) : <span className="text-sm text-muted-foreground">0</span>}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {d.earlyLeaveDays > 0 ? (
-                        <Badge variant="outline" className="bg-orange-500/15 text-orange-700 border-orange-500/20">{d.earlyLeaveDays}</Badge>
-                      ) : <span className="text-sm text-muted-foreground">0</span>}
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Groups</TableHead>
+                  <TableHead>Computer</TableHead>
+                  <TableHead>User</TableHead>
+                  <TableHead>First Activity</TableHead>
+                  <TableHead>Last Activity</TableHead>
+                  <TableHead>Last Activity Log</TableHead>
+                  <TableHead className="text-right">Productive</TableHead>
+                  <TableHead className="text-right">Unproductive</TableHead>
+                  <TableHead className="text-right">Undefined</TableHead>
+                  <TableHead className="text-right">Total Time</TableHead>
+                  <TableHead className="text-right">Active Time</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {isLoading ? (
+                  <TableRow><TableCell colSpan={12} className="h-32 text-center text-muted-foreground">Loading...</TableCell></TableRow>
+                ) : rows.length === 0 ? (
+                  <TableRow><TableCell colSpan={12} className="h-32 text-center text-muted-foreground">No activity in this range.</TableCell></TableRow>
+                ) : (
+                  rows.map((r) => (
+                    <TableRow key={`${r.deviceId}-${r.date}`}>
+                      <TableCell className="whitespace-nowrap text-sm">{fmtDay(r.date)}</TableCell>
+                      <TableCell><Badge variant="secondary" className="font-normal">{r.deviceGroup}</Badge></TableCell>
+                      <TableCell className="font-medium whitespace-nowrap">{r.systemName}</TableCell>
+                      <TableCell className="whitespace-nowrap text-sm">{r.username ?? <span className="text-muted-foreground">—</span>}</TableCell>
+                      <TableCell className="whitespace-nowrap text-sm tabular-nums">{fmtTime(r.firstActivity)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-sm tabular-nums">{fmtTime(r.lastActivity)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-sm tabular-nums text-muted-foreground">{fmtDateTime(r.lastActivityLog)}</TableCell>
+                      <TableCell className="text-right text-sm tabular-nums text-emerald-600">{fmtDuration(r.productiveSeconds)}</TableCell>
+                      <TableCell className="text-right text-sm tabular-nums text-rose-600">{fmtDuration(r.unproductiveSeconds)}</TableCell>
+                      <TableCell className="text-right text-sm tabular-nums text-muted-foreground">{fmtDuration(r.undefinedSeconds)}</TableCell>
+                      <TableCell className="text-right text-sm tabular-nums font-medium">{fmtDuration(r.totalSeconds)}</TableCell>
+                      <TableCell className="text-right text-sm tabular-nums">{fmtDuration(r.activeSeconds)}</TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
     </div>

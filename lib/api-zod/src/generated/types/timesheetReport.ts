@@ -5,12 +5,12 @@
  * API specification for Workforce Analytics & IT Management
  * OpenAPI spec version: 0.1.0
  */
-import type { TimesheetDevice } from "./timesheetDevice";
-import type { TimesheetReportBucket } from "./timesheetReportBucket";
+import type { TimesheetRow } from "./timesheetRow";
+import type { TimesheetTotals } from "./timesheetTotals";
 
 export interface TimesheetReport {
   from: string;
   to: string;
-  bucket: TimesheetReportBucket;
-  devices: TimesheetDevice[];
+  totals: TimesheetTotals;
+  rows: TimesheetRow[];
 }

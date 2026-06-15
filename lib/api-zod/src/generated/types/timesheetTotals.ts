@@ -6,17 +6,11 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface TimesheetBucket {
-  key: string;
-  label: string;
-  startDay: string;
-  endDay: string;
+export interface TimesheetTotals {
   workedSeconds: number;
   activeSeconds: number;
   idleSeconds: number;
   productiveSeconds: number;
-  workingDays: number;
-  presentDays: number;
   lateDays: number;
   earlyLeaveDays: number;
 }

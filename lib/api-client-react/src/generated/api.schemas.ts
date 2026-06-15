@@ -449,49 +449,42 @@ export interface AttendanceRangeReport {
   daily: AttendanceRangeDay[];
 }
 
-export type TimesheetReportBucket =
-  (typeof TimesheetReportBucket)[keyof typeof TimesheetReportBucket];
-
-export const TimesheetReportBucket = {
-  week: "week",
-  month: "month",
-} as const;
-
-export interface TimesheetBucket {
-  key: string;
-  label: string;
-  startDay: string;
-  endDay: string;
+export interface TimesheetTotals {
   workedSeconds: number;
   activeSeconds: number;
   idleSeconds: number;
   productiveSeconds: number;
-  workingDays: number;
-  presentDays: number;
   lateDays: number;
   earlyLeaveDays: number;
 }
 
-export interface TimesheetDevice {
+export interface TimesheetRow {
+  /** Day in YYYY-MM-DD (UTC) */
+  date: string;
   deviceId: string;
   systemName: string;
   deviceGroup: string;
-  totalWorkedSeconds: number;
-  totalActiveSeconds: number;
-  totalIdleSeconds: number;
-  totalProductiveSeconds: number;
-  workingDays: number;
-  presentDays: number;
-  lateDays: number;
-  earlyLeaveDays: number;
-  buckets: TimesheetBucket[];
+  username: string | null;
+  /** ISO timestamp of the day's first activity */
+  firstActivity: string | null;
+  /** ISO timestamp of the day's last activity end */
+  lastActivity: string | null;
+  /** ISO timestamp of the day's last logged activity start */
+  lastActivityLog: string | null;
+  productiveSeconds: number;
+  unproductiveSeconds: number;
+  neutralSeconds: number;
+  undefinedSeconds: number;
+  totalSeconds: number;
+  activeSeconds: number;
+  idleSeconds: number;
 }
 
 export interface TimesheetReport {
   from: string;
   to: string;
-  bucket: TimesheetReportBucket;
-  devices: TimesheetDevice[];
+  totals: TimesheetTotals;
+  rows: TimesheetRow[];
 }
 
 export type ProjectItemStatus =
@@ -1090,22 +1083,10 @@ export type GetTimesheetParams = {
    */
   to: string;
   /**
-   * Aggregation granularity; defaults to week
-   */
-  bucket?: GetTimesheetBucket;
-  /**
    * Restrict to devices in this group
    */
   group?: string;
 };
-
-export type GetTimesheetBucket =
-  (typeof GetTimesheetBucket)[keyof typeof GetTimesheetBucket];
-
-export const GetTimesheetBucket = {
-  week: "week",
-  month: "month",
-} as const;
 
 export type ListProjectsParams = {
   status?: ListProjectsStatus;

@@ -792,12 +792,11 @@ export const GetAttendanceRangeReportResponse = zod.object({
 });
 
 /**
- * @summary Per-device worked hours bucketed by week or month
+ * @summary Per-device, per-day work metrics with range totals
  */
 export const GetTimesheetQueryParams = zod.object({
   from: zod.coerce.string(),
   to: zod.coerce.string(),
-  bucket: zod.enum(["week", "month"]).optional(),
   group: zod.coerce
     .string()
     .optional()
@@ -807,36 +806,40 @@ export const GetTimesheetQueryParams = zod.object({
 export const GetTimesheetResponse = zod.object({
   from: zod.string(),
   to: zod.string(),
-  bucket: zod.enum(["week", "month"]),
-  devices: zod.array(
+  totals: zod.object({
+    workedSeconds: zod.number(),
+    activeSeconds: zod.number(),
+    idleSeconds: zod.number(),
+    productiveSeconds: zod.number(),
+    lateDays: zod.number(),
+    earlyLeaveDays: zod.number(),
+  }),
+  rows: zod.array(
     zod.object({
+      date: zod.string().describe("Day in YYYY-MM-DD (UTC)"),
       deviceId: zod.string().uuid(),
       systemName: zod.string(),
       deviceGroup: zod.string(),
-      totalWorkedSeconds: zod.number(),
-      totalActiveSeconds: zod.number(),
-      totalIdleSeconds: zod.number(),
-      totalProductiveSeconds: zod.number(),
-      workingDays: zod.number(),
-      presentDays: zod.number(),
-      lateDays: zod.number(),
-      earlyLeaveDays: zod.number(),
-      buckets: zod.array(
-        zod.object({
-          key: zod.string(),
-          label: zod.string(),
-          startDay: zod.string(),
-          endDay: zod.string(),
-          workedSeconds: zod.number(),
-          activeSeconds: zod.number(),
-          idleSeconds: zod.number(),
-          productiveSeconds: zod.number(),
-          workingDays: zod.number(),
-          presentDays: zod.number(),
-          lateDays: zod.number(),
-          earlyLeaveDays: zod.number(),
-        }),
-      ),
+      username: zod.string().nullable(),
+      firstActivity: zod
+        .string()
+        .nullable()
+        .describe("ISO timestamp of the day's first activity"),
+      lastActivity: zod
+        .string()
+        .nullable()
+        .describe("ISO timestamp of the day's last activity end"),
+      lastActivityLog: zod
+        .string()
+        .nullable()
+        .describe("ISO timestamp of the day's last logged activity start"),
+      productiveSeconds: zod.number(),
+      unproductiveSeconds: zod.number(),
+      neutralSeconds: zod.number(),
+      undefinedSeconds: zod.number(),
+      totalSeconds: zod.number(),
+      activeSeconds: zod.number(),
+      idleSeconds: zod.number(),
     }),
   ),
 });

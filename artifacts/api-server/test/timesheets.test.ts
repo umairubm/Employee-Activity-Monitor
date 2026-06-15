@@ -13,15 +13,17 @@ import app from "../src/app";
 import { createCategory, createDevice, makeApp, seedActivity } from "./helpers";
 
 /**
- * Tests for GET /api/timesheets. The handler buckets worked/active/idle/
- * productive seconds by ISO week or calendar month and derives late-arrival /
- * early-leave day counts from each device's effective attendance rule.
+ * Tests for GET /api/timesheets. The handler returns one row per device per
+ * active day (first/last activity, productive/unproductive/undefined/total/
+ * active time) plus range totals (worked/active/idle/productive seconds and
+ * late-arrival / early-leave day counts) derived from each device's effective
+ * attendance rule.
  *
  * To stay deterministic on a shared dev DB each test uses a UNIQUE group and a
  * per-DEVICE attendance override (so it never depends on, or mutates, the shared
  * global settings row). The dev/test environment runs in UTC, so the seeded
  * local "T10:00:00" timestamps land at 10:00 UTC, matching the handler's UTC
- * bucketing and check-in math.
+ * day bucketing and check-in math.
  */
 
 const featureApp = makeApp();
@@ -71,11 +73,12 @@ afterAll(async () => {
 });
 
 describe("GET /api/timesheets", () => {
-  it("buckets worked/active/idle by ISO week with late + early-leave counts", async () => {
-    const group = `ts-week-${randomUUID()}`;
+  it("returns per-day rows with productivity split + late/early totals", async () => {
+    const group = `ts-day-${randomUUID()}`;
     const device = await newDevice(group);
     const productive = await createCategory("productive");
-    createdCategoryIds.push(productive.id);
+    const unproductive = await createCategory("unproductive");
+    createdCategoryIds.push(productive.id, unproductive.id);
     // Work starts 09:00, required 8h => expected end 17:00.
     await setDeviceRule(device.id, {
       workStartTime: "09:00",
@@ -83,33 +86,38 @@ describe("GET /api/timesheets", () => {
       requiredHoursFriday: 8,
     });
 
-    // 2024-03-11 = Monday, 2024-03-12 = Tuesday (same ISO week, Monday-start).
-    // Both seeded at 10:00 (late vs 09:00) and end well before 17:00 (early).
+    // 2024-03-11 = Monday, 2024-03-12 = Tuesday. Both seeded at 10:00 (late vs
+    // 09:00) and end well before 17:00 (early).
     await seedActivity(device.id, "2024-03-11", 3600, 600, productive.id);
+    await seedActivity(device.id, "2024-03-11", 1200, 0, unproductive.id);
     await seedActivity(device.id, "2024-03-12", 1800, 0, productive.id);
 
     const res = await request(featureApp)
       .get("/timesheets")
-      .query({ from: "2024-03-11", to: "2024-03-12", bucket: "week", group });
+      .query({ from: "2024-03-11", to: "2024-03-12", group });
     expect(res.status).toBe(200);
-    expect(res.body.bucket).toBe("week");
 
-    const dev = res.body.devices.find((d: any) => d.deviceId === device.id);
-    expect(dev, "device missing from timesheet").toBeDefined();
-    expect(dev.totalWorkedSeconds).toBe(5400);
-    expect(dev.totalIdleSeconds).toBe(600);
-    expect(dev.totalActiveSeconds).toBe(4800);
-    expect(dev.totalProductiveSeconds).toBe(5400);
-    expect(dev.workingDays).toBe(2);
-    expect(dev.presentDays).toBe(0); // neither day reaches 8h
-    expect(dev.lateDays).toBe(2);
-    expect(dev.earlyLeaveDays).toBe(2);
+    const rows = res.body.rows.filter((r: any) => r.deviceId === device.id);
+    // Newest day first.
+    expect(rows.map((r: any) => r.date)).toEqual(["2024-03-12", "2024-03-11"]);
 
-    // Both days fall in one Monday-started ISO week bucket.
-    expect(dev.buckets).toHaveLength(1);
-    expect(dev.buckets[0].key).toBe("2024-03-11");
-    expect(dev.buckets[0].workedSeconds).toBe(5400);
-    expect(dev.buckets[0].activeSeconds).toBe(4800);
+    const mon = rows.find((r: any) => r.date === "2024-03-11");
+    expect(mon.systemName).toBe(device.systemName);
+    expect(mon.deviceGroup).toBe(group);
+    expect(mon.totalSeconds).toBe(4800); // 3600 + 1200
+    expect(mon.idleSeconds).toBe(600);
+    expect(mon.activeSeconds).toBe(4200); // 4800 - 600
+    expect(mon.productiveSeconds).toBe(3600);
+    expect(mon.unproductiveSeconds).toBe(1200);
+    expect(mon.undefinedSeconds).toBe(0);
+    // First activity 10:00 UTC, last activity end = 10:00 + 3600s = 11:00 UTC.
+    expect(mon.firstActivity).toContain("T10:00:00");
+    expect(mon.lastActivity).toContain("T11:00:00");
+    expect(mon.lastActivityLog).toContain("T10:00:00");
+
+    // Both seeded days are late and end before 17:00 => early-leave.
+    expect(res.body.totals.lateDays).toBe(2);
+    expect(res.body.totals.earlyLeaveDays).toBe(2);
   });
 
   it("does not flag late/early when arrival is on time and a full day is worked", async () => {
@@ -128,37 +136,37 @@ describe("GET /api/timesheets", () => {
       .get("/timesheets")
       .query({ from: "2024-03-11", to: "2024-03-11", group });
     expect(res.status).toBe(200);
+    expect(res.body.totals.lateDays).toBe(0);
+    expect(res.body.totals.earlyLeaveDays).toBe(0);
 
-    const dev = res.body.devices.find((d: any) => d.deviceId === device.id);
-    expect(dev).toBeDefined();
-    expect(dev.lateDays).toBe(0);
-    expect(dev.earlyLeaveDays).toBe(0);
-    expect(dev.presentDays).toBe(1); // 1h >= required 0h
+    const rows = res.body.rows.filter((r: any) => r.deviceId === device.id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].totalSeconds).toBe(3600);
+    // No category assigned => counts as undefined.
+    expect(rows[0].undefinedSeconds).toBe(3600);
   });
 
-  it("buckets by calendar month when bucket=month", async () => {
-    const group = `ts-month-${randomUUID()}`;
+  it("omits days with no activity and orders rows newest-first across days", async () => {
+    const group = `ts-sparse-${randomUUID()}`;
     const device = await newDevice(group);
     await setDeviceRule(device.id, {
       workStartTime: "09:00",
       requiredHoursNormal: 8,
       requiredHoursFriday: 8,
     });
-    // One day in March, one in April.
+    // Activity on two non-adjacent days; the gap day must not appear.
     await seedActivity(device.id, "2024-03-15", 3600, 0);
-    await seedActivity(device.id, "2024-04-15", 1800, 0);
+    await seedActivity(device.id, "2024-03-17", 1800, 0);
 
     const res = await request(featureApp)
       .get("/timesheets")
-      .query({ from: "2024-03-01", to: "2024-04-30", bucket: "month", group });
+      .query({ from: "2024-03-14", to: "2024-03-18", group });
     expect(res.status).toBe(200);
 
-    const dev = res.body.devices.find((d: any) => d.deviceId === device.id);
-    expect(dev).toBeDefined();
-    const keys = dev.buckets.map((b: any) => b.key);
-    expect(keys).toEqual(["2024-03", "2024-04"]);
-    const march = dev.buckets.find((b: any) => b.key === "2024-03");
-    expect(march.workedSeconds).toBe(3600);
+    const dates = res.body.rows
+      .filter((r: any) => r.deviceId === device.id)
+      .map((r: any) => r.date);
+    expect(dates).toEqual(["2024-03-17", "2024-03-15"]);
   });
 
   it("does not flag early-leave for overnight shifts whose expected end crosses midnight", async () => {
@@ -178,10 +186,7 @@ describe("GET /api/timesheets", () => {
       .get("/timesheets")
       .query({ from: "2024-03-11", to: "2024-03-11", group });
     expect(res.status).toBe(200);
-
-    const dev = res.body.devices.find((d: any) => d.deviceId === device.id);
-    expect(dev).toBeDefined();
-    expect(dev.earlyLeaveDays).toBe(0);
+    expect(res.body.totals.earlyLeaveDays).toBe(0);
   });
 
   it("rejects an inverted range with 400", async () => {

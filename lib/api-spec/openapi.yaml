@@ -694,7 +694,7 @@ paths:
     get:
       operationId: getTimesheet
       tags: [timesheets]
-      summary: Per-device worked hours bucketed by week or month
+      summary: Per-device, per-day work metrics with range totals
       parameters:
         - name: from
           in: query
@@ -708,13 +708,6 @@ paths:
           schema:
             type: string
             description: Range end day in YYYY-MM-DD format (inclusive)
-        - name: bucket
-          in: query
-          required: false
-          schema:
-            type: string
-            enum: [week, month]
-            description: Aggregation granularity; defaults to week
         - name: group
           in: query
           required: false
@@ -1883,68 +1876,16 @@ components:
           type: string
         to:
           type: string
-        bucket:
-          type: string
-          enum: [week, month]
-        devices:
+        totals:
+          $ref: "#/components/schemas/TimesheetTotals"
+        rows:
           type: array
           items:
-            $ref: "#/components/schemas/TimesheetDevice"
-      required: [from, to, bucket, devices]
-    TimesheetDevice:
+            $ref: "#/components/schemas/TimesheetRow"
+      required: [from, to, totals, rows]
+    TimesheetTotals:
       type: object
       properties:
-        deviceId:
-          type: string
-          format: uuid
-        systemName:
-          type: string
-        deviceGroup:
-          type: string
-        totalWorkedSeconds:
-          type: number
-        totalActiveSeconds:
-          type: number
-        totalIdleSeconds:
-          type: number
-        totalProductiveSeconds:
-          type: number
-        workingDays:
-          type: integer
-        presentDays:
-          type: integer
-        lateDays:
-          type: integer
-        earlyLeaveDays:
-          type: integer
-        buckets:
-          type: array
-          items:
-            $ref: "#/components/schemas/TimesheetBucket"
-      required:
-        - deviceId
-        - systemName
-        - deviceGroup
-        - totalWorkedSeconds
-        - totalActiveSeconds
-        - totalIdleSeconds
-        - totalProductiveSeconds
-        - workingDays
-        - presentDays
-        - lateDays
-        - earlyLeaveDays
-        - buckets
-    TimesheetBucket:
-      type: object
-      properties:
-        key:
-          type: string
-        label:
-          type: string
-        startDay:
-          type: string
-        endDay:
-          type: string
         workedSeconds:
           type: number
         activeSeconds:
@@ -1953,27 +1894,75 @@ components:
           type: number
         productiveSeconds:
           type: number
-        workingDays:
-          type: integer
-        presentDays:
-          type: integer
         lateDays:
           type: integer
         earlyLeaveDays:
           type: integer
       required:
-        - key
-        - label
-        - startDay
-        - endDay
         - workedSeconds
         - activeSeconds
         - idleSeconds
         - productiveSeconds
-        - workingDays
-        - presentDays
         - lateDays
         - earlyLeaveDays
+    TimesheetRow:
+      type: object
+      properties:
+        date:
+          type: string
+          description: Day in YYYY-MM-DD (UTC)
+        deviceId:
+          type: string
+          format: uuid
+        systemName:
+          type: string
+        deviceGroup:
+          type: string
+        username:
+          type: string
+          nullable: true
+        firstActivity:
+          type: string
+          nullable: true
+          description: ISO timestamp of the day's first activity
+        lastActivity:
+          type: string
+          nullable: true
+          description: ISO timestamp of the day's last activity end
+        lastActivityLog:
+          type: string
+          nullable: true
+          description: ISO timestamp of the day's last logged activity start
+        productiveSeconds:
+          type: number
+        unproductiveSeconds:
+          type: number
+        neutralSeconds:
+          type: number
+        undefinedSeconds:
+          type: number
+        totalSeconds:
+          type: number
+        activeSeconds:
+          type: number
+        idleSeconds:
+          type: number
+      required:
+        - date
+        - deviceId
+        - systemName
+        - deviceGroup
+        - username
+        - firstActivity
+        - lastActivity
+        - lastActivityLog
+        - productiveSeconds
+        - unproductiveSeconds
+        - neutralSeconds
+        - undefinedSeconds
+        - totalSeconds
+        - activeSeconds
+        - idleSeconds
     ProjectItem:
       type: object
       properties:
