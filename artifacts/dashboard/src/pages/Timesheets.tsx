@@ -103,7 +103,7 @@ export default function Timesheets() {
     ...(groupFilter !== ALL ? { group: groupFilter } : {}),
   };
   const { data: report, isLoading, isError, error } = useGetTimesheet(params, {
-    query: { queryKey: getGetTimesheetQueryKey(params), enabled: valid },
+    query: { queryKey: getGetTimesheetQueryKey(params), enabled: valid, refetchInterval: 30000 },
   });
 
   const rows = report?.rows ?? [];

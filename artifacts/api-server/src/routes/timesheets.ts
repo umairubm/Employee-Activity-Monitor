@@ -8,7 +8,7 @@ import {
   type AttendanceSettings,
 } from "@workspace/db";
 import { and, asc, eq, gte, inArray, lt, sql } from "drizzle-orm";
-import { coveredSecondsByKey, correctOverlap } from "../lib/activityTime";
+import { coveredSecondsByKey, spanSecondsByKey, correctOverlap } from "../lib/activityTime";
 import {
   MAX_RANGE_DAYS,
   applyShiftStartTime,
@@ -167,19 +167,28 @@ router.get("/", async (req, res) => {
 
     // Real wall-clock coverage per device+day (overlapping duplicate-agent logs
     // merged), keyed "deviceId|YYYY-MM-DD" to match the row loop below.
+    const keyExpr = sql`${activityLogsTable.deviceId}::text || '|' || to_char(${activityLogsTable.startedAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD')`;
+    const groupExtraWhere = group
+      ? inArray(
+          activityLogsTable.deviceId,
+          db
+            .select({ id: devicesTable.id })
+            .from(devicesTable)
+            .where(eq(devicesTable.deviceGroup, group)),
+        )
+      : undefined;
     const coveredByKey = await coveredSecondsByKey({
       rangeStart,
       rangeEnd,
-      keyExpr: sql`${activityLogsTable.deviceId}::text || '|' || to_char(${activityLogsTable.startedAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD')`,
-      extraWhere: group
-        ? inArray(
-            activityLogsTable.deviceId,
-            db
-              .select({ id: devicesTable.id })
-              .from(devicesTable)
-              .where(eq(devicesTable.deviceGroup, group)),
-          )
-        : undefined,
+      keyExpr,
+      extraWhere: groupExtraWhere,
+    });
+    // First→last span per device+day; this is the headline "total duration".
+    const spanByKey = await spanSecondsByKey({
+      rangeStart,
+      rangeEnd,
+      keyExpr,
+      extraWhere: groupExtraWhere,
     });
 
     const weekdayByDay = new Map<string, number>();
@@ -236,7 +245,8 @@ router.get("/", async (req, res) => {
         // Correct for overlapping duplicate-agent logs: scale the naive sums
         // down to the real wall-clock coverage for this device+day.
         const covered = coveredByKey.get(`${device.id}|${day}`) ?? 0;
-        const t = correctOverlap(act, covered);
+        const span = spanByKey.get(`${device.id}|${day}`) ?? 0;
+        const t = correctOverlap(act, covered, span);
 
         rows.push({
           date: day,

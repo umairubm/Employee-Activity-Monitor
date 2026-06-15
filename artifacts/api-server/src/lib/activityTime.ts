@@ -78,6 +78,51 @@ export async function coveredSecondsByKey(opts: {
   return map;
 }
 
+/**
+ * Wall-clock SPAN per partition key: the difference between the last upload
+ * (max endedAt) and the first push (min startedAt). Unlike the covered UNION,
+ * the span INCLUDES the gaps between sessions (breaks, lunch, idle stretches),
+ * so it represents the full "first activity → last activity" window of the day.
+ *
+ * IMPORTANT: callers MUST key by device+DAY. A device-only key over a multi-day
+ * range would span overnight gaps and wildly overstate the duration; sum the
+ * per-day spans instead to get a range total.
+ *
+ * @returns Map of partition key (text) -> span seconds.
+ */
+export async function spanSecondsByKey(opts: {
+  rangeStart: Date;
+  rangeEnd: Date;
+  /** SQL expression producing the (text) partition key, e.g. device+day. */
+  keyExpr: SQL;
+  /** Optional extra WHERE (e.g. a device/group filter). */
+  extraWhere?: SQL;
+}): Promise<Map<string, number>> {
+  const { rangeStart, rangeEnd, keyExpr, extraWhere } = opts;
+  const base = and(
+    gte(activityLogsTable.startedAt, rangeStart),
+    lt(activityLogsTable.startedAt, rangeEnd),
+  );
+  const whereClause = extraWhere ? and(base, extraWhere) : base;
+
+  const result = await db.execute(sql`
+    SELECT ${keyExpr}::text AS k,
+           coalesce(
+             extract(epoch FROM (max(${activityLogsTable.endedAt}) - min(${activityLogsTable.startedAt}))),
+             0
+           )::int AS span
+    FROM ${activityLogsTable}
+    WHERE ${whereClause}
+    GROUP BY ${keyExpr}
+  `);
+
+  const map = new Map<string, number>();
+  for (const row of result.rows as Array<{ k: string; span: number | string }>) {
+    map.set(String(row.k), Number(row.span));
+  }
+  return map;
+}
+
 export interface NaiveTime {
   workedSeconds: number;
   idleSeconds: number;
@@ -99,31 +144,45 @@ export interface CorrectedTime {
 
 /**
  * Scale naive per-key component sums down to the real wall-clock coverage so
- * overlapping (duplicate-agent) logs don't double-count time.
+ * overlapping (duplicate-agent) logs don't double-count time, and report the
+ * day's total DURATION as the first→last span.
  *
- * Preserves category ratios; guarantees the four classes sum exactly to total
- * and active = total - idle. When there are no overlaps, covered === worked and
- * every value is returned unchanged.
+ * - `coveredSeconds` is the UNION of the activity intervals (overlap removed);
+ *   it drives the productivity breakdown and the active/idle split.
+ * - `spanSeconds` (optional) is the first-push→last-upload window for the day.
+ *   When provided, it becomes `totalSeconds` (duration), so the headline figure
+ *   includes the gaps between sessions. `idleSeconds` then absorbs those gaps:
+ *   active = covered - micro-idle, idle = total - active. When omitted, total
+ *   falls back to the covered union (legacy behaviour).
+ *
+ * Category ratios are preserved and the four classes sum exactly to the covered
+ * union. When there are no overlaps and no span gap, every value is unchanged.
  */
 export function correctOverlap(
   naive: NaiveTime,
   coveredSeconds: number,
+  spanSeconds?: number,
 ): CorrectedTime {
   const worked = naive.workedSeconds;
   // Union can never exceed the sum of durations and can never be negative; clamp
   // to guard against the tiny duration_seconds vs (ended-started) drift in
   // stored rows and any malformed/negative covered value.
   const safeCovered = Math.max(0, coveredSeconds);
-  const total = worked > 0 ? Math.min(safeCovered, worked) : 0;
-  const ratio = worked > 0 ? total / worked : 0;
+  const covered = worked > 0 ? Math.min(safeCovered, worked) : 0;
+  const ratio = worked > 0 ? covered / worked : 0;
+
+  // Total duration is the first→last span when supplied (it can never be smaller
+  // than the covered activity it bounds); otherwise it is the covered union.
+  const total =
+    spanSeconds != null ? Math.max(Math.round(spanSeconds), covered) : covered;
 
   // Scale each class by the overlap ratio, then round while preserving the
   // scaled SUM (largest-remainder). Each class keeps its own proportion of
   // worked time, so callers that only populate `productiveSeconds` (leaderboard,
   // group-comparison) get exactly round(productive * ratio). For fully-classified
-  // data the four classes scaled-sum to `total`, so they sum to total exactly —
-  // unlike independent per-component rounding, which can overshoot when several
-  // classes round up.
+  // data the four classes scaled-sum to the covered union exactly — unlike
+  // independent per-component rounding, which can overshoot when several classes
+  // round up.
   const [productiveSeconds, unproductiveSeconds, neutralSeconds, undefinedSeconds] =
     roundPreservingSum([
       naive.productiveSeconds * ratio,
@@ -132,8 +191,12 @@ export function correctOverlap(
       naive.undefinedSeconds * ratio,
     ]);
 
-  const idleSeconds = Math.min(total, Math.round(naive.idleSeconds * ratio));
-  const activeSeconds = Math.max(0, total - idleSeconds);
+  // Active time is the covered foreground activity minus reported micro-idle;
+  // idle absorbs the remainder of the span (between-session gaps + micro-idle),
+  // so active + idle === total.
+  const microIdle = Math.min(covered, Math.round(naive.idleSeconds * ratio));
+  const activeSeconds = Math.max(0, covered - microIdle);
+  const idleSeconds = Math.max(0, total - activeSeconds);
 
   return {
     totalSeconds: total,

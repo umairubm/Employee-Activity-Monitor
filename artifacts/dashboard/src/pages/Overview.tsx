@@ -71,13 +71,13 @@ export default function Overview() {
     ...rangeParams,
   };
   const { data: summary, isLoading: isSummaryLoading } = useGetSummary(params, {
-    query: { queryKey: getGetSummaryQueryKey(params) },
+    query: { queryKey: getGetSummaryQueryKey(params), refetchInterval: 30000 },
   });
   const { data: leaderboard, isLoading: isLeaderboardLoading } = useGetLeaderboard(params, {
-    query: { queryKey: getGetLeaderboardQueryKey(params) },
+    query: { queryKey: getGetLeaderboardQueryKey(params), refetchInterval: 30000 },
   });
   const { data: groupComparison } = useGetGroupComparison(rangeParams, {
-    query: { queryKey: getGetGroupComparisonQueryKey(rangeParams) },
+    query: { queryKey: getGetGroupComparisonQueryKey(rangeParams), refetchInterval: 30000 },
   });
 
   if (isSummaryLoading || isLeaderboardLoading) {

@@ -8,7 +8,7 @@ import {
   type AttendanceSettings,
 } from "@workspace/db";
 import { and, asc, eq, gte, inArray, lt, sql } from "drizzle-orm";
-import { coveredSecondsByKey, correctOverlap } from "../lib/activityTime";
+import { coveredSecondsByKey, spanSecondsByKey, correctOverlap } from "../lib/activityTime";
 import { requireRole } from "../middlewares/userAuth";
 import {
   DEFAULT_SETTINGS,
@@ -311,9 +311,10 @@ router.get("/range", async (req, res) => {
       devices.map((d) => [d.id, resolveForDevice(d, settings, overrides)]),
     );
 
-    // Worked seconds per device+day are the real wall-clock coverage (overlapping
-    // duplicate-agent logs merged), keyed "deviceId|YYYY-MM-DD".
-    const coveredByKey = await coveredSecondsByKey({
+    // Worked seconds per device+day are the first→last span (first push to last
+    // upload), keyed "deviceId|YYYY-MM-DD". The span includes between-session
+    // gaps, so attendance reflects the full presence window for the day.
+    const spanByKey = await spanSecondsByKey({
       rangeStart,
       rangeEnd,
       keyExpr: sql`${activityLogsTable.deviceId}::text || '|' || to_char(${activityLogsTable.startedAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD')`,
@@ -330,7 +331,7 @@ router.get("/range", async (req, res) => {
 
     // device id -> (day -> worked seconds)
     const workedByDevice = new Map<string, Map<string, number>>();
-    for (const [key, covered] of coveredByKey) {
+    for (const [key, span] of spanByKey) {
       const sep = key.indexOf("|");
       const deviceId = key.slice(0, sep);
       const day = key.slice(sep + 1);
@@ -339,7 +340,7 @@ router.get("/range", async (req, res) => {
         perDay = new Map();
         workedByDevice.set(deviceId, perDay);
       }
-      perDay.set(day, covered);
+      perDay.set(day, span);
     }
 
     const rows = devices.map((device) => {
@@ -520,19 +521,27 @@ router.get("/", async (req, res) => {
 
     // Real wall-clock coverage per device (overlapping duplicate-agent logs
     // merged) for this single day.
+    const dayExtraWhere = group
+      ? inArray(
+          activityLogsTable.deviceId,
+          db
+            .select({ id: devicesTable.id })
+            .from(devicesTable)
+            .where(eq(devicesTable.deviceGroup, group)),
+        )
+      : undefined;
     const coveredByDevice = await coveredSecondsByKey({
       rangeStart: dayStart,
       rangeEnd: dayEnd,
       keyExpr: sql`${activityLogsTable.deviceId}::text`,
-      extraWhere: group
-        ? inArray(
-            activityLogsTable.deviceId,
-            db
-              .select({ id: devicesTable.id })
-              .from(devicesTable)
-              .where(eq(devicesTable.deviceGroup, group)),
-          )
-        : undefined,
+      extraWhere: dayExtraWhere,
+    });
+    // First→last span per device for this single day = the worked duration.
+    const spanByDevice = await spanSecondsByKey({
+      rangeStart: dayStart,
+      rangeEnd: dayEnd,
+      keyExpr: sql`${activityLogsTable.deviceId}::text`,
+      extraWhere: dayExtraWhere,
     });
 
     const rows = devices.map((device) => {
@@ -550,6 +559,7 @@ router.get("/", async (req, res) => {
           undefinedSeconds: 0,
         },
         coveredByDevice.get(device.id) ?? 0,
+        spanByDevice.get(device.id) ?? 0,
       );
       const workedSeconds = t.totalSeconds;
       const workedHours = workedSeconds / 3600;

@@ -5,6 +5,7 @@
 - [API test harness](api-test-harness.md) — vitest integration tests in `artifacts/api-server/test/` hit the real dev DB; seed unique rows + clean up, run files sequentially (global settings row), stub auth via injected `req.user`.
 - [Drizzle partial unique indexes](drizzle-partial-unique-indexes.md) — upserts onto a partial unique index need `targetWhere`; `drizzle-kit push` ignores WHERE-predicate changes, so DROP/CREATE the index by hand.
 - [Activity Logs daily aggregation](activity-daily-aggregation.md) — Activity Logs screen aggregates a day of logs CLIENT-SIDE in browser-local tz via `/activity/range`; intentionally diverges from server-local `/reports`.
+- [Duration = span per device+day](duration-span-semantics.md) — total worked time = first→last span keyed per device+DAY, range totals SUM daily spans; gaps→idle, categories scale to covered union; realtime via 30s poll.
 - [Dashboard shared filters](dashboard-shared-filters.md) — no global header; group + a shared date RANGE (useDateRange/DateRangeFilter) share state via localStorage+window-event hooks across all date-aware pages (Attendance DayView stays single-day).
 - [Drizzle wraps driver errors](drizzle-error-wrapping.md) — pg error code (e.g. FK 23503) is under error.cause, not error.code; check both when mapping DB errors to HTTP 4xx.
 - [Screenshot lightbox viewer](screenshot-lightbox.md) — one shared controlled arrow-key viewer for both screenshot surfaces (gallery + Activity Logs sessions); self-reconciles index; don't re-add bespoke per-thumbnail dialogs.

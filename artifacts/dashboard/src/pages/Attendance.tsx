@@ -110,7 +110,7 @@ function DayView() {
 
   const reportParams = { date, ...(groupFilter !== ALL ? { group: groupFilter } : {}) };
   const { data: report, isLoading } = useGetAttendanceReport(reportParams, {
-    query: { queryKey: getGetAttendanceReportQueryKey(reportParams) },
+    query: { queryKey: getGetAttendanceReportQueryKey(reportParams), refetchInterval: 30000 },
   });
 
   const counts = useMemo(() => {
@@ -253,6 +253,7 @@ function RangeView() {
   const rangeParams = { from, to, ...(groupFilter !== ALL ? { group: groupFilter } : {}) };
   const { data: report, isLoading, isError, error } = useGetAttendanceRangeReport(rangeParams, {
     query: {
+      refetchInterval: 30000,
       queryKey: getGetAttendanceRangeReportQueryKey(rangeParams),
       enabled: valid,
     },

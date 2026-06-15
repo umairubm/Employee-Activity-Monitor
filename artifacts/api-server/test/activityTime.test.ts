@@ -114,4 +114,30 @@ describe("correctOverlap", () => {
     expect(t.idleSeconds).toBe(400);
     expect(t.activeSeconds).toBe(0);
   });
+
+  it("uses the first→last span as total when it exceeds covered (gap absorbed as idle)", () => {
+    // Two sessions of 30m each with a 2h gap between them: covered (foreground)
+    // is 3600s, but the day's span (first push → last upload) is 18000s. Total
+    // must be the span; active stays the covered work; idle absorbs the gap.
+    const n = naive({
+      workedSeconds: 3600,
+      productiveSeconds: 3600,
+    });
+    const t = correctOverlap(n, 3600, 18000);
+    expect(t.totalSeconds).toBe(18000);
+    expect(t.activeSeconds).toBe(3600);
+    expect(t.idleSeconds).toBe(14400);
+    // Categories scale to the covered union, not the gappy span.
+    expect(t.productiveSeconds).toBe(3600);
+  });
+
+  it("falls back to covered when span is smaller than or equal to covered", () => {
+    const n = naive({ workedSeconds: 4800, productiveSeconds: 3600 });
+    // Contiguous data: span === covered, behaves like the no-span passthrough.
+    const t = correctOverlap(n, 4800, 4800);
+    expect(t.totalSeconds).toBe(4800);
+    expect(t.productiveSeconds).toBe(3600);
+    // A span below covered (shouldn't happen) never shrinks the real coverage.
+    expect(correctOverlap(n, 4800, 1000).totalSeconds).toBe(4800);
+  });
 });

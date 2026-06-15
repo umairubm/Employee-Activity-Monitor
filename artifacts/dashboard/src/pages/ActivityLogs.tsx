@@ -193,6 +193,10 @@ function aggregateLogs(
   let naiveTotal = 0;
   let naiveActive = 0;
   const intervals: Array<[number, number]> = [];
+  // First→last span is keyed per local day so multi-day ranges sum daily spans
+  // instead of one giant span across overnight gaps (mirrors the server, which
+  // keys span by device+day). day -> [minStartMs, maxEndMs].
+  const dayBounds = new Map<string, [number, number]>();
   for (const log of logs) {
     const started = new Date(log.startedAt);
     const ended = new Date(log.endedAt);
@@ -204,6 +208,15 @@ function aggregateLogs(
     naiveTotal += duration;
     naiveActive += active;
     intervals.push([started.getTime(), ended.getTime()]);
+
+    const dayKey = `${started.getFullYear()}-${started.getMonth()}-${started.getDate()}`;
+    const bounds = dayBounds.get(dayKey);
+    if (!bounds) {
+      dayBounds.set(dayKey, [started.getTime(), ended.getTime()]);
+    } else {
+      if (started.getTime() < bounds[0]) bounds[0] = started.getTime();
+      if (ended.getTime() > bounds[1]) bounds[1] = ended.getTime();
+    }
 
     if (!agg.startedAt || started < agg.startedAt) agg.startedAt = started;
     if (!agg.endedAt || ended > agg.endedAt) agg.endedAt = ended;
@@ -249,14 +262,20 @@ function aggregateLogs(
     }
   }
 
-  // Correct overlapping duplicate-agent logs: total time is the real merged
-  // wall-clock coverage; active time is scaled by the same ratio. With no
-  // overlap, covered === naiveTotal and both values are unchanged.
+  // Total time is the first→last span of the day (first push to last upload),
+  // so it includes the gaps between sessions. Active time is the overlap-merged
+  // foreground coverage (duplicate-agent overlap removed), scaled by the same
+  // ratio. With no overlap and no gaps, covered === naiveTotal === span and both
+  // values are unchanged.
   const covered = mergedCoveredSeconds(intervals);
-  const total = naiveTotal > 0 ? Math.min(covered, naiveTotal) : 0;
-  const ratio = naiveTotal > 0 ? total / naiveTotal : 0;
-  agg.totalSeconds = total;
-  agg.activeSeconds = Math.min(total, Math.round(naiveActive * ratio));
+  const cappedCovered = naiveTotal > 0 ? Math.min(covered, naiveTotal) : 0;
+  let span = 0;
+  for (const [minStart, maxEnd] of dayBounds.values()) {
+    span += Math.max(0, Math.round((maxEnd - minStart) / 1000));
+  }
+  const ratio = naiveTotal > 0 ? cappedCovered / naiveTotal : 0;
+  agg.totalSeconds = Math.max(span, cappedCovered);
+  agg.activeSeconds = Math.min(cappedCovered, Math.round(naiveActive * ratio));
   return agg;
 }
 
@@ -593,7 +612,7 @@ export default function ActivityLogs() {
     group: groupFilter === ALL ? undefined : groupFilter,
   };
   const { data: logs, isLoading: logsLoading } = useGetActivityRange(rangeParams, {
-    query: { queryKey: getGetActivityRangeQueryKey(rangeParams) },
+    query: { queryKey: getGetActivityRangeQueryKey(rangeParams), refetchInterval: 30000 },
   });
 
   const classById = useMemo(() => {

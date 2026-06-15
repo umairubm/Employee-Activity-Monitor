@@ -18,9 +18,28 @@ import {
   lt,
   sql,
 } from "drizzle-orm";
-import { coveredSecondsByKey, correctOverlap } from "../lib/activityTime";
+import { coveredSecondsByKey, spanSecondsByKey, correctOverlap } from "../lib/activityTime";
 
 const router: IRouter = Router();
+
+/** SQL key for "deviceId|YYYY-MM-DD" (UTC day) — one span bucket per device+day. */
+const deviceDayKeyExpr = sql`${activityLogsTable.deviceId}::text || '|' || to_char(${activityLogsTable.startedAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD')`;
+
+/**
+ * Collapse a "deviceId|day" -> span map into "deviceId" -> total span by summing
+ * the per-day spans. Spans must stay keyed by day (a device-only span over a
+ * range would wrongly include overnight gaps); summing daily spans is the right
+ * range total.
+ */
+function sumSpansByDevice(spanByKey: Map<string, number>): Map<string, number> {
+  const byDevice = new Map<string, number>();
+  for (const [key, span] of spanByKey) {
+    const sep = key.indexOf("|");
+    const deviceId = sep === -1 ? key : key.slice(0, sep);
+    byDevice.set(deviceId, (byDevice.get(deviceId) ?? 0) + span);
+  }
+  return byDevice;
+}
 
 function todayString(): string {
   const d = new Date();
@@ -168,6 +187,15 @@ router.get("/summary", async (req, res) => {
       keyExpr: sql`${activityLogsTable.deviceId}::text`,
       extraWhere: activityGroupFilter,
     });
+    // First→last span per device+day, summed per device for the range total.
+    const spanByDevice = sumSpansByDevice(
+      await spanSecondsByKey({
+        rangeStart,
+        rangeEnd,
+        keyExpr: deviceDayKeyExpr,
+        extraWhere: activityGroupFilter,
+      }),
+    );
 
     const activityToday = {
       productiveSeconds: 0,
@@ -185,7 +213,11 @@ router.get("/summary", async (req, res) => {
         neutralSeconds: Number(row.neutralSeconds),
         undefinedSeconds: Number(row.undefinedSeconds),
       };
-      const t = correctOverlap(naive, coveredByDevice.get(row.deviceId) ?? 0);
+      const t = correctOverlap(
+        naive,
+        coveredByDevice.get(row.deviceId) ?? 0,
+        spanByDevice.get(row.deviceId) ?? 0,
+      );
       activityToday.productiveSeconds += t.productiveSeconds;
       activityToday.unproductiveSeconds += t.unproductiveSeconds;
       activityToday.neutralSeconds += t.neutralSeconds;
@@ -255,20 +287,29 @@ router.get("/leaderboard", async (req, res) => {
       .groupBy(activityLogsTable.deviceId, devicesTable.systemName);
 
     // Correct each device's naive sums for overlapping duplicate-agent logs.
+    const leaderboardExtraWhere = group
+      ? inArray(
+          activityLogsTable.deviceId,
+          db
+            .select({ id: devicesTable.id })
+            .from(devicesTable)
+            .where(eq(devicesTable.deviceGroup, group)),
+        )
+      : undefined;
     const coveredByDevice = await coveredSecondsByKey({
       rangeStart,
       rangeEnd,
       keyExpr: sql`${activityLogsTable.deviceId}::text`,
-      extraWhere: group
-        ? inArray(
-            activityLogsTable.deviceId,
-            db
-              .select({ id: devicesTable.id })
-              .from(devicesTable)
-              .where(eq(devicesTable.deviceGroup, group)),
-          )
-        : undefined,
+      extraWhere: leaderboardExtraWhere,
     });
+    const spanByDevice = sumSpansByDevice(
+      await spanSecondsByKey({
+        rangeStart,
+        rangeEnd,
+        keyExpr: deviceDayKeyExpr,
+        extraWhere: leaderboardExtraWhere,
+      }),
+    );
 
     const leaderboard = rows
       .map((r) => {
@@ -283,6 +324,7 @@ router.get("/leaderboard", async (req, res) => {
             undefinedSeconds: 0,
           },
           coveredByDevice.get(r.deviceId) ?? 0,
+          spanByDevice.get(r.deviceId) ?? 0,
         );
         const productiveSeconds = t.productiveSeconds;
         const totalSeconds = t.totalSeconds;
@@ -363,6 +405,13 @@ router.get("/group-comparison", async (req, res) => {
       rangeEnd,
       keyExpr: sql`${activityLogsTable.deviceId}::text`,
     });
+    const spanByDevice = sumSpansByDevice(
+      await spanSecondsByKey({
+        rangeStart,
+        rangeEnd,
+        keyExpr: deviceDayKeyExpr,
+      }),
+    );
 
     const activityByGroup = new Map<
       string,
@@ -379,6 +428,7 @@ router.get("/group-comparison", async (req, res) => {
           undefinedSeconds: 0,
         },
         coveredByDevice.get(row.deviceId) ?? 0,
+        spanByDevice.get(row.deviceId) ?? 0,
       );
       const acc = activityByGroup.get(row.group) ?? {
         productiveSeconds: 0,
