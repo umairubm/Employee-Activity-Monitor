@@ -1581,6 +1581,11 @@ components:
           type: number
         requiredHoursFriday:
           type: number
+        timezone:
+          type: string
+          description: >-
+            Organization timezone (IANA name, e.g. "Asia/Karachi", or "UTC").
+            Attendance day buckets and late/early classification use this zone.
         workingDays:
           type: array
           description: Working weekdays, 0=Sunday .. 6=Saturday.
@@ -1605,6 +1610,7 @@ components:
         - halfDayThresholdHours
         - requiredHoursNormal
         - requiredHoursFriday
+        - timezone
         - workingDays
         - holidays
     AttendanceSettingsUpdate:
@@ -1624,6 +1630,11 @@ components:
           type: number
         requiredHoursFriday:
           type: number
+        timezone:
+          type: string
+          description: >-
+            Organization timezone (IANA name, e.g. "Asia/Karachi", or "UTC").
+            Optional; when omitted the current value is kept.
         workingDays:
           type: array
           description: Working weekdays, 0=Sunday .. 6=Saturday.

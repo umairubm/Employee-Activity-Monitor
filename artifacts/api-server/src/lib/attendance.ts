@@ -22,9 +22,68 @@ export const DEFAULT_SETTINGS = {
   requiredHoursFriday: 7.0,
   workingDays: [1, 2, 3, 4, 5],
   holidays: [] as string[],
+  timezone: "UTC",
 };
 
 export const MAX_RANGE_DAYS = 366;
+
+/**
+ * True if `tz` is a timezone identifier this runtime (and, by extension,
+ * Postgres) understands. "UTC" and IANA names like "Asia/Karachi" are valid.
+ */
+export function isValidTimeZone(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * UTC instant corresponding to local midnight (00:00) of `dateStr` (YYYY-MM-DD)
+ * in IANA timezone `tz`. Used to build day buckets aligned to the org's local
+ * calendar day rather than to UTC.
+ *
+ * Works regardless of the server's own timezone: both `toLocaleString` calls run
+ * in the same runtime, so the runtime offset cancels in the subtraction, leaving
+ * only the difference between `tz` and UTC.
+ */
+export function localMidnightUtc(dateStr: string, tz: string): Date {
+  const utcGuess = new Date(`${dateStr}T00:00:00Z`);
+  const tzMs = new Date(
+    utcGuess.toLocaleString("en-US", { timeZone: tz }),
+  ).getTime();
+  const utcMs = new Date(
+    utcGuess.toLocaleString("en-US", { timeZone: "UTC" }),
+  ).getTime();
+  const offset = tzMs - utcMs; // how far ahead `tz` is from UTC at that instant
+  return new Date(utcGuess.getTime() - offset);
+}
+
+/**
+ * Minutes since local midnight in timezone `tz` for a timestamp, or null when
+ * the input is missing/invalid. Mirrors the SQL `AT TIME ZONE tz` minute-of-day
+ * used by `dayTimeBoundsByKey`, for the single-day attendance route.
+ */
+export function minutesOfDayInTz(
+  ts: Date | string | null | undefined,
+  tz: string,
+): number | null {
+  if (ts === null || ts === undefined) return null;
+  const d = typeof ts === "string" ? new Date(ts) : ts;
+  if (Number.isNaN(d.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(d);
+  const hh = Number(parts.find((p) => p.type === "hour")?.value ?? "0");
+  const mm = Number(parts.find((p) => p.type === "minute")?.value ?? "0");
+  // hour12:false can render midnight as "24" in some environments — normalize.
+  return (hh % 24) * 60 + mm;
+}
 
 /**
  * A calendar day counts as a working day when its weekday is configured as a

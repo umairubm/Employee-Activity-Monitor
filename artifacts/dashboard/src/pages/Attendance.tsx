@@ -81,6 +81,30 @@ const WEEKDAYS = [
   { value: 6, label: "Sat" },
 ];
 
+// Curated timezone list for the org-wide attendance setting. Attendance day
+// buckets and late/early classification are computed in the selected zone.
+const TIMEZONES: { value: string; label: string }[] = [
+  { value: "UTC", label: "UTC (no offset)" },
+  { value: "Asia/Karachi", label: "Pakistan — Karachi/Lahore/Islamabad (UTC+5)" },
+  { value: "Asia/Kolkata", label: "India — Kolkata (UTC+5:30)" },
+  { value: "Asia/Dhaka", label: "Bangladesh — Dhaka (UTC+6)" },
+  { value: "Asia/Dubai", label: "UAE — Dubai (UTC+4)" },
+  { value: "Asia/Riyadh", label: "Saudi Arabia — Riyadh (UTC+3)" },
+  { value: "Asia/Manila", label: "Philippines — Manila (UTC+8)" },
+  { value: "Asia/Shanghai", label: "China — Shanghai (UTC+8)" },
+  { value: "Asia/Singapore", label: "Singapore (UTC+8)" },
+  { value: "Asia/Tokyo", label: "Japan — Tokyo (UTC+9)" },
+  { value: "Europe/London", label: "UK — London (UTC+0/+1)" },
+  { value: "Europe/Berlin", label: "Central Europe — Berlin (UTC+1/+2)" },
+  { value: "Africa/Cairo", label: "Egypt — Cairo (UTC+2)" },
+  { value: "America/New_York", label: "US — New York (UTC−5/−4)" },
+  { value: "America/Chicago", label: "US — Chicago (UTC−6/−5)" },
+  { value: "America/Denver", label: "US — Denver (UTC−7/−6)" },
+  { value: "America/Los_Angeles", label: "US — Los Angeles (UTC−8/−7)" },
+  { value: "America/Sao_Paulo", label: "Brazil — São Paulo (UTC−3)" },
+  { value: "Australia/Sydney", label: "Australia — Sydney (UTC+10/+11)" },
+];
+
 function downloadCsv(filename: string, rows: (string | number)[][]) {
   const escape = (v: string | number) => {
     const s = String(v);
@@ -599,6 +623,7 @@ export default function Attendance() {
     halfDayThresholdHours: "4",
     requiredHoursNormal: "7.5",
     requiredHoursFriday: "7",
+    timezone: "UTC",
   });
   const [workingDays, setWorkingDays] = useState<number[]>([1, 2, 3, 4, 5]);
   const [holidaysText, setHolidaysText] = useState("");
@@ -629,6 +654,8 @@ export default function Attendance() {
     requiredHoursFriday: number;
     workingDays: number[];
     holidays: string[];
+    // Only present on the global default row; overrides do not carry a timezone.
+    timezone?: string;
   };
 
   const loadRulesIntoForm = (r: Rules) => {
@@ -639,6 +666,9 @@ export default function Attendance() {
       halfDayThresholdHours: String(r.halfDayThresholdHours),
       requiredHoursNormal: String(r.requiredHoursNormal),
       requiredHoursFriday: String(r.requiredHoursFriday),
+      // Timezone is global-only; always seed from the global default so the
+      // dropdown shows the org's real value even when editing an override.
+      timezone: settings?.timezone ?? r.timezone ?? "UTC",
     });
     setWorkingDays([...r.workingDays].sort((a, b) => a - b));
     setHolidaysText(r.holidays.join(", "));
@@ -711,7 +741,7 @@ export default function Attendance() {
 
     if (scope.type === "global") {
       updateSettings.mutate(
-        { data: rules },
+        { data: { ...rules, timezone: form.timezone } },
         {
           onSuccess: () => {
             refetchAll();
@@ -845,6 +875,27 @@ export default function Attendance() {
             </div>
 
             <div className="grid grid-cols-2 gap-4 py-2">
+              {scope.type === "global" && (
+                <div className="space-y-1 col-span-2">
+                  <Label htmlFor="timezone">Organization timezone</Label>
+                  <Select
+                    value={form.timezone}
+                    onValueChange={(v) => setForm((f) => ({ ...f, timezone: v }))}
+                  >
+                    <SelectTrigger id="timezone">
+                      <SelectValue placeholder="Select timezone" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {TIMEZONES.map((tz) => (
+                        <SelectItem key={tz.value} value={tz.value}>
+                          {tz.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">Check-in / leave times are judged against this zone. Applies to all reports, including past data.</p>
+                </div>
+              )}
               <div className="space-y-1">
                 <Label htmlFor="workStartTime">Work start time</Label>
                 <Input id="workStartTime" type="time" value={form.workStartTime} onChange={(e) => setForm((f) => ({ ...f, workStartTime: e.target.value }))} />

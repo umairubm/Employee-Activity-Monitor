@@ -48,6 +48,11 @@ export const attendanceSettingsTable = pgTable("attendance_settings", {
   halfDayThresholdHours: real("half_day_threshold_hours").notNull().default(4),
   requiredHoursNormal: real("required_hours_normal").notNull().default(7.5),
   requiredHoursFriday: real("required_hours_friday").notNull().default(7.0),
+  // Organization timezone (IANA name, e.g. "Asia/Karachi"). Attendance day
+  // buckets and late-arrival / early-leave minute-of-day classification are
+  // computed in this zone, not in UTC. This is a GLOBAL setting only: it is read
+  // from the single global default row and ignored on per-device/group overrides.
+  timezone: text("timezone").notNull().default("UTC"),
   // Working days of the week as ISO-style indices, 0=Sunday .. 6=Saturday.
   // Days not listed here (e.g. weekends) are excluded from attendance counts.
   workingDays: integer("working_days")

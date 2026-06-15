@@ -22,9 +22,12 @@ import {
   classifyWorkingDay,
   eachDayUTC,
   getGlobalSettings,
+  isValidTimeZone,
   isWorkingDay,
   loadApprovedLeaveDays,
+  localMidnightUtc,
   loadOverrides,
+  minutesOfDayInTz,
   parseDateParam,
   parseExplicitDate,
   requiredHoursFor,
@@ -33,16 +36,11 @@ import {
 
 const HHMM = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Expected HH:MM");
 
-/**
- * Minutes-since-UTC-midnight for a timestamp value (Date or ISO string), or null
- * when absent. Used by the single-day report to derive a device's first/last
- * activity time-of-day for late-arrival / early-leave half-day detection.
- */
-function utcMinutesOfDay(ts: string | Date | null): number | null {
-  if (ts === null) return null;
-  const d = ts instanceof Date ? ts : new Date(ts);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.getUTCHours() * 60 + d.getUTCMinutes();
+/** Next calendar day (YYYY-MM-DD) after `day`, computed on the UTC calendar. */
+function nextDay(day: string): string {
+  return new Date(Date.parse(`${day}T00:00:00Z`) + 86400000)
+    .toISOString()
+    .slice(0, 10);
 }
 
 const router: IRouter = Router();
@@ -63,6 +61,12 @@ const updateSettingsSchema = z.object({
   halfDayThresholdHours: z.number().min(0).max(24),
   requiredHoursNormal: z.number().min(0).max(24),
   requiredHoursFriday: z.number().min(0).max(24),
+  // Organization timezone (IANA name or "UTC"). Optional so existing clients
+  // that omit it keep working; validated against the runtime's tz database.
+  timezone: z
+    .string()
+    .refine(isValidTimeZone, "Unknown timezone")
+    .optional(),
   // Optional so existing clients that omit them keep working; when provided,
   // de-duplicated and sorted/validated before persisting.
   workingDays: z
@@ -299,10 +303,13 @@ router.get("/range", async (req, res) => {
         ? req.query.group
         : undefined;
 
-    const rangeStart = new Date(`${from}T00:00:00Z`);
-    const rangeEnd = new Date(Date.parse(`${to}T00:00:00Z`) + 86400000);
-
     const settings = await getGlobalSettings();
+    // Bucket days and measure minute-of-day in the org's local timezone so
+    // non-UTC teams are classified against their own clock (not UTC).
+    const tz = settings.timezone || "UTC";
+    const rangeStart = localMidnightUtc(from, tz);
+    const rangeEnd = localMidnightUtc(nextDay(to), tz);
+
     const overrides = await loadOverrides();
     const leaveByUser = await loadApprovedLeaveDays(from, to);
 
@@ -339,7 +346,7 @@ router.get("/range", async (req, res) => {
     // Worked seconds per device+day are the first→last span (first push to last
     // upload), keyed "deviceId|YYYY-MM-DD". The span includes between-session
     // gaps, so attendance reflects the full presence window for the day.
-    const keyExpr = sql`${activityLogsTable.deviceId}::text || '|' || to_char(${activityLogsTable.startedAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD')`;
+    const keyExpr = sql`${activityLogsTable.deviceId}::text || '|' || to_char(${activityLogsTable.startedAt} AT TIME ZONE ${tz}, 'YYYY-MM-DD')`;
     const keyExtraWhere = group
       ? inArray(
           activityLogsTable.deviceId,
@@ -362,6 +369,7 @@ router.get("/range", async (req, res) => {
       rangeEnd,
       keyExpr,
       extraWhere: keyExtraWhere,
+      tz,
     });
 
     // device id -> (day -> worked seconds)
@@ -533,16 +541,16 @@ router.get("/", async (req, res) => {
       typeof req.query.group === "string" && req.query.group !== ""
         ? req.query.group
         : undefined;
-    // Bucket the day in UTC to match the range report and the UTC minute-of-day
-    // used for late-arrival / early-leave classification below. (A non-UTC
-    // server timezone would otherwise make single-day and range reports diverge
-    // around midnight.)
-    const dayStart = new Date(`${date}T00:00:00Z`);
-    const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
-    const weekday = dayStart.getUTCDay();
+    const settings = await getGlobalSettings();
+    // Bucket the day and measure minute-of-day in the org's local timezone so
+    // late-arrival / early-leave classification follows the team's clock, not
+    // UTC. Weekday is taken from the calendar date string (timezone-independent).
+    const tz = settings.timezone || "UTC";
+    const dayStart = localMidnightUtc(date, tz);
+    const dayEnd = localMidnightUtc(nextDay(date), tz);
+    const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
     const isFriday = weekday === 5;
 
-    const settings = await getGlobalSettings();
     const overrides = await loadOverrides();
     const leaveByUser = await loadApprovedLeaveDays(date, date);
     // Top-level fields reflect the global rule; each device row below is
@@ -656,8 +664,8 @@ router.get("/", async (req, res) => {
           workedSeconds,
           requiredHours: deviceRequiredHours,
           settings: eff,
-          firstActivityMinutes: utcMinutesOfDay(a?.checkIn ?? null),
-          lastActivityMinutes: utcMinutesOfDay(a?.lastSeen ?? null),
+          firstActivityMinutes: minutesOfDayInTz(a?.checkIn ?? null, tz),
+          lastActivityMinutes: minutesOfDayInTz(a?.lastSeen ?? null, tz),
         });
 
       return {

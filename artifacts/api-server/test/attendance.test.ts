@@ -50,6 +50,10 @@ const SETTINGS = {
   halfDayThresholdHours: 4,
   requiredHoursNormal: 7.5,
   requiredHoursFriday: 7.0,
+  // Explicit so each beforeEach resets tz to UTC; the timezone suite below sets
+  // its own value and would otherwise leak into later tests (setGlobalSettings
+  // only updates the keys it is given).
+  timezone: "UTC",
 };
 
 function fmt(d: Date): string {
@@ -238,6 +242,134 @@ describe("time-based half-day triggers (late arrival / early leave)", () => {
     const day = res.body.daily.find((d: any) => d.day === NORMAL_DAY);
     const cell = day.byDevice.find((b: any) => b.deviceId === device.id);
     expect(cell.status).toBe("half_day");
+  });
+});
+
+describe("organization timezone (classification + day bucketing)", () => {
+  // Asia/Karachi is UTC+5 with no DST, so a UTC instant maps to local +5h.
+  const KARACHI = "Asia/Karachi";
+
+  function nextDayOf(dateStr: string): string {
+    const d = new Date(`${dateStr}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + 1);
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(
+      d.getUTCDate(),
+    ).padStart(2, "0")}`;
+  }
+
+  it("classifies late arrival against local (tz) minute-of-day, not UTC", async () => {
+    // 05:00 UTC = 10:00 in Karachi (after 09:30) → late → half_day,
+    // even though 05:00 UTC alone is before the 09:30 threshold.
+    await setGlobalSettings({
+      ...SETTINGS,
+      halfDayLateThreshold: "09:30",
+      halfDayMiddayCutoff: "00:00",
+      timezone: KARACHI,
+    });
+    const device = await newDevice();
+    await seedActivityAt(device.id, new Date(`${NORMAL_DAY}T05:00:00Z`), 8 * 3600);
+
+    const tzRes = await request(app).get(`/attendance?date=${NORMAL_DAY}`);
+    const tzRow = tzRes.body.devices.find((r: any) => r.deviceId === device.id);
+    expect(tzRow.status).toBe("half_day");
+    expect(tzRow.workedSeconds).toBe(8 * 3600);
+
+    // Same data under UTC (05:00 is before 09:30) → on time → present.
+    await setGlobalSettings({
+      ...SETTINGS,
+      halfDayLateThreshold: "09:30",
+      halfDayMiddayCutoff: "00:00",
+      timezone: "UTC",
+    });
+    const utcRes = await request(app).get(`/attendance?date=${NORMAL_DAY}`);
+    const utcRow = utcRes.body.devices.find((r: any) => r.deviceId === device.id);
+    expect(utcRow.status).toBe("present");
+  });
+
+  it("buckets activity into the local (tz) day, not the UTC day", async () => {
+    // 20:00 UTC on NORMAL_DAY = 01:00 next local day in Karachi.
+    await setGlobalSettings({ ...SETTINGS, timezone: KARACHI });
+    const device = await newDevice();
+    await seedActivityAt(device.id, new Date(`${NORMAL_DAY}T20:00:00Z`), 2 * 3600);
+
+    const sameDay = await request(app).get(`/attendance?date=${NORMAL_DAY}`);
+    const sameRow = sameDay.body.devices.find(
+      (r: any) => r.deviceId === device.id,
+    );
+    // Falls on the NEXT local day, so the UTC day shows no worked time.
+    expect(sameRow?.workedSeconds ?? 0).toBe(0);
+
+    const nextDay = nextDayOf(NORMAL_DAY);
+    const nextRes = await request(app).get(`/attendance?date=${nextDay}`);
+    const nextRow = nextRes.body.devices.find(
+      (r: any) => r.deviceId === device.id,
+    );
+    expect(nextRow.workedSeconds).toBe(2 * 3600);
+  });
+
+  it("applies the tz on the range report too", async () => {
+    await setGlobalSettings({
+      ...SETTINGS,
+      halfDayLateThreshold: "09:30",
+      halfDayMiddayCutoff: "00:00",
+      timezone: KARACHI,
+    });
+    const device = await newDevice();
+    // 05:00 UTC = 10:00 local → late → half_day on the local NORMAL_DAY.
+    await seedActivityAt(device.id, new Date(`${NORMAL_DAY}T05:00:00Z`), 8 * 3600);
+
+    const res = await request(app).get(
+      `/attendance/range?from=${NORMAL_DAY}&to=${NORMAL_DAY}`,
+    );
+    expect(res.status).toBe(200);
+    const day = res.body.daily.find((d: any) => d.day === NORMAL_DAY);
+    const cell = day.byDevice.find((b: any) => b.deviceId === device.id);
+    expect(cell.status).toBe("half_day");
+  });
+
+  it("respects a DST boundary when computing the local day (America/New_York)", async () => {
+    // US spring-forward 2024 was 2024-03-10 (a Sunday): EST (UTC−5) → EDT (UTC−4).
+    // On Monday 2024-03-11 the offset is −4, so local midnight = 04:00 UTC and the
+    // local day ends at 04:00 UTC the next day. An activity at 03:30 UTC on 03-12
+    // is still 2024-03-11 23:30 local — it must bucket into 03-11, not 03-12.
+    const NY = "America/New_York";
+    const MON = "2024-03-11"; // a working Monday, day after the DST switch
+    await setGlobalSettings({
+      ...SETTINGS,
+      halfDayLateThreshold: "23:59",
+      halfDayMiddayCutoff: "00:00",
+      timezone: NY,
+    });
+    const device = await newDevice();
+    // 18:00 EDT Mon (22:00 UTC) for 8h → ends 02:00 EDT Tue (06:00 UTC); the
+    // first push at 22:00 UTC is local Monday, so the worked span lands on MON.
+    await seedActivityAt(device.id, new Date(`${MON}T22:00:00Z`), 8 * 3600);
+
+    const monRes = await request(app).get(`/attendance?date=${MON}`);
+    const monRow = monRes.body.devices.find(
+      (r: any) => r.deviceId === device.id,
+    );
+    expect(monRow.workedSeconds).toBe(8 * 3600);
+
+    // The UTC calendar day of the start (03-11) coincidentally matches here, so
+    // assert the DST-sensitive boundary directly: 03:30 UTC on 03-12 is still
+    // 23:30 EDT on 03-11 and must NOT appear on the UTC-named 03-12 local day.
+    const lateDevice = await newDevice();
+    await seedActivityAt(
+      lateDevice.id,
+      new Date("2024-03-12T03:30:00Z"),
+      30 * 60,
+    );
+    const tueRes = await request(app).get(`/attendance?date=2024-03-12`);
+    const tueRow = tueRes.body.devices.find(
+      (r: any) => r.deviceId === lateDevice.id,
+    );
+    expect(tueRow?.workedSeconds ?? 0).toBe(0);
+    const monRes2 = await request(app).get(`/attendance?date=${MON}`);
+    const lateOnMon = monRes2.body.devices.find(
+      (r: any) => r.deviceId === lateDevice.id,
+    );
+    expect(lateOnMon.workedSeconds).toBe(30 * 60);
   });
 });
 

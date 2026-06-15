@@ -113,7 +113,7 @@ export async function spanSecondsByKey(opts: {
            )::int AS span
     FROM ${activityLogsTable}
     WHERE ${whereClause}
-    GROUP BY ${keyExpr}
+    GROUP BY 1
   `);
 
   const map = new Map<string, number>();
@@ -138,8 +138,14 @@ export async function dayTimeBoundsByKey(opts: {
   keyExpr: SQL;
   /** Optional extra WHERE (e.g. a device/group filter). */
   extraWhere?: SQL;
+  /**
+   * IANA timezone the minute-of-day is measured in (minutes since local midnight
+   * in this zone). Defaults to "UTC" to preserve prior behavior. Must align with
+   * the timezone used to bucket `keyExpr` by day.
+   */
+  tz?: string;
 }): Promise<Map<string, { firstMinutes: number; lastMinutes: number }>> {
-  const { rangeStart, rangeEnd, keyExpr, extraWhere } = opts;
+  const { rangeStart, rangeEnd, keyExpr, extraWhere, tz = "UTC" } = opts;
   const base = and(
     gte(activityLogsTable.startedAt, rangeStart),
     lt(activityLogsTable.startedAt, rangeEnd),
@@ -148,11 +154,11 @@ export async function dayTimeBoundsByKey(opts: {
 
   const result = await db.execute(sql`
     SELECT ${keyExpr}::text AS k,
-           (extract(epoch FROM (min(${activityLogsTable.startedAt}) AT TIME ZONE 'UTC')::time) / 60)::int AS first_min,
-           (extract(epoch FROM (max(${activityLogsTable.endedAt}) AT TIME ZONE 'UTC')::time) / 60)::int AS last_min
+           (extract(epoch FROM (min(${activityLogsTable.startedAt}) AT TIME ZONE ${tz})::time) / 60)::int AS first_min,
+           (extract(epoch FROM (max(${activityLogsTable.endedAt}) AT TIME ZONE ${tz})::time) / 60)::int AS last_min
     FROM ${activityLogsTable}
     WHERE ${whereClause}
-    GROUP BY ${keyExpr}
+    GROUP BY 1
   `);
 
   const map = new Map<string, { firstMinutes: number; lastMinutes: number }>();

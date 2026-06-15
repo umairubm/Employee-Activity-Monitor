@@ -565,6 +565,11 @@ export const GetAttendanceSettingsResponse = zod.object({
   halfDayThresholdHours: zod.number(),
   requiredHoursNormal: zod.number(),
   requiredHoursFriday: zod.number(),
+  timezone: zod
+    .string()
+    .describe(
+      'Organization timezone (IANA name, e.g. \"Asia\/Karachi\", or \"UTC\"). Attendance day buckets and late\/early classification use this zone.',
+    ),
   workingDays: zod
     .array(zod.number())
     .describe("Working weekdays, 0=Sunday .. 6=Saturday."),
@@ -589,6 +594,12 @@ export const UpdateAttendanceSettingsBody = zod.object({
   halfDayThresholdHours: zod.number(),
   requiredHoursNormal: zod.number(),
   requiredHoursFriday: zod.number(),
+  timezone: zod
+    .string()
+    .optional()
+    .describe(
+      'Organization timezone (IANA name, e.g. \"Asia\/Karachi\", or \"UTC\"). Optional; when omitted the current value is kept.',
+    ),
   workingDays: zod
     .array(zod.number())
     .optional()
@@ -612,6 +623,11 @@ export const UpdateAttendanceSettingsResponse = zod.object({
   halfDayThresholdHours: zod.number(),
   requiredHoursNormal: zod.number(),
   requiredHoursFriday: zod.number(),
+  timezone: zod
+    .string()
+    .describe(
+      'Organization timezone (IANA name, e.g. \"Asia\/Karachi\", or \"UTC\"). Attendance day buckets and late\/early classification use this zone.',
+    ),
   workingDays: zod
     .array(zod.number())
     .describe("Working weekdays, 0=Sunday .. 6=Saturday."),

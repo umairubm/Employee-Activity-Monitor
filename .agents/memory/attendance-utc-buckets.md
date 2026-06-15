@@ -1,31 +1,38 @@
 ---
-name: Attendance day-bucketing must be UTC across all surfaces
-description: Single-day and range attendance reports must both bucket days and compute minute-of-day in UTC, or they diverge around midnight under a non-UTC server timezone.
+name: Attendance day-bucketing uses the configurable org timezone
+description: Single-day and range attendance reports must both bucket days and compute minute-of-day in the SAME org timezone (global setting, default UTC), or they diverge around midnight.
 ---
 
-# Attendance day-bucketing is UTC everywhere
+# Attendance day-bucketing follows the org timezone
 
-Every attendance surface that classifies a working day must bucket the day
-window and derive weekday/minute-of-day in **UTC**:
+Attendance day classification is driven by a single GLOBAL org timezone setting
+(`attendance_settings.timezone`, default `"UTC"`). Every attendance surface that
+classifies a working day must bucket the day window AND derive minute-of-day in
+that SAME zone, in lockstep:
 
-- Day window: `new Date(\`${date}T00:00:00Z\`)` (note the `Z`), not the local
-  `new Date(\`${date}T00:00:00\`)`.
-- Weekday: `getUTCDay()`, not `getDay()`.
-- Late-arrival / early-leave time-of-day: minutes-since-UTC-midnight
-  (first/last activity timestamps converted in UTC).
+- Day window: `localMidnightUtc(date, tz)` for `[dayStart, dayEnd)` — the UTC
+  instant of local midnight in `tz`. Do NOT hardcode `...T00:00:00Z`.
+- Day key (range report): `to_char(started_at AT TIME ZONE tz, 'YYYY-MM-DD')`.
+- Late-arrival / early-leave minute-of-day: measured in `tz`
+  (`minutesOfDayInTz` single-day; `AT TIME ZONE tz` inside `dayTimeBoundsByKey`).
+- Weekday stays derived from the date STRING (tz-independent), not a timestamp.
 
-**Why:** The range report was written in UTC, but the single-day report
-historically used local-time day boundaries + `getDay()`. When half-day
-classification gained UTC minute-of-day late/early triggers, the single-day
-route was left mixing local day buckets with UTC minute-of-day. In the
-Replit dev/prod env (TZ=UTC) the two coincide so tests pass, but under any
-non-UTC server timezone the single-day vs range status for the same
-date/device diverges around midnight. The single-day route was switched to
-UTC to match.
+**Why:** The agent stamps activity in UTC, but a non-UTC org (e.g. Asia/Karachi
+UTC+5) needs days and the 09:30/12:30 thresholds judged against its own clock,
+or Present/Half-day/Absent come out wrong. The fix reinterprets existing
+UTC-stamped logs in org-local time at read time (no agent change). Timezone is
+GLOBAL-only — it is read from `getGlobalSettings()`, NOT carried on
+device/group overrides or `resolveForDevice`.
 
-**How to apply:** Any new attendance/activity report that classifies days
-must use UTC bucketing + UTC weekday + UTC minute-of-day, in lockstep with
-the existing single-day and range routes. Do not reintroduce local-time
-(`getDay()` / no-`Z`) day math in these routes. (The Activity-Logs *screen*
-deliberately aggregates client-side in browser-local tz — that is a separate,
-intentional divergence; do not conflate the two.)
+**How to apply:** Any new attendance/activity report that classifies days must
+load the global timezone and use it for BOTH bucketing and minute-of-day, in
+lockstep with the single-day and range routes. The Activity-Logs *screen*
+deliberately aggregates client-side in browser-local tz — a separate,
+intentional divergence; do not conflate the two.
+
+**Gotcha (Drizzle + GROUP BY):** Once a `keyExpr` contains a bound parameter
+(e.g. `AT TIME ZONE ${tz}`), interpolating that same `keyExpr` in both SELECT
+and `GROUP BY ${keyExpr}` makes Drizzle emit DISTINCT placeholders ($1 vs $2),
+so Postgres no longer sees the grouped column as grouped (error 42803). Group by
+the output ordinal (`GROUP BY 1`) instead, or alias the key once in a CTE and
+group by the alias (as `coveredSecondsByKey` does).

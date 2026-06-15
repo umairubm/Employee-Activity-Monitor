@@ -15,6 +15,8 @@ export interface AttendanceSettingsUpdate {
   halfDayThresholdHours: number;
   requiredHoursNormal: number;
   requiredHoursFriday: number;
+  /** Organization timezone (IANA name, e.g. "Asia/Karachi", or "UTC"). Optional; when omitted the current value is kept. */
+  timezone?: string;
   /** Working weekdays, 0=Sunday .. 6=Saturday. */
   workingDays?: number[];
   /** Company holidays as YYYY-MM-DD strings. */

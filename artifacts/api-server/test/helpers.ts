@@ -273,6 +273,7 @@ export async function setGlobalSettings(values: {
   requiredHoursFriday: number;
   halfDayLateThreshold?: string | null;
   halfDayMiddayCutoff?: string | null;
+  timezone?: string;
 }): Promise<void> {
   await db
     .insert(attendanceSettingsTable)
