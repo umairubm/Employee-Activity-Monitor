@@ -777,20 +777,45 @@ async function executeCommand(cmd) {
   let ok = true;
   try {
     if (cmd.commandType === "lock_screen") {
-      if (IS_WIN) await runCmd("rundll32.exe", ["user32.dll,LockWorkStation"]);
-      else if (IS_MAC)
+      if (IS_WIN) {
+        await runCmd("rundll32.exe", ["user32.dll,LockWorkStation"]);
+      } else if (IS_MAC) {
         await runCmd("pmset", ["displaysleepnow"]);
-      else ok = false;
+      } else {
+        // Linux locking fallbacks
+        let locked = false;
+        for (const c of [
+          ["loginctl", ["lock-session"]],
+          ["xdg-screensaver", ["lock"]],
+          ["gnome-screensaver-command", ["-l"]]
+        ]) {
+          const res = await runCmd(c[0], c[1]);
+          if (res !== "") { locked = true; break; }
+        }
+        if (!locked) ok = false;
+      }
     } else if (cmd.commandType === "logout_user") {
       // Give the user a few seconds to see the notice before signing out.
       await new Promise((r) => setTimeout(r, 4000));
-      if (IS_WIN) await runCmd("shutdown", ["/l"]);
-      else if (IS_MAC)
+      if (IS_WIN) {
+        await runCmd("shutdown", ["/l"]);
+      } else if (IS_MAC) {
         await runCmd("osascript", [
           "-e",
           'tell application "System Events" to log out',
         ]);
-      else ok = false;
+      } else {
+        // Linux logout fallbacks
+        let loggedOut = false;
+        for (const c of [
+          ["gnome-session-quit", ["--logout", "--no-prompt"]],
+          ["loginctl", ["terminate-user", process.env.USER || ""]]
+        ]) {
+          const res = await runCmd(c[0], c[1]);
+          if (res !== "") { loggedOut = true; break; }
+        }
+        if (!loggedOut) ok = false;
+      }
     } else {
       ok = false;
     }
@@ -815,7 +840,49 @@ let psProcess = null;
 function startPersistentTelemetryStream() {
   if (IS_WIN) startPersistentTelemetryStreamWin();
   else if (IS_MAC) startPersistentTelemetryStreamMac();
-  else console.log("ℹ️ Foreground-app tracking is not supported on this OS.");
+  else startPersistentTelemetryStreamLinux();
+}
+
+function startPersistentTelemetryStreamLinux() {
+  const linuxLoop = `
+    while true; do
+      if command -v xdotool >/dev/null 2>&1; then
+        ACTIVE_ID=$(xdotool getactivewindow 2>/dev/null)
+        if [ ! -z "$ACTIVE_ID" ]; then
+          TITLE=$(xdotool getwindowname "$ACTIVE_ID" 2>/dev/null)
+          PID=$(xdotool getwindowpid "$ACTIVE_ID" 2>/dev/null)
+          if [ ! -z "$PID" ]; then
+            PROCESS=$(ps -p "$PID" -o comm= 2>/dev/null)
+          fi
+        fi
+      fi
+      if command -v xprintidle >/dev/null 2>&1; then
+        IDLE_MS=$(xprintidle 2>/dev/null)
+        IDLE_SEC=$((IDLE_MS / 1000))
+      else
+        IDLE_SEC=0
+      fi
+      echo "{\\"title\\":\\"\${TITLE:-Unknown}\\",\\"process\\":\\"\${PROCESS:-System}\\",\\"idle\\":\${IDLE_SEC:-0}}"
+      sleep 2
+    done
+  `;
+  const linuxProcess = spawn("bash", ["-c", linuxLoop]);
+  const rl = readline.createInterface({ input: linuxProcess.stdout, terminal: false });
+  rl.on("line", (line) => {
+    try {
+      const data = JSON.parse(line.trim());
+      clientState.activeApp = data.process || "System";
+      clientState.windowTitle = data.title || "Desktop";
+      if (typeof data.idle === "number") {
+        clientState.idleSecondsCounter = data.idle;
+        clientState.isCurrentlyIdle = data.idle >= configState.idleThresholdSeconds;
+      }
+    } catch { }
+  });
+  linuxProcess.on("close", () => {
+    console.log("⚠️ Linux telemetry stream closed. Restarting in 5s...");
+    setTimeout(startPersistentTelemetryStreamLinux, 5000);
+  });
 }
 
 function startPersistentTelemetryStreamWin() {
@@ -924,6 +991,35 @@ function startPersistentTelemetryStreamMac() {
 async function captureScreenshot() {
   if (IS_WIN) return captureScreenshotWin();
   if (IS_MAC) return captureScreenshotMac();
+  return captureScreenshotLinux();
+}
+
+async function captureScreenshotLinux() {
+  const tmpImg = path.join(os.tmpdir(), `tracker_cap_${Date.now()}.jpg`);
+  
+  // Try scrot, gnome-screenshot, or ImageMagick import
+  const commands = [
+    `scrot -z "${tmpImg}"`,
+    `gnome-screenshot -f "${tmpImg}"`,
+    `import -window root "${tmpImg}"`
+  ];
+
+  for (const cmd of commands) {
+    try {
+      await new Promise((resolve, reject) => {
+        exec(cmd, (err) => err ? reject(err) : resolve());
+      });
+      if (fs.existsSync(tmpImg)) {
+        const buffer = fs.readFileSync(tmpImg);
+        fs.unlinkSync(tmpImg);
+        return { buffer, contentType: "image/jpeg" };
+      }
+    } catch (_) {
+      // Try next fallback command
+    }
+  }
+
+  console.error("❌ Screenshot capture failed (Linux): No screen capture tools available.");
   return null;
 }
 
