@@ -15,6 +15,7 @@ import {
   Download,
   Apple,
   Monitor,
+  Terminal,
   ShieldCheck,
   RefreshCw,
   PackageOpen,
@@ -29,6 +30,13 @@ function formatSize(bytes: number | null | undefined): string {
 const PLATFORM_ICON: Record<string, typeof Monitor> = {
   windows: Monitor,
   macos: Apple,
+  linux: Terminal,
+};
+
+const PLATFORM_DESC: Record<string, string> = {
+  windows: "Signed-in users can install without admin rights (.exe installer).",
+  macos: "Drag-and-drop install from a disk image (.dmg).",
+  linux: "Extract and run the agent binary (.tar.gz archive).",
 };
 
 function InstallerCard({ item }: { item: DownloadItem }) {
@@ -40,9 +48,8 @@ function InstallerCard({ item }: { item: DownloadItem }) {
           <Icon className="h-5 w-5 text-primary" /> {item.label}
         </CardTitle>
         <CardDescription>
-          {item.platform === "windows"
-            ? "Signed-in users can install without admin rights (.exe installer)."
-            : "Drag-and-drop install from a disk image (.dmg)."}
+          {PLATFORM_DESC[item.platform] ??
+            "Install the desktop agent for this platform."}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -146,7 +153,7 @@ export default function Downloads() {
         </p>
       ) : (
         <>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {items.map((item) => (
               <InstallerCard key={item.platform} item={item} />
             ))}

@@ -46,12 +46,12 @@ describe("downloads route", () => {
     expect(res.status).toBe(403);
   });
 
-  it("lists both platforms as unavailable when no release is reachable", async () => {
+  it("lists all platforms as unavailable when no release is reachable", async () => {
     const app = makeDownloadsApp("admin");
     const res = await request(app).get("/downloads");
     expect(res.status).toBe(200);
     const platforms = res.body.items.map((i: any) => i.platform).sort();
-    expect(platforms).toEqual(["macos", "windows"]);
+    expect(platforms).toEqual(["linux", "macos", "windows"]);
     for (const item of res.body.items) {
       expect(item.available).toBe(false);
       expect(item.downloadUrl).toBeNull();
@@ -60,7 +60,7 @@ describe("downloads route", () => {
 
   it("404s for an unknown platform", async () => {
     const app = makeDownloadsApp("admin");
-    const res = await request(app).get("/downloads/linux");
+    const res = await request(app).get("/downloads/solaris");
     expect(res.status).toBe(404);
   });
 
@@ -85,6 +85,7 @@ describe("downloads route", () => {
         assets: [
           { id: 2, name: "WorkforceAgent-Setup-windows.exe", size: 20, updatedAt: "2026-05-01T00:00:00Z", apiUrl: "u2" },
           { id: 3, name: "WorkforceAgent-macos.dmg", size: 11, updatedAt: "2026-05-01T00:00:00Z", apiUrl: "u3" },
+          { id: 4, name: "WorkforceAgent-linux.tar.gz", size: 30, updatedAt: "2026-05-01T00:00:00Z", apiUrl: "u4" },
         ],
       },
     ];
@@ -101,5 +102,9 @@ describe("downloads route", () => {
     expect(byPlatform.windows.downloadUrl).toBe("/api/downloads/windows");
     expect(byPlatform.macos.available).toBe(true);
     expect(byPlatform.macos.version).toBe("agent-v0.2.0");
+    expect(byPlatform.linux.available).toBe(true);
+    expect(byPlatform.linux.version).toBe("agent-v0.1.7");
+    expect(byPlatform.linux.fileName).toBe("WorkforceAgent-linux.tar.gz");
+    expect(byPlatform.linux.downloadUrl).toBe("/api/downloads/linux");
   });
 });

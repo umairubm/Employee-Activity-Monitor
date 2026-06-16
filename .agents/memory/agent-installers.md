@@ -3,16 +3,25 @@ name: Desktop agent installers + downloads
 description: Why agent installers build on CI and how the dashboard serves them
 ---
 
-# Desktop agent installers (.exe / .dmg) and dashboard downloads
+# Desktop agent installers (.exe / .dmg / .tar.gz) and dashboard downloads
 
-The Python desktop agent uses tkinter (consent dialog) + pystray (tray icon),
-which **cannot be cross-compiled** from Linux/Replit into a real Windows `.exe`
-or macOS `.dmg`. They must be built on native runners.
+The Python desktop agent uses tkinter (consent dialog) + pystray (tray icon).
+Each platform's binary **cannot be cross-compiled** from another OS, so all
+three must be built on native runners.
 
 **Decision:** installers are produced by a GitHub Actions workflow
-(`build-agent-installers.yml`) on `windows-latest` (PyInstaller + Inno Setup) and
-`macos-latest` (PyInstaller + DMG script), triggered by an `agent-v*` tag or
-manual dispatch, and attached to a GitHub Release.
+(`build-agent-installers.yml`) on `windows-latest` (PyInstaller + Inno Setup),
+`macos-latest` (PyInstaller + DMG script), and `ubuntu-latest` (PyInstaller +
+`tar -czf` of `dist/WorkforceAgent` → `WorkforceAgent-linux.tar.gz`), triggered by
+an `agent-v*` tag or manual dispatch, and attached to a GitHub Release.
+
+**Adding a download platform is 3 + 2 places, all by file extension:** server
+`PLATFORM_EXT` (github.ts) + `PLATFORMS`/`VALID_PLATFORMS` (downloads.ts), the
+dashboard `PLATFORM_ICON`/`PLATFORM_DESC` maps (Downloads.tsx), plus a CI build
+job and the PyInstaller spec's per-OS pystray backend hiddenimport
+(`_win32`/`_darwin`/`_xorg`). Linux backend is `pystray._xorg` (pulls python-xlib
+on Linux via pip env marker). Asset matching is extension-only (`endsWith`), so
+keep each platform's release asset name uniquely suffixed.
 
 **Why windowed (no-console) is allowed:** transparency is a hard product rule,
 but it is satisfied at *runtime* (consent gate, always-visible tray icon,

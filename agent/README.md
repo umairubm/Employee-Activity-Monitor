@@ -75,7 +75,7 @@ python agent.py        # or: python -m agent.agent from the repo root
   detection (`sudo apt install xdotool xprintidle`). The agent degrades
   gracefully if they are missing (reports `unknown` / `0` idle).
 
-## Packaging the installers (Windows `.exe` + macOS `.dmg`)
+## Packaging the installers (Windows `.exe` + macOS `.dmg` + Linux `.tar.gz`)
 
 The professional installers are built from the assets in `packaging/`:
 
@@ -86,6 +86,7 @@ The professional installers are built from the assets in `packaging/`:
 | `packaging/launcher.py`           | Frozen entry point (`from agent.agent import main`)  |
 | `packaging/windows/WorkforceAgent.iss` | Inno Setup script → `WorkforceAgent-Setup-windows.exe` |
 | `packaging/macos/build_dmg.sh`    | Builds the `.app` and packages it → `WorkforceAgent-macos.dmg` |
+| (CI tarball step)                 | Packs the Linux binary → `WorkforceAgent-linux.tar.gz` |
 
 These produce **windowed** binaries with no console window. Transparency is still
 fully enforced at runtime — the consent dialog, the always-visible tray icon, and
@@ -93,13 +94,13 @@ the pre-screenshot notice are unchanged. Do not add covert/hidden-process flags.
 
 ### Build via GitHub Actions (recommended)
 
-Linux (and Replit) cannot cross-compile a real `.exe` or `.dmg`, so the binaries
-are built on native runners by `.github/workflows/build-agent-installers.yml`.
+Each platform's binary cannot be cross-compiled, so they are built on native
+runners by `.github/workflows/build-agent-installers.yml`.
 
 1. Push a tag like `agent-v0.1.0` (or run the workflow manually from the Actions
    tab and supply the tag).
-2. The `windows-latest` and `macos-latest` jobs build the installers and attach
-   them to a GitHub Release for that tag.
+2. The `windows-latest`, `macos-latest`, and `ubuntu-latest` jobs build the
+   installers and attach them to a GitHub Release for that tag.
 3. The dashboard's **Download Agent** page reads the latest release and serves
    the installers to signed-in admins.
 
@@ -112,6 +113,7 @@ cd packaging
 pyinstaller --noconfirm WorkforceAgent.spec      # -> dist/WorkforceAgent(.exe/.app)
 # Windows: ISCC.exe windows\WorkforceAgent.iss    (requires Inno Setup 6)
 # macOS:   bash macos/build_dmg.sh
+# Linux:   tar -czf dist/WorkforceAgent-linux.tar.gz -C dist WorkforceAgent
 ```
 
 ## Uninstalling

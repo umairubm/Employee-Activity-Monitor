@@ -108,6 +108,7 @@ export async function getLatestRelease(): Promise<LatestRelease | null> {
 const PLATFORM_EXT: Record<string, string> = {
   windows: ".exe",
   macos: ".dmg",
+  linux: ".tar.gz",
 };
 
 export function assetForPlatform(

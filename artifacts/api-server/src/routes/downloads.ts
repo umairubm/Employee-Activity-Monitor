@@ -12,7 +12,10 @@ const router: IRouter = Router();
 const PLATFORMS = [
   { platform: "windows", label: "Windows", extension: ".exe" },
   { platform: "macos", label: "macOS", extension: ".dmg" },
+  { platform: "linux", label: "Linux", extension: ".tar.gz" },
 ] as const;
+
+const VALID_PLATFORMS = new Set<string>(PLATFORMS.map((p) => p.platform));
 
 // GET /api/downloads - list available desktop-agent installers (admin-gated by
 // the mount in routes/index.ts). Returns metadata per platform; the actual
@@ -48,7 +51,7 @@ router.get("/", async (_req, res) => {
 // GET /api/downloads/:platform - stream the installer bytes for a platform.
 router.get("/:platform", async (req, res) => {
   const platform = String(req.params.platform);
-  if (platform !== "windows" && platform !== "macos") {
+  if (!VALID_PLATFORMS.has(platform)) {
     res.status(404).json({ error: "Unknown platform" });
     return;
   }

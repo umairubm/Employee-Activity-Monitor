@@ -9,6 +9,7 @@ notice. Run from the `agent/packaging` directory:
 
 Windows  -> dist/WorkforceAgent.exe  (packaged by Inno Setup into a Setup.exe)
 macOS    -> dist/WorkforceAgent.app  (packaged by build_dmg.sh into a .dmg)
+Linux    -> dist/WorkforceAgent      (packaged into a .tar.gz in CI)
 """
 
 import sys
@@ -20,6 +21,7 @@ REPO_ROOT = AGENT_DIR.parent
 
 is_win = sys.platform.startswith("win")
 is_mac = sys.platform == "darwin"
+is_linux = sys.platform.startswith("linux")
 
 icon_path = None
 if is_win:
@@ -48,6 +50,8 @@ if is_win:
     hiddenimports.append("pystray._win32")
 elif is_mac:
     hiddenimports.append("pystray._darwin")
+elif is_linux:
+    hiddenimports.append("pystray._xorg")
 
 a = Analysis(
     [str(SPEC_DIR / "launcher.py")],
