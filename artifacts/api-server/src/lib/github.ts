@@ -105,19 +105,78 @@ export async function getLatestRelease(): Promise<LatestRelease | null> {
   };
 }
 
-const PLATFORM_EXT: Record<string, string> = {
-  windows: ".exe",
-  macos: ".dmg",
-  linux: ".tar.gz",
+// Per-platform asset matchers. Windows and macOS use a single, unambiguous
+// installer extension. Linux has no universal installer format and our releases
+// have historically shipped the Linux build as a bare PyInstaller binary with
+// NO extension (e.g. "svctcom"), so the Linux matcher accepts both the common
+// Linux package extensions AND an extensionless binary — while explicitly
+// excluding the other platforms' installers and non-installer sidecar files
+// (checksums, signatures, notes).
+const WINDOWS_EXT = [".exe"];
+const MACOS_EXT = [".dmg"];
+const LINUX_EXT = [".tar.gz", ".tgz", ".appimage", ".deb", ".rpm"];
+const NON_INSTALLER_EXT = [
+  ".sha256",
+  ".sha512",
+  ".md5",
+  ".sig",
+  ".asc",
+  ".txt",
+  ".md",
+  ".json",
+  ".yml",
+  ".yaml",
+  ".zip",
+];
+
+function hasExt(name: string, exts: string[]): boolean {
+  const lower = name.toLowerCase();
+  return exts.some((e) => lower.endsWith(e));
+}
+
+// Common extensionless files that are NOT installers, so a bare-binary match
+// never resolves Linux to a repo/doc/checksum file that happens to ship as an
+// asset.
+const BARE_NON_INSTALLER = new Set([
+  "readme",
+  "license",
+  "licence",
+  "changelog",
+  "notice",
+  "authors",
+  "copying",
+  "contributing",
+  "manifest",
+  "checksums",
+  "sha256sums",
+  "sha512sums",
+  "md5sums",
+]);
+
+/** A release asset filename with no extension at all (a bare ELF binary). */
+function isBareBinary(name: string): boolean {
+  const base = name.split("/").pop() ?? name;
+  if (base.includes(".")) return false;
+  return !BARE_NON_INSTALLER.has(base.toLowerCase());
+}
+
+const PLATFORM_MATCH: Record<string, (name: string) => boolean> = {
+  windows: (n) => hasExt(n, WINDOWS_EXT),
+  macos: (n) => hasExt(n, MACOS_EXT),
+  linux: (n) =>
+    !hasExt(n, NON_INSTALLER_EXT) &&
+    !hasExt(n, WINDOWS_EXT) &&
+    !hasExt(n, MACOS_EXT) &&
+    (hasExt(n, LINUX_EXT) || isBareBinary(n)),
 };
 
 export function assetForPlatform(
   release: LatestRelease,
   platform: string,
 ): ReleaseAsset | undefined {
-  const ext = PLATFORM_EXT[platform];
-  if (!ext) return undefined;
-  return release.assets.find((a) => a.name.toLowerCase().endsWith(ext));
+  const match = PLATFORM_MATCH[platform];
+  if (!match) return undefined;
+  return release.assets.find((a) => match(a.name));
 }
 
 /**
@@ -164,10 +223,10 @@ export function findPlatformAsset(
   releases: LatestRelease[],
   platform: string,
 ): { asset: ReleaseAsset; tag: string } | undefined {
-  const ext = PLATFORM_EXT[platform];
-  if (!ext) return undefined;
+  const match = PLATFORM_MATCH[platform];
+  if (!match) return undefined;
   for (const release of releases) {
-    const asset = release.assets.find((a) => a.name.toLowerCase().endsWith(ext));
+    const asset = release.assets.find((a) => match(a.name));
     if (asset) return { asset, tag: release.tag };
   }
   return undefined;

@@ -15,13 +15,22 @@ three must be built on native runners.
 `tar -czf` of `dist/WorkforceAgent` → `WorkforceAgent-linux.tar.gz`), triggered by
 an `agent-v*` tag or manual dispatch, and attached to a GitHub Release.
 
-**Adding a download platform is 3 + 2 places, all by file extension:** server
-`PLATFORM_EXT` (github.ts) + `PLATFORMS`/`VALID_PLATFORMS` (downloads.ts), the
-dashboard `PLATFORM_ICON`/`PLATFORM_DESC` maps (Downloads.tsx), plus a CI build
-job and the PyInstaller spec's per-OS pystray backend hiddenimport
+**Adding a download platform touches:** server `PLATFORM_MATCH` (github.ts) +
+`PLATFORMS`/`VALID_PLATFORMS` (downloads.ts), the dashboard
+`PLATFORM_ICON`/`PLATFORM_DESC` maps (Downloads.tsx), plus a CI build job and the
+PyInstaller spec's per-OS pystray backend hiddenimport
 (`_win32`/`_darwin`/`_xorg`). Linux backend is `pystray._xorg` (pulls python-xlib
-on Linux via pip env marker). Asset matching is extension-only (`endsWith`), so
-keep each platform's release asset name uniquely suffixed.
+on Linux via pip env marker).
+
+**Asset matching is per-platform predicates, NOT a single extension.** Windows =
+`.exe`, macOS = `.dmg`. The published Linux build is shipped as a **bare
+PyInstaller binary with NO extension** (e.g. `svctcom`), so the Linux matcher
+accepts common Linux pkg extensions (`.tar.gz`/`.AppImage`/`.deb`/`.rpm`) OR an
+extensionless filename, while excluding `.exe`/`.dmg` and non-installer sidecars
+(`.sha256`/`.sig`/`.txt`/...). Don't revert Linux to extension-only `endsWith` —
+it silently hides the real bare-binary asset.
+**Why:** the user's actual releases use obfuscated names like `svctcom`,
+`SVCTCOM-Setup.exe`, `svctcom.dmg` (the bare one is Linux).
 
 **Why windowed (no-console) is allowed:** transparency is a hard product rule,
 but it is satisfied at *runtime* (consent gate, always-visible tray icon,

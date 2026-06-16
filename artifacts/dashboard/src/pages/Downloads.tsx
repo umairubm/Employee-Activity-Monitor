@@ -36,7 +36,7 @@ const PLATFORM_ICON: Record<string, typeof Monitor> = {
 const PLATFORM_DESC: Record<string, string> = {
   windows: "Signed-in users can install without admin rights (.exe installer).",
   macos: "Drag-and-drop install from a disk image (.dmg).",
-  linux: "Extract and run the agent binary (.tar.gz archive).",
+  linux: "Download the agent, then make it executable (chmod +x) and run it.",
 };
 
 function InstallerCard({ item }: { item: DownloadItem }) {

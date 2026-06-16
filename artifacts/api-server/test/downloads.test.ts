@@ -107,4 +107,56 @@ describe("downloads route", () => {
     expect(byPlatform.linux.fileName).toBe("WorkforceAgent-linux.tar.gz");
     expect(byPlatform.linux.downloadUrl).toBe("/api/downloads/linux");
   });
+
+  it("resolves a bare (extensionless) Linux binary alongside .exe/.dmg", async () => {
+    // Mirrors how releases ship in practice: the Linux build is a bare
+    // PyInstaller binary with no extension, next to a Windows .exe and macOS
+    // .dmg. Each platform must resolve to its own asset.
+    const releases: LatestRelease[] = [
+      {
+        tag: "agent-v0.2.24",
+        assets: [
+          { id: 1, name: "svctcom", size: 35314152, updatedAt: "2026-06-10T00:00:00Z", apiUrl: "u1" },
+          { id: 2, name: "SVCTCOM-Setup.exe", size: 22142497, updatedAt: "2026-06-10T00:00:00Z", apiUrl: "u2" },
+          { id: 3, name: "svctcom.dmg", size: 17715244, updatedAt: "2026-06-10T00:00:00Z", apiUrl: "u3" },
+          { id: 4, name: "svctcom.sha256", size: 64, updatedAt: "2026-06-10T00:00:00Z", apiUrl: "u4" },
+        ],
+      },
+    ];
+    vi.mocked(getReleases).mockResolvedValueOnce(releases);
+
+    const app = makeDownloadsApp("admin");
+    const res = await request(app).get("/downloads");
+    expect(res.status).toBe(200);
+
+    const byPlatform = Object.fromEntries(res.body.items.map((i: any) => [i.platform, i]));
+    expect(byPlatform.windows.fileName).toBe("SVCTCOM-Setup.exe");
+    expect(byPlatform.macos.fileName).toBe("svctcom.dmg");
+    expect(byPlatform.linux.available).toBe(true);
+    expect(byPlatform.linux.fileName).toBe("svctcom");
+    expect(byPlatform.linux.version).toBe("agent-v0.2.24");
+    expect(byPlatform.linux.downloadUrl).toBe("/api/downloads/linux");
+  });
+
+  it("skips extensionless non-installer files and still picks the Linux binary", async () => {
+    const releases: LatestRelease[] = [
+      {
+        tag: "agent-v0.2.24",
+        assets: [
+          { id: 1, name: "LICENSE", size: 1024, updatedAt: "2026-06-10T00:00:00Z", apiUrl: "u1" },
+          { id: 2, name: "README", size: 2048, updatedAt: "2026-06-10T00:00:00Z", apiUrl: "u2" },
+          { id: 3, name: "svctcom", size: 35314152, updatedAt: "2026-06-10T00:00:00Z", apiUrl: "u3" },
+        ],
+      },
+    ];
+    vi.mocked(getReleases).mockResolvedValueOnce(releases);
+
+    const app = makeDownloadsApp("admin");
+    const res = await request(app).get("/downloads");
+    expect(res.status).toBe(200);
+
+    const byPlatform = Object.fromEntries(res.body.items.map((i: any) => [i.platform, i]));
+    expect(byPlatform.linux.available).toBe(true);
+    expect(byPlatform.linux.fileName).toBe("svctcom");
+  });
 });
