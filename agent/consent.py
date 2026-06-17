@@ -58,6 +58,11 @@ def show_consent_dialog(
     root.configure(bg=WHITE)
     root.resizable(False, False)
 
+    # Hide the consent dialog from the Windows taskbar to maintain a background-service feel.
+    # The 'toolwindow' attribute removes the taskbar button while keeping the window functional.
+    if sys.platform.startswith("win"):
+        root.attributes("-toolwindow", True)
+
     # Window icon (best-effort).
     icon = _asset("icon.png")
     if icon:

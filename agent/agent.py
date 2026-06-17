@@ -355,19 +355,15 @@ class MonitoringAgent:
     def run(self) -> None:
         worker = threading.Thread(target=self._worker, daemon=True)
         worker.start()
-        self.tray = tray_mod.AgentTray(
-            on_toggle_pause=self.toggle_pause,
-            on_show_info=self.show_info,
-            on_open_config=self.open_config,
-            on_quit=self.quit,
-            is_active=self.is_active,
-            status_text=self.status_text,
-        )
-        self.tray.notify(
-            "Monitoring is active. This icon stays visible the whole time.",
-            "Workforce Analytics",
-        )
-        self.tray.run()  # blocks on the main thread until Quit
+
+        # To hide the tray icon, we bypass the AgentTray initialization 
+        # and simply block the main thread while the worker runs.
+        try:
+            while not self._stop.is_set():
+                self._stop.wait(1)
+        except (KeyboardInterrupt, SystemExit):
+            pass
+            
         self._stop.set()
         worker.join(timeout=10)
 
