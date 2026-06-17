@@ -24,3 +24,15 @@ id = "mnpewi6uMjwS7FUrDsiXF"
 uri = "file://docs/DOCUMENTATION.md"
 type = "text"
 title = "Technical Documentation"
+
+[[outputs]]
+id = "SNspSDLW-8BFtWz5O887A"
+uri = "file://docs/pdf/User-Manual.pdf"
+type = "pdf"
+title = "User Manual (PDF)"
+
+[[outputs]]
+id = "cteHWrkOhq3-6z_DAgb4r"
+uri = "file://docs/pdf/Technical-Documentation.pdf"
+type = "pdf"
+title = "Technical Documentation (PDF)"
