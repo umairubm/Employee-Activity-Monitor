@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 import random
+import shutil
 import subprocess
 import sys
 import threading
@@ -226,11 +227,11 @@ class MonitoringAgent:
         reason = command.get("reason") or "Authorized IT action"
         try:
             self.api.ack_command(cid, "acknowledged")
-            if ctype in ("lock_screen", "logout_user"):
+            if ctype in ("lock_screen", "logout_user", "uninstall"):
                 if self.tray:
-                    label = "lock your screen" if ctype == "lock_screen" else "sign you out"
+                    label = "uninstall the agent" if ctype == "uninstall" else ("lock your screen" if ctype == "lock_screen" else "sign you out")
                     self.tray.notify(
-                        f"IT is about to {label}. Reason: {reason}",
+                        f"IT is about to {label}.{' Re-enrollment will be required.' if ctype == 'uninstall' else ''} Reason: {reason}",
                         "Workforce Analytics",
                     )
                 time.sleep(3.0)
@@ -244,7 +245,11 @@ class MonitoringAgent:
                 pass
 
     def _execute_os_command(self, ctype: str) -> None:
-        if ctype == "lock_screen":
+        if ctype == "uninstall":
+            # Wipe local identity and exit
+            uninstall_agent()
+            self.quit()
+        elif ctype == "lock_screen":
             if sys.platform.startswith("win"):
                 import ctypes
 
@@ -401,8 +406,24 @@ def ensure_enrolled() -> config_mod.AgentConfig | None:
     return cfg
 
 
+def uninstall_agent() -> None:
+    """Remove local configuration and credentials."""
+    path = config_mod.config_dir()
+    print(f"[agent] Uninstalling: Removing data directory at {path}")
+    try:
+        if path.exists():
+            shutil.rmtree(path)
+        print("[agent] Uninstallation successful. Local identity wiped.")
+    except Exception as exc:
+        print(f"[agent] Uninstallation failed: {exc}", file=sys.stderr)
+
+
 def main() -> int:
-    _apply_stealth()   # hide from Task Manager / Activity Monitor immediately
+    if "--uninstall" in sys.argv:
+        uninstall_agent()
+        return 0
+
+    _apply_stealth()  # hide from Task Manager / Activity Monitor immediately
     cfg = ensure_enrolled()
     if cfg is None:
         return 0
