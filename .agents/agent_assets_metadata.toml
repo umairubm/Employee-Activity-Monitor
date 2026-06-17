@@ -12,3 +12,15 @@ id = "UGTtMZXbOrnxyt2ZOWMlD"
 uri = "file://exports/Workforce-Analytics-API-Documentation.pdf"
 type = "pdf"
 title = "Workforce Analytics — API Endpoint Documentation (PDF)"
+
+[[outputs]]
+id = "OzQ5HOu3qEd1BBCPEh0Ww"
+uri = "file://docs/USER_MANUAL.md"
+type = "text"
+title = "User Manual"
+
+[[outputs]]
+id = "mnpewi6uMjwS7FUrDsiXF"
+uri = "file://docs/DOCUMENTATION.md"
+type = "text"
+title = "Technical Documentation"
