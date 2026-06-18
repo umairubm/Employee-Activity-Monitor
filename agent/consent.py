@@ -170,9 +170,9 @@ def show_consent_dialog(
             entry.insert(0, default)
         return entry
 
-    # Server URL and token come from env vars / installer seed — not shown to user.
-    _server = default_server or "https://activitymonitor.replit.app"
-    _token = default_token
+    # Allow the user/IT to specify the server URL if the default is incorrect.
+    server_entry = field("API Server URL", default_server or "https://activitymonitor.replit.app")
+    token_entry = field("Enrollment token (from your IT admin)", default_token)
     name_entry = field("Your full name", "")
 
     # ---- Acknowledgement ---------------------------------------------------
@@ -204,14 +204,22 @@ def show_consent_dialog(
         root.destroy()
 
     def on_accept():
+        server = server_entry.get().strip()
+        token = token_entry.get().strip()
         name = name_entry.get().strip()
+        if not server:
+            error_var.set("Please enter the API Server URL.")
+            return
+        if not token:
+            error_var.set("Please enter the enrollment token from your IT admin.")
+            return
         if not name:
             error_var.set("Please enter your full name to record your consent.")
             return
         if not ack_var.get():
             error_var.set("Please tick the consent checkbox to continue.")
             return
-        result["value"] = {"server_url": _server.rstrip("/"), "token": _token, "name": name}
+        result["value"] = {"server_url": server.rstrip("/"), "token": token, "name": name}
         root.destroy()
 
     decline = tk.Button(

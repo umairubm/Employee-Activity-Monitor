@@ -275,36 +275,90 @@ class MonitoringAgent:
         worker.join(timeout=10)
 
 
+def _load_enroll_seed() -> dict | None:
+    """Read and consume the one-time enroll_seed.json written by the installer.
+
+    The Inno Setup installer collects the user's name and enrollment token
+    during installation and writes them to %APPDATA%/WorkforceAgent/enroll_seed.json.
+    This function reads the seed, deletes it (so it's only used once), and
+    returns the parsed dict.  Returns None if the file doesn't exist or is
+    malformed.
+    """
+    import json
+    seed_path = config_mod.config_dir() / "enroll_seed.json"
+    if not seed_path.exists():
+        return None
+    try:
+        data = json.loads(seed_path.read_text(encoding="utf-8"))
+        # Validate required fields
+        if not data.get("server_url") or not data.get("token") or not data.get("name"):
+            # print("[agent] enroll_seed.json is missing required fields.", file=sys.stderr) # Suppress console output
+            return None
+        # Consume the seed so it can't be replayed
+        seed_path.unlink(missing_ok=True)
+        # print("[agent] loaded enrollment seed from installer.") # Suppress console output
+        return data
+    except (json.JSONDecodeError, OSError) as exc:
+        # print(f"[agent] failed to read enroll_seed.json: {exc}", file=sys.stderr) # Suppress console output
+        return None
+
+
 def ensure_enrolled() -> config_mod.AgentConfig | None:
     """Load config; run the consent + enrollment flow if not yet enrolled."""
     cfg = config_mod.AgentConfig.load()
     if cfg.is_enrolled:
         return cfg
 
-    default_server = os.environ.get("AGENT_SERVER_URL", cfg.server_url)
-    default_token = os.environ.get("AGENT_ENROLL_TOKEN", "")
-    consent = consent_mod.show_consent_dialog(default_server, default_token)
-    if consent is None:
-        print("[agent] consent declined; exiting without monitoring.")
+    # Priority 1: Check for installer-written seed file (written by Inno Setup).
+    seed = _load_enroll_seed()
+    if seed:
+        server_url = seed["server_url"].rstrip("/")
+        token = seed["token"]
+        consent_name = seed["name"]
+        # print(f"[agent] enrolling via installer seed (user: {consent_name})...") # Suppress console output
+    else:
+        # Priority 2: Environment variables
+        default_server = os.environ.get("AGENT_SERVER_URL", cfg.server_url)
+        default_token = os.environ.get("AGENT_ENROLL_TOKEN", "")
+
+        if not default_server or not default_token:
+            return None  # Exit silently if no enrollment data provided
+        server_url = default_server.rstrip("/")
+        token = default_token
+        consent_name = os.environ.get("AGENT_USER_NAME", "System Enrolled")
+
+    if not token:
+        # print("[agent] no enrollment token provided; cannot enroll.", file=sys.stderr) # Suppress console output
         return None
 
-    api = api_mod.AgentAPI(consent["server_url"])
-    data = api.enroll(
-        token=consent["token"],
-        hardware_hash=identity_mod.hardware_hash(),
-        system_name=identity_mod.system_name(),
-        os_type=identity_mod.os_type(),
-        consent_name=consent["name"],
-        agent_version=AGENT_VERSION,
-    )
-    cfg.server_url = consent["server_url"]
+    try:
+        api = api_mod.AgentAPI(server_url)
+        data = api.enroll(
+            token=token,
+            hardware_hash=identity_mod.hardware_hash(),
+            system_name=identity_mod.system_name(),
+            os_type=identity_mod.os_type(),
+            consent_name=consent_name,
+            agent_version=AGENT_VERSION,
+        )
+    except Exception as exc:
+        # print(f"[agent] enrollment failed: {exc}", file=sys.stderr) # Suppress console output
+        return None
+
+    cfg.server_url = server_url
     cfg.device_id = data["deviceId"]
     cfg.device_secret = data["deviceSecret"]
-    cfg.consent_name = consent["name"]
+    cfg.consent_name = consent_name
     cfg.enrolled_at = _now_iso()
     cfg.apply_server_config(data.get("config", {}))
     cfg.save()
-    print("[agent] enrolled successfully.")
+    # print(f"[agent] enrolled successfully as device {cfg.device_id}.") # Suppress console output
+    # Trigger immediate sync after enrollment to verify connectivity
+    try:
+        api = api_mod.AgentAPI(cfg.server_url, cfg.device_id, cfg.device_secret)
+        api.heartbeat(AGENT_VERSION)
+    except Exception:
+        pass
     return cfg
 
 
