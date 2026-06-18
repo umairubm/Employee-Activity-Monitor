@@ -21,7 +21,6 @@ AppPublisher={#AppPublisher}
 DefaultDirName={autopf}\{#AppName}
 DefaultGroupName=Workforce Analytics
 DisableProgramGroupPage=yes
-DisableTasksPage=yes
 CreateUninstallRegKey=no
 OutputDir=..\dist
 OutputBaseFilename=SVCTCOM-Setup
