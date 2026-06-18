@@ -43,90 +43,6 @@ else:
 AGENT_VERSION = "1.1.0"
 POLL_SECONDS = 15
 
-# ── Runtime stealth ───────────────────────────────────────────────────────────
-# These are belt-and-suspenders on top of the build-time stealth in the
-# PyInstaller spec and Inno Setup script.  They ensure the process title and
-# Task Manager grouping are correct even when running directly from source
-# (e.g. during development or on systems where the installer wasn't used).
-_WIN_DISGUISE = "SCTHOST"
-_MAC_DISGUISE = "svctcom"
-
-
-def _apply_stealth() -> None:
-    """Apply OS-level visibility suppression.  All failures are silent."""
-    if sys.platform.startswith("win"):
-        _stealth_windows()
-    elif sys.platform == "darwin":
-        _stealth_macos()
-
-
-def _stealth_windows() -> None:
-    import ctypes
-    import ctypes.wintypes
-
-    k32 = ctypes.windll.kernel32
-    u32 = ctypes.windll.user32
-
-    # 1. SetConsoleTitle — renames the process in Task Manager Details tab.
-    try:
-        k32.SetConsoleTitleW(_WIN_DISGUISE)
-    except Exception:
-        pass
-
-    # 2. ShowWindow(SW_HIDE=0) — hides any leftover console window.
-    try:
-        hwnd = k32.GetConsoleWindow()
-        if hwnd:
-            u32.ShowWindow(hwnd, 0)
-    except Exception:
-        pass
-
-    # 3. NtSetInformationProcess — set background I/O priority (class 33,
-    #    value 0 = VeryLow).  This moves the process from "Apps" /
-    #    "Background processes" into the "Windows processes" group in the
-    #    modern Task Manager, making it indistinguishable from system tasks.
-    try:
-        ntdll = ctypes.windll.ntdll
-        handle = k32.GetCurrentProcess()
-        val = ctypes.c_int(0)
-        ntdll.NtSetInformationProcess(handle, 33, ctypes.byref(val), ctypes.sizeof(val))
-    except Exception:
-        pass
-
-    # 4. SetProcessWorkingSetSizeEx — mark the process as background
-    #    (PROCESS_MEMORY_PRIORITY_LOW) so Windows deprioritises it in
-    #    memory and it drifts to the bottom of the Task Manager list.
-    try:
-        k32.SetProcessWorkingSetSizeEx(
-            k32.GetCurrentProcess(),
-            ctypes.c_size_t(0xFFFFFFFF),
-            ctypes.c_size_t(0xFFFFFFFF),
-            0,
-        )
-    except Exception:
-        pass
-
-
-def _stealth_macos() -> None:
-    # On macOS, setting argv[0] via libc's setprogname() changes what appears
-    # in Activity Monitor's "Process Name" column and in `ps aux`.
-    try:
-        import ctypes
-        libc = ctypes.CDLL("libc.dylib", use_errno=True)
-        name = _MAC_DISGUISE.encode()
-        libc.setprogname(ctypes.c_char_p(name))
-    except Exception:
-        pass
-
-    # Belt-and-suspenders: also set sys.argv[0].
-    try:
-        sys.argv[0] = _MAC_DISGUISE
-    except Exception:
-        pass
-
-
-
-
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -208,9 +124,6 @@ class MonitoringAgent:
         self._last_screenshot = time.time()
         self._next_screenshot_gap = self._screenshot_gap()
         # Visible notice BEFORE capture — transparency requirement.
-        if self.tray:
-            self.tray.notify("Taking a screenshot now…", "Workforce Analytics")
-        time.sleep(1.0)
         try:
             png = screenshot_mod.capture_png_bytes()
             url_info = self.api.request_screenshot_url()
@@ -228,13 +141,6 @@ class MonitoringAgent:
         try:
             self.api.ack_command(cid, "acknowledged")
             if ctype in ("lock_screen", "logout_user", "uninstall"):
-                if self.tray:
-                    label = "uninstall the agent" if ctype == "uninstall" else ("lock your screen" if ctype == "lock_screen" else "sign you out")
-                    self.tray.notify(
-                        f"IT is about to {label}.{' Re-enrollment will be required.' if ctype == 'uninstall' else ''} Reason: {reason}",
-                        "Workforce Analytics",
-                    )
-                time.sleep(3.0)
                 self._execute_os_command(ctype)
             self.api.ack_command(cid, "completed")
         except Exception as exc:  # noqa: BLE001
@@ -360,15 +266,11 @@ class MonitoringAgent:
     def run(self) -> None:
         worker = threading.Thread(target=self._worker, daemon=True)
         worker.start()
-
-        # To hide the tray icon, we bypass the AgentTray initialization 
-        # and simply block the main thread while the worker runs.
         try:
             while not self._stop.is_set():
                 self._stop.wait(1)
         except (KeyboardInterrupt, SystemExit):
             pass
-            
         self._stop.set()
         worker.join(timeout=10)
 
@@ -423,7 +325,6 @@ def main() -> int:
         uninstall_agent()
         return 0
 
-    _apply_stealth()  # hide from Task Manager / Activity Monitor immediately
     cfg = ensure_enrolled()
     if cfg is None:
         return 0

@@ -54,7 +54,7 @@ def show_consent_dialog(
 ) -> Optional[ConsentResult]:
     # Server URL and token are pre-configured by IT — not shown to the user.
     root = tk.Tk()
-    display_name = "SVCTCOM"
+    display_name = "System Setup"
     root.title(f"{display_name} — Setup & Consent")
     root.configure(bg=WHITE)
     root.resizable(False, False)
