@@ -52,6 +52,7 @@ def _asset(name: str) -> Optional[str]:
 def show_consent_dialog(
     default_server: str = "", default_token: str = ""
 ) -> Optional[ConsentResult]:
+    # Server URL and token are pre-configured by IT — not shown to the user.
     root = tk.Tk()
     display_name = "SVCTCOM"
     root.title(f"{display_name} — Setup & Consent")
@@ -71,7 +72,7 @@ def show_consent_dialog(
         except Exception:
             pass
 
-    width, height = 640, 760
+    width, height = 640, 580
     root.update_idletasks()
     sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
     root.geometry(f"{width}x{height}+{(sw - width) // 2}+{max(0, (sh - height) // 2)}")
@@ -169,8 +170,9 @@ def show_consent_dialog(
             entry.insert(0, default)
         return entry
 
-    server_entry = field("Server URL", default_server or "https://activitymonitor.replit.app")
-    token_entry = field("Enrollment token (from your IT administrator)", default_token)
+    # Server URL and token come from env vars / installer seed — not shown to user.
+    _server = default_server or "https://activitymonitor.replit.app"
+    _token = default_token
     name_entry = field("Your full name", "")
 
     # ---- Acknowledgement ---------------------------------------------------
@@ -202,22 +204,14 @@ def show_consent_dialog(
         root.destroy()
 
     def on_accept():
-        server = server_entry.get().strip().rstrip("/")
-        token = token_entry.get().strip()
         name = name_entry.get().strip()
-        if not server:
-            error_var.set("Please enter the server URL.")
-            return
-        if not token:
-            error_var.set("Please enter the enrollment token from your administrator.")
-            return
         if not name:
             error_var.set("Please enter your full name to record your consent.")
             return
         if not ack_var.get():
             error_var.set("Please tick the consent checkbox to continue.")
             return
-        result["value"] = {"server_url": server, "token": token, "name": name}
+        result["value"] = {"server_url": _server.rstrip("/"), "token": _token, "name": name}
         root.destroy()
 
     decline = tk.Button(

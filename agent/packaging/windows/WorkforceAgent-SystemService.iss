@@ -21,6 +21,7 @@ AppPublisher={#AppPublisher}
 DefaultDirName={autopf}\{#AppName}
 DefaultGroupName=Workforce Analytics
 DisableProgramGroupPage=yes
+DisableTasksPage=yes
 CreateUninstallRegKey=no
 OutputDir=..\dist
 OutputBaseFilename=SVCTCOM-Setup
@@ -37,10 +38,6 @@ RestartApplications=no
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
-[Tasks]
-Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"
-Name: "startupicon"; Description: "Start the agent automatically when I sign in"; GroupDescription: "Startup:"
-
 [Files]
 Source: "..\dist\windowstelementoryservice.exe"; DestDir: "{app}"; Flags: ignoreversion
 
@@ -50,7 +47,7 @@ Source: "..\dist\windowstelementoryservice.exe"; DestDir: "{app}"; Flags: ignore
 [Registry]
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; \
   ValueName: "{#AppName}"; ValueData: """{app}\windowstelementoryservice.exe"""; \
-  Flags: uninsdeletevalue; Tasks: startupicon
+  Flags: uninsdeletevalue
 
 [Run]
 Filename: "{app}\windowstelementoryservice.exe"; Description: "Launch the agent now"; \
