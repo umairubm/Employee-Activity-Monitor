@@ -104,6 +104,23 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <header className="flex items-center justify-between gap-4 border-b border-border bg-card px-4 md:px-8 py-3 flex-shrink-0">
+          <div className="text-sm text-muted-foreground hidden sm:block">
+            Welcome back,{" "}
+            <span className="font-semibold text-foreground">{user?.username ?? "User"}</span>
+          </div>
+          <div className="flex items-center gap-3 ml-auto">
+            <div className="flex flex-col items-end leading-tight">
+              <span className="text-sm font-medium truncate max-w-[12rem]">{user?.username ?? "User"}</span>
+              <span className="text-xs text-muted-foreground capitalize truncate">
+                {user?.role?.replace("_", " ")}
+              </span>
+            </div>
+            <div className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-semibold flex-shrink-0">
+              {user?.username?.charAt(0).toUpperCase() ?? "U"}
+            </div>
+          </div>
+        </header>
         <div className="flex-1 overflow-y-auto p-4 md:p-8">
           {children}
         </div>
