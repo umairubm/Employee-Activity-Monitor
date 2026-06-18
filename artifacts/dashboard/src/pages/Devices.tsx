@@ -159,6 +159,7 @@ export default function Devices() {
               <TableRow>
                 <TableHead>System Name</TableHead>
                 <TableHead>Group</TableHead>
+                <TableHead>Label</TableHead>
                 <TableHead>OS</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Consent</TableHead>
@@ -169,7 +170,7 @@ export default function Devices() {
             <TableBody>
               {filteredDevices?.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="h-32 text-center text-muted-foreground">
+                  <TableCell colSpan={8} className="h-32 text-center text-muted-foreground">
                     No devices found.
                   </TableCell>
                 </TableRow>
@@ -193,6 +194,13 @@ export default function Devices() {
                         <Badge variant="secondary" className="font-normal">{device.deviceGroup}</Badge>
                         <FolderPen className="h-3.5 w-3.5 opacity-0 group-hover:opacity-60" />
                       </button>
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {device.tokenLabel ? (
+                        device.tokenLabel
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
                     </TableCell>
                     <TableCell className="capitalize">{device.osType}</TableCell>
                     <TableCell>

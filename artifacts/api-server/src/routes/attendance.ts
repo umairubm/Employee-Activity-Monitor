@@ -3,6 +3,7 @@ import { z } from "zod/v4";
 import {
   db,
   devicesTable,
+  enrollmentTokensTable,
   activityLogsTable,
   appCategoriesTable,
   attendanceSettingsTable,
@@ -331,8 +332,13 @@ router.get("/range", async (req, res) => {
         systemName: devicesTable.systemName,
         deviceGroup: devicesTable.deviceGroup,
         assignedUserId: devicesTable.assignedUserId,
+        tokenLabel: enrollmentTokensTable.label,
       })
       .from(devicesTable)
+      .leftJoin(
+        enrollmentTokensTable,
+        eq(devicesTable.enrolledViaTokenId, enrollmentTokensTable.id),
+      )
       .where(group ? eq(devicesTable.deviceGroup, group) : undefined)
       .orderBy(asc(devicesTable.systemName));
 
@@ -448,6 +454,7 @@ router.get("/range", async (req, res) => {
         deviceId: device.id,
         systemName: device.systemName,
         deviceGroup: device.deviceGroup,
+        tokenLabel: device.tokenLabel,
         presentDays,
         halfDays,
         absentDays,
@@ -564,8 +571,13 @@ router.get("/", async (req, res) => {
         systemName: devicesTable.systemName,
         deviceGroup: devicesTable.deviceGroup,
         assignedUserId: devicesTable.assignedUserId,
+        tokenLabel: enrollmentTokensTable.label,
       })
       .from(devicesTable)
+      .leftJoin(
+        enrollmentTokensTable,
+        eq(devicesTable.enrolledViaTokenId, enrollmentTokensTable.id),
+      )
       .where(group ? eq(devicesTable.deviceGroup, group) : undefined)
       .orderBy(asc(devicesTable.systemName));
 
@@ -672,6 +684,7 @@ router.get("/", async (req, res) => {
         deviceId: device.id,
         systemName: device.systemName,
         deviceGroup: device.deviceGroup,
+        tokenLabel: device.tokenLabel,
         checkIn: a?.checkIn ?? null,
         lastActivity: a?.lastSeen ?? null,
         workedSeconds,

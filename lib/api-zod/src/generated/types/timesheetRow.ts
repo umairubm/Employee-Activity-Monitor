@@ -12,6 +12,8 @@ export interface TimesheetRow {
   deviceId: string;
   systemName: string;
   deviceGroup: string;
+  /** Label of the enrollment token this device was enrolled with. */
+  tokenLabel?: string | null;
   username: string | null;
   /** ISO timestamp of the day's first activity */
   firstActivity: string | null;

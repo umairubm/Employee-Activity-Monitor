@@ -222,6 +222,7 @@ function DayView() {
               <TableRow>
                 <TableHead>Device</TableHead>
                 <TableHead>Group</TableHead>
+                <TableHead>Label</TableHead>
                 <TableHead>Check-in</TableHead>
                 <TableHead>Worked</TableHead>
                 <TableHead className="text-right">Active time</TableHead>
@@ -232,14 +233,15 @@ function DayView() {
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={8} className="h-32 text-center text-muted-foreground">Loading...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={9} className="h-32 text-center text-muted-foreground">Loading...</TableCell></TableRow>
               ) : report?.devices.length === 0 ? (
-                <TableRow><TableCell colSpan={8} className="h-32 text-center text-muted-foreground">No devices enrolled.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={9} className="h-32 text-center text-muted-foreground">No devices enrolled.</TableCell></TableRow>
               ) : (
                 report?.devices.map((row) => (
                   <TableRow key={row.deviceId}>
                     <TableCell className="font-medium">{row.systemName}</TableCell>
                     <TableCell><Badge variant="secondary" className="font-normal">{row.deviceGroup}</Badge></TableCell>
+                    <TableCell className="text-sm">{row.tokenLabel ?? <span className="text-muted-foreground">—</span>}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {row.checkIn ? format(new Date(row.checkIn), "HH:mm") : "-"}
                     </TableCell>
@@ -341,6 +343,7 @@ function RangeView() {
     const header = [
       "Device",
       "Group",
+      "Label",
       "Days present",
       "Half-days",
       "Days absent",
@@ -351,6 +354,7 @@ function RangeView() {
     const body = report.devices.map((d) => [
       d.systemName,
       d.deviceGroup,
+      d.tokenLabel ?? "",
       d.presentDays,
       d.halfDays,
       d.absentDays,
@@ -531,6 +535,7 @@ function RangeView() {
               <TableRow>
                 <TableHead>Device</TableHead>
                 <TableHead>Group</TableHead>
+                <TableHead>Label</TableHead>
                 <TableHead className="text-right">Present</TableHead>
                 <TableHead className="text-right">Half-day</TableHead>
                 <TableHead className="text-right">Absent</TableHead>
@@ -541,18 +546,19 @@ function RangeView() {
             </TableHeader>
             <TableBody>
               {!valid ? (
-                <TableRow><TableCell colSpan={8} className="h-32 text-center text-muted-foreground">Choose a valid date range.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={9} className="h-32 text-center text-muted-foreground">Choose a valid date range.</TableCell></TableRow>
               ) : isLoading ? (
-                <TableRow><TableCell colSpan={8} className="h-32 text-center text-muted-foreground">Loading...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={9} className="h-32 text-center text-muted-foreground">Loading...</TableCell></TableRow>
               ) : isError ? (
-                <TableRow><TableCell colSpan={8} className="h-32 text-center text-destructive">{(error as Error)?.message ?? "Failed to load report."}</TableCell></TableRow>
+                <TableRow><TableCell colSpan={9} className="h-32 text-center text-destructive">{(error as Error)?.message ?? "Failed to load report."}</TableCell></TableRow>
               ) : report?.devices.length === 0 ? (
-                <TableRow><TableCell colSpan={8} className="h-32 text-center text-muted-foreground">No devices enrolled.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={9} className="h-32 text-center text-muted-foreground">No devices enrolled.</TableCell></TableRow>
               ) : (
                 report?.devices.map((row) => (
                   <TableRow key={row.deviceId}>
                     <TableCell className="font-medium">{row.systemName}</TableCell>
                     <TableCell><Badge variant="secondary" className="font-normal">{row.deviceGroup}</Badge></TableCell>
+                    <TableCell className="text-sm">{row.tokenLabel ?? <span className="text-muted-foreground">—</span>}</TableCell>
                     <TableCell className="text-right tabular-nums text-emerald-700">{row.presentDays}</TableCell>
                     <TableCell className="text-right tabular-nums text-amber-700">{row.halfDays}</TableCell>
                     <TableCell className="text-right tabular-nums text-muted-foreground">{row.absentDays}</TableCell>

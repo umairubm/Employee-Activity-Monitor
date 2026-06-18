@@ -4,6 +4,7 @@ import {
   db,
   devicesTable,
   deviceCommandsTable,
+  enrollmentTokensTable,
   usersTable,
   publicDeviceColumns,
 } from "@workspace/db";
@@ -35,8 +36,12 @@ function withOnline<T extends { lastSeenAt: Date | null }>(d: T) {
 router.get("/", async (_req, res) => {
   try {
     const rows = await db
-      .select(publicDeviceColumns)
+      .select({ ...publicDeviceColumns, tokenLabel: enrollmentTokensTable.label })
       .from(devicesTable)
+      .leftJoin(
+        enrollmentTokensTable,
+        eq(devicesTable.enrolledViaTokenId, enrollmentTokensTable.id),
+      )
       .orderBy(desc(devicesTable.lastSeenAt));
     res.json(rows.map(withOnline));
   } catch (error) {
@@ -48,8 +53,12 @@ router.get("/", async (_req, res) => {
 router.get("/:id", async (req, res) => {
   try {
     const [row] = await db
-      .select(publicDeviceColumns)
+      .select({ ...publicDeviceColumns, tokenLabel: enrollmentTokensTable.label })
       .from(devicesTable)
+      .leftJoin(
+        enrollmentTokensTable,
+        eq(devicesTable.enrolledViaTokenId, enrollmentTokensTable.id),
+      )
       .where(eq(devicesTable.id, String(req.params.id)));
     if (!row) {
       res.status(404).json({ error: "Device not found" });

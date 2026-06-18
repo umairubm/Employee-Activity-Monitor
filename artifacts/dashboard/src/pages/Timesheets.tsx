@@ -115,6 +115,7 @@ export default function Timesheets() {
       "Date",
       "Groups",
       "Computer",
+      "Label",
       "User",
       "First Activity",
       "Last Activity",
@@ -129,6 +130,7 @@ export default function Timesheets() {
       fmtDay(r.date),
       r.deviceGroup,
       r.systemName,
+      r.tokenLabel ?? "",
       r.username ?? "",
       fmtTime(r.firstActivity),
       fmtTime(r.lastActivity),
@@ -241,6 +243,7 @@ export default function Timesheets() {
                   <TableHead>Date</TableHead>
                   <TableHead>Groups</TableHead>
                   <TableHead>Computer</TableHead>
+                  <TableHead>Label</TableHead>
                   <TableHead>User</TableHead>
                   <TableHead>First Activity</TableHead>
                   <TableHead>Last Activity</TableHead>
@@ -254,15 +257,16 @@ export default function Timesheets() {
               </TableHeader>
               <TableBody>
                 {isLoading ? (
-                  <TableRow><TableCell colSpan={12} className="h-32 text-center text-muted-foreground">Loading...</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={13} className="h-32 text-center text-muted-foreground">Loading...</TableCell></TableRow>
                 ) : rows.length === 0 ? (
-                  <TableRow><TableCell colSpan={12} className="h-32 text-center text-muted-foreground">No activity in this range.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={13} className="h-32 text-center text-muted-foreground">No activity in this range.</TableCell></TableRow>
                 ) : (
                   rows.map((r) => (
                     <TableRow key={`${r.deviceId}-${r.date}`}>
                       <TableCell className="whitespace-nowrap text-sm">{fmtDay(r.date)}</TableCell>
                       <TableCell><Badge variant="secondary" className="font-normal">{r.deviceGroup}</Badge></TableCell>
                       <TableCell className="font-medium whitespace-nowrap">{r.systemName}</TableCell>
+                      <TableCell className="whitespace-nowrap text-sm">{r.tokenLabel ?? <span className="text-muted-foreground">—</span>}</TableCell>
                       <TableCell className="whitespace-nowrap text-sm">{r.username ?? <span className="text-muted-foreground">—</span>}</TableCell>
                       <TableCell className="whitespace-nowrap text-sm tabular-nums">{fmtTime(r.firstActivity)}</TableCell>
                       <TableCell className="whitespace-nowrap text-sm tabular-nums">{fmtTime(r.lastActivity)}</TableCell>

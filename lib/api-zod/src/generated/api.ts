@@ -69,6 +69,10 @@ export const ListDevicesResponseItem = zod.object({
   syncIntervalSeconds: zod.number(),
   monitoringEnabled: zod.boolean(),
   deviceGroup: zod.string(),
+  tokenLabel: zod
+    .string()
+    .nullish()
+    .describe("Label of the enrollment token this device was enrolled with."),
   online: zod.boolean(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -100,6 +104,10 @@ export const GetDeviceResponse = zod.object({
   syncIntervalSeconds: zod.number(),
   monitoringEnabled: zod.boolean(),
   deviceGroup: zod.string(),
+  tokenLabel: zod
+    .string()
+    .nullish()
+    .describe("Label of the enrollment token this device was enrolled with."),
   online: zod.boolean(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -216,6 +224,10 @@ export const SetDeviceGroupResponse = zod.object({
   syncIntervalSeconds: zod.number(),
   monitoringEnabled: zod.boolean(),
   deviceGroup: zod.string(),
+  tokenLabel: zod
+    .string()
+    .nullish()
+    .describe("Label of the enrollment token this device was enrolled with."),
   online: zod.boolean(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -313,6 +325,10 @@ export const UpdateDeviceConfigResponse = zod.object({
   syncIntervalSeconds: zod.number(),
   monitoringEnabled: zod.boolean(),
   deviceGroup: zod.string(),
+  tokenLabel: zod
+    .string()
+    .nullish()
+    .describe("Label of the enrollment token this device was enrolled with."),
   online: zod.boolean(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -774,6 +790,12 @@ export const GetAttendanceReportResponse = zod.object({
       deviceId: zod.string().uuid(),
       systemName: zod.string(),
       deviceGroup: zod.string(),
+      tokenLabel: zod
+        .string()
+        .nullish()
+        .describe(
+          "Label of the enrollment token this device was enrolled with.",
+        ),
       checkIn: zod.coerce.date().nullish(),
       lastActivity: zod.coerce.date().nullish(),
       workedSeconds: zod.number(),
@@ -828,6 +850,12 @@ export const GetAttendanceRangeReportResponse = zod.object({
       deviceId: zod.string().uuid(),
       systemName: zod.string(),
       deviceGroup: zod.string(),
+      tokenLabel: zod
+        .string()
+        .nullish()
+        .describe(
+          "Label of the enrollment token this device was enrolled with.",
+        ),
       presentDays: zod.number(),
       halfDays: zod.number(),
       absentDays: zod.number(),
@@ -895,6 +923,12 @@ export const GetTimesheetResponse = zod.object({
       deviceId: zod.string().uuid(),
       systemName: zod.string(),
       deviceGroup: zod.string(),
+      tokenLabel: zod
+        .string()
+        .nullish()
+        .describe(
+          "Label of the enrollment token this device was enrolled with.",
+        ),
       username: zod.string().nullable(),
       firstActivity: zod
         .string()

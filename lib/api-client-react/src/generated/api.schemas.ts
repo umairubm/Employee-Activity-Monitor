@@ -59,6 +59,11 @@ export interface DeviceItem {
   syncIntervalSeconds: number;
   monitoringEnabled: boolean;
   deviceGroup: string;
+  /**
+   * Label of the enrollment token this device was enrolled with.
+   * @nullable
+   */
+  tokenLabel?: string | null;
   online: boolean;
   createdAt: string;
   updatedAt: string;
@@ -394,6 +399,11 @@ export interface AttendanceRow {
   deviceId: string;
   systemName: string;
   deviceGroup: string;
+  /**
+   * Label of the enrollment token this device was enrolled with.
+   * @nullable
+   */
+  tokenLabel?: string | null;
   /** @nullable */
   checkIn?: string | null;
   /** @nullable */
@@ -424,6 +434,11 @@ export interface AttendanceRangeRow {
   deviceId: string;
   systemName: string;
   deviceGroup: string;
+  /**
+   * Label of the enrollment token this device was enrolled with.
+   * @nullable
+   */
+  tokenLabel?: string | null;
   presentDays: number;
   halfDays: number;
   absentDays: number;
@@ -490,6 +505,8 @@ export interface TimesheetRow {
   deviceId: string;
   systemName: string;
   deviceGroup: string;
+  /** Label of the enrollment token this device was enrolled with. */
+  tokenLabel?: string | null;
   username: string | null;
   /** ISO timestamp of the day's first activity */
   firstActivity: string | null;

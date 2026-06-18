@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import {
   db,
   devicesTable,
+  enrollmentTokensTable,
   usersTable,
   activityLogsTable,
   appCategoriesTable,
@@ -94,9 +95,14 @@ router.get("/", async (req, res) => {
         systemName: devicesTable.systemName,
         deviceGroup: devicesTable.deviceGroup,
         username: usersTable.username,
+        tokenLabel: enrollmentTokensTable.label,
       })
       .from(devicesTable)
       .leftJoin(usersTable, eq(devicesTable.assignedUserId, usersTable.id))
+      .leftJoin(
+        enrollmentTokensTable,
+        eq(devicesTable.enrolledViaTokenId, enrollmentTokensTable.id),
+      )
       .where(group ? eq(devicesTable.deviceGroup, group) : undefined)
       .orderBy(asc(devicesTable.systemName));
 
@@ -201,6 +207,7 @@ router.get("/", async (req, res) => {
       deviceId: string;
       systemName: string;
       deviceGroup: string;
+      tokenLabel: string | null;
       username: string | null;
       firstActivity: string | null;
       lastActivity: string | null;
@@ -253,6 +260,7 @@ router.get("/", async (req, res) => {
           deviceId: device.id,
           systemName: device.systemName,
           deviceGroup: device.deviceGroup,
+          tokenLabel: device.tokenLabel,
           username: device.username,
           firstActivity: act.firstActivity,
           lastActivity: act.lastActivity,

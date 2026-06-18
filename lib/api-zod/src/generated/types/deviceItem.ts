@@ -31,6 +31,11 @@ export interface DeviceItem {
   syncIntervalSeconds: number;
   monitoringEnabled: boolean;
   deviceGroup: string;
+  /**
+   * Label of the enrollment token this device was enrolled with.
+   * @nullable
+   */
+  tokenLabel?: string | null;
   online: boolean;
   createdAt: Date;
   updatedAt: Date;

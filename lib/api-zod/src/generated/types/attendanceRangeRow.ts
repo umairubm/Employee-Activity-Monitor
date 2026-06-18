@@ -10,6 +10,11 @@ export interface AttendanceRangeRow {
   deviceId: string;
   systemName: string;
   deviceGroup: string;
+  /**
+   * Label of the enrollment token this device was enrolled with.
+   * @nullable
+   */
+  tokenLabel?: string | null;
   presentDays: number;
   halfDays: number;
   absentDays: number;

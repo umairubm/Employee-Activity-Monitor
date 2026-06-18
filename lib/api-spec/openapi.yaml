@@ -1256,6 +1256,9 @@ components:
           type: boolean
         deviceGroup:
           type: string
+        tokenLabel:
+          type: [string, "null"]
+          description: Label of the enrollment token this device was enrolled with.
         online:
           type: boolean
         createdAt:
@@ -1767,6 +1770,9 @@ components:
           type: string
         deviceGroup:
           type: string
+        tokenLabel:
+          type: [string, "null"]
+          description: Label of the enrollment token this device was enrolled with.
         checkIn:
           type: [string, "null"]
           format: date-time
@@ -1832,6 +1838,9 @@ components:
           type: string
         deviceGroup:
           type: string
+        tokenLabel:
+          type: [string, "null"]
+          description: Label of the enrollment token this device was enrolled with.
         presentDays:
           type: integer
         halfDays:
@@ -1973,6 +1982,10 @@ components:
           type: string
         deviceGroup:
           type: string
+        tokenLabel:
+          type: string
+          nullable: true
+          description: Label of the enrollment token this device was enrolled with.
         username:
           type: string
           nullable: true
