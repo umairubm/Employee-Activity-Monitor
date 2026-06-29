@@ -17,12 +17,25 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { MonitorSmartphone, ShieldAlert, LogOut, Clock, ShieldCheck, Cpu, Ban, Users, Pencil, AlertTriangle, HardDrive, Check } from "lucide-react";
+import { MonitorSmartphone, ShieldAlert, LogOut, Clock, ShieldCheck, Cpu, Ban, Users, Pencil, AlertTriangle, HardDrive, Check, MemoryStick, Network, Server } from "lucide-react";
 import { format } from "date-fns";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+
+const SYSTEM_INFO_GROUPS: { label: string; icon: typeof Server; fields: string[] }[] = [
+  { label: "System", icon: Server, fields: ["Host Name", "Operating System", "OS Version", "Manufacturer", "Model", "Serial_Number"] },
+  { label: "Processor", icon: Cpu, fields: ["Processor", "CPU", "CPU_Core"] },
+  { label: "Memory", icon: MemoryStick, fields: ["Ram_Size", "Ram_Type"] },
+  { label: "Storage", icon: HardDrive, fields: ["Total Disk Space", "HD Size", "HD_Type", "Available Space"] },
+  { label: "Network", icon: Network, fields: ["Ip"] },
+];
+
+function formatSystemValue(value: unknown): string {
+  if (value === null || value === undefined || value === "") return "—";
+  return String(value);
+}
 
 export default function DeviceDetail({ id }: { id: string }) {
   const queryClient = useQueryClient();
@@ -510,16 +523,42 @@ export default function DeviceDetail({ id }: { id: string }) {
         </CardHeader>
         <CardContent>
           {device.systemInfo && Object.keys(device.systemInfo).length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-4 text-sm">
-              {Object.entries(device.systemInfo).map(([key, value]) => (
-                <div key={key}>
-                  <p className="text-muted-foreground mb-0.5">{key}</p>
-                  <p className="font-medium break-words">
-                    {value === null || value === "" ? "—" : String(value)}
-                  </p>
+            (() => {
+              const info = device.systemInfo as Record<string, unknown>;
+              const known = new Set(SYSTEM_INFO_GROUPS.flatMap((g) => g.fields));
+              const otherKeys = Object.keys(info).filter((k) => !known.has(k));
+              const sections = [
+                ...SYSTEM_INFO_GROUPS.map((g) => ({
+                  label: g.label,
+                  icon: g.icon,
+                  keys: g.fields.filter((f) => f in info),
+                })),
+                ...(otherKeys.length > 0
+                  ? [{ label: "Other", icon: MonitorSmartphone, keys: otherKeys }]
+                  : []),
+              ].filter((s) => s.keys.length > 0);
+
+              return (
+                <div className="space-y-6">
+                  {sections.map((section) => (
+                    <div key={section.label}>
+                      <div className="flex items-center gap-2 mb-3 text-sm font-medium text-muted-foreground">
+                        <section.icon className="h-4 w-4" />
+                        {section.label}
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-4 text-sm">
+                        {section.keys.map((key) => (
+                          <div key={key}>
+                            <p className="text-muted-foreground mb-0.5">{key}</p>
+                            <p className="font-medium break-words">{formatSystemValue(info[key])}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              );
+            })()
           ) : (
             <p className="text-sm text-muted-foreground">No system information reported yet.</p>
           )}
