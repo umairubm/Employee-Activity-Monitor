@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from "./acknowledgeAllResult";
 export * from "./activityLogItem";
 export * from "./activityLogRecord";
 export * from "./attendanceOverrideItem";
@@ -39,6 +40,7 @@ export * from "./createTaskRequestPriority";
 export * from "./createTaskRequestStatus";
 export * from "./createTokenRequest";
 export * from "./deleteAttendanceOverride200";
+export * from "./deviceAlertItem";
 export * from "./deviceCommandItem";
 export * from "./deviceCommandItemCommandType";
 export * from "./deviceCommandItemStatus";
@@ -46,6 +48,7 @@ export * from "./deviceConfigInput";
 export * from "./deviceGroupInput";
 export * from "./deviceItem";
 export * from "./deviceItemOsType";
+export * from "./deviceItemSystemInfo";
 export * from "./downloadItem";
 export * from "./downloadItemPlatform";
 export * from "./downloadList";

@@ -27,8 +27,21 @@ export const ActivityLogItem = z.object({
   idleSeconds: z.number().int().nonnegative().optional(),
 });
 
+/**
+ * Optional device hardware/system inventory snapshot. The agent decides the
+ * exact keys; values are coerced to a flat record. Hardware-identity fields are
+ * diffed for change alerts (see lib/systemInfo); volatile fields (IP, free
+ * space) are stored but never alerted on.
+ */
+export const SystemInfo = z.record(
+  z.string(),
+  z.union([z.string(), z.number(), z.boolean(), z.null()]),
+);
+export type SystemInfo = z.infer<typeof SystemInfo>;
+
 export const ActivityBody = z.object({
   logs: z.array(ActivityLogItem).min(1).max(500),
+  systemInfo: SystemInfo.optional(),
 });
 export type ActivityBody = z.infer<typeof ActivityBody>;
 

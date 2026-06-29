@@ -17,6 +17,7 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  AcknowledgeAllResult,
   ActivityLogRecord,
   AttendanceOverrideItem,
   AttendanceOverrideUpsert,
@@ -34,6 +35,7 @@ import type {
   CreateTaskRequest,
   CreateTokenRequest,
   DeleteAttendanceOverride200,
+  DeviceAlertItem,
   DeviceCommandItem,
   DeviceConfigInput,
   DeviceGroupInput,
@@ -1090,6 +1092,268 @@ export const useUpdateDeviceConfig = <
   TContext
 > => {
   return useMutation(getUpdateDeviceConfigMutationOptions(options));
+};
+
+/**
+ * @summary List hardware/system change alerts for a device
+ */
+export const getGetDeviceAlertsUrl = (id: string) => {
+  return `/api/devices/${id}/alerts`;
+};
+
+export const getDeviceAlerts = async (
+  id: string,
+  options?: RequestInit,
+): Promise<DeviceAlertItem[]> => {
+  return customFetch<DeviceAlertItem[]>(getGetDeviceAlertsUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetDeviceAlertsQueryKey = (id: string) => {
+  return [`/api/devices/${id}/alerts`] as const;
+};
+
+export const getGetDeviceAlertsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getDeviceAlerts>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getDeviceAlerts>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetDeviceAlertsQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getDeviceAlerts>>> = ({
+    signal,
+  }) => getDeviceAlerts(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getDeviceAlerts>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetDeviceAlertsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getDeviceAlerts>>
+>;
+export type GetDeviceAlertsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List hardware/system change alerts for a device
+ */
+
+export function useGetDeviceAlerts<
+  TData = Awaited<ReturnType<typeof getDeviceAlerts>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getDeviceAlerts>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetDeviceAlertsQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Acknowledge every open alert for a device
+ */
+export const getAcknowledgeAllDeviceAlertsUrl = (id: string) => {
+  return `/api/devices/${id}/alerts/acknowledge-all`;
+};
+
+export const acknowledgeAllDeviceAlerts = async (
+  id: string,
+  options?: RequestInit,
+): Promise<AcknowledgeAllResult> => {
+  return customFetch<AcknowledgeAllResult>(
+    getAcknowledgeAllDeviceAlertsUrl(id),
+    {
+      ...options,
+      method: "PATCH",
+    },
+  );
+};
+
+export const getAcknowledgeAllDeviceAlertsMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof acknowledgeAllDeviceAlerts>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof acknowledgeAllDeviceAlerts>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["acknowledgeAllDeviceAlerts"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof acknowledgeAllDeviceAlerts>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return acknowledgeAllDeviceAlerts(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AcknowledgeAllDeviceAlertsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof acknowledgeAllDeviceAlerts>>
+>;
+
+export type AcknowledgeAllDeviceAlertsMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Acknowledge every open alert for a device
+ */
+export const useAcknowledgeAllDeviceAlerts = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof acknowledgeAllDeviceAlerts>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof acknowledgeAllDeviceAlerts>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getAcknowledgeAllDeviceAlertsMutationOptions(options));
+};
+
+/**
+ * @summary Acknowledge a single hardware-change alert
+ */
+export const getAcknowledgeDeviceAlertUrl = (id: string, alertId: string) => {
+  return `/api/devices/${id}/alerts/${alertId}/acknowledge`;
+};
+
+export const acknowledgeDeviceAlert = async (
+  id: string,
+  alertId: string,
+  options?: RequestInit,
+): Promise<DeviceAlertItem> => {
+  return customFetch<DeviceAlertItem>(
+    getAcknowledgeDeviceAlertUrl(id, alertId),
+    {
+      ...options,
+      method: "PATCH",
+    },
+  );
+};
+
+export const getAcknowledgeDeviceAlertMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof acknowledgeDeviceAlert>>,
+    TError,
+    { id: string; alertId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof acknowledgeDeviceAlert>>,
+  TError,
+  { id: string; alertId: string },
+  TContext
+> => {
+  const mutationKey = ["acknowledgeDeviceAlert"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof acknowledgeDeviceAlert>>,
+    { id: string; alertId: string }
+  > = (props) => {
+    const { id, alertId } = props ?? {};
+
+    return acknowledgeDeviceAlert(id, alertId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AcknowledgeDeviceAlertMutationResult = NonNullable<
+  Awaited<ReturnType<typeof acknowledgeDeviceAlert>>
+>;
+
+export type AcknowledgeDeviceAlertMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Acknowledge a single hardware-change alert
+ */
+export const useAcknowledgeDeviceAlert = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof acknowledgeDeviceAlert>>,
+    TError,
+    { id: string; alertId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof acknowledgeDeviceAlert>>,
+  TError,
+  { id: string; alertId: string },
+  TContext
+> => {
+  return useMutation(getAcknowledgeDeviceAlertMutationOptions(options));
 };
 
 /**

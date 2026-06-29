@@ -76,6 +76,18 @@ export const ListDevicesResponseItem = zod.object({
   online: zod.boolean(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
+  systemInfo: zod
+    .record(zod.string(), zod.unknown())
+    .nullish()
+    .describe(
+      "Latest hardware\/system inventory snapshot reported by the agent.",
+    ),
+  alertCount: zod
+    .number()
+    .optional()
+    .describe(
+      "Number of unacknowledged hardware-change alerts for this device.",
+    ),
 });
 export const ListDevicesResponse = zod.array(ListDevicesResponseItem);
 
@@ -111,6 +123,18 @@ export const GetDeviceResponse = zod.object({
   online: zod.boolean(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
+  systemInfo: zod
+    .record(zod.string(), zod.unknown())
+    .nullish()
+    .describe(
+      "Latest hardware\/system inventory snapshot reported by the agent.",
+    ),
+  alertCount: zod
+    .number()
+    .optional()
+    .describe(
+      "Number of unacknowledged hardware-change alerts for this device.",
+    ),
 });
 
 /**
@@ -231,6 +255,18 @@ export const SetDeviceGroupResponse = zod.object({
   online: zod.boolean(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
+  systemInfo: zod
+    .record(zod.string(), zod.unknown())
+    .nullish()
+    .describe(
+      "Latest hardware\/system inventory snapshot reported by the agent.",
+    ),
+  alertCount: zod
+    .number()
+    .optional()
+    .describe(
+      "Number of unacknowledged hardware-change alerts for this device.",
+    ),
 });
 
 /**
@@ -332,6 +368,67 @@ export const UpdateDeviceConfigResponse = zod.object({
   online: zod.boolean(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
+  systemInfo: zod
+    .record(zod.string(), zod.unknown())
+    .nullish()
+    .describe(
+      "Latest hardware\/system inventory snapshot reported by the agent.",
+    ),
+  alertCount: zod
+    .number()
+    .optional()
+    .describe(
+      "Number of unacknowledged hardware-change alerts for this device.",
+    ),
+});
+
+/**
+ * @summary List hardware/system change alerts for a device
+ */
+export const GetDeviceAlertsParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
+
+export const GetDeviceAlertsResponseItem = zod.object({
+  id: zod.string().uuid(),
+  deviceId: zod.string().uuid(),
+  field: zod.string(),
+  oldValue: zod.string().nullish(),
+  newValue: zod.string().nullish(),
+  detectedAt: zod.coerce.date(),
+  acknowledgedAt: zod.coerce.date().nullish(),
+  acknowledgedByUsername: zod.string().nullish(),
+});
+export const GetDeviceAlertsResponse = zod.array(GetDeviceAlertsResponseItem);
+
+/**
+ * @summary Acknowledge every open alert for a device
+ */
+export const AcknowledgeAllDeviceAlertsParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
+
+export const AcknowledgeAllDeviceAlertsResponse = zod.object({
+  acknowledged: zod.number(),
+});
+
+/**
+ * @summary Acknowledge a single hardware-change alert
+ */
+export const AcknowledgeDeviceAlertParams = zod.object({
+  id: zod.coerce.string().uuid(),
+  alertId: zod.coerce.string().uuid(),
+});
+
+export const AcknowledgeDeviceAlertResponse = zod.object({
+  id: zod.string().uuid(),
+  deviceId: zod.string().uuid(),
+  field: zod.string(),
+  oldValue: zod.string().nullish(),
+  newValue: zod.string().nullish(),
+  detectedAt: zod.coerce.date(),
+  acknowledgedAt: zod.coerce.date().nullish(),
+  acknowledgedByUsername: zod.string().nullish(),
 });
 
 /**

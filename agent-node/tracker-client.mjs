@@ -316,6 +316,104 @@ async function putBytes(uploadUrl, buffer, contentType) {
   }
 }
 
+// ── System inventory (transparent hardware snapshot) ──────────────────────────
+// Reports a best-effort hardware/system snapshot on each activity sync. The
+// server diffs hardware-identity fields to raise change alerts. All values are
+// real readings from the OS — no placeholders. Fields that can't be read are
+// simply omitted. Cached for an hour so we don't spawn helper processes each
+// cycle.
+let systemInfoCache = { value: null, at: 0 };
+const SYSTEM_INFO_TTL_MS = 60 * 60 * 1000;
+
+function osName() {
+  switch (os.platform()) {
+    case "win32":
+      return "Windows";
+    case "darwin":
+      return "macOS";
+    case "linux":
+      return "Linux";
+    default:
+      return os.platform();
+  }
+}
+
+function primaryIPv4() {
+  const ifaces = os.networkInterfaces();
+  for (const name of Object.keys(ifaces)) {
+    for (const ni of ifaces[name] || []) {
+      if (ni.family === "IPv4" && !ni.internal) return ni.address;
+    }
+  }
+  return null;
+}
+
+function execText(cmd, timeoutMs = 5000) {
+  return new Promise((resolve) => {
+    exec(cmd, { timeout: timeoutMs, windowsHide: true }, (err, stdout) => {
+      resolve(err ? "" : String(stdout || "").trim());
+    });
+  });
+}
+
+async function collectSystemInfo() {
+  const cpus = os.cpus() || [];
+  const info = {
+    "Host Name": os.hostname(),
+    "Operating System": osName(),
+    "OS Version": os.release(),
+    Processor: cpus[0]?.model?.trim() || null,
+    CPU: cpus.length || null,
+    Ram_Size: `${Math.round(os.totalmem() / 1024 ** 3)} GB`,
+    Ip: primaryIPv4(),
+  };
+
+  try {
+    if (os.platform() === "win32") {
+      const ps = (c) =>
+        execText(`powershell -NoProfile -Command "${c}"`, 6000);
+      const [manu, model, serial, disk] = await Promise.all([
+        ps("(Get-CimInstance Win32_ComputerSystem).Manufacturer"),
+        ps("(Get-CimInstance Win32_ComputerSystem).Model"),
+        ps("(Get-CimInstance Win32_BIOS).SerialNumber"),
+        ps(
+          "[math]::Round((Get-CimInstance Win32_DiskDrive | Select-Object -First 1).Size/1GB)",
+        ),
+      ]);
+      if (manu) info.Manufacturer = manu;
+      if (model) info.Model = model;
+      if (serial) info.Serial_Number = serial;
+      if (disk) info["HD Size"] = `${disk} GB`;
+    } else if (os.platform() === "darwin") {
+      const model = await execText("sysctl -n hw.model");
+      if (model) info.Model = model;
+      const serial = await execText(
+        "system_profiler SPHardwareDataType | awk -F': ' '/Serial Number/{print $2}'",
+      );
+      if (serial) info.Serial_Number = serial;
+      info.Manufacturer = "Apple";
+    }
+  } catch {
+    // Augmentation is best-effort; the os.* fields above are always present.
+  }
+
+  for (const k of Object.keys(info)) {
+    if (info[k] === null || info[k] === undefined || info[k] === "")
+      delete info[k];
+  }
+  return info;
+}
+
+async function getSystemInfo() {
+  const now = Date.now();
+  if (systemInfoCache.value && now - systemInfoCache.at < SYSTEM_INFO_TTL_MS) {
+    return systemInfoCache.value;
+  }
+  const value = await collectSystemInfo();
+  systemInfoCache = { value, at: now };
+  return value;
+}
+
 // ── Terminal prompt fallback ──────────────────────────────────────────────────
 function ask(question, { muted = false } = {}) {
   return new Promise((resolve) => {
@@ -838,7 +936,8 @@ async function syncTelemetry() {
     const combined = [...offlineQueue.logs, logItem];
     const batch = combined.slice(0, 500);
     try {
-      await apiPost("/activity", { logs: batch });
+      const systemInfo = await getSystemInfo();
+      await apiPost("/activity", { logs: batch, systemInfo });
       offlineQueue.logs = combined.slice(batch.length);
       offlineQueue.save();
       console.log(

@@ -6,14 +6,18 @@ import {
   getGetDeviceCommandsQueryKey, 
   useIssueDeviceCommand,
   useCancelDeviceCommand,
-  useSetDeviceGroup
+  useSetDeviceGroup,
+  useGetDeviceAlerts,
+  getGetDeviceAlertsQueryKey,
+  useAcknowledgeDeviceAlert,
+  useAcknowledgeAllDeviceAlerts
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { MonitorSmartphone, ShieldAlert, LogOut, Clock, ShieldCheck, Cpu, Ban, Users, Pencil } from "lucide-react";
+import { MonitorSmartphone, ShieldAlert, LogOut, Clock, ShieldCheck, Cpu, Ban, Users, Pencil, AlertTriangle, HardDrive, Check } from "lucide-react";
 import { format } from "date-fns";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -28,6 +32,10 @@ export default function DeviceDetail({ id }: { id: string }) {
   const issueCommand = useIssueDeviceCommand();
   const cancelCommand = useCancelDeviceCommand();
   const setDeviceGroup = useSetDeviceGroup();
+  const { data: alerts } = useGetDeviceAlerts(id, { query: { enabled: !!id, queryKey: getGetDeviceAlertsQueryKey(id) } });
+  const acknowledgeAlert = useAcknowledgeDeviceAlert();
+  const acknowledgeAllAlerts = useAcknowledgeAllDeviceAlerts();
+  const unackAlerts = (alerts ?? []).filter((a) => !a.acknowledgedAt);
 
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
   const [groupValue, setGroupValue] = useState("");
@@ -118,6 +126,25 @@ export default function DeviceDetail({ id }: { id: string }) {
       onError: (error: any) => {
         toast({ title: "Failed to cancel command", description: error.message, variant: "destructive" });
       }
+    });
+  };
+
+  const refetchAlerts = () => {
+    queryClient.invalidateQueries({ queryKey: getGetDeviceAlertsQueryKey(id) });
+    queryClient.invalidateQueries({ queryKey: getGetDeviceQueryKey(id) });
+  };
+
+  const handleAcknowledge = (alertId: string) => {
+    acknowledgeAlert.mutate({ id, alertId }, {
+      onSuccess: () => { refetchAlerts(); toast({ title: "Alert acknowledged" }); },
+      onError: (error: any) => toast({ title: "Failed to acknowledge", description: error.message, variant: "destructive" }),
+    });
+  };
+
+  const handleAcknowledgeAll = () => {
+    acknowledgeAllAlerts.mutate({ id }, {
+      onSuccess: (result) => { refetchAlerts(); toast({ title: "All alerts acknowledged", description: `${result.acknowledged} change(s) cleared.` }); },
+      onError: (error: any) => toast({ title: "Failed to acknowledge", description: error.message, variant: "destructive" }),
     });
   };
 
@@ -239,6 +266,70 @@ export default function DeviceDetail({ id }: { id: string }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {alerts && alerts.length > 0 && (
+        <Card>
+          <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
+            <div>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-amber-500" />
+                Hardware Change Alerts
+                {unackAlerts.length > 0 && (
+                  <Badge variant="destructive">{unackAlerts.length} new</Badge>
+                )}
+              </CardTitle>
+              <CardDescription>
+                Changes detected in this device's hardware identity (CPU, RAM, disk size, model, serial, host name, OS).
+              </CardDescription>
+            </div>
+            {unackAlerts.length > 0 && (
+              <Button variant="outline" size="sm" className="gap-1.5 shrink-0" onClick={handleAcknowledgeAll} disabled={acknowledgeAllAlerts.isPending}>
+                <Check className="h-3.5 w-3.5" />
+                Acknowledge all
+              </Button>
+            )}
+          </CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Property</TableHead>
+                  <TableHead>Changed</TableHead>
+                  <TableHead>Detected</TableHead>
+                  <TableHead className="text-right">Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {alerts.map((a) => (
+                  <TableRow key={a.id} className={a.acknowledgedAt ? "opacity-60" : ""}>
+                    <TableCell className="font-medium">{a.field}</TableCell>
+                    <TableCell className="text-sm">
+                      <span className="text-muted-foreground line-through">{a.oldValue ?? "—"}</span>
+                      <span className="mx-1.5">→</span>
+                      <span className="font-medium">{a.newValue ?? "—"}</span>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
+                      {format(new Date(a.detectedAt), "MMM d, HH:mm")}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {a.acknowledgedAt ? (
+                        <span className="text-xs text-muted-foreground">
+                          Acknowledged{a.acknowledgedByUsername ? ` by ${a.acknowledgedByUsername}` : ""}
+                        </span>
+                      ) : (
+                        <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => handleAcknowledge(a.id)} disabled={acknowledgeAlert.isPending}>
+                          <Check className="h-3.5 w-3.5" />
+                          Acknowledge
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="lg:col-span-1">
@@ -408,6 +499,32 @@ export default function DeviceDetail({ id }: { id: string }) {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <HardDrive className="h-5 w-5 text-muted-foreground" />
+            System Information
+          </CardTitle>
+          <CardDescription>Latest hardware inventory reported by the agent.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {device.systemInfo && Object.keys(device.systemInfo).length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-4 text-sm">
+              {Object.entries(device.systemInfo).map(([key, value]) => (
+                <div key={key}>
+                  <p className="text-muted-foreground mb-0.5">{key}</p>
+                  <p className="font-medium break-words">
+                    {value === null || value === "" ? "—" : String(value)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No system information reported yet.</p>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

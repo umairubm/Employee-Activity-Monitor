@@ -7,8 +7,14 @@ import {
   activityLogsTable,
   screenshotsTable,
   deviceCommandsTable,
+  deviceAlertsTable,
   type Device,
 } from "@workspace/db";
+import {
+  diffSystemInfo,
+  mergeSnapshot,
+  type Snapshot,
+} from "../lib/systemInfo";
 import {
   EnrollBody,
   HeartbeatBody,
@@ -247,6 +253,28 @@ router.post(
     });
 
     await db.insert(activityLogsTable).values(values);
+
+    // Optional hardware/system inventory snapshot. Detect changes in
+    // identity fields, record alerts, and store the latest snapshot.
+    if (parsed.data.systemInfo) {
+      const incoming = parsed.data.systemInfo as Snapshot;
+      const prev = (device.systemInfo as Snapshot | null) ?? null;
+      const changes = diffSystemInfo(prev, incoming);
+      if (changes.length > 0) {
+        await db.insert(deviceAlertsTable).values(
+          changes.map((c) => ({
+            deviceId: device.id,
+            field: c.field,
+            oldValue: c.oldValue,
+            newValue: c.newValue,
+          })),
+        );
+      }
+      await db
+        .update(devicesTable)
+        .set({ systemInfo: mergeSnapshot(prev, incoming), updatedAt: new Date() })
+        .where(eq(devicesTable.id, device.id));
+    }
 
     res.status(201).json({ accepted: values.length });
   },

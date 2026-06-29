@@ -26,6 +26,25 @@ export interface AuthUser {
   createdAt: string;
 }
 
+export interface DeviceAlertItem {
+  id: string;
+  deviceId: string;
+  field: string;
+  /** @nullable */
+  oldValue?: string | null;
+  /** @nullable */
+  newValue?: string | null;
+  detectedAt: string;
+  /** @nullable */
+  acknowledgedAt?: string | null;
+  /** @nullable */
+  acknowledgedByUsername?: string | null;
+}
+
+export interface AcknowledgeAllResult {
+  acknowledged: number;
+}
+
 export type DeviceItemOsType =
   (typeof DeviceItemOsType)[keyof typeof DeviceItemOsType];
 
@@ -34,6 +53,12 @@ export const DeviceItemOsType = {
   macos: "macos",
   linux: "linux",
 } as const;
+
+/**
+ * Latest hardware/system inventory snapshot reported by the agent.
+ * @nullable
+ */
+export type DeviceItemSystemInfo = { [key: string]: unknown } | null;
 
 export interface DeviceItem {
   id: string;
@@ -67,6 +92,13 @@ export interface DeviceItem {
   online: boolean;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Latest hardware/system inventory snapshot reported by the agent.
+   * @nullable
+   */
+  systemInfo?: DeviceItemSystemInfo;
+  /** Number of unacknowledged hardware-change alerts for this device. */
+  alertCount?: number;
 }
 
 export interface DeviceGroupInput {

@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { DeviceItemOsType } from "./deviceItemOsType";
+import type { DeviceItemSystemInfo } from "./deviceItemSystemInfo";
 
 export interface DeviceItem {
   id: string;
@@ -39,4 +40,11 @@ export interface DeviceItem {
   online: boolean;
   createdAt: Date;
   updatedAt: Date;
+  /**
+   * Latest hardware/system inventory snapshot reported by the agent.
+   * @nullable
+   */
+  systemInfo?: DeviceItemSystemInfo;
+  /** Number of unacknowledged hardware-change alerts for this device. */
+  alertCount?: number;
 }

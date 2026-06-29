@@ -243,6 +243,56 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DeviceItem"
+  /devices/{id}/alerts:
+    get:
+      operationId: getDeviceAlerts
+      tags: [devices]
+      summary: List hardware/system change alerts for a device
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Alerts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DeviceAlertItem"
+  /devices/{id}/alerts/acknowledge-all:
+    patch:
+      operationId: acknowledgeAllDeviceAlerts
+      tags: [devices]
+      summary: Acknowledge every open alert for a device
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Number of alerts acknowledged
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AcknowledgeAllResult"
+  /devices/{id}/alerts/{alertId}/acknowledge:
+    patch:
+      operationId: acknowledgeDeviceAlert
+      tags: [devices]
+      summary: Acknowledge a single hardware-change alert
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - name: alertId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Acknowledged alert
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceAlertItem"
   /downloads:
     get:
       operationId: listDownloads
@@ -1213,6 +1263,41 @@ components:
           type: string
           format: date-time
       required: [id, username, email, role, createdAt]
+    DeviceAlertItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        deviceId:
+          type: string
+          format: uuid
+        field:
+          type: string
+        oldValue:
+          type: [string, "null"]
+        newValue:
+          type: [string, "null"]
+        detectedAt:
+          type: string
+          format: date-time
+        acknowledgedAt:
+          type: [string, "null"]
+          format: date-time
+        acknowledgedByUsername:
+          type: [string, "null"]
+      required:
+        - id
+        - deviceId
+        - field
+        - detectedAt
+    AcknowledgeAllResult:
+      type: object
+      properties:
+        acknowledged:
+          type: integer
+      required:
+        - acknowledged
     DeviceItem:
       type: object
       properties:
@@ -1267,6 +1352,13 @@ components:
         updatedAt:
           type: string
           format: date-time
+        systemInfo:
+          type: [object, "null"]
+          additionalProperties: true
+          description: Latest hardware/system inventory snapshot reported by the agent.
+        alertCount:
+          type: integer
+          description: Number of unacknowledged hardware-change alerts for this device.
       required:
         - id
         - hardwareHash

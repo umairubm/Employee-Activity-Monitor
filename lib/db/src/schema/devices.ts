@@ -5,6 +5,7 @@ import {
   timestamp,
   integer,
   boolean,
+  jsonb,
   pgEnum,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
@@ -42,6 +43,12 @@ export const devicesTable = pgTable("devices", {
   syncIntervalSeconds: integer("sync_interval_seconds").notNull().default(300),
   monitoringEnabled: boolean("monitoring_enabled").notNull().default(true),
   deviceGroup: text("device_group").notNull().default("Unassigned"),
+  // Latest hardware/system inventory snapshot reported by the agent. Used to
+  // detect hardware-identity changes (see device_alerts). Nullable until the
+  // agent first reports it.
+  systemInfo: jsonb("system_info").$type<
+    Record<string, string | number | boolean | null>
+  >(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -85,6 +92,7 @@ export const publicDeviceColumns = {
   syncIntervalSeconds: devicesTable.syncIntervalSeconds,
   monitoringEnabled: devicesTable.monitoringEnabled,
   deviceGroup: devicesTable.deviceGroup,
+  systemInfo: devicesTable.systemInfo,
   createdAt: devicesTable.createdAt,
   updatedAt: devicesTable.updatedAt,
 };

@@ -21,7 +21,7 @@ import {
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { MonitorSmartphone, Search, CheckCircle2, XCircle, Clock, ShieldCheck, FolderPen, FolderSync } from "lucide-react";
+import { MonitorSmartphone, Search, CheckCircle2, XCircle, Clock, ShieldCheck, FolderPen, FolderSync, AlertTriangle } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { useGroupFilter, ALL_GROUPS as ALL } from "@/hooks/use-group-filter";
@@ -182,6 +182,12 @@ export default function Devices() {
                         <MonitorSmartphone className="h-4 w-4 text-muted-foreground" />
                         {device.systemName}
                         {device.isLocked && <Badge variant="destructive" className="ml-2 text-[10px]">Locked</Badge>}
+                        {(device.alertCount ?? 0) > 0 && (
+                          <Badge variant="destructive" className="ml-2 gap-1 text-[10px]" title="Unacknowledged hardware changes">
+                            <AlertTriangle className="h-3 w-3" />
+                            {device.alertCount}
+                          </Badge>
+                        )}
                       </div>
                       <div className="text-xs text-muted-foreground font-mono mt-1">{device.hardwareHash.substring(0, 8)}...</div>
                     </TableCell>

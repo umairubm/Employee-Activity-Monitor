@@ -4,11 +4,12 @@ import {
   db,
   devicesTable,
   deviceCommandsTable,
+  deviceAlertsTable,
   enrollmentTokensTable,
   usersTable,
   publicDeviceColumns,
 } from "@workspace/db";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { requireRole, type AuthedRequest } from "../middlewares/userAuth";
 
@@ -43,7 +44,20 @@ router.get("/", async (_req, res) => {
         eq(devicesTable.enrolledViaTokenId, enrollmentTokensTable.id),
       )
       .orderBy(desc(devicesTable.lastSeenAt));
-    res.json(rows.map(withOnline));
+
+    const counts = await db
+      .select({
+        deviceId: deviceAlertsTable.deviceId,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(deviceAlertsTable)
+      .where(isNull(deviceAlertsTable.acknowledgedAt))
+      .groupBy(deviceAlertsTable.deviceId);
+    const countMap = new Map(counts.map((c) => [c.deviceId, c.count]));
+
+    res.json(
+      rows.map((r) => ({ ...withOnline(r), alertCount: countMap.get(r.id) ?? 0 })),
+    );
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }
@@ -64,7 +78,16 @@ router.get("/:id", async (req, res) => {
       res.status(404).json({ error: "Device not found" });
       return;
     }
-    res.json(withOnline(row));
+    const [{ count } = { count: 0 }] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(deviceAlertsTable)
+      .where(
+        and(
+          eq(deviceAlertsTable.deviceId, row.id),
+          isNull(deviceAlertsTable.acknowledgedAt),
+        ),
+      );
+    res.json({ ...withOnline(row), alertCount: count });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }
@@ -106,6 +129,102 @@ router.get("/:id/commands", async (req, res) => {
     res.status(500).json({ error: (error as Error).message });
   }
 });
+
+// GET /api/devices/:id/alerts - hardware/system change alerts for a device
+router.get("/:id/alerts", async (req, res) => {
+  try {
+    const rows = await db
+      .select({
+        id: deviceAlertsTable.id,
+        deviceId: deviceAlertsTable.deviceId,
+        field: deviceAlertsTable.field,
+        oldValue: deviceAlertsTable.oldValue,
+        newValue: deviceAlertsTable.newValue,
+        detectedAt: deviceAlertsTable.detectedAt,
+        acknowledgedAt: deviceAlertsTable.acknowledgedAt,
+        acknowledgedByUsername: usersTable.username,
+      })
+      .from(deviceAlertsTable)
+      .leftJoin(usersTable, eq(deviceAlertsTable.acknowledgedById, usersTable.id))
+      .where(eq(deviceAlertsTable.deviceId, String(req.params.id)))
+      .orderBy(desc(deviceAlertsTable.detectedAt))
+      .limit(200);
+    res.json(rows);
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// PATCH /api/devices/:id/alerts/acknowledge-all - acknowledge every open alert.
+// Registered before "/:id/alerts/:alertId/acknowledge" so the literal segment
+// is matched first.
+router.patch(
+  "/:id/alerts/acknowledge-all",
+  requireRole("admin", "super_user"),
+  async (req, res) => {
+    try {
+      const acknowledged = await db
+        .update(deviceAlertsTable)
+        .set({
+          acknowledgedAt: new Date(),
+          acknowledgedById: (req as AuthedRequest).user.id,
+        })
+        .where(
+          and(
+            eq(deviceAlertsTable.deviceId, String(req.params.id)),
+            isNull(deviceAlertsTable.acknowledgedAt),
+          ),
+        )
+        .returning({ id: deviceAlertsTable.id });
+      res.json({ acknowledged: acknowledged.length });
+    } catch (error) {
+      res.status(500).json({ error: (error as Error).message });
+    }
+  },
+);
+
+// PATCH /api/devices/:id/alerts/:alertId/acknowledge - acknowledge one alert
+router.patch(
+  "/:id/alerts/:alertId/acknowledge",
+  requireRole("admin", "super_user"),
+  async (req, res) => {
+    try {
+      const user = (req as AuthedRequest).user;
+      const [updated] = await db
+        .update(deviceAlertsTable)
+        .set({ acknowledgedAt: new Date(), acknowledgedById: user.id })
+        .where(
+          and(
+            eq(deviceAlertsTable.id, String(req.params.alertId)),
+            eq(deviceAlertsTable.deviceId, String(req.params.id)),
+            isNull(deviceAlertsTable.acknowledgedAt),
+          ),
+        )
+        .returning();
+      if (updated) {
+        res.json({ ...updated, acknowledgedByUsername: user.username });
+        return;
+      }
+
+      const [existing] = await db
+        .select({ acknowledgedAt: deviceAlertsTable.acknowledgedAt })
+        .from(deviceAlertsTable)
+        .where(
+          and(
+            eq(deviceAlertsTable.id, String(req.params.alertId)),
+            eq(deviceAlertsTable.deviceId, String(req.params.id)),
+          ),
+        );
+      if (!existing) {
+        res.status(404).json({ error: "Alert not found" });
+        return;
+      }
+      res.status(409).json({ error: "Alert already acknowledged" });
+    } catch (error) {
+      res.status(500).json({ error: (error as Error).message });
+    }
+  },
+);
 
 const issueCommandSchema = z.object({
   commandType: z.enum(["lock_screen", "logout_user"]),
