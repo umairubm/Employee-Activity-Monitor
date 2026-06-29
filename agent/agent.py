@@ -31,6 +31,7 @@ if __package__ in (None, ""):
     from agent import monitor as monitor_mod
     from agent import screenshot as screenshot_mod
     from agent import tray as tray_mod
+    from agent import system_info as system_info_mod
 else:
     from . import api as api_mod
     from . import config as config_mod
@@ -39,6 +40,7 @@ else:
     from . import monitor as monitor_mod
     from . import screenshot as screenshot_mod
     from . import tray as tray_mod
+    from . import system_info as system_info_mod
 
 AGENT_VERSION = "1.1.0"
 POLL_SECONDS = 15
@@ -218,9 +220,8 @@ class MonitoringAgent:
         if batch:
             try:
                 try:
-                    from system_info import sysinfo
-                    system_hardware_details = sysinfo.sysInfo
-                except ImportError:
+                    system_hardware_details = system_info_mod.sysinfo.sysInfo
+                except Exception:
                     system_hardware_details = None
 
                 self.api.send_activity(batch, system_info=system_hardware_details)
