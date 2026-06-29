@@ -281,11 +281,14 @@ function aggregateLogs(
 
 /* ------------------------------ slot bar --------------------------------- */
 
-const HOUR_TICKS = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22];
+// Anchored to the full local day so the labels line up with the slot positions
+// (justify-between spreads N labels across the bar: 0h→left edge, 24h→right edge).
+const HOUR_TICKS = [0, 6, 12, 18, 24];
 
 function tickLabel(hour: number): string {
-  const h12 = hour % 12 === 0 ? 12 : hour % 12;
-  return `${h12}${hour < 12 ? "AM" : "PM"}`;
+  const h = hour % 24; // 24 -> 0 (midnight)
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}${h < 12 ? "AM" : "PM"}`;
 }
 
 function ActivitySlots({ slots }: { slots: Uint8Array }) {
@@ -679,7 +682,7 @@ export default function ActivityLogs() {
             activity per user. Select a row for the full breakdown.
           </p>
         </div>
-        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-end">
           <DateRangeFilter />
           <Select value={groupFilter} onValueChange={setGroupFilter}>
             <SelectTrigger className="w-full sm:w-44">

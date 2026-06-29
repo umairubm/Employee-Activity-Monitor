@@ -578,6 +578,39 @@ export const ListScreenshotsResponseItem = zod.object({
 export const ListScreenshotsResponse = zod.array(ListScreenshotsResponseItem);
 
 /**
+ * @summary Count screenshots matching the given filters
+ */
+export const GetScreenshotCountQueryParams = zod.object({
+  deviceId: zod.coerce.string().uuid().optional(),
+  flagged: zod.coerce.boolean().optional(),
+  group: zod.coerce
+    .string()
+    .optional()
+    .describe("Restrict to devices in this group"),
+  from: zod
+    .date()
+    .optional()
+    .describe("Only screenshots captured at or after this instant (inclusive)"),
+  to: zod
+    .date()
+    .optional()
+    .describe(
+      "Only screenshots captured strictly before this instant (exclusive)",
+    ),
+});
+
+export const GetScreenshotCountResponse = zod.object({
+  count: zod.number(),
+});
+
+/**
+ * @summary Permanently delete a screenshot (does not adjust tracked hours)
+ */
+export const DeleteScreenshotParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
+
+/**
  * @summary Flag or unflag a screenshot
  */
 export const FlagScreenshotParams = zod.object({
@@ -1311,10 +1344,67 @@ export const CreateLeaveRequestBody = zod.object({
 });
 
 /**
+ * @summary Edit a pending leave request
+ */
+export const UpdateLeaveRequestParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
+
+export const UpdateLeaveRequestBody = zod.object({
+  leaveType: zod.enum(["annual", "sick", "casual", "unpaid"]).optional(),
+  startDate: zod.string().optional(),
+  endDate: zod.string().optional(),
+  reason: zod.string().nullish(),
+});
+
+export const UpdateLeaveRequestResponse = zod.object({
+  id: zod.string().uuid(),
+  userId: zod.string().uuid(),
+  username: zod.string().nullish(),
+  leaveType: zod.enum(["annual", "sick", "casual", "unpaid"]),
+  startDate: zod.string(),
+  endDate: zod.string(),
+  days: zod.number(),
+  reason: zod.string().nullish(),
+  status: zod.enum(["pending", "approved", "rejected", "cancelled"]),
+  reviewedById: zod.string().uuid().nullish(),
+  reviewerUsername: zod.string().nullish(),
+  reviewedAt: zod.coerce.date().nullish(),
+  reviewNote: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
  * @summary Delete a leave request
  */
 export const DeleteLeaveRequestParams = zod.object({
   id: zod.coerce.string().uuid(),
+});
+
+/**
+ * @summary Cancel a pending leave request
+ */
+export const CancelLeaveRequestParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
+
+export const CancelLeaveRequestResponse = zod.object({
+  id: zod.string().uuid(),
+  userId: zod.string().uuid(),
+  username: zod.string().nullish(),
+  leaveType: zod.enum(["annual", "sick", "casual", "unpaid"]),
+  startDate: zod.string(),
+  endDate: zod.string(),
+  days: zod.number(),
+  reason: zod.string().nullish(),
+  status: zod.enum(["pending", "approved", "rejected", "cancelled"]),
+  reviewedById: zod.string().uuid().nullish(),
+  reviewerUsername: zod.string().nullish(),
+  reviewedAt: zod.coerce.date().nullish(),
+  reviewNote: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
 });
 
 /**

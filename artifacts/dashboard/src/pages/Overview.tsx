@@ -6,6 +6,8 @@ import {
   getGetLeaderboardQueryKey,
   useGetGroupComparison,
   getGetGroupComparisonQueryKey,
+  useGetScreenshotCount,
+  getGetScreenshotCountQueryKey,
   useListDevices,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -28,7 +30,7 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { Link } from "wouter";
 import { useGroupFilter, ALL_GROUPS as ALL } from "@/hooks/use-group-filter";
-import { useDateRange, todayStr } from "@/hooks/use-date-filter";
+import { useDateRange, todayStr, rangeBoundsIso } from "@/hooks/use-date-filter";
 import { DateRangeFilter } from "@/components/DateFilter";
 
 function downloadCsv(filename: string, rows: (string | number)[][]) {
@@ -78,6 +80,22 @@ export default function Overview() {
   });
   const { data: groupComparison } = useGetGroupComparison(rangeParams, {
     query: { queryKey: getGetGroupComparisonQueryKey(rangeParams), refetchInterval: 30000 },
+  });
+
+  // Count screenshots with the SAME browser-local instant bounds the
+  // Screenshots gallery uses, so this KPI matches the gallery exactly rather
+  // than the server-local calendar-day count baked into /reports/summary.
+  const shotBounds = useMemo(() => rangeBoundsIso(range), [range]);
+  const shotCountParams = {
+    from: shotBounds.from,
+    to: shotBounds.to,
+    ...(groupFilter !== ALL ? { group: groupFilter } : {}),
+  };
+  const { data: screenshotCount } = useGetScreenshotCount(shotCountParams, {
+    query: {
+      queryKey: getGetScreenshotCountQueryKey(shotCountParams),
+      refetchInterval: 30000,
+    },
   });
 
   if (isSummaryLoading || isLeaderboardLoading) {
@@ -288,11 +306,11 @@ export default function Overview() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Screenshots Today</CardTitle>
+            <CardTitle className="text-sm font-medium">{isToday ? "Screenshots Today" : "Screenshots"}</CardTitle>
             <ImageIcon className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{summary.screenshotsToday}</div>
+            <div className="text-2xl font-bold">{screenshotCount?.count ?? summary.screenshotsToday}</div>
             <p className="text-xs text-muted-foreground mt-1">
               Across all active devices
             </p>

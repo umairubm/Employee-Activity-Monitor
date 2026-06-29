@@ -870,6 +870,24 @@ export interface ReviewLeaveRequest {
   reviewNote?: string | null;
 }
 
+export type UpdateLeaveRequestLeaveType =
+  (typeof UpdateLeaveRequestLeaveType)[keyof typeof UpdateLeaveRequestLeaveType];
+
+export const UpdateLeaveRequestLeaveType = {
+  annual: "annual",
+  sick: "sick",
+  casual: "casual",
+  unpaid: "unpaid",
+} as const;
+
+export interface UpdateLeaveRequest {
+  leaveType?: UpdateLeaveRequestLeaveType;
+  startDate?: string;
+  endDate?: string;
+  /** @nullable */
+  reason?: string | null;
+}
+
 export type LeaveBalanceItemLeaveType =
   (typeof LeaveBalanceItemLeaveType)[keyof typeof LeaveBalanceItemLeaveType];
 
@@ -1070,6 +1088,27 @@ export type ListScreenshotsParams = {
    */
   to?: string;
   limit?: number;
+};
+
+export type GetScreenshotCountParams = {
+  deviceId?: string;
+  flagged?: boolean;
+  /**
+   * Restrict to devices in this group
+   */
+  group?: string;
+  /**
+   * Only screenshots captured at or after this instant (inclusive)
+   */
+  from?: string;
+  /**
+   * Only screenshots captured strictly before this instant (exclusive)
+   */
+  to?: string;
+};
+
+export type GetScreenshotCount200 = {
+  count: number;
 };
 
 export type FlagScreenshot200 = {

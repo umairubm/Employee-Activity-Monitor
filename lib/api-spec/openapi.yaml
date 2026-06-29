@@ -484,6 +484,64 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/ScreenshotListItem"
+  /screenshots/count:
+    get:
+      operationId: getScreenshotCount
+      tags: [screenshots]
+      summary: Count screenshots matching the given filters
+      parameters:
+        - name: deviceId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: flagged
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: group
+          in: query
+          required: false
+          description: Restrict to devices in this group
+          schema:
+            type: string
+        - name: from
+          in: query
+          required: false
+          description: Only screenshots captured at or after this instant (inclusive)
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          description: Only screenshots captured strictly before this instant (exclusive)
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Screenshot count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                required: [count]
+  /screenshots/{id}:
+    delete:
+      operationId: deleteScreenshot
+      tags: [screenshots]
+      summary: Permanently delete a screenshot (does not adjust tracked hours)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Deleted
   /screenshots/{id}/flag:
     patch:
       operationId: flagScreenshot
@@ -1009,6 +1067,25 @@ paths:
               schema:
                 $ref: "#/components/schemas/LeaveRequestItem"
   /leave-requests/{id}:
+    patch:
+      operationId: updateLeaveRequest
+      tags: [leave]
+      summary: Edit a pending leave request
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateLeaveRequest"
+      responses:
+        "200":
+          description: Updated leave request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeaveRequestItem"
     delete:
       operationId: deleteLeaveRequest
       tags: [leave]
@@ -1018,6 +1095,20 @@ paths:
       responses:
         "204":
           description: Deleted
+  /leave-requests/{id}/cancel:
+    post:
+      operationId: cancelLeaveRequest
+      tags: [leave]
+      summary: Cancel a pending leave request
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Cancelled leave request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeaveRequestItem"
   /leave-requests/{id}/review:
     post:
       operationId: reviewLeaveRequest
@@ -2430,6 +2521,18 @@ components:
         reviewNote:
           type: [string, "null"]
       required: [status]
+    UpdateLeaveRequest:
+      type: object
+      properties:
+        leaveType:
+          type: string
+          enum: [annual, sick, casual, unpaid]
+        startDate:
+          type: string
+        endDate:
+          type: string
+        reason:
+          type: [string, "null"]
     LeaveBalanceItem:
       type: object
       properties:

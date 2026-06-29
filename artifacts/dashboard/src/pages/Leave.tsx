@@ -4,6 +4,8 @@ import {
   getListLeaveRequestsQueryKey,
   useCreateLeaveRequest,
   useReviewLeaveRequest,
+  useCancelLeaveRequest,
+  useUpdateLeaveRequest,
   useDeleteLeaveRequest,
   useListLeaveBalances,
   getListLeaveBalancesQueryKey,
@@ -49,7 +51,7 @@ import {
   TabsTrigger,
 } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { CalendarOff, Plus, Trash2, Check, X } from "lucide-react";
+import { CalendarOff, Plus, Trash2, Check, X, Ban, Pencil } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const LEAVE_TYPES = [
@@ -318,7 +320,69 @@ function RequestRow({
 }) {
   const { toast } = useToast();
   const review = useReviewLeaveRequest();
+  const cancelReq = useCancelLeaveRequest();
+  const updateReq = useUpdateLeaveRequest();
   const deleteReq = useDeleteLeaveRequest();
+
+  const [editOpen, setEditOpen] = useState(false);
+  const [editType, setEditType] = useState<string>(req.leaveType);
+  const [editStart, setEditStart] = useState(req.startDate);
+  const [editEnd, setEditEnd] = useState(req.endDate);
+  const [editReason, setEditReason] = useState(req.reason ?? "");
+
+  const openEdit = () => {
+    setEditType(req.leaveType);
+    setEditStart(req.startDate);
+    setEditEnd(req.endDate);
+    setEditReason(req.reason ?? "");
+    setEditOpen(true);
+  };
+
+  const handleSaveEdit = () => {
+    updateReq.mutate(
+      {
+        id: req.id,
+        data: {
+          leaveType: editType as never,
+          startDate: editStart,
+          endDate: editEnd,
+          reason: editReason.trim() || null,
+        },
+      },
+      {
+        onSuccess: () => {
+          onChanged();
+          setEditOpen(false);
+          toast({ title: "Leave request updated" });
+        },
+        onError: (e) =>
+          toast({
+            title: "Update failed",
+            description: (e as Error).message,
+            variant: "destructive",
+          }),
+      },
+    );
+  };
+
+  const handleCancel = () => {
+    if (!confirm("Cancel this pending leave request?")) return;
+    cancelReq.mutate(
+      { id: req.id },
+      {
+        onSuccess: () => {
+          onChanged();
+          toast({ title: "Leave request cancelled" });
+        },
+        onError: (e) =>
+          toast({
+            title: "Cancel failed",
+            description: (e as Error).message,
+            variant: "destructive",
+          }),
+      },
+    );
+  };
 
   const handleReview = (status: "approved" | "rejected") => {
     review.mutate(
@@ -392,6 +456,26 @@ function RequestRow({
               >
                 <X className="h-4 w-4" />
               </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                onClick={openEdit}
+                disabled={updateReq.isPending}
+                title="Edit"
+              >
+                <Pencil className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                onClick={handleCancel}
+                disabled={cancelReq.isPending}
+                title="Cancel request"
+              >
+                <Ban className="h-4 w-4" />
+              </Button>
             </>
           )}
           <Button
@@ -405,6 +489,75 @@ function RequestRow({
             <Trash2 className="h-4 w-4" />
           </Button>
         </div>
+
+        <Dialog open={editOpen} onOpenChange={setEditOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Edit Leave Request</DialogTitle>
+              <DialogDescription>
+                Only pending requests can be edited. Business days
+                (Mon&ndash;Fri) in the range are counted as leave days.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4 text-left">
+              <div className="grid gap-2">
+                <Label>Type</Label>
+                <Select value={editType} onValueChange={setEditType}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LEAVE_TYPES.map((t) => (
+                      <SelectItem key={t.value} value={t.value}>
+                        {t.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor={`e-start-${req.id}`}>Start date</Label>
+                  <Input
+                    id={`e-start-${req.id}`}
+                    type="date"
+                    value={editStart}
+                    onChange={(e) => setEditStart(e.target.value)}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor={`e-end-${req.id}`}>End date</Label>
+                  <Input
+                    id={`e-end-${req.id}`}
+                    type="date"
+                    value={editEnd}
+                    onChange={(e) => setEditEnd(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor={`e-reason-${req.id}`}>Reason (optional)</Label>
+                <Textarea
+                  id={`e-reason-${req.id}`}
+                  value={editReason}
+                  onChange={(e) => setEditReason(e.target.value)}
+                  rows={2}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setEditOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSaveEdit}
+                disabled={updateReq.isPending || editStart > editEnd}
+              >
+                {updateReq.isPending ? "Saving..." : "Save changes"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </TableCell>
     </TableRow>
   );

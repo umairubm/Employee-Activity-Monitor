@@ -49,6 +49,8 @@ import type {
   GetAttendanceReportParams,
   GetGroupComparisonParams,
   GetLeaderboardParams,
+  GetScreenshotCount200,
+  GetScreenshotCountParams,
   GetSummaryParams,
   GetTimelineParams,
   GetTimesheetParams,
@@ -79,6 +81,7 @@ import type {
   TaskItem,
   TimesheetReport,
   UpdateCategoryRequest,
+  UpdateLeaveRequest,
   UpdateProjectRequest,
   UpdateShiftRequest,
   UpdateTaskRequest,
@@ -1897,6 +1900,187 @@ export function useListScreenshots<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary Count screenshots matching the given filters
+ */
+export const getGetScreenshotCountUrl = (params?: GetScreenshotCountParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/screenshots/count?${stringifiedParams}`
+    : `/api/screenshots/count`;
+};
+
+export const getScreenshotCount = async (
+  params?: GetScreenshotCountParams,
+  options?: RequestInit,
+): Promise<GetScreenshotCount200> => {
+  return customFetch<GetScreenshotCount200>(getGetScreenshotCountUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetScreenshotCountQueryKey = (
+  params?: GetScreenshotCountParams,
+) => {
+  return [`/api/screenshots/count`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetScreenshotCountQueryOptions = <
+  TData = Awaited<ReturnType<typeof getScreenshotCount>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetScreenshotCountParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getScreenshotCount>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetScreenshotCountQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getScreenshotCount>>
+  > = ({ signal }) => getScreenshotCount(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getScreenshotCount>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetScreenshotCountQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getScreenshotCount>>
+>;
+export type GetScreenshotCountQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Count screenshots matching the given filters
+ */
+
+export function useGetScreenshotCount<
+  TData = Awaited<ReturnType<typeof getScreenshotCount>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetScreenshotCountParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getScreenshotCount>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetScreenshotCountQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Permanently delete a screenshot (does not adjust tracked hours)
+ */
+export const getDeleteScreenshotUrl = (id: string) => {
+  return `/api/screenshots/${id}`;
+};
+
+export const deleteScreenshot = async (
+  id: string,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteScreenshotUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteScreenshotMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteScreenshot>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteScreenshot>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["deleteScreenshot"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteScreenshot>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteScreenshot(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteScreenshotMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteScreenshot>>
+>;
+
+export type DeleteScreenshotMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Permanently delete a screenshot (does not adjust tracked hours)
+ */
+export const useDeleteScreenshot = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteScreenshot>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteScreenshot>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getDeleteScreenshotMutationOptions(options));
+};
 
 /**
  * @summary Flag or unflag a screenshot
@@ -4194,6 +4378,93 @@ export const useCreateLeaveRequest = <
 };
 
 /**
+ * @summary Edit a pending leave request
+ */
+export const getUpdateLeaveRequestUrl = (id: string) => {
+  return `/api/leave-requests/${id}`;
+};
+
+export const updateLeaveRequest = async (
+  id: string,
+  updateLeaveRequest: UpdateLeaveRequest,
+  options?: RequestInit,
+): Promise<LeaveRequestItem> => {
+  return customFetch<LeaveRequestItem>(getUpdateLeaveRequestUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateLeaveRequest),
+  });
+};
+
+export const getUpdateLeaveRequestMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateLeaveRequest>>,
+    TError,
+    { id: string; data: BodyType<UpdateLeaveRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateLeaveRequest>>,
+  TError,
+  { id: string; data: BodyType<UpdateLeaveRequest> },
+  TContext
+> => {
+  const mutationKey = ["updateLeaveRequest"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateLeaveRequest>>,
+    { id: string; data: BodyType<UpdateLeaveRequest> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateLeaveRequest(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateLeaveRequestMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateLeaveRequest>>
+>;
+export type UpdateLeaveRequestMutationBody = BodyType<UpdateLeaveRequest>;
+export type UpdateLeaveRequestMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Edit a pending leave request
+ */
+export const useUpdateLeaveRequest = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateLeaveRequest>>,
+    TError,
+    { id: string; data: BodyType<UpdateLeaveRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateLeaveRequest>>,
+  TError,
+  { id: string; data: BodyType<UpdateLeaveRequest> },
+  TContext
+> => {
+  return useMutation(getUpdateLeaveRequestMutationOptions(options));
+};
+
+/**
  * @summary Delete a leave request
  */
 export const getDeleteLeaveRequestUrl = (id: string) => {
@@ -4275,6 +4546,90 @@ export const useDeleteLeaveRequest = <
   TContext
 > => {
   return useMutation(getDeleteLeaveRequestMutationOptions(options));
+};
+
+/**
+ * @summary Cancel a pending leave request
+ */
+export const getCancelLeaveRequestUrl = (id: string) => {
+  return `/api/leave-requests/${id}/cancel`;
+};
+
+export const cancelLeaveRequest = async (
+  id: string,
+  options?: RequestInit,
+): Promise<LeaveRequestItem> => {
+  return customFetch<LeaveRequestItem>(getCancelLeaveRequestUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getCancelLeaveRequestMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof cancelLeaveRequest>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof cancelLeaveRequest>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["cancelLeaveRequest"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof cancelLeaveRequest>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return cancelLeaveRequest(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CancelLeaveRequestMutationResult = NonNullable<
+  Awaited<ReturnType<typeof cancelLeaveRequest>>
+>;
+
+export type CancelLeaveRequestMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Cancel a pending leave request
+ */
+export const useCancelLeaveRequest = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof cancelLeaveRequest>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof cancelLeaveRequest>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getCancelLeaveRequestMutationOptions(options));
 };
 
 /**

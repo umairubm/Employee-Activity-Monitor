@@ -1,6 +1,6 @@
 import { useCallback, useEffect } from "react";
 import { format } from "date-fns";
-import { ChevronLeft, ChevronRight, Flag } from "lucide-react";
+import { ChevronLeft, ChevronRight, Flag, Trash2 } from "lucide-react";
 import type { ScreenshotListItem } from "@workspace/api-client-react";
 import {
   Dialog,
@@ -20,12 +20,16 @@ export function ScreenshotLightbox({
   onIndexChange,
   open,
   onOpenChange,
+  onDelete,
+  deleting = false,
 }: {
   screenshots: ScreenshotListItem[];
   index: number;
   onIndexChange: (index: number) => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onDelete?: (screenshot: ScreenshotListItem) => void;
+  deleting?: boolean;
 }) {
   const count = screenshots.length;
   const current = screenshots[index];
@@ -108,6 +112,19 @@ export function ScreenshotLightbox({
             <div className="absolute left-4 top-4 flex items-center gap-1 rounded-md bg-amber-500 px-2 py-0.5 text-xs font-medium text-white">
               <Flag className="h-3 w-3" /> Flagged
             </div>
+          )}
+
+          {onDelete && (
+            <button
+              type="button"
+              aria-label="Delete screenshot"
+              title="Delete screenshot"
+              onClick={() => onDelete(current)}
+              disabled={deleting}
+              className="absolute right-3 top-3 rounded-full border border-white/10 bg-black/60 p-2 text-white backdrop-blur-md transition-colors hover:bg-destructive hover:text-destructive-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 disabled:opacity-50"
+            >
+              <Trash2 className="h-5 w-5" />
+            </button>
           )}
 
           <div className="absolute bottom-4 left-4 rounded-md border border-white/10 bg-black/70 px-3 py-1.5 text-sm text-white backdrop-blur-md">

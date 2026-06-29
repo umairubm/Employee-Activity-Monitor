@@ -267,6 +267,121 @@ router.post("/:id/review", async (req, res) => {
   }
 });
 
+const updateLeaveSchema = z.object({
+  leaveType: z.enum(leaveTypes).optional(),
+  startDate: calendarDateSchema.optional(),
+  endDate: calendarDateSchema.optional(),
+  reason: z.string().max(2000).nullish(),
+});
+
+// PATCH /api/leave-requests/:id - edit a PENDING request (type/dates/reason).
+// Only pending requests are editable; pending never consumed balance, so no
+// balance adjustment is needed here.
+router.patch("/:id", async (req, res) => {
+  try {
+    if (!isUuid(String(req.params.id))) {
+      res.status(400).json({ error: "Invalid leave id" });
+      return;
+    }
+    const parsed = updateLeaveSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid leave payload" });
+      return;
+    }
+    const id = String(req.params.id);
+    const outcome = await db.transaction(async (tx) => {
+      const [existing] = await tx
+        .select()
+        .from(leaveRequestsTable)
+        .where(eq(leaveRequestsTable.id, id));
+      if (!existing) return "missing" as const;
+      if (existing.status !== "pending") return "conflict" as const;
+
+      const startDate = parsed.data.startDate ?? existing.startDate;
+      const endDate = parsed.data.endDate ?? existing.endDate;
+      if (startDate > endDate) return "invalid" as const;
+
+      const [updated] = await tx
+        .update(leaveRequestsTable)
+        .set({
+          leaveType: parsed.data.leaveType ?? existing.leaveType,
+          startDate,
+          endDate,
+          reason:
+            parsed.data.reason !== undefined
+              ? parsed.data.reason
+              : existing.reason,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(leaveRequestsTable.id, id),
+            eq(leaveRequestsTable.status, "pending"),
+          ),
+        )
+        .returning();
+      return updated ?? ("conflict" as const);
+    });
+
+    if (outcome === "missing") {
+      res.status(404).json({ error: "Leave request not found" });
+      return;
+    }
+    if (outcome === "conflict") {
+      res.status(409).json({ error: "Only pending requests can be edited" });
+      return;
+    }
+    if (outcome === "invalid") {
+      res.status(400).json({ error: "startDate must be on or before endDate" });
+      return;
+    }
+
+    res.json(await fetchShapedLeave(outcome.id));
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// POST /api/leave-requests/:id/cancel - cancel a PENDING request.
+// A pending request never consumed balance, so cancelling leaves balances
+// untouched. The conditional `status = 'pending'` guard makes this race-safe.
+router.post("/:id/cancel", async (req, res) => {
+  try {
+    if (!isUuid(String(req.params.id))) {
+      res.status(400).json({ error: "Invalid leave id" });
+      return;
+    }
+    const id = String(req.params.id);
+    const [updated] = await db
+      .update(leaveRequestsTable)
+      .set({ status: "cancelled", updatedAt: new Date() })
+      .where(
+        and(
+          eq(leaveRequestsTable.id, id),
+          eq(leaveRequestsTable.status, "pending"),
+        ),
+      )
+      .returning();
+
+    if (!updated) {
+      const [exists] = await db
+        .select({ id: leaveRequestsTable.id })
+        .from(leaveRequestsTable)
+        .where(eq(leaveRequestsTable.id, id));
+      if (!exists) {
+        res.status(404).json({ error: "Leave request not found" });
+        return;
+      }
+      res.status(409).json({ error: "Only pending requests can be cancelled" });
+      return;
+    }
+
+    res.json(await fetchShapedLeave(updated.id));
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
 // DELETE /api/leave-requests/:id - delete a request (refunds balance if approved)
 router.delete("/:id", async (req, res) => {
   try {

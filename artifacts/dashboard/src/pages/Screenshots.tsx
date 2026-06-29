@@ -3,7 +3,10 @@ import {
   useListScreenshots,
   getListScreenshotsQueryKey,
   useFlagScreenshot,
+  useDeleteScreenshot,
+  getGetScreenshotCountQueryKey,
   useListDevices,
+  type ScreenshotListItem,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
@@ -16,7 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { format } from "date-fns";
-import { Image as ImageIcon, Info, Flag } from "lucide-react";
+import { Image as ImageIcon, Info, Flag, Trash2 } from "lucide-react";
 import { ScreenshotLightbox } from "@/components/ScreenshotLightbox";
 import { useToast } from "@/hooks/use-toast";
 import { useGroupFilter, ALL_GROUPS as ALL } from "@/hooks/use-group-filter";
@@ -49,6 +52,31 @@ export default function Screenshots() {
     query: { queryKey: getListScreenshotsQueryKey(params) },
   });
   const flag = useFlagScreenshot();
+  const del = useDeleteScreenshot();
+
+  const handleDelete = (shot: ScreenshotListItem) => {
+    if (
+      !window.confirm(
+        "Permanently delete this screenshot? This cannot be undone. Tracked hours are not affected.",
+      )
+    )
+      return;
+    del.mutate(
+      { id: shot.id },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getListScreenshotsQueryKey(params) });
+          // Invalidate every screenshot-count variant (any group/date params) so
+          // the Overview KPI reconciles immediately after a delete.
+          queryClient.invalidateQueries({ queryKey: getGetScreenshotCountQueryKey() });
+          toast({ title: "Screenshot deleted" });
+        },
+        onError: (error: any) => {
+          toast({ title: "Failed to delete", description: error.message, variant: "destructive" });
+        },
+      },
+    );
+  };
 
   const toggleFlag = (id: string, current: boolean) => {
     flag.mutate(
@@ -78,7 +106,7 @@ export default function Screenshots() {
               : "Captures from the selected range, taken with explicit user consent."}
           </p>
         </div>
-        <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full sm:w-auto">
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-end">
           <DateRangeFilter />
           <Select value={groupFilter} onValueChange={setGroupFilter}>
             <SelectTrigger className="w-full sm:w-44">
@@ -138,10 +166,20 @@ export default function Screenshots() {
           {screenshots?.map((screenshot, i) => (
             <div
               key={screenshot.id}
-              className={`group rounded-xl overflow-hidden border bg-card shadow-sm hover:shadow-md transition-all ${
+              className={`group relative rounded-xl overflow-hidden border bg-card shadow-sm hover:shadow-md transition-all ${
                 screenshot.flagged ? "border-amber-500 ring-1 ring-amber-500/40" : "border-border"
               }`}
             >
+              <button
+                type="button"
+                aria-label="Delete screenshot"
+                title="Delete screenshot"
+                onClick={() => handleDelete(screenshot)}
+                disabled={del.isPending}
+                className="absolute right-2 top-2 z-10 rounded-md bg-black/55 p-1.5 text-white opacity-0 backdrop-blur-sm transition-opacity hover:bg-destructive group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 disabled:opacity-50"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
               <button
                 type="button"
                 onClick={() => setViewerIndex(i)}
@@ -190,6 +228,8 @@ export default function Screenshots() {
         onOpenChange={(o) => {
           if (!o) setViewerIndex(null);
         }}
+        onDelete={handleDelete}
+        deleting={del.isPending}
       />
     </div>
   );

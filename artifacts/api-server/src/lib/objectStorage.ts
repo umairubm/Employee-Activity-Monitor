@@ -154,6 +154,18 @@ export class ObjectStorageService {
     return objectFile;
   }
 
+  // Best-effort delete of an object entity. A missing object is treated as
+  // success so callers can delete a DB row and its bytes idempotently.
+  async deleteObjectEntity(objectPath: string): Promise<void> {
+    try {
+      const file = await this.getObjectEntityFile(objectPath);
+      await file.delete({ ignoreNotFound: true });
+    } catch (error) {
+      if (error instanceof ObjectNotFoundError) return;
+      throw error;
+    }
+  }
+
   normalizeObjectEntityPath(rawPath: string): string {
     if (!rawPath.startsWith("https://storage.googleapis.com/")) {
       return rawPath;

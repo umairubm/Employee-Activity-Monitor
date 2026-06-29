@@ -56,7 +56,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen w-full flex-col lg:flex-row bg-background">
       {/* Sidebar */}
-      <aside className="w-full lg:w-64 border-r border-border bg-card flex flex-col flex-shrink-0">
+      <aside className="w-full lg:w-64 border-r border-border bg-card flex flex-col flex-shrink-0 lg:sticky lg:top-0 lg:h-screen">
         <div className="p-6 flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground">
             <ShieldCheck size={20} />
@@ -103,8 +103,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <header className="flex items-center justify-between gap-4 border-b border-border bg-card px-4 md:px-8 py-3 flex-shrink-0">
+      <main className="flex-1 flex flex-col min-w-0">
+        <header className="sticky top-0 z-20 flex items-center justify-between gap-4 border-b border-border bg-card px-4 md:px-8 py-3 flex-shrink-0">
           <div className="text-sm text-muted-foreground hidden sm:block">
             Welcome back,{" "}
             <span className="font-semibold text-foreground">{user?.username ?? "User"}</span>
@@ -121,7 +121,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             </div>
           </div>
         </header>
-        <div className="flex-1 overflow-y-auto p-4 md:p-8">
+        <div className="flex-1 p-4 md:p-8">
           {children}
         </div>
       </main>

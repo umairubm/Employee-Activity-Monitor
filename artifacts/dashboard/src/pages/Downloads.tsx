@@ -42,7 +42,7 @@ const PLATFORM_DESC: Record<string, string> = {
 function InstallerCard({ item }: { item: DownloadItem }) {
   const Icon = PLATFORM_ICON[item.platform] ?? Monitor;
   return (
-    <Card>
+    <Card className="flex h-full flex-col">
       <CardHeader>
         <CardTitle className="text-base flex items-center gap-2">
           <Icon className="h-5 w-5 text-primary" /> {item.label}
@@ -52,7 +52,7 @@ function InstallerCard({ item }: { item: DownloadItem }) {
             "Install the desktop agent for this platform."}
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="flex flex-1 flex-col gap-4">
         {item.available ? (
           <>
             <div className="text-xs text-muted-foreground space-y-1">
@@ -75,7 +75,7 @@ function InstallerCard({ item }: { item: DownloadItem }) {
                 </div>
               )}
             </div>
-            <Button asChild className="w-full gap-2">
+            <Button asChild className="mt-auto w-full gap-2">
               <a href={item.downloadUrl ?? "#"} download>
                 <Download className="h-4 w-4" />
                 Download for {item.label}
@@ -83,7 +83,7 @@ function InstallerCard({ item }: { item: DownloadItem }) {
             </Button>
           </>
         ) : (
-          <div className="rounded-md border border-dashed border-border p-4 text-center">
+          <div className="mt-auto flex flex-1 flex-col justify-center rounded-md border border-dashed border-border p-4 text-center">
             <PackageOpen className="h-6 w-6 text-muted-foreground mx-auto mb-2" />
             <p className="text-sm font-medium">Not published yet</p>
             <p className="text-xs text-muted-foreground mt-1">

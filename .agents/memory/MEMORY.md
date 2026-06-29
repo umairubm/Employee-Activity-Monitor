@@ -12,3 +12,4 @@
 - [Screenshot lightbox viewer](screenshot-lightbox.md) — one shared controlled arrow-key viewer for both screenshot surfaces (gallery + Activity Logs sessions); self-reconciles index; don't re-add bespoke per-thumbnail dialogs.
 - [React Fast Refresh + context/hook split](react-fast-refresh-context.md) — never export a Provider component AND its hook/Context from one file; intermittent dev-only "useAuth must be used within Provider" crashes; keep hook+Context in a plain .ts.
 - [Overlapping-agent time correction](overlap-time-correction.md) — merge intervals per device(+day), never across devices; correctOverlap ratio-scales each class + sum-preserving rounding; don't re-normalize.
+- [Orval query-key prefixes](orval-query-key-prefix.md) — generated React Query keys are prefixed with the FULL `/api/...` path; always invalidate via the generated `getXxxQueryKey()` helper, never a hand-written prefix.

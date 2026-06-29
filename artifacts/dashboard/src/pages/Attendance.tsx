@@ -26,7 +26,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogT
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent, type ChartConfig } from "@/components/ui/chart";
 import { CartesianGrid, XAxis, YAxis, Line, ComposedChart, Bar, Cell } from "recharts";
-import { CalendarCheck, CalendarRange, Settings2, Clock, Download, TrendingUp } from "lucide-react";
+import { CalendarCheck, CalendarRange, Settings2, Clock, Download, TrendingUp, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { useGroupFilter, ALL_GROUPS as ALL } from "@/hooks/use-group-filter";
@@ -963,11 +963,12 @@ export default function Attendance() {
             <DialogFooter className="gap-2 sm:justify-between">
               {currentOverride ? (
                 <Button
-                  variant="ghost"
-                  className="text-destructive hover:text-destructive"
+                  variant="outline"
+                  className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
                   onClick={removeOverride}
                   disabled={deleteOverride.isPending}
                 >
+                  <Trash2 className="mr-2 h-4 w-4" />
                   {deleteOverride.isPending ? "Removing..." : "Remove override"}
                 </Button>
               ) : (
