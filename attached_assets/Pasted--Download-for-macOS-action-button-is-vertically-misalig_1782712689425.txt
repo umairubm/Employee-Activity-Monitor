@@ -1,0 +1,54 @@
+"""Download for macOS"" action button is vertically misaligned compared to Windows
+and Linux cards"
+"Sidebar menu background layout cuts off early, leaving large empty whitespace 
+container area under the navigation links on scrollable pages."
+Filter controls and date pickers wrap vertically and misalign on the Activity Logs toolbar.
+"Date filter components fragment layout spacing and wrap inconsistently on the
+Screenshots toolbar"
+"""Remove Override"" element in Attendance Rules lacks button styling, appearing as
+regular static text."
+"Total screenshot count on Overview dashboard displays ""4"" while only 3 screenshot 
+cards render in the Screenshots tab."
+"Leave requests filter dropdown includes a ""Cancelled"" option, but no action exists to
+cancel a request."
+"Password input field lacks a show/hide visibility toggle icon on the Welcome Back
+login card."
+"Activity timelines and screenshot metadata are hardcoded to AM hours, ignoring the
+user's local system timezone."
+
+"UX Enhancement Suggestion: Add Deletion Capability for Captured Screenshots
+
+Type: Feature Request / Enhancement
+
+Description: Currently, if the agent background tracker captures a screen
+containing sensitive data (such as personal banking information, corporate 
+passwords, or private messages), the entry remains permanent. Users must
+either leave it exposed or request a database wipe from system administrators.
+
+Proposed Solution: Introduce a Trash Can ""Delete"" icon on the card overlay during
+mouse hovers, as well as an explicit action button within the expanded full-screen
+preview player. This allows swift removal of compromised image assets. To maintain
+organizational accountability, completing a deletion can automatically deduct the 
+associated timeline block (e.g., 10 minutes) from the user's daily total tracked
+work hours.
+
+Reference Module: Screenshots Management Page
+
+Proof: https://go.screenpal.com/watch/cO1FXGnuER5 "
+
+"UX Enhancement Suggestion: Add Inline Editing Capability for Pending Leave
+Requests
+
+Type: Feature Request / Enhancement
+
+Description: Currently, if a user selects the wrong leave type (e.g., choosing ""Sick"" 
+instead of ""Casual""), they must delete the row entirely or await rejection and 
+create a new request.
+
+Proposed Solution: Introduce a pencil ""Edit"" icon next to the action controls strictly for 
+entries that are still in a pending status. This allows quick changes to the leave type
+or date boundaries without forcing a total deletion cycle.
+
+Reference Module: Leave Management Page
+
+Proof: https://go.screenpal.com/watch/cO1FiCnuEtU "
