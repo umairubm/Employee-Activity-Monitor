@@ -105,8 +105,9 @@ describe("attendance status thresholds (required 7.5h, half-day 4h)", () => {
       { worked: 7.5 * H, expected: "present" }, // exactly required
       { worked: 5 * H, expected: "half_day" }, // between thresholds
       { worked: 4 * H, expected: "half_day" }, // exactly half-day threshold
-      { worked: 3.9 * H, expected: "absent" }, // just below half-day
-      { worked: 0, expected: "absent" }, // no activity at all
+      { worked: 3.9 * H, expected: "half_day" }, // below floor but has activity → half_day
+      { worked: 0.1 * H, expected: "half_day" }, // any activity at all → never absent
+      { worked: 0, expected: "absent" }, // no activity at all → absent
     ] as const;
 
     const devices: { id: string; expected: string; worked: number }[] = [];

@@ -295,11 +295,13 @@ export function hhmmToMinutes(hhmm: string): number {
  * and approved leave separately). The rule COMBINES the hours-based floor with
  * two time-based half-day triggers:
  *
- *   - absent      : no activity, or worked below the half-day hours floor.
- *   - half_day    : worked enough to clear the floor, but EITHER worked below the
- *                   required hours, OR arrived late (first activity strictly
- *                   after `halfDayLateThreshold`), OR left early (no activity at
- *                   or after `halfDayMiddayCutoff`).
+ *   - absent      : NO activity at all. Any data reported by the device on a
+ *                   working day (even a single log) means the device was used,
+ *                   so it is never absent — at minimum it is a half day.
+ *   - half_day    : some activity, but EITHER worked below the half-day hours
+ *                   floor, OR below the required hours, OR arrived late (first
+ *                   activity strictly after `halfDayLateThreshold`), OR left
+ *                   early (no activity at or after `halfDayMiddayCutoff`).
  *   - present     : cleared required hours AND on time AND stayed past midday.
  *
  * Activity minute-of-day inputs are minutes-since-UTC-midnight (matching how the
@@ -317,9 +319,10 @@ export function classifyWorkingDay(opts: {
   lastActivityMinutes: number | null;
 }): "present" | "half_day" | "absent" {
   const { workedSeconds, requiredHours, settings } = opts;
+  // No data at all on a working day = absent. Any activity (even one log) means
+  // the device was used that day, so it is never marked absent.
   if (workedSeconds <= 0) return "absent";
   const workedHours = workedSeconds / 3600;
-  if (workedHours < settings.halfDayThresholdHours) return "absent";
 
   const late =
     opts.firstActivityMinutes !== null &&
@@ -328,6 +331,12 @@ export function classifyWorkingDay(opts: {
     opts.lastActivityMinutes !== null &&
     opts.lastActivityMinutes < hhmmToMinutes(settings.halfDayMiddayCutoff);
 
-  if (workedHours < requiredHours || late || early) return "half_day";
+  if (
+    workedHours < settings.halfDayThresholdHours ||
+    workedHours < requiredHours ||
+    late ||
+    early
+  )
+    return "half_day";
   return "present";
 }
