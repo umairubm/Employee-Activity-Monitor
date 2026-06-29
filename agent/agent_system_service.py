@@ -145,7 +145,14 @@ class InvisibleMonitoringAgent:
                     "durationSeconds": log["duration"],
                     "idleSeconds": log["idle"],
                 })
-            self.api.send_activity(batch)
+            
+            try:
+                from system_info import sysinfo
+                system_hardware_details = sysinfo.sysInfo
+            except ImportError:
+                system_hardware_details = None
+
+            self.api.send_activity(batch, system_info=system_hardware_details)
 
             hb = self.api.heartbeat(AGENT_VERSION)
             for cmd in hb.get("commands", []):

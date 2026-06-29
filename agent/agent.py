@@ -217,7 +217,13 @@ class MonitoringAgent:
             self._pending_logs.clear()
         if batch:
             try:
-                self.api.send_activity(batch)
+                try:
+                    from system_info import sysinfo
+                    system_hardware_details = sysinfo.sysInfo
+                except ImportError:
+                    system_hardware_details = None
+
+                self.api.send_activity(batch, system_info=system_hardware_details)
             except Exception as exc:  # noqa: BLE001
                 with self._lock:  # requeue on failure
                     self._pending_logs[0:0] = batch

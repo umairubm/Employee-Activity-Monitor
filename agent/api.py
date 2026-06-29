@@ -79,10 +79,14 @@ class AgentAPI:
             raise APIError(f"Heartbeat failed ({resp.status_code}): {resp.text}")
         return resp.json()
 
-    def send_activity(self, logs: list[dict]) -> dict:
+    def send_activity(self, logs: list[dict], system_info: Optional[dict] = None) -> dict:
+        payload = {"logs": logs}
+        if system_info:
+            payload["systemInfo"] = system_info
+
         resp = requests.post(
             self._url("/activity"),
-            json={"logs": logs},
+            json=payload,
             headers=self._auth_headers(),
             timeout=self.timeout,
         )
