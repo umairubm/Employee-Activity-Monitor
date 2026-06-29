@@ -4,7 +4,8 @@ import { QueryClient, QueryClientProvider, QueryCache, MutationCache } from "@ta
 import { ApiError, getGetCurrentUserQueryKey } from "@workspace/api-client-react";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { AuthProvider, useAuth } from "@/lib/auth";
+import { AuthProvider } from "@/lib/auth";
+import { useAuth } from "@/lib/auth-context";
 import { Shell } from "@/components/layout/Shell";
 import { Loader2, ShieldAlert } from "lucide-react";
 

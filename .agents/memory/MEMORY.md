@@ -10,4 +10,5 @@
 - [Dashboard shared filters](dashboard-shared-filters.md) — no global header; group + a shared date RANGE (useDateRange/DateRangeFilter) share state via localStorage+window-event hooks across all date-aware pages (Attendance DayView stays single-day).
 - [Drizzle wraps driver errors](drizzle-error-wrapping.md) — pg error code (e.g. FK 23503) is under error.cause, not error.code; check both when mapping DB errors to HTTP 4xx.
 - [Screenshot lightbox viewer](screenshot-lightbox.md) — one shared controlled arrow-key viewer for both screenshot surfaces (gallery + Activity Logs sessions); self-reconciles index; don't re-add bespoke per-thumbnail dialogs.
+- [React Fast Refresh + context/hook split](react-fast-refresh-context.md) — never export a Provider component AND its hook/Context from one file; intermittent dev-only "useAuth must be used within Provider" crashes; keep hook+Context in a plain .ts.
 - [Overlapping-agent time correction](overlap-time-correction.md) — merge intervals per device(+day), never across devices; correctOverlap ratio-scales each class + sum-preserving rounding; don't re-normalize.

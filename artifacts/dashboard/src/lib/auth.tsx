@@ -1,15 +1,7 @@
-import React, { createContext, useContext, useEffect, ReactNode } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { useGetCurrentUser, getGetCurrentUserQueryKey, AuthUser, ApiError } from "@workspace/api-client-react";
+import { useEffect, ReactNode } from "react";
+import { useGetCurrentUser, getGetCurrentUserQueryKey, ApiError } from "@workspace/api-client-react";
 import { useLocation } from "wouter";
-
-interface AuthContextType {
-  user: AuthUser | null;
-  isLoading: boolean;
-  isError: boolean;
-}
-
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+import { AuthContext } from "@/lib/auth-context";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [location, setLocation] = useLocation();
@@ -21,7 +13,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
 
   const isError = !!error;
-  
+
   useEffect(() => {
     if (error instanceof ApiError && error.status === 401 && location !== "/login") {
       setLocation("/login");
@@ -33,12 +25,4 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       {children}
     </AuthContext.Provider>
   );
-}
-
-export function useAuth() {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error("useAuth must be used within an AuthProvider");
-  }
-  return context;
 }
