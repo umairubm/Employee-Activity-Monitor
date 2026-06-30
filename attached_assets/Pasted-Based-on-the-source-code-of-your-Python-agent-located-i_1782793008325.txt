@@ -1,0 +1,77 @@
+Based on the source code of your Python agent (located in 
+
+agent/api.py
+), the agent communicates with your backend via a sync API (base path /api/sync).
+
+All API calls (except enrollment and direct image uploads) require the following authentication headers:
+
+x-device-id: The unique device ID.
+x-device-secret: The device secret obtained during enrollment.
+Here is the complete list of API calls and their payloads that your agent is sending:
+
+1. Enroll Agent
+Endpoint: POST /api/sync/enroll
+Description: Registers the device and retrieves its credentials (deviceId and deviceSecret).
+Payload (JSON):
+json
+{
+    "token": "<string>",
+    "hardwareHash": "<string>",
+    "systemName": "<string>",
+    "osType": "<string>",
+    "agentVersion": "<string>",
+    "consentAcknowledged": true,
+    "consentName": "<string>"
+}
+2. Heartbeat
+Endpoint: POST /api/sync/heartbeat
+Description: Lets the server know the agent is online and checks for pending commands.
+Payload (JSON):
+json
+{
+    "agentVersion": "<string>"
+}
+3. Send Activity
+Endpoint: POST /api/sync/activity
+Description: Syncs collected activity logs and system information.
+Payload (JSON):
+json
+{
+    "logs": [
+        { /* log object */ },
+        { /* log object */ }
+    ],
+    "system_info": { 
+        /* optional system information dictionary */ 
+    }
+}
+(Note: system_info is an optional field in the payload)
+
+4. Request Screenshot URL
+Endpoint: POST /api/sync/screenshots/request-url
+Description: Requests a pre-signed URL (e.g., AWS S3) from your server to upload a screenshot securely.
+Payload: (None)
+5. Upload Screenshot Bytes
+Endpoint: PUT <upload_url> (URL received from the Request Screenshot URL step)
+Headers: Content-Type: image/png
+Description: Uploads the actual screenshot image binary data to the storage provider.
+Payload: Raw bytes of the PNG image.
+6. Report Screenshot
+Endpoint: POST /api/sync/screenshots
+Description: Notifies the server that the screenshot has been successfully uploaded to the storage bucket.
+Payload (JSON):
+json
+{
+    "storageKey": "<string>",
+    "capturedAt": "<string>",
+    "fileSizeBytes": <integer>
+}
+7. Acknowledge Command
+Endpoint: POST /api/sync/commands/ack
+Description: Updates the server on the status of a command the agent processed.
+Payload (JSON):
+json
+{
+    "commandId": "<string>",
+    "status": "<string>"
+}
