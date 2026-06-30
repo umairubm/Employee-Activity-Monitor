@@ -10,7 +10,8 @@ import {
   useGetDeviceAlerts,
   getGetDeviceAlertsQueryKey,
   useAcknowledgeDeviceAlert,
-  useAcknowledgeAllDeviceAlerts
+  useAcknowledgeAllDeviceAlerts,
+  type DeviceAlertItem
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -43,6 +44,27 @@ function fieldIcon(field: string): typeof Server {
   return group?.icon ?? AlertTriangle;
 }
 
+// DEV-ONLY sample data so the Hardware Change Alerts UI can be previewed.
+// Referenced exclusively behind `import.meta.env.DEV`, so Vite strips this from
+// the production build (the dead branch is eliminated and the function is
+// tree-shaken). Never rendered in the deployed app.
+function devMockAlerts(deviceId: string): DeviceAlertItem[] {
+  return [
+    // Unacknowledged batch — drives the top alert bar + "New changes" table
+    { id: "dev-u1", deviceId, field: "Serial_Number", oldValue: "Unknown", newValue: "7QFK6P2", detectedAt: "2026-06-30T16:01:00.000Z", acknowledgedAt: null, acknowledgedByUsername: null },
+    { id: "dev-u2", deviceId, field: "Ram_Size", oldValue: "8 GB", newValue: "16 GB", detectedAt: "2026-06-30T16:01:00.000Z", acknowledgedAt: null, acknowledgedByUsername: null },
+    { id: "dev-u3", deviceId, field: "HD_Type", oldValue: "HDD", newValue: "SSD", detectedAt: "2026-06-30T16:01:00.000Z", acknowledgedAt: null, acknowledgedByUsername: null },
+    // Acknowledged batch 1 — grouped under one date dropdown
+    { id: "dev-a1", deviceId, field: "Operating System", oldValue: "Windows 10", newValue: "Windows 11", detectedAt: "2026-06-29T09:30:00.000Z", acknowledgedAt: "2026-06-29T10:00:00.000Z", acknowledgedByUsername: "e2e_admin" },
+    { id: "dev-a2", deviceId, field: "OS Version", oldValue: "10.0.19045", newValue: "10.0.22631", detectedAt: "2026-06-29T09:30:00.000Z", acknowledgedAt: "2026-06-29T10:00:00.000Z", acknowledgedByUsername: "e2e_admin" },
+    { id: "dev-a3", deviceId, field: "Host Name", oldValue: "DESKTOP-OLD", newValue: "Dell-68", detectedAt: "2026-06-29T09:30:00.000Z", acknowledgedAt: "2026-06-29T10:00:00.000Z", acknowledgedByUsername: "e2e_admin" },
+    // Acknowledged batch 2 — second date dropdown
+    { id: "dev-a4", deviceId, field: "Processor", oldValue: "Intel i5-8265U", newValue: "Intel i7-1165G7", detectedAt: "2026-06-25T14:12:00.000Z", acknowledgedAt: "2026-06-25T15:00:00.000Z", acknowledgedByUsername: "admin" },
+    { id: "dev-a5", deviceId, field: "Model", oldValue: "Vostro 5481", newValue: "Latitude 7420", detectedAt: "2026-06-25T14:12:00.000Z", acknowledgedAt: "2026-06-25T15:00:00.000Z", acknowledgedByUsername: "admin" },
+    { id: "dev-a6", deviceId, field: "Total Disk Space", oldValue: "237 GB", newValue: "475 GB", detectedAt: "2026-06-25T14:12:00.000Z", acknowledgedAt: "2026-06-25T15:00:00.000Z", acknowledgedByUsername: "admin" },
+  ];
+}
+
 export default function DeviceDetail({ id }: { id: string }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -51,9 +73,11 @@ export default function DeviceDetail({ id }: { id: string }) {
   const issueCommand = useIssueDeviceCommand();
   const cancelCommand = useCancelDeviceCommand();
   const setDeviceGroup = useSetDeviceGroup();
-  const { data: alerts } = useGetDeviceAlerts(id, { query: { enabled: !!id, queryKey: getGetDeviceAlertsQueryKey(id) } });
+  const { data: alertsData } = useGetDeviceAlerts(id, { query: { enabled: !!id, queryKey: getGetDeviceAlertsQueryKey(id) } });
   const acknowledgeAlert = useAcknowledgeDeviceAlert();
   const acknowledgeAllAlerts = useAcknowledgeAllDeviceAlerts();
+  // Preview the alerts UI with sample data in dev; production uses real data only.
+  const alerts = import.meta.env.DEV ? devMockAlerts(id) : alertsData;
   const unackAlerts = (alerts ?? []).filter((a) => !a.acknowledgedAt);
   const ackAlerts = (alerts ?? []).filter((a) => a.acknowledgedAt);
   const ackGroups = Object.values(
