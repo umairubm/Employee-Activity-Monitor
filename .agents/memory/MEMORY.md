@@ -14,5 +14,4 @@
 - [React Fast Refresh + context/hook split](react-fast-refresh-context.md) — never export a Provider component AND its hook/Context from one file; intermittent dev-only "useAuth must be used within Provider" crashes; keep hook+Context in a plain .ts.
 - [Overlapping-agent time correction](overlap-time-correction.md) — merge intervals per device(+day), never across devices; correctOverlap ratio-scales each class + sum-preserving rounding; don't re-normalize.
 - [Orval query-key prefixes](orval-query-key-prefix.md) — generated React Query keys are prefixed with the FULL `/api/...` path; always invalidate via the generated `getXxxQueryKey()` helper, never a hand-written prefix.
-- [Tenant scoping of shared helpers](tenant-scoping-shared-helpers.md) — multi-tenant isolation must reach every shared DB-read helper (took companyId), not just route WHERE clauses; test A-vs-B via real /api stack + fresh company pairs.
 - [Attendance: any activity ≠ absent](attendance-any-activity.md) — a working day with any reported activity is at minimum half_day; only zero worked seconds is absent.

@@ -12,12 +12,14 @@ import {
   activityLogsTable,
   companiesTable,
   companySecuritySettingsTable,
+  sessionsTable,
   usersTable,
   pool,
 } from "@workspace/db";
 import realApp from "../src/app";
 import managersRouter from "../src/routes/managers";
 import { createSession } from "../src/lib/session";
+import { hashSecret } from "../src/lib/secrets";
 import {
   makeApp,
   makeSyncApp,
@@ -416,21 +418,38 @@ describe("session lifetime honors the tenant's configured timeout", () => {
     const { user } = await createUser({ role: "company_admin", companyId });
 
     const before = Date.now();
-    const { expiresAt } = await createSession(user.id, stubReq(), companyId);
+    const { token, expiresAt } = await createSession(
+      user.id,
+      stubReq(),
+      companyId,
+    );
     const ttlMs = expiresAt.getTime() - before;
     // ~5 minutes (allow a generous window for test/DB latency).
     expect(ttlMs).toBeGreaterThan(4 * 60_000);
     expect(ttlMs).toBeLessThan(6 * 60_000);
+
+    // The session row is tenant-bound on write.
+    const [row] = await db
+      .select({ companyId: sessionsTable.companyId })
+      .from(sessionsTable)
+      .where(eq(sessionsTable.tokenHash, hashSecret(token)));
+    expect(row.companyId).toBe(companyId);
   });
 
-  it("falls back to the 7-day default for Super Users (no company)", async () => {
+  it("falls back to the 7-day default for Super Users (no company), with a null-company session row", async () => {
     const { user } = await createUser({ role: "super_user" });
     createdUserIds.push(user.id);
     const before = Date.now();
-    const { expiresAt } = await createSession(user.id, stubReq(), null);
+    const { token, expiresAt } = await createSession(user.id, stubReq(), null);
     const ttlMs = expiresAt.getTime() - before;
     const sevenDays = 7 * 24 * 60 * 60_000;
     expect(Math.abs(ttlMs - sevenDays)).toBeLessThan(60_000);
+
+    const [row] = await db
+      .select({ companyId: sessionsTable.companyId })
+      .from(sessionsTable)
+      .where(eq(sessionsTable.tokenHash, hashSecret(token)));
+    expect(row.companyId).toBeNull();
   });
 });
 

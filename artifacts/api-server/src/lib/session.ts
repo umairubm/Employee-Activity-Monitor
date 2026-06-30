@@ -39,6 +39,8 @@ export async function createSession(
   const expiresAt = new Date(Date.now() + ttlMs);
   await db.insert(sessionsTable).values({
     userId,
+    // Tenant-bind the session row. Super Users have no company (null).
+    companyId: companyId ?? null,
     tokenHash: hashSecret(token),
     userAgent: req.headers["user-agent"] ?? null,
     ipAddress: req.ip ?? null,
