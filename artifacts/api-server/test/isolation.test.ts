@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, it } from "vitest";
 import { randomUUID } from "crypto";
-import { inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import request from "supertest";
 import {
   db,
@@ -251,5 +251,94 @@ describe("suspended company is denied all access", () => {
       .set("x-device-secret", secret)
       .send({});
     expect(res.status).toBe(403);
+  });
+});
+
+describe("sync activity classification is tenant-scoped", () => {
+  // The device-authenticated /sync/activity path classifies incoming logs
+  // against app_categories. Those reads/writes must be scoped to the device's
+  // company, or tenant A's activity gets classified by tenant B's rules and
+  // auto-discovered "undefined" categories leak across tenants.
+  it("classifies activity using only the device's company categories, and auto-creates undefined rows in that company only", async () => {
+    const repA = randomUUID();
+    const repB = randomUUID();
+    createdCompanyIds.push(repA, repB);
+
+    // Same pattern, different classification per company. If the sync path
+    // ignored tenancy it could pick up B's rule (or both) for A's device.
+    const pattern = `iso-${randomUUID().slice(0, 8)}`;
+    await createCategory("productive", { companyId: repA, pattern });
+    await createCategory("unproductive", { companyId: repB, pattern });
+
+    const { device, secret } = await createDeviceWithSecret({
+      companyId: repA,
+    });
+
+    const syncApp = makeSyncApp();
+    const now = new Date().toISOString();
+    const novelPattern = `novel-${randomUUID().slice(0, 8)}`;
+    const res = await request(syncApp)
+      .post("/sync/activity")
+      .set("x-device-id", device.id)
+      .set("x-device-secret", secret)
+      .send({
+        logs: [
+          {
+            processName: pattern,
+            windowTitle: "known app",
+            startedAt: now,
+            endedAt: now,
+            durationSeconds: 60,
+          },
+          {
+            processName: novelPattern,
+            windowTitle: "unknown app",
+            startedAt: now,
+            endedAt: now,
+            durationSeconds: 60,
+          },
+        ],
+      });
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+
+    // The known-pattern log must be classified with A's "productive" category.
+    const logged = await db
+      .select({ categoryId: activityLogsTable.categoryId })
+      .from(activityLogsTable)
+      .where(eq(activityLogsTable.deviceId, device.id));
+    const catA = await db
+      .select()
+      .from(appCategoriesTable)
+      .where(
+        and(
+          eq(appCategoriesTable.companyId, repA),
+          eq(appCategoriesTable.pattern, pattern),
+        ),
+      );
+    expect(catA).toHaveLength(1);
+    const productiveId = catA[0].id;
+    expect(logged.map((l) => l.categoryId)).toContain(productiveId);
+
+    // The novel pattern auto-created an undefined category in A — and NOT in B.
+    const inA = await db
+      .select()
+      .from(appCategoriesTable)
+      .where(
+        and(
+          eq(appCategoriesTable.companyId, repA),
+          eq(appCategoriesTable.pattern, novelPattern),
+        ),
+      );
+    const inB = await db
+      .select()
+      .from(appCategoriesTable)
+      .where(
+        and(
+          eq(appCategoriesTable.companyId, repB),
+          eq(appCategoriesTable.pattern, novelPattern),
+        ),
+      );
+    expect(inA).toHaveLength(1);
+    expect(inB).toHaveLength(0);
   });
 });

@@ -230,7 +230,7 @@ router.post(
     }
     const { logs } = parsed.data;
 
-    let categories = await loadCategories();
+    let categories = await loadCategories(device.companyId);
     const unknown = new Set<string>();
     for (const log of logs) {
       if (!classify(log.processName, categories)) {
@@ -238,8 +238,8 @@ router.post(
       }
     }
     if (unknown.size > 0) {
-      await ensureUndefinedCategories([...unknown]);
-      categories = await loadCategories();
+      await ensureUndefinedCategories(device.companyId, [...unknown]);
+      categories = await loadCategories(device.companyId);
     }
 
     const values = logs.map((log) => {
