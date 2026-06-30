@@ -6,7 +6,7 @@ import subprocess
 
 class SysInfo:
     @property
-    def sysInfo(self):
+    def system_info(self):
         # Basic System Info
         info = {
             'Processor': platform.processor() or "Unknown",
@@ -111,4 +111,4 @@ class SysInfo:
 sysinfo = SysInfo()
 
 if __name__ == "__main__":
-    print(sysinfo.sysInfo)
+    print(sysinfo.system_info)

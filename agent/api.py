@@ -82,7 +82,7 @@ class AgentAPI:
     def send_activity(self, logs: list[dict], system_info: Optional[dict] = None) -> dict:
         payload = {"logs": logs}
         if system_info:
-            payload["systemInfo"] = system_info
+            payload["system_info"] = system_info
 
         resp = requests.post(
             self._url("/activity"),

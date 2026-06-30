@@ -149,7 +149,7 @@ class InvisibleMonitoringAgent:
                 })
             
             try:
-                system_hardware_details = system_info_mod.sysinfo.sysInfo
+                system_hardware_details = system_info_mod.sysinfo.system_info
             except Exception:
                 system_hardware_details = None
 
