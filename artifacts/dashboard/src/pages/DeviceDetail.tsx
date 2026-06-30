@@ -17,6 +17,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
 import { MonitorSmartphone, ShieldAlert, LogOut, Clock, ShieldCheck, Cpu, Ban, Users, Pencil, AlertTriangle, HardDrive, Check, MemoryStick, Network, Server } from "lucide-react";
 import { format } from "date-fns";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -37,6 +38,11 @@ function formatSystemValue(value: unknown): string {
   return String(value);
 }
 
+function fieldIcon(field: string): typeof Server {
+  const group = SYSTEM_INFO_GROUPS.find((g) => g.fields.includes(field));
+  return group?.icon ?? AlertTriangle;
+}
+
 export default function DeviceDetail({ id }: { id: string }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -49,6 +55,17 @@ export default function DeviceDetail({ id }: { id: string }) {
   const acknowledgeAlert = useAcknowledgeDeviceAlert();
   const acknowledgeAllAlerts = useAcknowledgeAllDeviceAlerts();
   const unackAlerts = (alerts ?? []).filter((a) => !a.acknowledgedAt);
+  const ackAlerts = (alerts ?? []).filter((a) => a.acknowledgedAt);
+  const ackGroups = Object.values(
+    ackAlerts.reduce<Record<string, { key: string; detectedAt: string; items: typeof ackAlerts }>>(
+      (acc, a) => {
+        const key = a.detectedAt;
+        (acc[key] ??= { key, detectedAt: a.detectedAt, items: [] }).items.push(a);
+        return acc;
+      },
+      {},
+    ),
+  ).sort((a, b) => new Date(b.detectedAt).getTime() - new Date(a.detectedAt).getTime());
 
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
   const [groupValue, setGroupValue] = useState("");
@@ -190,6 +207,31 @@ export default function DeviceDetail({ id }: { id: string }) {
         </div>
       </div>
 
+      {unackAlerts.length > 0 && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3">
+          <div className="flex items-center gap-2.5 text-sm">
+            <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
+            <span className="font-medium text-amber-900 dark:text-amber-200">
+              {unackAlerts.length} hardware change{unackAlerts.length > 1 ? "s" : ""} detected on this device.
+            </span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => document.getElementById("hardware-change-alerts")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+            >
+              View changes
+            </Button>
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={handleAcknowledgeAll} disabled={acknowledgeAllAlerts.isPending}>
+              <Check className="h-3.5 w-3.5" />
+              Acknowledge all
+            </Button>
+          </div>
+        </div>
+      )}
+
       <Dialog open={groupDialogOpen} onOpenChange={setGroupDialogOpen}>
         <DialogContent>
           <DialogHeader>
@@ -279,70 +321,6 @@ export default function DeviceDetail({ id }: { id: string }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {alerts && alerts.length > 0 && (
-        <Card>
-          <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
-            <div>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <AlertTriangle className="h-5 w-5 text-amber-500" />
-                Hardware Change Alerts
-                {unackAlerts.length > 0 && (
-                  <Badge variant="destructive">{unackAlerts.length} new</Badge>
-                )}
-              </CardTitle>
-              <CardDescription>
-                Changes detected in this device's hardware identity (CPU, RAM, disk size, model, serial, host name, OS).
-              </CardDescription>
-            </div>
-            {unackAlerts.length > 0 && (
-              <Button variant="outline" size="sm" className="gap-1.5 shrink-0" onClick={handleAcknowledgeAll} disabled={acknowledgeAllAlerts.isPending}>
-                <Check className="h-3.5 w-3.5" />
-                Acknowledge all
-              </Button>
-            )}
-          </CardHeader>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Property</TableHead>
-                  <TableHead>Changed</TableHead>
-                  <TableHead>Detected</TableHead>
-                  <TableHead className="text-right">Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {alerts.map((a) => (
-                  <TableRow key={a.id} className={a.acknowledgedAt ? "opacity-60" : ""}>
-                    <TableCell className="font-medium">{a.field}</TableCell>
-                    <TableCell className="text-sm">
-                      <span className="text-muted-foreground line-through">{a.oldValue ?? "—"}</span>
-                      <span className="mx-1.5">→</span>
-                      <span className="font-medium">{a.newValue ?? "—"}</span>
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
-                      {format(new Date(a.detectedAt), "MMM d, HH:mm")}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {a.acknowledgedAt ? (
-                        <span className="text-xs text-muted-foreground">
-                          Acknowledged{a.acknowledgedByUsername ? ` by ${a.acknowledgedByUsername}` : ""}
-                        </span>
-                      ) : (
-                        <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => handleAcknowledge(a.id)} disabled={acknowledgeAlert.isPending}>
-                          <Check className="h-3.5 w-3.5" />
-                          Acknowledge
-                        </Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="lg:col-span-1">
@@ -564,6 +542,138 @@ export default function DeviceDetail({ id }: { id: string }) {
           )}
         </CardContent>
       </Card>
+
+      {alerts && alerts.length > 0 && (
+        <Card id="hardware-change-alerts" className="scroll-mt-6">
+          <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
+            <div>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-amber-500" />
+                Hardware Change Alerts
+                {unackAlerts.length > 0 && (
+                  <Badge variant="destructive">{unackAlerts.length} new</Badge>
+                )}
+              </CardTitle>
+              <CardDescription>
+                Changes detected in this device's hardware identity (CPU, RAM, disk size, model, serial, host name, OS).
+              </CardDescription>
+            </div>
+            {unackAlerts.length > 0 && (
+              <Button variant="outline" size="sm" className="gap-1.5 shrink-0" onClick={handleAcknowledgeAll} disabled={acknowledgeAllAlerts.isPending}>
+                <Check className="h-3.5 w-3.5" />
+                Acknowledge all
+              </Button>
+            )}
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {unackAlerts.length > 0 && (
+              <div>
+                <p className="text-sm font-medium mb-3">New changes</p>
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Property</TableHead>
+                        <TableHead>Changed</TableHead>
+                        <TableHead>Detected</TableHead>
+                        <TableHead className="text-right">Action</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {unackAlerts.map((a) => {
+                        const Icon = fieldIcon(a.field);
+                        return (
+                          <TableRow key={a.id}>
+                            <TableCell className="font-medium">
+                              <span className="flex items-center gap-2">
+                                <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+                                {a.field}
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-sm">
+                              <span className="text-muted-foreground line-through">{a.oldValue ?? "—"}</span>
+                              <span className="mx-1.5">→</span>
+                              <span className="font-medium">{a.newValue ?? "—"}</span>
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
+                              {format(new Date(a.detectedAt), "MMM d, HH:mm")}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => handleAcknowledge(a.id)} disabled={acknowledgeAlert.isPending}>
+                                <Check className="h-3.5 w-3.5" />
+                                Acknowledge
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            )}
+
+            {ackGroups.length > 0 && (
+              <div>
+                <p className="text-sm font-medium mb-3 text-muted-foreground">Acknowledged history</p>
+                <Accordion type="multiple" className="space-y-2">
+                  {ackGroups.map((group) => (
+                    <AccordionItem key={group.key} value={group.key} className="border rounded-md px-3">
+                      <AccordionTrigger className="hover:no-underline py-3">
+                        <div className="flex items-center justify-between gap-3 w-full pr-2">
+                          <span className="text-sm font-medium">
+                            {format(new Date(group.detectedAt), "MMM d, yyyy · HH:mm")}
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            {Array.from(
+                              new Map(
+                                group.items.map((a) => {
+                                  const g = SYSTEM_INFO_GROUPS.find((s) => s.fields.includes(a.field));
+                                  return [g?.label ?? "Other", g?.icon ?? AlertTriangle] as const;
+                                }),
+                              ).entries(),
+                            ).map(([label, Icon]) => (
+                              <Icon key={label} className="h-3.5 w-3.5 text-muted-foreground" />
+                            ))}
+                            <Badge variant="secondary" className="ml-1 font-normal">{group.items.length}</Badge>
+                          </div>
+                        </div>
+                      </AccordionTrigger>
+                      <AccordionContent>
+                        <Table>
+                          <TableBody>
+                            {group.items.map((a) => {
+                              const Icon = fieldIcon(a.field);
+                              return (
+                                <TableRow key={a.id}>
+                                  <TableCell className="font-medium">
+                                    <span className="flex items-center gap-2">
+                                      <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+                                      {a.field}
+                                    </span>
+                                  </TableCell>
+                                  <TableCell className="text-sm">
+                                    <span className="text-muted-foreground line-through">{a.oldValue ?? "—"}</span>
+                                    <span className="mx-1.5">→</span>
+                                    <span className="font-medium">{a.newValue ?? "—"}</span>
+                                  </TableCell>
+                                  <TableCell className="text-right text-xs text-muted-foreground whitespace-nowrap">
+                                    Acknowledged{a.acknowledgedByUsername ? ` by ${a.acknowledgedByUsername}` : ""}
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
+                      </AccordionContent>
+                    </AccordionItem>
+                  ))}
+                </Accordion>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
