@@ -9,9 +9,13 @@ import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { usersTable } from "./users";
+import { companiesTable } from "./companies";
 
 export const enrollmentTokensTable = pgTable("enrollment_tokens", {
   id: uuid("id").primaryKey().defaultRandom(),
+  companyId: uuid("company_id").references(() => companiesTable.id, {
+    onDelete: "cascade",
+  }),
   token: text("token").notNull().unique(),
   label: text("label"),
   createdById: uuid("created_by_id").references(() => usersTable.id, {

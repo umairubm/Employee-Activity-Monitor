@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod/v4";
-import { db, usersTable, type User } from "@workspace/db";
+import { db, usersTable, companiesTable, type User } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { verifyPassword } from "../lib/passwords";
 import {
@@ -29,6 +29,7 @@ function publicUser(u: User) {
     username: u.username,
     email: u.email,
     role: u.role,
+    companyId: u.companyId,
     createdAt: u.createdAt,
   };
 }
@@ -53,6 +54,19 @@ router.post("/login", loginRateLimit, async (req, res) => {
     recordLoginFailure(req, username);
     res.status(401).json({ error: "Invalid username or password" });
     return;
+  }
+
+  // Block sign-in for users whose tenant has been suspended (Super Users have
+  // no company and are never blocked here).
+  if (user.companyId) {
+    const [company] = await db
+      .select({ status: companiesTable.status })
+      .from(companiesTable)
+      .where(eq(companiesTable.id, user.companyId));
+    if (company?.status === "suspended") {
+      res.status(403).json({ error: "Company account is suspended" });
+      return;
+    }
   }
 
   clearLoginFailures(req, username);

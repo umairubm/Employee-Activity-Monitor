@@ -11,6 +11,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { devicesTable } from "./devices";
 import { usersTable } from "./users";
+import { companiesTable } from "./companies";
 
 export const commandTypeEnum = pgEnum("command_type", [
   "lock_screen",
@@ -33,6 +34,9 @@ export const deviceCommandsTable = pgTable(
     deviceId: uuid("device_id")
       .notNull()
       .references(() => devicesTable.id, { onDelete: "cascade" }),
+    companyId: uuid("company_id").references(() => companiesTable.id, {
+      onDelete: "cascade",
+    }),
     issuedById: uuid("issued_by_id").references(() => usersTable.id, {
       onDelete: "set null",
     }),

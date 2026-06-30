@@ -1,7 +1,8 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod/v4";
 import { db, tasksTable, usersTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+import { getCompanyId } from "../middlewares/tenant";
 import {
   calendarDateSchema,
   isForeignKeyViolation,
@@ -27,6 +28,7 @@ const updateTaskSchema = z.object({
 // PATCH /api/tasks/:id - update a task (status, assignment, logged time)
 router.patch("/:id", async (req, res) => {
   try {
+    const companyId = getCompanyId(req);
     if (!isUuid(String(req.params.id))) {
       res.status(400).json({ error: "Invalid task id" });
       return;
@@ -40,7 +42,12 @@ router.patch("/:id", async (req, res) => {
     const [existing] = await db
       .select({ status: tasksTable.status, completedAt: tasksTable.completedAt })
       .from(tasksTable)
-      .where(eq(tasksTable.id, String(req.params.id)));
+      .where(
+        and(
+          eq(tasksTable.id, String(req.params.id)),
+          eq(tasksTable.companyId, companyId),
+        ),
+      );
     if (!existing) {
       res.status(404).json({ error: "Task not found" });
       return;
@@ -63,7 +70,12 @@ router.patch("/:id", async (req, res) => {
     const [updated] = await db
       .update(tasksTable)
       .set(updates)
-      .where(eq(tasksTable.id, String(req.params.id)))
+      .where(
+        and(
+          eq(tasksTable.id, String(req.params.id)),
+          eq(tasksTable.companyId, companyId),
+        ),
+      )
       .returning()
       .catch((error) => {
         if (isForeignKeyViolation(error)) return [];
@@ -92,13 +104,19 @@ router.patch("/:id", async (req, res) => {
 // DELETE /api/tasks/:id - delete a task
 router.delete("/:id", async (req, res) => {
   try {
+    const companyId = getCompanyId(req);
     if (!isUuid(String(req.params.id))) {
       res.status(400).json({ error: "Invalid task id" });
       return;
     }
     const [deleted] = await db
       .delete(tasksTable)
-      .where(eq(tasksTable.id, String(req.params.id)))
+      .where(
+        and(
+          eq(tasksTable.id, String(req.params.id)),
+          eq(tasksTable.companyId, companyId),
+        ),
+      )
       .returning({ id: tasksTable.id });
     if (!deleted) {
       res.status(404).json({ error: "Task not found" });

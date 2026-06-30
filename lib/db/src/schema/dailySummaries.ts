@@ -11,6 +11,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { usersTable } from "./users";
 import { devicesTable } from "./devices";
+import { companiesTable } from "./companies";
 
 export const dailySummariesTable = pgTable(
   "daily_summaries",
@@ -19,6 +20,9 @@ export const dailySummariesTable = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => usersTable.id, { onDelete: "cascade" }),
+    companyId: uuid("company_id").references(() => companiesTable.id, {
+      onDelete: "cascade",
+    }),
     deviceId: uuid("device_id").references(() => devicesTable.id, {
       onDelete: "set null",
     }),

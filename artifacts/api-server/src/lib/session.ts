@@ -1,5 +1,12 @@
 import type { Request, Response } from "express";
-import { db, sessionsTable, usersTable, type User } from "@workspace/db";
+import {
+  db,
+  sessionsTable,
+  usersTable,
+  companiesTable,
+  type User,
+  type CompanyStatus,
+} from "@workspace/db";
 import { and, eq, gt, isNull } from "drizzle-orm";
 import { generateSecret, hashSecret } from "./secrets";
 
@@ -54,17 +61,28 @@ function readCookie(req: Request, name: string): string | null {
   return null;
 }
 
-/** Resolve the current user from the session cookie, or null if unauthenticated. */
-export async function resolveSession(
-  req: Request,
-): Promise<{ user: User; sessionId: string } | null> {
+/**
+ * Resolve the current user from the session cookie, or null if unauthenticated.
+ * Also returns the owning company's status (null for Super Users, who have no
+ * company) so callers can reject suspended tenants.
+ */
+export async function resolveSession(req: Request): Promise<{
+  user: User;
+  sessionId: string;
+  companyStatus: CompanyStatus | null;
+} | null> {
   const token = readCookie(req, SESSION_COOKIE);
   if (!token) return null;
 
   const [row] = await db
-    .select({ session: sessionsTable, user: usersTable })
+    .select({
+      session: sessionsTable,
+      user: usersTable,
+      companyStatus: companiesTable.status,
+    })
     .from(sessionsTable)
     .innerJoin(usersTable, eq(sessionsTable.userId, usersTable.id))
+    .leftJoin(companiesTable, eq(usersTable.companyId, companiesTable.id))
     .where(
       and(
         eq(sessionsTable.tokenHash, hashSecret(token)),
@@ -74,7 +92,11 @@ export async function resolveSession(
     );
 
   if (!row) return null;
-  return { user: row.user, sessionId: row.session.id };
+  return {
+    user: row.user,
+    sessionId: row.session.id,
+    companyStatus: row.companyStatus,
+  };
 }
 
 /** Revoke the session referenced by the request cookie, if any. */

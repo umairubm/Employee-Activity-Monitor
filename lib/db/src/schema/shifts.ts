@@ -1,6 +1,7 @@
 import { pgTable, uuid, text, timestamp, pgEnum } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { companiesTable } from "./companies";
 
 /**
  * Named work shifts (morning / evening / night). A shift's `startTime` is the
@@ -16,6 +17,9 @@ export const shiftTypeEnum = pgEnum("shift_type", [
 
 export const shiftsTable = pgTable("shifts", {
   id: uuid("id").primaryKey().defaultRandom(),
+  companyId: uuid("company_id").references(() => companiesTable.id, {
+    onDelete: "cascade",
+  }),
   name: text("name").notNull(),
   shiftType: shiftTypeEnum("shift_type").notNull().default("morning"),
   startTime: text("start_time").notNull().default("09:00"),

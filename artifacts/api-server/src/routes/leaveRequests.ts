@@ -10,6 +10,7 @@ import {
 import { and, desc, eq, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { AuthedRequest } from "../middlewares/userAuth";
+import { getCompanyId } from "../middlewares/tenant";
 import {
   calendarDateSchema,
   isForeignKeyViolation,
@@ -28,7 +29,21 @@ const leaveStatuses = ["pending", "approved", "rejected", "cancelled"] as const;
 const reviewer = alias(usersTable, "reviewer");
 
 function shapeLeave(
-  row: LeaveRequest & { username?: string | null; reviewerUsername?: string | null },
+  row: Pick<
+    LeaveRequest,
+    | "id"
+    | "userId"
+    | "leaveType"
+    | "startDate"
+    | "endDate"
+    | "reason"
+    | "status"
+    | "reviewedById"
+    | "reviewedAt"
+    | "reviewNote"
+    | "createdAt"
+    | "updatedAt"
+  > & { username?: string | null; reviewerUsername?: string | null },
 ) {
   return {
     id: row.id,
@@ -80,6 +95,7 @@ async function fetchShapedLeave(id: string) {
 // GET /api/leave-requests?status=&userId= - list leave requests
 router.get("/", async (req, res) => {
   try {
+    const companyId = getCompanyId(req);
     const status = req.query.status as string | undefined;
     const userId = req.query.userId as string | undefined;
     if (status && !leaveStatuses.includes(status as never)) {
@@ -90,7 +106,7 @@ router.get("/", async (req, res) => {
       res.status(400).json({ error: "Invalid userId filter" });
       return;
     }
-    const conditions = [];
+    const conditions = [eq(leaveRequestsTable.companyId, companyId)];
     if (status) conditions.push(eq(leaveRequestsTable.status, status as never));
     if (userId) conditions.push(eq(leaveRequestsTable.userId, userId));
 
@@ -99,7 +115,7 @@ router.get("/", async (req, res) => {
       .from(leaveRequestsTable)
       .leftJoin(usersTable, eq(leaveRequestsTable.userId, usersTable.id))
       .leftJoin(reviewer, eq(leaveRequestsTable.reviewedById, reviewer.id))
-      .where(conditions.length ? and(...conditions) : undefined)
+      .where(and(...conditions))
       .orderBy(desc(leaveRequestsTable.startDate));
     res.json(rows.map(shapeLeave));
   } catch (error) {
@@ -122,6 +138,7 @@ const createLeaveSchema = z
 // POST /api/leave-requests - apply for leave (created as pending)
 router.post("/", async (req, res) => {
   try {
+    const companyId = getCompanyId(req);
     const parsed = createLeaveSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: "Invalid leave payload" });
@@ -130,6 +147,7 @@ router.post("/", async (req, res) => {
     const [created] = await db
       .insert(leaveRequestsTable)
       .values({
+        companyId,
         userId: parsed.data.userId,
         leaveType: parsed.data.leaveType ?? "annual",
         startDate: parsed.data.startDate,
@@ -169,6 +187,7 @@ async function adjustBalance(
   tx: Tx,
   request: LeaveRequest,
   sign: 1 | -1,
+  companyId: string,
 ): Promise<void> {
   if (request.leaveType === "unpaid") return;
   for (const [year, days] of businessDaysByYear(
@@ -180,6 +199,7 @@ async function adjustBalance(
     await tx
       .insert(leaveBalancesTable)
       .values({
+        companyId,
         userId: request.userId,
         year,
         leaveType: request.leaveType,
@@ -203,6 +223,7 @@ async function adjustBalance(
 // POST /api/leave-requests/:id/review - approve or reject (admin)
 router.post("/:id/review", async (req, res) => {
   try {
+    const companyId = getCompanyId(req);
     if (!isUuid(String(req.params.id))) {
       res.status(400).json({ error: "Invalid leave id" });
       return;
@@ -231,6 +252,7 @@ router.post("/:id/review", async (req, res) => {
         .where(
           and(
             eq(leaveRequestsTable.id, id),
+            eq(leaveRequestsTable.companyId, companyId),
             eq(leaveRequestsTable.status, "pending"),
           ),
         )
@@ -241,13 +263,18 @@ router.post("/:id/review", async (req, res) => {
         const [exists] = await tx
           .select({ id: leaveRequestsTable.id })
           .from(leaveRequestsTable)
-          .where(eq(leaveRequestsTable.id, id));
+          .where(
+            and(
+              eq(leaveRequestsTable.id, id),
+              eq(leaveRequestsTable.companyId, companyId),
+            ),
+          );
         return exists ? ("conflict" as const) : ("missing" as const);
       }
 
       // Approving consumes balance; rejecting does not touch it.
       if (parsed.data.status === "approved") {
-        await adjustBalance(tx, updated, 1);
+        await adjustBalance(tx, updated, 1, companyId);
       }
       return updated;
     });
@@ -279,6 +306,7 @@ const updateLeaveSchema = z.object({
 // balance adjustment is needed here.
 router.patch("/:id", async (req, res) => {
   try {
+    const companyId = getCompanyId(req);
     if (!isUuid(String(req.params.id))) {
       res.status(400).json({ error: "Invalid leave id" });
       return;
@@ -293,7 +321,12 @@ router.patch("/:id", async (req, res) => {
       const [existing] = await tx
         .select()
         .from(leaveRequestsTable)
-        .where(eq(leaveRequestsTable.id, id));
+        .where(
+          and(
+            eq(leaveRequestsTable.id, id),
+            eq(leaveRequestsTable.companyId, companyId),
+          ),
+        );
       if (!existing) return "missing" as const;
       if (existing.status !== "pending") return "conflict" as const;
 
@@ -316,6 +349,7 @@ router.patch("/:id", async (req, res) => {
         .where(
           and(
             eq(leaveRequestsTable.id, id),
+            eq(leaveRequestsTable.companyId, companyId),
             eq(leaveRequestsTable.status, "pending"),
           ),
         )
@@ -347,6 +381,7 @@ router.patch("/:id", async (req, res) => {
 // untouched. The conditional `status = 'pending'` guard makes this race-safe.
 router.post("/:id/cancel", async (req, res) => {
   try {
+    const companyId = getCompanyId(req);
     if (!isUuid(String(req.params.id))) {
       res.status(400).json({ error: "Invalid leave id" });
       return;
@@ -358,6 +393,7 @@ router.post("/:id/cancel", async (req, res) => {
       .where(
         and(
           eq(leaveRequestsTable.id, id),
+          eq(leaveRequestsTable.companyId, companyId),
           eq(leaveRequestsTable.status, "pending"),
         ),
       )
@@ -367,7 +403,12 @@ router.post("/:id/cancel", async (req, res) => {
       const [exists] = await db
         .select({ id: leaveRequestsTable.id })
         .from(leaveRequestsTable)
-        .where(eq(leaveRequestsTable.id, id));
+        .where(
+          and(
+            eq(leaveRequestsTable.id, id),
+            eq(leaveRequestsTable.companyId, companyId),
+          ),
+        );
       if (!exists) {
         res.status(404).json({ error: "Leave request not found" });
         return;
@@ -385,6 +426,7 @@ router.post("/:id/cancel", async (req, res) => {
 // DELETE /api/leave-requests/:id - delete a request (refunds balance if approved)
 router.delete("/:id", async (req, res) => {
   try {
+    const companyId = getCompanyId(req);
     if (!isUuid(String(req.params.id))) {
       res.status(400).json({ error: "Invalid leave id" });
       return;
@@ -396,12 +438,17 @@ router.delete("/:id", async (req, res) => {
     const deleted = await db.transaction(async (tx) => {
       const [row] = await tx
         .delete(leaveRequestsTable)
-        .where(eq(leaveRequestsTable.id, id))
+        .where(
+          and(
+            eq(leaveRequestsTable.id, id),
+            eq(leaveRequestsTable.companyId, companyId),
+          ),
+        )
         .returning();
       if (!row) return null;
       // Refund consumed balance if the deleted request had been approved.
       if (row.status === "approved") {
-        await adjustBalance(tx, row, -1);
+        await adjustBalance(tx, row, -1, companyId);
       }
       return row;
     });

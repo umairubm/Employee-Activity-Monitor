@@ -17,6 +17,7 @@ import {
   correctOverlap,
 } from "../lib/activityTime";
 import { requireRole } from "../middlewares/userAuth";
+import { getCompanyId } from "../middlewares/tenant";
 import {
   DEFAULT_SETTINGS,
   MAX_RANGE_DAYS,
@@ -47,9 +48,10 @@ function nextDay(day: string): string {
 const router: IRouter = Router();
 
 // GET /api/attendance/settings - global attendance rules
-router.get("/settings", async (_req, res) => {
+router.get("/settings", async (req, res) => {
   try {
-    res.json(await getGlobalSettings());
+    const companyId = getCompanyId(req);
+    res.json(await getGlobalSettings(companyId));
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }
@@ -83,15 +85,16 @@ const updateSettingsSchema = z.object({
 // PUT /api/attendance/settings - update global attendance rules
 router.put(
   "/settings",
-  requireRole("admin", "super_user"),
+  requireRole("company_admin", "manager"),
   async (req, res) => {
     try {
+      const companyId = getCompanyId(req);
       const parsed = updateSettingsSchema.safeParse(req.body);
       if (!parsed.success) {
         res.status(400).json({ error: "Invalid attendance settings" });
         return;
       }
-      const current = await getGlobalSettings();
+      const current = await getGlobalSettings(companyId);
       const { workingDays, holidays, ...rest } = parsed.data;
       const [updated] = await db
         .update(attendanceSettingsTable)
@@ -105,7 +108,12 @@ router.put(
             : {}),
           updatedAt: new Date(),
         })
-        .where(eq(attendanceSettingsTable.id, current.id))
+        .where(
+          and(
+            eq(attendanceSettingsTable.id, current.id),
+            eq(attendanceSettingsTable.companyId, companyId),
+          ),
+        )
         .returning();
       res.json(updated);
     } catch (error) {
@@ -115,8 +123,9 @@ router.put(
 );
 
 // GET /api/attendance/overrides - list all per-device and per-team overrides.
-router.get("/overrides", async (_req, res) => {
+router.get("/overrides", async (req, res) => {
   try {
+    const companyId = getCompanyId(req);
     const rows = await db
       .select({
         id: attendanceSettingsTable.id,
@@ -140,7 +149,10 @@ router.get("/overrides", async (_req, res) => {
         eq(attendanceSettingsTable.deviceId, devicesTable.id),
       )
       .where(
-        sql`${attendanceSettingsTable.deviceId} is not null or ${attendanceSettingsTable.deviceGroup} is not null`,
+        and(
+          eq(attendanceSettingsTable.companyId, companyId),
+          sql`${attendanceSettingsTable.deviceId} is not null or ${attendanceSettingsTable.deviceGroup} is not null`,
+        ),
       )
       .orderBy(asc(attendanceSettingsTable.createdAt));
 
@@ -186,9 +198,10 @@ const upsertOverrideSchema = z.discriminatedUnion("scope", [
 // PUT /api/attendance/overrides - create or replace a per-device/per-team rule.
 router.put(
   "/overrides",
-  requireRole("admin", "super_user"),
+  requireRole("company_admin", "manager"),
   async (req, res) => {
     try {
+      const companyId = getCompanyId(req);
       const parsed = upsertOverrideSchema.safeParse(req.body);
       if (!parsed.success) {
         res.status(400).json({ error: "Invalid override" });
@@ -210,14 +223,19 @@ router.put(
         const [device] = await db
           .select({ id: devicesTable.id })
           .from(devicesTable)
-          .where(eq(devicesTable.id, data.deviceId));
+          .where(
+            and(
+              eq(devicesTable.id, data.deviceId),
+              eq(devicesTable.companyId, companyId),
+            ),
+          );
         if (!device) {
           res.status(404).json({ error: "Device not found" });
           return;
         }
         const [row] = await db
           .insert(attendanceSettingsTable)
-          .values({ deviceId: data.deviceId, deviceGroup: null, ...rules })
+          .values({ deviceId: data.deviceId, deviceGroup: null, companyId, ...rules })
           .onConflictDoUpdate({
             target: attendanceSettingsTable.deviceId,
             // Matches the partial unique index `attendance_settings_device_uniq`.
@@ -231,10 +249,14 @@ router.put(
 
       const [row] = await db
         .insert(attendanceSettingsTable)
-        .values({ deviceId: null, deviceGroup: data.deviceGroup, ...rules })
+        .values({ deviceId: null, deviceGroup: data.deviceGroup, companyId, ...rules })
         .onConflictDoUpdate({
-          target: attendanceSettingsTable.deviceGroup,
-          // Matches the partial unique index `attendance_settings_group_uniq`.
+          // Matches the composite partial unique index
+          // `attendance_settings_group_uniq` on (company_id, device_group).
+          target: [
+            attendanceSettingsTable.companyId,
+            attendanceSettingsTable.deviceGroup,
+          ],
           targetWhere: sql`${attendanceSettingsTable.deviceGroup} is not null`,
           set: { ...rules, updatedAt: new Date() },
         })
@@ -250,15 +272,17 @@ router.put(
 // devices fall back to their group override or the global default.
 router.delete(
   "/overrides/:id",
-  requireRole("admin", "super_user"),
+  requireRole("company_admin", "manager"),
   async (req, res) => {
     try {
+      const companyId = getCompanyId(req);
       const id = String(req.params.id);
       const [deleted] = await db
         .delete(attendanceSettingsTable)
         .where(
           and(
             eq(attendanceSettingsTable.id, id),
+            eq(attendanceSettingsTable.companyId, companyId),
             // Guard the single global default row from deletion via this route.
             sql`(${attendanceSettingsTable.deviceId} is not null or ${attendanceSettingsTable.deviceGroup} is not null)`,
           ),
@@ -304,15 +328,16 @@ router.get("/range", async (req, res) => {
         ? req.query.group
         : undefined;
 
-    const settings = await getGlobalSettings();
+    const companyId = getCompanyId(req);
+    const settings = await getGlobalSettings(companyId);
     // Bucket days and measure minute-of-day in the org's local timezone so
     // non-UTC teams are classified against their own clock (not UTC).
     const tz = settings.timezone || "UTC";
     const rangeStart = localMidnightUtc(from, tz);
     const rangeEnd = localMidnightUtc(nextDay(to), tz);
 
-    const overrides = await loadOverrides();
-    const leaveByUser = await loadApprovedLeaveDays(from, to);
+    const overrides = await loadOverrides(companyId);
+    const leaveByUser = await loadApprovedLeaveDays(companyId, from, to);
 
     // Weekday per day is shared across devices; the working-day decision and
     // required hours are resolved per device against its effective rule.
@@ -339,7 +364,12 @@ router.get("/range", async (req, res) => {
         enrollmentTokensTable,
         eq(devicesTable.enrolledViaTokenId, enrollmentTokensTable.id),
       )
-      .where(group ? eq(devicesTable.deviceGroup, group) : undefined)
+      .where(
+        and(
+          eq(devicesTable.companyId, companyId),
+          group ? eq(devicesTable.deviceGroup, group) : undefined,
+        ),
+      )
       .orderBy(asc(devicesTable.systemName));
 
     const leaveDaysFor = (assignedUserId: string | null): Set<string> =>
@@ -353,15 +383,23 @@ router.get("/range", async (req, res) => {
     // upload), keyed "deviceId|YYYY-MM-DD". The span includes between-session
     // gaps, so attendance reflects the full presence window for the day.
     const keyExpr = sql`${activityLogsTable.deviceId}::text || '|' || to_char(${activityLogsTable.startedAt} AT TIME ZONE ${tz}, 'YYYY-MM-DD')`;
-    const keyExtraWhere = group
-      ? inArray(
-          activityLogsTable.deviceId,
-          db
-            .select({ id: devicesTable.id })
-            .from(devicesTable)
-            .where(eq(devicesTable.deviceGroup, group)),
-        )
-      : undefined;
+    const keyExtraWhere = and(
+      eq(activityLogsTable.companyId, companyId),
+      group
+        ? inArray(
+            activityLogsTable.deviceId,
+            db
+              .select({ id: devicesTable.id })
+              .from(devicesTable)
+              .where(
+                and(
+                  eq(devicesTable.companyId, companyId),
+                  eq(devicesTable.deviceGroup, group),
+                ),
+              ),
+          )
+        : undefined,
+    );
     const spanByKey = await spanSecondsByKey({
       rangeStart,
       rangeEnd,
@@ -548,7 +586,8 @@ router.get("/", async (req, res) => {
       typeof req.query.group === "string" && req.query.group !== ""
         ? req.query.group
         : undefined;
-    const settings = await getGlobalSettings();
+    const companyId = getCompanyId(req);
+    const settings = await getGlobalSettings(companyId);
     // Bucket the day and measure minute-of-day in the org's local timezone so
     // late-arrival / early-leave classification follows the team's clock, not
     // UTC. Weekday is taken from the calendar date string (timezone-independent).
@@ -558,8 +597,8 @@ router.get("/", async (req, res) => {
     const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
     const isFriday = weekday === 5;
 
-    const overrides = await loadOverrides();
-    const leaveByUser = await loadApprovedLeaveDays(date, date);
+    const overrides = await loadOverrides(companyId);
+    const leaveByUser = await loadApprovedLeaveDays(companyId, date, date);
     // Top-level fields reflect the global rule; each device row below is
     // classified against its own effective rule (device → group → global).
     const workingDay = isWorkingDay(date, weekday, settings);
@@ -578,7 +617,12 @@ router.get("/", async (req, res) => {
         enrollmentTokensTable,
         eq(devicesTable.enrolledViaTokenId, enrollmentTokensTable.id),
       )
-      .where(group ? eq(devicesTable.deviceGroup, group) : undefined)
+      .where(
+        and(
+          eq(devicesTable.companyId, companyId),
+          group ? eq(devicesTable.deviceGroup, group) : undefined,
+        ),
+      )
       .orderBy(asc(devicesTable.systemName));
 
     // Productivity sums join app_categories; unclassified / undefined logs fall
@@ -605,6 +649,7 @@ router.get("/", async (req, res) => {
       )
       .where(
         and(
+          eq(activityLogsTable.companyId, companyId),
           gte(activityLogsTable.startedAt, dayStart),
           lt(activityLogsTable.startedAt, dayEnd),
         ),
@@ -615,15 +660,23 @@ router.get("/", async (req, res) => {
 
     // Real wall-clock coverage per device (overlapping duplicate-agent logs
     // merged) for this single day.
-    const dayExtraWhere = group
-      ? inArray(
-          activityLogsTable.deviceId,
-          db
-            .select({ id: devicesTable.id })
-            .from(devicesTable)
-            .where(eq(devicesTable.deviceGroup, group)),
-        )
-      : undefined;
+    const dayExtraWhere = and(
+      eq(activityLogsTable.companyId, companyId),
+      group
+        ? inArray(
+            activityLogsTable.deviceId,
+            db
+              .select({ id: devicesTable.id })
+              .from(devicesTable)
+              .where(
+                and(
+                  eq(devicesTable.companyId, companyId),
+                  eq(devicesTable.deviceGroup, group),
+                ),
+              ),
+          )
+        : undefined,
+    );
     const coveredByDevice = await coveredSecondsByKey({
       rangeStart: dayStart,
       rangeEnd: dayEnd,

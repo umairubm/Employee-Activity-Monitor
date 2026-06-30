@@ -12,5 +12,7 @@ export interface AuthUser {
   username: string;
   email: string;
   role: AuthUserRole;
+  /** @nullable */
+  companyId?: string | null;
   createdAt: Date;
 }

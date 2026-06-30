@@ -14,7 +14,8 @@ export type AuthUserRole = (typeof AuthUserRole)[keyof typeof AuthUserRole];
 
 export const AuthUserRole = {
   super_user: "super_user",
-  admin: "admin",
+  company_admin: "company_admin",
+  manager: "manager",
   team_member: "team_member",
 } as const;
 
@@ -23,7 +24,133 @@ export interface AuthUser {
   username: string;
   email: string;
   role: AuthUserRole;
+  /** @nullable */
+  companyId?: string | null;
   createdAt: string;
+}
+
+export interface OkResult {
+  ok: boolean;
+}
+
+export type CompanyStatus = (typeof CompanyStatus)[keyof typeof CompanyStatus];
+
+export const CompanyStatus = {
+  active: "active",
+  suspended: "suspended",
+} as const;
+
+export interface Company {
+  id: string;
+  name: string;
+  status: CompanyStatus;
+  /** @nullable */
+  createdById?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CompanyUserRole =
+  (typeof CompanyUserRole)[keyof typeof CompanyUserRole];
+
+export const CompanyUserRole = {
+  super_user: "super_user",
+  company_admin: "company_admin",
+  manager: "manager",
+  team_member: "team_member",
+} as const;
+
+export interface CompanyUser {
+  id: string;
+  username: string;
+  email: string;
+  role: CompanyUserRole;
+  createdAt?: string;
+}
+
+export interface SecuritySettings {
+  id: string;
+  companyId: string;
+  passwordMinLength: number;
+  passwordRequireUppercase: boolean;
+  passwordRequireNumber: boolean;
+  passwordRequireSymbol: boolean;
+  sessionTimeoutMinutes: number;
+  allowedIpRanges: string[];
+  mfaRequired: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export type CompanyDetail = Company & {
+  securitySettings?: SecuritySettings | null;
+  admins: CompanyUser[];
+};
+
+export interface CreateAdminRequest {
+  username: string;
+  email: string;
+  /** @minLength 8 */
+  password: string;
+}
+
+export interface CreateCompanyRequest {
+  name: string;
+  admin?: CreateAdminRequest;
+}
+
+export interface CreateCompanyResult {
+  company: Company;
+  admin?: CompanyUser | null;
+}
+
+export type CreateManagerRequestRole =
+  (typeof CreateManagerRequestRole)[keyof typeof CreateManagerRequestRole];
+
+export const CreateManagerRequestRole = {
+  manager: "manager",
+  team_member: "team_member",
+} as const;
+
+export interface CreateManagerRequest {
+  username: string;
+  email: string;
+  /** @minLength 8 */
+  password: string;
+  role?: CreateManagerRequestRole;
+}
+
+export type UpdateManagerRequestRole =
+  (typeof UpdateManagerRequestRole)[keyof typeof UpdateManagerRequestRole];
+
+export const UpdateManagerRequestRole = {
+  manager: "manager",
+  team_member: "team_member",
+} as const;
+
+export interface UpdateManagerRequest {
+  email?: string;
+  /** @minLength 8 */
+  password?: string;
+  role?: UpdateManagerRequestRole;
+}
+
+export interface UpdateSecuritySettingsRequest {
+  /**
+   * @minimum 6
+   * @maximum 128
+   */
+  passwordMinLength?: number;
+  passwordRequireUppercase?: boolean;
+  passwordRequireNumber?: boolean;
+  passwordRequireSymbol?: boolean;
+  /**
+   * @minimum 5
+   * @maximum 43200
+   */
+  sessionTimeoutMinutes?: number;
+  allowedIpRanges?: string[];
+  mfaRequired?: boolean;
 }
 
 export interface DeviceAlertItem {

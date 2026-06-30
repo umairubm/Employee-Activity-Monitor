@@ -13,11 +13,15 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { usersTable } from "./users";
 import { enrollmentTokensTable } from "./enrollmentTokens";
+import { companiesTable } from "./companies";
 
 export const osTypeEnum = pgEnum("os_type", ["windows", "macos", "linux"]);
 
 export const devicesTable = pgTable("devices", {
   id: uuid("id").primaryKey().defaultRandom(),
+  companyId: uuid("company_id").references(() => companiesTable.id, {
+    onDelete: "cascade",
+  }),
   hardwareHash: text("hardware_hash").notNull().unique(),
   systemName: text("system_name").notNull(),
   osType: osTypeEnum("os_type").notNull(),
@@ -76,6 +80,7 @@ export const insertDeviceSchema = createInsertSchema(devicesTable).omit({
 
 export const publicDeviceColumns = {
   id: devicesTable.id,
+  companyId: devicesTable.companyId,
   hardwareHash: devicesTable.hardwareHash,
   systemName: devicesTable.systemName,
   osType: devicesTable.osType,

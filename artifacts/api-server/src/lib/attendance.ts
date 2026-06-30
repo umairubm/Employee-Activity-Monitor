@@ -110,22 +110,31 @@ export function requiredHoursFor(
 }
 
 /**
- * Load the single global attendance-settings row, creating defaults if absent.
- * Concurrency-safe: a partial unique index on (device_id IS NULL AND
- * device_group IS NULL) guarantees a single global row, and `onConflictDoNothing`
- * makes the seed insert idempotent.
+ * Load a company's single global attendance-settings row, creating defaults if
+ * absent. Concurrency-safe: a partial unique index on (company_id) WHERE
+ * (device_id IS NULL AND device_group IS NULL) guarantees ONE global row PER
+ * company, and `onConflictDoNothing` keyed on that index makes the seed insert
+ * idempotent. The settings are tenant-scoped: each company sees only its own.
  */
-export async function getGlobalSettings(): Promise<AttendanceSettings> {
+export async function getGlobalSettings(
+  companyId: string,
+): Promise<AttendanceSettings> {
   await db
     .insert(attendanceSettingsTable)
-    .values({ deviceId: null, deviceGroup: null, ...DEFAULT_SETTINGS })
-    .onConflictDoNothing();
+    .values({ companyId, deviceId: null, deviceGroup: null, ...DEFAULT_SETTINGS })
+    .onConflictDoNothing({
+      target: attendanceSettingsTable.companyId,
+      // `where` (not `targetWhere`) is how onConflictDoNothing infers a PARTIAL
+      // unique index: it must match `attendance_settings_global_uniq`'s predicate.
+      where: sql`${attendanceSettingsTable.deviceId} is null and ${attendanceSettingsTable.deviceGroup} is null`,
+    });
 
   const [row] = await db
     .select()
     .from(attendanceSettingsTable)
     .where(
       and(
+        eq(attendanceSettingsTable.companyId, companyId),
         isNull(attendanceSettingsTable.deviceId),
         isNull(attendanceSettingsTable.deviceGroup),
       ),
@@ -139,7 +148,7 @@ export async function getGlobalSettings(): Promise<AttendanceSettings> {
  * Load every override row (per-device and per-team) and index them for fast
  * lookup. Device overrides set `deviceId`; group overrides set `deviceGroup`.
  */
-export async function loadOverrides(): Promise<{
+export async function loadOverrides(companyId: string): Promise<{
   byDevice: Map<string, AttendanceSettings>;
   byGroup: Map<string, AttendanceSettings>;
 }> {
@@ -147,7 +156,10 @@ export async function loadOverrides(): Promise<{
     .select()
     .from(attendanceSettingsTable)
     .where(
-      sql`${attendanceSettingsTable.deviceId} is not null or ${attendanceSettingsTable.deviceGroup} is not null`,
+      and(
+        eq(attendanceSettingsTable.companyId, companyId),
+        sql`${attendanceSettingsTable.deviceId} is not null or ${attendanceSettingsTable.deviceGroup} is not null`,
+      ),
     );
   const byDevice = new Map<string, AttendanceSettings>();
   const byGroup = new Map<string, AttendanceSettings>();
@@ -182,10 +194,13 @@ export function resolveForDevice(
  * attendance rule's `workStartTime` when a shift is attached (morning/evening/
  * night), so late-arrival detection follows the shift's clock-in time.
  */
-export async function loadShiftStartTimes(): Promise<Map<string, string>> {
+export async function loadShiftStartTimes(
+  companyId: string,
+): Promise<Map<string, string>> {
   const rows = await db
     .select({ id: shiftsTable.id, startTime: shiftsTable.startTime })
-    .from(shiftsTable);
+    .from(shiftsTable)
+    .where(eq(shiftsTable.companyId, companyId));
   return new Map(rows.map((r) => [r.id, r.startTime]));
 }
 
@@ -212,6 +227,7 @@ export function applyShiftStartTime(
  * absent. Only `approved` leave counts; pending/rejected/cancelled are ignored.
  */
 export async function loadApprovedLeaveDays(
+  companyId: string,
   from: string,
   to: string,
 ): Promise<Map<string, Set<string>>> {
@@ -224,6 +240,7 @@ export async function loadApprovedLeaveDays(
     .from(leaveRequestsTable)
     .where(
       and(
+        eq(leaveRequestsTable.companyId, companyId),
         eq(leaveRequestsTable.status, "approved"),
         lte(leaveRequestsTable.startDate, to),
         gte(leaveRequestsTable.endDate, from),

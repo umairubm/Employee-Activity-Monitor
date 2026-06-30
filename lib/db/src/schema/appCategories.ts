@@ -2,6 +2,7 @@ import { pgTable, uuid, text, timestamp, pgEnum, uniqueIndex } from "drizzle-orm
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { usersTable } from "./users";
+import { companiesTable } from "./companies";
 
 export const productivityClassEnum = pgEnum("productivity_class", [
   "productive",
@@ -14,6 +15,9 @@ export const appCategoriesTable = pgTable(
   "app_categories",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    companyId: uuid("company_id").references(() => companiesTable.id, {
+      onDelete: "cascade",
+    }),
     pattern: text("pattern").notNull(),
     displayName: text("display_name").notNull(),
     classification: productivityClassEnum("classification")
@@ -30,7 +34,10 @@ export const appCategoriesTable = pgTable(
       .defaultNow(),
   },
   (table) => ({
-    patternIdx: uniqueIndex("app_categories_pattern_idx").on(table.pattern),
+    patternIdx: uniqueIndex("app_categories_pattern_idx").on(
+      table.companyId,
+      table.pattern,
+    ),
   }),
 );
 

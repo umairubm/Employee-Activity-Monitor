@@ -10,6 +10,7 @@ import {
 } from "@workspace/db";
 import { and, asc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { coveredSecondsByKey, spanSecondsByKey, correctOverlap } from "../lib/activityTime";
+import { getCompanyId } from "../middlewares/tenant";
 import {
   MAX_RANGE_DAYS,
   applyShiftStartTime,
@@ -82,12 +83,14 @@ router.get("/", async (req, res) => {
         ? req.query.group
         : undefined;
 
+    const companyId = getCompanyId(req);
+
     const rangeStart = new Date(`${from}T00:00:00Z`);
     const rangeEnd = new Date(Date.parse(`${to}T00:00:00Z`) + 86400000);
 
-    const settings = await getGlobalSettings();
-    const overrides = await loadOverrides();
-    const shiftStarts = await loadShiftStartTimes();
+    const settings = await getGlobalSettings(companyId);
+    const overrides = await loadOverrides(companyId);
+    const shiftStarts = await loadShiftStartTimes(companyId);
 
     const devices = await db
       .select({
@@ -103,7 +106,12 @@ router.get("/", async (req, res) => {
         enrollmentTokensTable,
         eq(devicesTable.enrolledViaTokenId, enrollmentTokensTable.id),
       )
-      .where(group ? eq(devicesTable.deviceGroup, group) : undefined)
+      .where(
+        and(
+          eq(devicesTable.companyId, companyId),
+          group ? eq(devicesTable.deviceGroup, group) : undefined,
+        ),
+      )
       .orderBy(asc(devicesTable.systemName));
 
     // An attached shift re-anchors clock-in time, so late/early flags below
@@ -142,6 +150,7 @@ router.get("/", async (req, res) => {
       )
       .where(
         and(
+          eq(activityLogsTable.companyId, companyId),
           gte(activityLogsTable.startedAt, rangeStart),
           lt(activityLogsTable.startedAt, rangeEnd),
         ),
@@ -174,15 +183,23 @@ router.get("/", async (req, res) => {
     // Real wall-clock coverage per device+day (overlapping duplicate-agent logs
     // merged), keyed "deviceId|YYYY-MM-DD" to match the row loop below.
     const keyExpr = sql`${activityLogsTable.deviceId}::text || '|' || to_char(${activityLogsTable.startedAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD')`;
-    const groupExtraWhere = group
-      ? inArray(
-          activityLogsTable.deviceId,
-          db
-            .select({ id: devicesTable.id })
-            .from(devicesTable)
-            .where(eq(devicesTable.deviceGroup, group)),
-        )
-      : undefined;
+    const groupExtraWhere = and(
+      eq(activityLogsTable.companyId, companyId),
+      group
+        ? inArray(
+            activityLogsTable.deviceId,
+            db
+              .select({ id: devicesTable.id })
+              .from(devicesTable)
+              .where(
+                and(
+                  eq(devicesTable.companyId, companyId),
+                  eq(devicesTable.deviceGroup, group),
+                ),
+              ),
+          )
+        : undefined,
+    );
     const coveredByKey = await coveredSecondsByKey({
       rangeStart,
       rangeEnd,

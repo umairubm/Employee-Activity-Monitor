@@ -1,5 +1,6 @@
 import { pgTable, uuid, text, timestamp, index } from "drizzle-orm/pg-core";
 import { usersTable } from "./users";
+import { companiesTable } from "./companies";
 
 export const sessionsTable = pgTable(
   "sessions",
@@ -8,6 +9,9 @@ export const sessionsTable = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => usersTable.id, { onDelete: "cascade" }),
+    companyId: uuid("company_id").references(() => companiesTable.id, {
+      onDelete: "cascade",
+    }),
     tokenHash: text("token_hash").notNull().unique(),
     userAgent: text("user_agent"),
     ipAddress: text("ip_address"),

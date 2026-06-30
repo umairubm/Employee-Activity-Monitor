@@ -11,6 +11,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { usersTable } from "./users";
 import { leaveTypeEnum } from "./leaveRequests";
+import { companiesTable } from "./companies";
 
 /**
  * Per-user, per-year, per-type leave allocation. `usedDays` is incremented when
@@ -24,6 +25,9 @@ export const leaveBalancesTable = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => usersTable.id, { onDelete: "cascade" }),
+    companyId: uuid("company_id").references(() => companiesTable.id, {
+      onDelete: "cascade",
+    }),
     year: integer("year").notNull(),
     leaveType: leaveTypeEnum("leave_type").notNull(),
     allocatedDays: real("allocated_days").notNull().default(0),

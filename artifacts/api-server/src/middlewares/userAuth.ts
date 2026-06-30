@@ -18,6 +18,12 @@ export async function userAuth(
     res.status(401).json({ error: "Authentication required" });
     return;
   }
+  // A suspended tenant loses all access immediately, regardless of valid
+  // credentials. Super Users (companyStatus === null) are never suspended.
+  if (result.companyStatus === "suspended") {
+    res.status(403).json({ error: "Company account is suspended" });
+    return;
+  }
   (req as AuthedRequest).user = result.user;
   (req as AuthedRequest).sessionId = result.sessionId;
   next();

@@ -1,7 +1,8 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod/v4";
 import { db, shiftsTable } from "@workspace/db";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
+import { getCompanyId } from "../middlewares/tenant";
 import { isUuid } from "../lib/validators";
 
 const router: IRouter = Router();
@@ -24,11 +25,13 @@ const updateShiftSchema = z.object({
 });
 
 // GET /api/shifts - list shifts
-router.get("/", async (_req, res) => {
+router.get("/", async (req, res) => {
   try {
+    const companyId = getCompanyId(req);
     const rows = await db
       .select()
       .from(shiftsTable)
+      .where(eq(shiftsTable.companyId, companyId))
       .orderBy(desc(shiftsTable.createdAt));
     res.json(rows);
   } catch (error) {
@@ -39,6 +42,7 @@ router.get("/", async (_req, res) => {
 // POST /api/shifts - create a shift
 router.post("/", async (req, res) => {
   try {
+    const companyId = getCompanyId(req);
     const parsed = createShiftSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: "Invalid shift payload" });
@@ -47,6 +51,7 @@ router.post("/", async (req, res) => {
     const [created] = await db
       .insert(shiftsTable)
       .values({
+        companyId,
         name: parsed.data.name,
         shiftType: parsed.data.shiftType ?? "morning",
         startTime: parsed.data.startTime,
@@ -62,6 +67,7 @@ router.post("/", async (req, res) => {
 // PATCH /api/shifts/:id - update a shift
 router.patch("/:id", async (req, res) => {
   try {
+    const companyId = getCompanyId(req);
     if (!isUuid(String(req.params.id))) {
       res.status(400).json({ error: "Invalid shift id" });
       return;
@@ -74,7 +80,12 @@ router.patch("/:id", async (req, res) => {
     const [updated] = await db
       .update(shiftsTable)
       .set({ ...parsed.data, updatedAt: new Date() })
-      .where(eq(shiftsTable.id, String(req.params.id)))
+      .where(
+        and(
+          eq(shiftsTable.id, String(req.params.id)),
+          eq(shiftsTable.companyId, companyId),
+        ),
+      )
       .returning();
     if (!updated) {
       res.status(404).json({ error: "Shift not found" });
@@ -89,13 +100,19 @@ router.patch("/:id", async (req, res) => {
 // DELETE /api/shifts/:id - delete a shift (detaches from settings via set null)
 router.delete("/:id", async (req, res) => {
   try {
+    const companyId = getCompanyId(req);
     if (!isUuid(String(req.params.id))) {
       res.status(400).json({ error: "Invalid shift id" });
       return;
     }
     const [deleted] = await db
       .delete(shiftsTable)
-      .where(eq(shiftsTable.id, String(req.params.id)))
+      .where(
+        and(
+          eq(shiftsTable.id, String(req.params.id)),
+          eq(shiftsTable.companyId, companyId),
+        ),
+      )
       .returning({ id: shiftsTable.id });
     if (!deleted) {
       res.status(404).json({ error: "Shift not found" });

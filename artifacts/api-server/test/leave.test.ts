@@ -26,10 +26,10 @@ const createdShiftIds: string[] = [];
 
 beforeAll(async () => {
   const { user } = await createUser({ role: "team_member" });
-  const { user: reviewer } = await createUser({ role: "admin" });
+  const { user: reviewer } = await createUser({ role: "company_admin" });
   seededUserId = user.id;
   reviewerId = reviewer.id;
-  featureApp = makeApp({ role: "admin", userId: reviewer.id });
+  featureApp = makeApp({ role: "company_admin", userId: reviewer.id });
 });
 
 afterAll(async () => {

@@ -1,9 +1,10 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod/v4";
 import { db, enrollmentTokensTable, devicesTable } from "@workspace/db";
-import { desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { generateEnrollmentToken } from "../lib/secrets";
 import { requireRole, type AuthedRequest } from "../middlewares/userAuth";
+import { getCompanyId } from "../middlewares/tenant";
 
 const router: IRouter = Router();
 
@@ -41,11 +42,13 @@ async function enrolledDevicesByToken(
 
 // GET /api/tokens - list enrollment tokens, each with the device(s) that
 // enrolled using it so admins can see exactly where a token's uses went.
-router.get("/", async (_req, res) => {
+router.get("/", async (req, res) => {
   try {
+    const companyId = getCompanyId(req);
     const rows = await db
       .select()
       .from(enrollmentTokensTable)
+      .where(eq(enrollmentTokensTable.companyId, companyId))
       .orderBy(desc(enrollmentTokensTable.createdAt));
 
     const byToken = await enrolledDevicesByToken(rows.map((r) => r.id));
@@ -68,7 +71,7 @@ const createSchema = z.object({
 });
 
 // POST /api/tokens - mint a new enrollment token
-router.post("/", requireRole("admin", "super_user"), async (req, res) => {
+router.post("/", requireRole("company_admin", "manager"), async (req, res) => {
   try {
     const parsed = createSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -76,6 +79,7 @@ router.post("/", requireRole("admin", "super_user"), async (req, res) => {
       return;
     }
     const { label, maxUses, expiresDays } = parsed.data;
+    const companyId = getCompanyId(req);
 
     const [token] = await db
       .insert(enrollmentTokensTable)
@@ -87,6 +91,7 @@ router.post("/", requireRole("admin", "super_user"), async (req, res) => {
           ? new Date(Date.now() + expiresDays * 24 * 60 * 60 * 1000)
           : null,
         createdById: (req as AuthedRequest).user.id,
+        companyId,
       })
       .returning();
 
@@ -101,13 +106,19 @@ router.post("/", requireRole("admin", "super_user"), async (req, res) => {
 // POST /api/tokens/:id/revoke - revoke an enrollment token
 router.post(
   "/:id/revoke",
-  requireRole("admin", "super_user"),
+  requireRole("company_admin", "manager"),
   async (req, res) => {
     try {
+      const companyId = getCompanyId(req);
       const [updated] = await db
         .update(enrollmentTokensTable)
         .set({ revokedAt: new Date() })
-        .where(eq(enrollmentTokensTable.id, String(req.params.id)))
+        .where(
+          and(
+            eq(enrollmentTokensTable.id, String(req.params.id)),
+            eq(enrollmentTokensTable.companyId, companyId),
+          ),
+        )
         .returning();
 
       if (!updated) {

@@ -16,7 +16,7 @@ import {
 } from "./helpers";
 import type { Express } from "express";
 
-const app = makeApp({ role: "admin" });
+const app = makeApp({ role: "company_admin" });
 const createdDeviceIds: string[] = [];
 const createdTokenIds: string[] = [];
 const createdUserIds: string[] = [];
@@ -26,9 +26,9 @@ const createdUserIds: string[] = [];
 let realAdminApp: Express;
 
 beforeAll(async () => {
-  const { user } = await createUser({ role: "admin" });
+  const { user } = await createUser({ role: "company_admin" });
   createdUserIds.push(user.id);
-  realAdminApp = makeApp({ role: "admin", userId: user.id });
+  realAdminApp = makeApp({ role: "company_admin", userId: user.id });
 });
 
 afterAll(async () => {

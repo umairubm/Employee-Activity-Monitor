@@ -45,8 +45,14 @@ async function main(): Promise<void> {
   if (password.length < 8) {
     throw new Error("--password must be at least 8 characters");
   }
-  if (!["super_user", "admin", "team_member"].includes(role)) {
-    throw new Error("--role must be super_user, admin or team_member");
+  const validRoles = [
+    "super_user",
+    "company_admin",
+    "manager",
+    "team_member",
+  ];
+  if (!validRoles.includes(role)) {
+    throw new Error(`--role must be one of: ${validRoles.join(", ")}`);
   }
 
   const [existing] = await db
@@ -63,7 +69,7 @@ async function main(): Promise<void> {
       username,
       email,
       passwordHash: hashPassword(password),
-      role: role as "super_user" | "admin" | "team_member",
+      role: role as "super_user" | "company_admin" | "manager" | "team_member",
     })
     .returning();
 

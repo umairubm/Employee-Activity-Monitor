@@ -4,6 +4,7 @@ import { db, screenshotsTable, devicesTable } from "@workspace/db";
 import { and, count, desc, eq, gte, inArray, lt } from "drizzle-orm";
 import { ObjectNotFoundError, ObjectStorageService } from "../lib/objectStorage";
 import { requireRole } from "../middlewares/userAuth";
+import { getCompanyId } from "../middlewares/tenant";
 
 const router: IRouter = Router();
 
@@ -43,6 +44,7 @@ function parseRange(
 
 /** Build the shared screenshot WHERE filters for list and count. */
 function buildFilters(opts: {
+  companyId: string;
   deviceId?: string;
   group?: string;
   flaggedOnly: boolean;
@@ -50,6 +52,7 @@ function buildFilters(opts: {
   toDate: Date | null;
 }) {
   return [
+    eq(screenshotsTable.companyId, opts.companyId),
     opts.deviceId ? eq(screenshotsTable.deviceId, opts.deviceId) : undefined,
     opts.flaggedOnly ? eq(screenshotsTable.flagged, true) : undefined,
     opts.group
@@ -58,7 +61,12 @@ function buildFilters(opts: {
           db
             .select({ id: devicesTable.id })
             .from(devicesTable)
-            .where(eq(devicesTable.deviceGroup, opts.group)),
+            .where(
+              and(
+                eq(devicesTable.deviceGroup, opts.group),
+                eq(devicesTable.companyId, opts.companyId),
+              ),
+            ),
         )
       : undefined,
     opts.fromDate ? gte(screenshotsTable.capturedAt, opts.fromDate) : undefined,
@@ -69,6 +77,7 @@ function buildFilters(opts: {
 // GET /api/screenshots - list screenshot metadata (filter by device / flagged)
 router.get("/", async (req, res) => {
   try {
+    const companyId = getCompanyId(req);
     const { deviceId, group, from, to } = req.query as Record<
       string,
       string | undefined
@@ -83,6 +92,7 @@ router.get("/", async (req, res) => {
     }
 
     const filters = buildFilters({
+      companyId,
       deviceId,
       group,
       flaggedOnly,
@@ -118,6 +128,7 @@ router.get("/", async (req, res) => {
 // than the server-local calendar-day count from /reports/summary.
 router.get("/count", async (req, res) => {
   try {
+    const companyId = getCompanyId(req);
     const { deviceId, group, from, to } = req.query as Record<
       string,
       string | undefined
@@ -131,6 +142,7 @@ router.get("/count", async (req, res) => {
     }
 
     const filters = buildFilters({
+      companyId,
       deviceId,
       group,
       flaggedOnly,
@@ -154,9 +166,10 @@ const flagSchema = z.object({ flagged: z.boolean() });
 // PATCH /api/screenshots/:id/flag - flag or unflag a screenshot
 router.patch(
   "/:id/flag",
-  requireRole("admin", "super_user"),
+  requireRole("company_admin", "manager"),
   async (req, res) => {
     try {
+      const companyId = getCompanyId(req);
       const parsed = flagSchema.safeParse(req.body);
       if (!parsed.success) {
         res.status(400).json({ error: "Invalid flag payload" });
@@ -165,7 +178,12 @@ router.patch(
       const [updated] = await db
         .update(screenshotsTable)
         .set({ flagged: parsed.data.flagged })
-        .where(eq(screenshotsTable.id, String(req.params.id)))
+        .where(
+          and(
+            eq(screenshotsTable.id, String(req.params.id)),
+            eq(screenshotsTable.companyId, companyId),
+          ),
+        )
         .returning({
           id: screenshotsTable.id,
           flagged: screenshotsTable.flagged,
@@ -183,11 +201,17 @@ router.patch(
 
 // DELETE /api/screenshots/:id - permanently delete a screenshot (row + bytes).
 // Per product decision, this does NOT adjust any tracked/working hours.
-router.delete("/:id", requireRole("admin", "super_user"), async (req, res) => {
+router.delete("/:id", requireRole("company_admin", "manager"), async (req, res) => {
   try {
+    const companyId = getCompanyId(req);
     const [deleted] = await db
       .delete(screenshotsTable)
-      .where(eq(screenshotsTable.id, String(req.params.id)))
+      .where(
+        and(
+          eq(screenshotsTable.id, String(req.params.id)),
+          eq(screenshotsTable.companyId, companyId),
+        ),
+      )
       .returning({ storageKey: screenshotsTable.storageKey });
     if (!deleted) {
       res.status(404).json({ error: "Screenshot not found" });
@@ -211,10 +235,16 @@ router.delete("/:id", requireRole("admin", "super_user"), async (req, res) => {
 // GET /api/screenshots/:id/image - stream the screenshot bytes (auth-gated)
 router.get("/:id/image", async (req, res) => {
   try {
+    const companyId = getCompanyId(req);
     const [shot] = await db
       .select({ storageKey: screenshotsTable.storageKey })
       .from(screenshotsTable)
-      .where(eq(screenshotsTable.id, String(req.params.id)));
+      .where(
+        and(
+          eq(screenshotsTable.id, String(req.params.id)),
+          eq(screenshotsTable.companyId, companyId),
+        ),
+      );
     if (!shot) {
       res.status(404).json({ error: "Screenshot not found" });
       return;

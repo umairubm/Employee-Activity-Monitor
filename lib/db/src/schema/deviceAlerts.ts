@@ -2,6 +2,7 @@ import { pgTable, uuid, text, timestamp } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { devicesTable } from "./devices";
 import { usersTable } from "./users";
+import { companiesTable } from "./companies";
 
 /**
  * Hardware/system change alerts. Each row records a single tracked property
@@ -14,6 +15,9 @@ export const deviceAlertsTable = pgTable("device_alerts", {
   deviceId: uuid("device_id")
     .notNull()
     .references(() => devicesTable.id, { onDelete: "cascade" }),
+  companyId: uuid("company_id").references(() => companiesTable.id, {
+    onDelete: "cascade",
+  }),
   field: text("field").notNull(),
   oldValue: text("old_value"),
   newValue: text("new_value"),

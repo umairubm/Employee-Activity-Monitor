@@ -26,7 +26,8 @@ export const LoginResponse = zod.object({
   id: zod.string().uuid(),
   username: zod.string(),
   email: zod.string(),
-  role: zod.enum(["super_user", "admin", "team_member"]),
+  role: zod.enum(["super_user", "company_admin", "manager", "team_member"]),
+  companyId: zod.string().uuid().nullish(),
   createdAt: zod.coerce.date(),
 });
 
@@ -44,7 +45,8 @@ export const GetCurrentUserResponse = zod.object({
   id: zod.string().uuid(),
   username: zod.string(),
   email: zod.string(),
-  role: zod.enum(["super_user", "admin", "team_member"]),
+  role: zod.enum(["super_user", "company_admin", "manager", "team_member"]),
+  companyId: zod.string().uuid().nullish(),
   createdAt: zod.coerce.date(),
 });
 
@@ -1604,10 +1606,256 @@ export const ListUsersResponseItem = zod.object({
   id: zod.string().uuid(),
   username: zod.string(),
   email: zod.string(),
-  role: zod.enum(["super_user", "admin", "team_member"]),
+  role: zod.enum(["super_user", "company_admin", "manager", "team_member"]),
+  companyId: zod.string().uuid().nullish(),
   createdAt: zod.coerce.date(),
 });
 export const ListUsersResponse = zod.array(ListUsersResponseItem);
+
+/**
+ * @summary List all tenants (Super User)
+ */
+export const ListCompaniesResponseItem = zod.object({
+  id: zod.string().uuid(),
+  name: zod.string(),
+  status: zod.enum(["active", "suspended"]),
+  createdById: zod.string().uuid().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+export const ListCompaniesResponse = zod.array(ListCompaniesResponseItem);
+
+/**
+ * @summary Create a tenant and (optionally) its first Company Admin
+ */
+export const createCompanyBodyAdminPasswordMin = 8;
+
+export const CreateCompanyBody = zod.object({
+  name: zod.string(),
+  admin: zod
+    .object({
+      username: zod.string(),
+      email: zod.string().email(),
+      password: zod.string().min(createCompanyBodyAdminPasswordMin),
+    })
+    .optional(),
+});
+
+/**
+ * @summary Get a tenant with its security settings and admins
+ */
+export const GetCompanyParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
+
+export const GetCompanyResponse = zod
+  .object({
+    id: zod.string().uuid(),
+    name: zod.string(),
+    status: zod.enum(["active", "suspended"]),
+    createdById: zod.string().uuid().nullish(),
+    createdAt: zod.coerce.date(),
+    updatedAt: zod.coerce.date(),
+  })
+  .and(
+    zod.object({
+      securitySettings: zod
+        .union([
+          zod.object({
+            id: zod.string().uuid(),
+            companyId: zod.string().uuid(),
+            passwordMinLength: zod.number(),
+            passwordRequireUppercase: zod.boolean(),
+            passwordRequireNumber: zod.boolean(),
+            passwordRequireSymbol: zod.boolean(),
+            sessionTimeoutMinutes: zod.number(),
+            allowedIpRanges: zod.array(zod.string()),
+            mfaRequired: zod.boolean(),
+            createdAt: zod.coerce.date().optional(),
+            updatedAt: zod.coerce.date().optional(),
+          }),
+          zod.null(),
+        ])
+        .optional(),
+      admins: zod.array(
+        zod.object({
+          id: zod.string().uuid(),
+          username: zod.string(),
+          email: zod.string(),
+          role: zod.enum([
+            "super_user",
+            "company_admin",
+            "manager",
+            "team_member",
+          ]),
+          createdAt: zod.coerce.date().optional(),
+        }),
+      ),
+    }),
+  );
+
+/**
+ * @summary Add a Company Admin to an existing tenant
+ */
+export const AddCompanyAdminParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
+
+export const addCompanyAdminBodyPasswordMin = 8;
+
+export const AddCompanyAdminBody = zod.object({
+  username: zod.string(),
+  email: zod.string().email(),
+  password: zod.string().min(addCompanyAdminBodyPasswordMin),
+});
+
+/**
+ * @summary Suspend a tenant
+ */
+export const SuspendCompanyParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
+
+export const SuspendCompanyResponse = zod.object({
+  id: zod.string().uuid(),
+  name: zod.string(),
+  status: zod.enum(["active", "suspended"]),
+  createdById: zod.string().uuid().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Reactivate a suspended tenant
+ */
+export const ReactivateCompanyParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
+
+export const ReactivateCompanyResponse = zod.object({
+  id: zod.string().uuid(),
+  name: zod.string(),
+  status: zod.enum(["active", "suspended"]),
+  createdById: zod.string().uuid().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary List this tenant's managers and team members
+ */
+export const ListManagersResponseItem = zod.object({
+  id: zod.string().uuid(),
+  username: zod.string(),
+  email: zod.string(),
+  role: zod.enum(["super_user", "company_admin", "manager", "team_member"]),
+  createdAt: zod.coerce.date().optional(),
+});
+export const ListManagersResponse = zod.array(ListManagersResponseItem);
+
+/**
+ * @summary Create a manager or team member in this tenant
+ */
+export const createManagerBodyPasswordMin = 8;
+
+export const CreateManagerBody = zod.object({
+  username: zod.string(),
+  email: zod.string().email(),
+  password: zod.string().min(createManagerBodyPasswordMin),
+  role: zod.enum(["manager", "team_member"]).optional(),
+});
+
+/**
+ * @summary Update a manager or team member in this tenant
+ */
+export const UpdateManagerParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
+
+export const updateManagerBodyPasswordMin = 8;
+
+export const UpdateManagerBody = zod.object({
+  email: zod.string().email().optional(),
+  password: zod.string().min(updateManagerBodyPasswordMin).optional(),
+  role: zod.enum(["manager", "team_member"]).optional(),
+});
+
+export const UpdateManagerResponse = zod.object({
+  id: zod.string().uuid(),
+  username: zod.string(),
+  email: zod.string(),
+  role: zod.enum(["super_user", "company_admin", "manager", "team_member"]),
+  createdAt: zod.coerce.date().optional(),
+});
+
+/**
+ * @summary Remove a manager or team member from this tenant
+ */
+export const DeleteManagerParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
+
+export const DeleteManagerResponse = zod.object({
+  ok: zod.boolean(),
+});
+
+/**
+ * @summary Get this tenant's security policy
+ */
+export const GetSecuritySettingsResponse = zod.object({
+  id: zod.string().uuid(),
+  companyId: zod.string().uuid(),
+  passwordMinLength: zod.number(),
+  passwordRequireUppercase: zod.boolean(),
+  passwordRequireNumber: zod.boolean(),
+  passwordRequireSymbol: zod.boolean(),
+  sessionTimeoutMinutes: zod.number(),
+  allowedIpRanges: zod.array(zod.string()),
+  mfaRequired: zod.boolean(),
+  createdAt: zod.coerce.date().optional(),
+  updatedAt: zod.coerce.date().optional(),
+});
+
+/**
+ * @summary Update this tenant's security policy
+ */
+export const updateSecuritySettingsBodyPasswordMinLengthMin = 6;
+export const updateSecuritySettingsBodyPasswordMinLengthMax = 128;
+
+export const updateSecuritySettingsBodySessionTimeoutMinutesMin = 5;
+export const updateSecuritySettingsBodySessionTimeoutMinutesMax = 43200;
+
+export const UpdateSecuritySettingsBody = zod.object({
+  passwordMinLength: zod
+    .number()
+    .min(updateSecuritySettingsBodyPasswordMinLengthMin)
+    .max(updateSecuritySettingsBodyPasswordMinLengthMax)
+    .optional(),
+  passwordRequireUppercase: zod.boolean().optional(),
+  passwordRequireNumber: zod.boolean().optional(),
+  passwordRequireSymbol: zod.boolean().optional(),
+  sessionTimeoutMinutes: zod
+    .number()
+    .min(updateSecuritySettingsBodySessionTimeoutMinutesMin)
+    .max(updateSecuritySettingsBodySessionTimeoutMinutesMax)
+    .optional(),
+  allowedIpRanges: zod.array(zod.string()).optional(),
+  mfaRequired: zod.boolean().optional(),
+});
+
+export const UpdateSecuritySettingsResponse = zod.object({
+  id: zod.string().uuid(),
+  companyId: zod.string().uuid(),
+  passwordMinLength: zod.number(),
+  passwordRequireUppercase: zod.boolean(),
+  passwordRequireNumber: zod.boolean(),
+  passwordRequireSymbol: zod.boolean(),
+  sessionTimeoutMinutes: zod.number(),
+  allowedIpRanges: zod.array(zod.string()),
+  mfaRequired: zod.boolean(),
+  createdAt: zod.coerce.date().optional(),
+  updatedAt: zod.coerce.date().optional(),
+});
 
 /**
  * @summary Node reports status and pulls configuration

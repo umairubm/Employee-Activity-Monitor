@@ -11,6 +11,7 @@ import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { usersTable } from "./users";
+import { companiesTable } from "./companies";
 
 /**
  * Leave types shared by leave_requests and leave_balances. `unpaid` is excluded
@@ -38,6 +39,9 @@ export const leaveRequestsTable = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => usersTable.id, { onDelete: "cascade" }),
+    companyId: uuid("company_id").references(() => companiesTable.id, {
+      onDelete: "cascade",
+    }),
     leaveType: leaveTypeEnum("leave_type").notNull().default("annual"),
     // Inclusive [startDate, endDate] range, stored as YYYY-MM-DD strings.
     startDate: date("start_date", { mode: "string" }).notNull(),

@@ -16,6 +16,7 @@ import {
   makeApp,
   seedActivity,
   seedActivityAt,
+  TEST_COMPANY_ID,
 } from "./helpers";
 
 /**
@@ -52,6 +53,7 @@ async function setDeviceRule(
 ) {
   await db.insert(attendanceSettingsTable).values({
     deviceId,
+    companyId: TEST_COMPANY_ID,
     halfDayThresholdHours: 4,
     workingDays: [1, 2, 3, 4, 5],
     holidays: [],

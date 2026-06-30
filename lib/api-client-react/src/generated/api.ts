@@ -29,7 +29,14 @@ import type {
   BulkUpdateResult,
   CancelCommandRequest,
   CategoryItem,
+  Company,
+  CompanyDetail,
+  CompanyUser,
+  CreateAdminRequest,
+  CreateCompanyRequest,
+  CreateCompanyResult,
   CreateLeaveRequest,
+  CreateManagerRequest,
   CreateProjectRequest,
   CreateShiftRequest,
   CreateTaskRequest,
@@ -69,11 +76,13 @@ import type {
   ListScreenshotsParams,
   LoginRequest,
   Logout200,
+  OkResult,
   ProjectItem,
   RenameDeviceGroup200,
   ReviewLeaveRequest,
   ScreenshotFlagInput,
   ScreenshotListItem,
+  SecuritySettings,
   ShiftItem,
   SummaryResponse,
   SyncActivity200,
@@ -82,7 +91,9 @@ import type {
   TimesheetReport,
   UpdateCategoryRequest,
   UpdateLeaveRequest,
+  UpdateManagerRequest,
   UpdateProjectRequest,
+  UpdateSecuritySettingsRequest,
   UpdateShiftRequest,
   UpdateTaskRequest,
   UpsertLeaveBalanceRequest,
@@ -5458,6 +5469,1003 @@ export function useListUsers<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary List all tenants (Super User)
+ */
+export const getListCompaniesUrl = () => {
+  return `/api/companies`;
+};
+
+export const listCompanies = async (
+  options?: RequestInit,
+): Promise<Company[]> => {
+  return customFetch<Company[]>(getListCompaniesUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListCompaniesQueryKey = () => {
+  return [`/api/companies`] as const;
+};
+
+export const getListCompaniesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listCompanies>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listCompanies>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListCompaniesQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listCompanies>>> = ({
+    signal,
+  }) => listCompanies({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listCompanies>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListCompaniesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listCompanies>>
+>;
+export type ListCompaniesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List all tenants (Super User)
+ */
+
+export function useListCompanies<
+  TData = Awaited<ReturnType<typeof listCompanies>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listCompanies>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListCompaniesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Create a tenant and (optionally) its first Company Admin
+ */
+export const getCreateCompanyUrl = () => {
+  return `/api/companies`;
+};
+
+export const createCompany = async (
+  createCompanyRequest: CreateCompanyRequest,
+  options?: RequestInit,
+): Promise<CreateCompanyResult> => {
+  return customFetch<CreateCompanyResult>(getCreateCompanyUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createCompanyRequest),
+  });
+};
+
+export const getCreateCompanyMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createCompany>>,
+    TError,
+    { data: BodyType<CreateCompanyRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createCompany>>,
+  TError,
+  { data: BodyType<CreateCompanyRequest> },
+  TContext
+> => {
+  const mutationKey = ["createCompany"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createCompany>>,
+    { data: BodyType<CreateCompanyRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createCompany(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateCompanyMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createCompany>>
+>;
+export type CreateCompanyMutationBody = BodyType<CreateCompanyRequest>;
+export type CreateCompanyMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Create a tenant and (optionally) its first Company Admin
+ */
+export const useCreateCompany = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createCompany>>,
+    TError,
+    { data: BodyType<CreateCompanyRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createCompany>>,
+  TError,
+  { data: BodyType<CreateCompanyRequest> },
+  TContext
+> => {
+  return useMutation(getCreateCompanyMutationOptions(options));
+};
+
+/**
+ * @summary Get a tenant with its security settings and admins
+ */
+export const getGetCompanyUrl = (id: string) => {
+  return `/api/companies/${id}`;
+};
+
+export const getCompany = async (
+  id: string,
+  options?: RequestInit,
+): Promise<CompanyDetail> => {
+  return customFetch<CompanyDetail>(getGetCompanyUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetCompanyQueryKey = (id: string) => {
+  return [`/api/companies/${id}`] as const;
+};
+
+export const getGetCompanyQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCompany>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCompany>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetCompanyQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getCompany>>> = ({
+    signal,
+  }) => getCompany(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCompany>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetCompanyQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getCompany>>
+>;
+export type GetCompanyQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get a tenant with its security settings and admins
+ */
+
+export function useGetCompany<
+  TData = Awaited<ReturnType<typeof getCompany>>,
+  TError = ErrorType<unknown>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCompany>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetCompanyQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Add a Company Admin to an existing tenant
+ */
+export const getAddCompanyAdminUrl = (id: string) => {
+  return `/api/companies/${id}/admins`;
+};
+
+export const addCompanyAdmin = async (
+  id: string,
+  createAdminRequest: CreateAdminRequest,
+  options?: RequestInit,
+): Promise<CompanyUser> => {
+  return customFetch<CompanyUser>(getAddCompanyAdminUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createAdminRequest),
+  });
+};
+
+export const getAddCompanyAdminMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof addCompanyAdmin>>,
+    TError,
+    { id: string; data: BodyType<CreateAdminRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof addCompanyAdmin>>,
+  TError,
+  { id: string; data: BodyType<CreateAdminRequest> },
+  TContext
+> => {
+  const mutationKey = ["addCompanyAdmin"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof addCompanyAdmin>>,
+    { id: string; data: BodyType<CreateAdminRequest> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return addCompanyAdmin(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AddCompanyAdminMutationResult = NonNullable<
+  Awaited<ReturnType<typeof addCompanyAdmin>>
+>;
+export type AddCompanyAdminMutationBody = BodyType<CreateAdminRequest>;
+export type AddCompanyAdminMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Add a Company Admin to an existing tenant
+ */
+export const useAddCompanyAdmin = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof addCompanyAdmin>>,
+    TError,
+    { id: string; data: BodyType<CreateAdminRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof addCompanyAdmin>>,
+  TError,
+  { id: string; data: BodyType<CreateAdminRequest> },
+  TContext
+> => {
+  return useMutation(getAddCompanyAdminMutationOptions(options));
+};
+
+/**
+ * @summary Suspend a tenant
+ */
+export const getSuspendCompanyUrl = (id: string) => {
+  return `/api/companies/${id}/suspend`;
+};
+
+export const suspendCompany = async (
+  id: string,
+  options?: RequestInit,
+): Promise<Company> => {
+  return customFetch<Company>(getSuspendCompanyUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getSuspendCompanyMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof suspendCompany>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof suspendCompany>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["suspendCompany"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof suspendCompany>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return suspendCompany(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SuspendCompanyMutationResult = NonNullable<
+  Awaited<ReturnType<typeof suspendCompany>>
+>;
+
+export type SuspendCompanyMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Suspend a tenant
+ */
+export const useSuspendCompany = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof suspendCompany>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof suspendCompany>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getSuspendCompanyMutationOptions(options));
+};
+
+/**
+ * @summary Reactivate a suspended tenant
+ */
+export const getReactivateCompanyUrl = (id: string) => {
+  return `/api/companies/${id}/reactivate`;
+};
+
+export const reactivateCompany = async (
+  id: string,
+  options?: RequestInit,
+): Promise<Company> => {
+  return customFetch<Company>(getReactivateCompanyUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getReactivateCompanyMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof reactivateCompany>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof reactivateCompany>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["reactivateCompany"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof reactivateCompany>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return reactivateCompany(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ReactivateCompanyMutationResult = NonNullable<
+  Awaited<ReturnType<typeof reactivateCompany>>
+>;
+
+export type ReactivateCompanyMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Reactivate a suspended tenant
+ */
+export const useReactivateCompany = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof reactivateCompany>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof reactivateCompany>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getReactivateCompanyMutationOptions(options));
+};
+
+/**
+ * @summary List this tenant's managers and team members
+ */
+export const getListManagersUrl = () => {
+  return `/api/managers`;
+};
+
+export const listManagers = async (
+  options?: RequestInit,
+): Promise<CompanyUser[]> => {
+  return customFetch<CompanyUser[]>(getListManagersUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListManagersQueryKey = () => {
+  return [`/api/managers`] as const;
+};
+
+export const getListManagersQueryOptions = <
+  TData = Awaited<ReturnType<typeof listManagers>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listManagers>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListManagersQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listManagers>>> = ({
+    signal,
+  }) => listManagers({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listManagers>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListManagersQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listManagers>>
+>;
+export type ListManagersQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List this tenant's managers and team members
+ */
+
+export function useListManagers<
+  TData = Awaited<ReturnType<typeof listManagers>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listManagers>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListManagersQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Create a manager or team member in this tenant
+ */
+export const getCreateManagerUrl = () => {
+  return `/api/managers`;
+};
+
+export const createManager = async (
+  createManagerRequest: CreateManagerRequest,
+  options?: RequestInit,
+): Promise<CompanyUser> => {
+  return customFetch<CompanyUser>(getCreateManagerUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createManagerRequest),
+  });
+};
+
+export const getCreateManagerMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createManager>>,
+    TError,
+    { data: BodyType<CreateManagerRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createManager>>,
+  TError,
+  { data: BodyType<CreateManagerRequest> },
+  TContext
+> => {
+  const mutationKey = ["createManager"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createManager>>,
+    { data: BodyType<CreateManagerRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createManager(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateManagerMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createManager>>
+>;
+export type CreateManagerMutationBody = BodyType<CreateManagerRequest>;
+export type CreateManagerMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Create a manager or team member in this tenant
+ */
+export const useCreateManager = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createManager>>,
+    TError,
+    { data: BodyType<CreateManagerRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createManager>>,
+  TError,
+  { data: BodyType<CreateManagerRequest> },
+  TContext
+> => {
+  return useMutation(getCreateManagerMutationOptions(options));
+};
+
+/**
+ * @summary Update a manager or team member in this tenant
+ */
+export const getUpdateManagerUrl = (id: string) => {
+  return `/api/managers/${id}`;
+};
+
+export const updateManager = async (
+  id: string,
+  updateManagerRequest: UpdateManagerRequest,
+  options?: RequestInit,
+): Promise<CompanyUser> => {
+  return customFetch<CompanyUser>(getUpdateManagerUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateManagerRequest),
+  });
+};
+
+export const getUpdateManagerMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateManager>>,
+    TError,
+    { id: string; data: BodyType<UpdateManagerRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateManager>>,
+  TError,
+  { id: string; data: BodyType<UpdateManagerRequest> },
+  TContext
+> => {
+  const mutationKey = ["updateManager"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateManager>>,
+    { id: string; data: BodyType<UpdateManagerRequest> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateManager(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateManagerMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateManager>>
+>;
+export type UpdateManagerMutationBody = BodyType<UpdateManagerRequest>;
+export type UpdateManagerMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Update a manager or team member in this tenant
+ */
+export const useUpdateManager = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateManager>>,
+    TError,
+    { id: string; data: BodyType<UpdateManagerRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateManager>>,
+  TError,
+  { id: string; data: BodyType<UpdateManagerRequest> },
+  TContext
+> => {
+  return useMutation(getUpdateManagerMutationOptions(options));
+};
+
+/**
+ * @summary Remove a manager or team member from this tenant
+ */
+export const getDeleteManagerUrl = (id: string) => {
+  return `/api/managers/${id}`;
+};
+
+export const deleteManager = async (
+  id: string,
+  options?: RequestInit,
+): Promise<OkResult> => {
+  return customFetch<OkResult>(getDeleteManagerUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteManagerMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteManager>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteManager>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["deleteManager"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteManager>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteManager(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteManagerMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteManager>>
+>;
+
+export type DeleteManagerMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Remove a manager or team member from this tenant
+ */
+export const useDeleteManager = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteManager>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteManager>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getDeleteManagerMutationOptions(options));
+};
+
+/**
+ * @summary Get this tenant's security policy
+ */
+export const getGetSecuritySettingsUrl = () => {
+  return `/api/security-settings`;
+};
+
+export const getSecuritySettings = async (
+  options?: RequestInit,
+): Promise<SecuritySettings> => {
+  return customFetch<SecuritySettings>(getGetSecuritySettingsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetSecuritySettingsQueryKey = () => {
+  return [`/api/security-settings`] as const;
+};
+
+export const getGetSecuritySettingsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSecuritySettings>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getSecuritySettings>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetSecuritySettingsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getSecuritySettings>>
+  > = ({ signal }) => getSecuritySettings({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSecuritySettings>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetSecuritySettingsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSecuritySettings>>
+>;
+export type GetSecuritySettingsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get this tenant's security policy
+ */
+
+export function useGetSecuritySettings<
+  TData = Awaited<ReturnType<typeof getSecuritySettings>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getSecuritySettings>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetSecuritySettingsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Update this tenant's security policy
+ */
+export const getUpdateSecuritySettingsUrl = () => {
+  return `/api/security-settings`;
+};
+
+export const updateSecuritySettings = async (
+  updateSecuritySettingsRequest: UpdateSecuritySettingsRequest,
+  options?: RequestInit,
+): Promise<SecuritySettings> => {
+  return customFetch<SecuritySettings>(getUpdateSecuritySettingsUrl(), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateSecuritySettingsRequest),
+  });
+};
+
+export const getUpdateSecuritySettingsMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateSecuritySettings>>,
+    TError,
+    { data: BodyType<UpdateSecuritySettingsRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateSecuritySettings>>,
+  TError,
+  { data: BodyType<UpdateSecuritySettingsRequest> },
+  TContext
+> => {
+  const mutationKey = ["updateSecuritySettings"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateSecuritySettings>>,
+    { data: BodyType<UpdateSecuritySettingsRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return updateSecuritySettings(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateSecuritySettingsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateSecuritySettings>>
+>;
+export type UpdateSecuritySettingsMutationBody =
+  BodyType<UpdateSecuritySettingsRequest>;
+export type UpdateSecuritySettingsMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Update this tenant's security policy
+ */
+export const useUpdateSecuritySettings = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateSecuritySettings>>,
+    TError,
+    { data: BodyType<UpdateSecuritySettingsRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateSecuritySettings>>,
+  TError,
+  { data: BodyType<UpdateSecuritySettingsRequest> },
+  TContext
+> => {
+  return useMutation(getUpdateSecuritySettingsMutationOptions(options));
+};
 
 /**
  * @summary Node reports status and pulls configuration

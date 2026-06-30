@@ -1,8 +1,9 @@
 import { randomUUID } from "crypto";
 import express, { type Express, type Request } from "express";
-import { isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import {
   db,
+  companiesTable,
   devicesTable,
   activityLogsTable,
   appCategoriesTable,
@@ -38,20 +39,56 @@ import { generateSecret, hashSecret } from "../src/lib/secrets";
 import { SESSION_COOKIE } from "../src/lib/session";
 
 /**
+ * Default tenant every seed helper and `makeApp` user is bound to, so the
+ * tenant-scoped routes (which filter by `req.user.companyId`) see the data the
+ * tests create. Isolation tests pass an explicit `companyId` to seed a second
+ * tenant and prove cross-tenant reads/writes are blocked.
+ */
+export const TEST_COMPANY_ID = "00000000-0000-4000-8000-00000000c0de";
+
+const ensuredCompanies = new Set<string>();
+
+/**
+ * Idempotently ensure a companies row exists for the given id so the nullable
+ * `company_id` foreign keys on tenant tables resolve. Cached per process.
+ */
+export async function ensureCompany(
+  companyId: string = TEST_COMPANY_ID,
+): Promise<string> {
+  if (ensuredCompanies.has(companyId)) return companyId;
+  await db
+    .insert(companiesTable)
+    .values({ id: companyId, name: `test-co-${companyId}` })
+    .onConflictDoNothing();
+  ensuredCompanies.add(companyId);
+  return companyId;
+}
+
+/**
  * Build an Express app that mounts the feature routers behind a stubbed auth
- * middleware. The real `requireRole` guards read `req.user.role`, so we inject a
- * synthetic user instead of standing up the full session/cookie stack.
+ * middleware. The real `requireRole` guards read `req.user.role` and the
+ * tenant-scoped handlers read `req.user.companyId`, so we inject a synthetic
+ * user (with a tenant for every role except Super User) instead of standing up
+ * the full session/cookie stack.
  */
 export function makeApp(
-  opts: { role?: UserRole; userId?: string } = {},
+  opts: { role?: UserRole; userId?: string; companyId?: string | null } = {},
 ): Express {
+  const role = opts.role ?? "company_admin";
+  const companyId =
+    opts.companyId !== undefined
+      ? opts.companyId
+      : role === "super_user"
+        ? null
+        : TEST_COMPANY_ID;
   const app = express();
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
   app.use((req, _res, next) => {
     (req as express.Request & { user: unknown }).user = {
       id: opts.userId ?? randomUUID(),
-      role: opts.role ?? "admin",
+      role,
+      companyId: companyId ?? undefined,
     };
     next();
   });
@@ -75,13 +112,16 @@ export async function createCategory(
   overrides: Partial<typeof appCategoriesTable.$inferInsert> = {},
 ): Promise<AppCategory> {
   const tag = randomUUID();
+  const { companyId = TEST_COMPANY_ID, ...rest } = overrides;
+  await ensureCompany(companyId);
   const [category] = await db
     .insert(appCategoriesTable)
     .values({
       pattern: `test-pattern-${tag}`,
       displayName: `test-cat-${tag}`,
       classification,
-      ...overrides,
+      companyId,
+      ...rest,
     })
     .returning();
   return category;
@@ -92,6 +132,8 @@ export async function createDevice(
   overrides: Partial<typeof devicesTable.$inferInsert> = {},
 ): Promise<Device> {
   const tag = randomUUID();
+  const { companyId = TEST_COMPANY_ID, ...rest } = overrides;
+  await ensureCompany(companyId);
   const [device] = await db
     .insert(devicesTable)
     .values({
@@ -100,7 +142,8 @@ export async function createDevice(
       osType: "linux",
       secretHash: "test-secret-hash",
       deviceGroup: "Unassigned",
-      ...overrides,
+      companyId,
+      ...rest,
     })
     .returning();
   return device;
@@ -119,6 +162,7 @@ export async function seedActivity(
   workedSeconds: number,
   idleSeconds = 0,
   categoryId: string | null = null,
+  companyId: string = TEST_COMPANY_ID,
 ): Promise<void> {
   // Stagger successive logs on the same device+day so they are SEQUENTIAL and
   // non-overlapping (a device never runs two foreground apps at once). The first
@@ -131,8 +175,10 @@ export async function seedActivity(
   const start = new Date(startMs);
   const end = new Date(startMs + workedSeconds * 1000);
   nextStartByDeviceDay.set(key, end.getTime());
+  await ensureCompany(companyId);
   await db.insert(activityLogsTable).values({
     deviceId,
+    companyId,
     processName: "test-process",
     windowTitle: "test window",
     categoryId,
@@ -154,10 +200,13 @@ export async function seedActivityAt(
   workedSeconds: number,
   idleSeconds = 0,
   categoryId: string | null = null,
+  companyId: string = TEST_COMPANY_ID,
 ): Promise<void> {
   const end = new Date(start.getTime() + workedSeconds * 1000);
+  await ensureCompany(companyId);
   await db.insert(activityLogsTable).values({
     deviceId,
+    companyId,
     processName: "test-process",
     windowTitle: "test window",
     categoryId,
@@ -171,12 +220,15 @@ export async function seedActivityAt(
 /** Insert a screenshot row for a device; returns the created row. */
 export async function createScreenshot(
   deviceId: string,
-  opts: { flagged?: boolean; capturedAt?: Date } = {},
+  opts: { flagged?: boolean; capturedAt?: Date; companyId?: string } = {},
 ): Promise<Screenshot> {
+  const companyId = opts.companyId ?? TEST_COMPANY_ID;
+  await ensureCompany(companyId);
   const [shot] = await db
     .insert(screenshotsTable)
     .values({
       deviceId,
+      companyId,
       storageKey: `test/${randomUUID()}.png`,
       fileSizeBytes: 1234,
       flagged: opts.flagged ?? false,
@@ -214,13 +266,16 @@ export function makeSyncApp(): Express {
 export async function createEnrollmentToken(
   overrides: Partial<typeof enrollmentTokensTable.$inferInsert> = {},
 ): Promise<EnrollmentToken> {
+  const { companyId = TEST_COMPANY_ID, ...rest } = overrides;
+  await ensureCompany(companyId);
   const [token] = await db
     .insert(enrollmentTokensTable)
     .values({
       token: `test-token-${randomUUID()}`,
       label: "test enrollment token",
       maxUses: 1,
-      ...overrides,
+      companyId,
+      ...rest,
     })
     .returning();
   return token;
@@ -231,14 +286,17 @@ export async function createDeviceCommand(
   deviceId: string,
   overrides: Partial<typeof deviceCommandsTable.$inferInsert> = {},
 ): Promise<DeviceCommand> {
+  const { companyId = TEST_COMPANY_ID, ...rest } = overrides;
+  await ensureCompany(companyId);
   const [command] = await db
     .insert(deviceCommandsTable)
     .values({
       deviceId,
+      companyId,
       commandType: "lock_screen",
       status: "pending",
       reason: "test command",
-      ...overrides,
+      ...rest,
     })
     .returning();
   return command;
@@ -275,32 +333,53 @@ export async function setGlobalSettings(values: {
   halfDayMiddayCutoff?: string | null;
   timezone?: string;
 }): Promise<void> {
+  await ensureCompany(TEST_COMPANY_ID);
   await db
     .insert(attendanceSettingsTable)
-    .values({ deviceId: null, ...values })
-    .onConflictDoNothing();
+    .values({ companyId: TEST_COMPANY_ID, deviceId: null, ...values })
+    .onConflictDoNothing({
+      target: attendanceSettingsTable.companyId,
+      where: sql`${attendanceSettingsTable.deviceId} is null and ${attendanceSettingsTable.deviceGroup} is null`,
+    });
   await db
     .update(attendanceSettingsTable)
     .set(values)
-    .where(isNull(attendanceSettingsTable.deviceId));
+    .where(
+      and(
+        eq(attendanceSettingsTable.companyId, TEST_COMPANY_ID),
+        isNull(attendanceSettingsTable.deviceId),
+        isNull(attendanceSettingsTable.deviceGroup),
+      ),
+    );
 }
 
 /**
  * Insert a user with a known plaintext password; returns the row and password.
- * Defaults to the `admin` role.
+ * Defaults to the `company_admin` role.
  */
 export async function createUser(
-  opts: { role?: UserRole; password?: string } = {},
+  opts: { role?: UserRole; password?: string; companyId?: string | null } = {},
 ): Promise<{ user: User; password: string }> {
   const tag = randomUUID();
   const password = opts.password ?? `pw-${tag}`;
+  const role = opts.role ?? "company_admin";
+  // Super Users live above all tenants and have no company; everyone else is
+  // bound to the default test tenant unless the caller overrides it.
+  const companyId =
+    opts.companyId !== undefined
+      ? opts.companyId
+      : role === "super_user"
+        ? null
+        : TEST_COMPANY_ID;
+  if (companyId) await ensureCompany(companyId);
   const [user] = await db
     .insert(usersTable)
     .values({
       username: `user-${tag}`,
       email: `${tag}@test.local`,
       passwordHash: hashPassword(password),
-      role: opts.role ?? "admin",
+      role,
+      companyId,
     })
     .returning();
   return { user, password };

@@ -3,6 +3,7 @@ import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { usersTable } from "./users";
+import { companiesTable } from "./companies";
 
 export const projectStatusEnum = pgEnum("project_status", [
   "active",
@@ -13,6 +14,9 @@ export const projectStatusEnum = pgEnum("project_status", [
 
 export const projectsTable = pgTable("projects", {
   id: uuid("id").primaryKey().defaultRandom(),
+  companyId: uuid("company_id").references(() => companiesTable.id, {
+    onDelete: "cascade",
+  }),
   name: text("name").notNull(),
   description: text("description"),
   client: text("client"),

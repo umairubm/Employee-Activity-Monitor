@@ -2,11 +2,13 @@ import { pgTable, uuid, text, timestamp, pgEnum } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { companiesTable } from "./companies";
 
 export const userRoleEnum = pgEnum("user_role", [
   "super_user",
-  "admin",
+  "company_admin",
   "team_member",
+  "manager",
 ]);
 
 export const usersTable = pgTable("users", {
@@ -15,6 +17,12 @@ export const usersTable = pgTable("users", {
   email: text("email").notNull().unique(),
   passwordHash: text("password_hash").notNull(),
   role: userRoleEnum("role").notNull().default("team_member"),
+  // Tenant this user belongs to. NULL only for Super Users (the SaaS owner),
+  // who live above all tenants. Enforced non-null for every other role by app
+  // logic + backfill.
+  companyId: uuid("company_id").references(() => companiesTable.id, {
+    onDelete: "cascade",
+  }),
   managedById: uuid("managed_by_id"),
   selfDashboardEnabled: text("self_dashboard_enabled").notNull().default("true"),
   createdAt: timestamp("created_at", { withTimezone: true })

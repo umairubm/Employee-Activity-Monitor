@@ -13,6 +13,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { usersTable } from "./users";
 import { projectsTable } from "./projects";
+import { companiesTable } from "./companies";
 
 export const taskStatusEnum = pgEnum("task_status", [
   "todo",
@@ -30,6 +31,9 @@ export const tasksTable = pgTable(
   "tasks",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    companyId: uuid("company_id").references(() => companiesTable.id, {
+      onDelete: "cascade",
+    }),
     projectId: uuid("project_id")
       .notNull()
       .references(() => projectsTable.id, { onDelete: "cascade" }),

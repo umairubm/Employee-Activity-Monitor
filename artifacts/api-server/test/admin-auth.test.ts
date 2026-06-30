@@ -54,7 +54,7 @@ beforeEach(() => {
 
 describe("POST /api/auth/login", () => {
   it("issues a session cookie for valid credentials", async () => {
-    const { user, password } = await newUser({ role: "admin" });
+    const { user, password } = await newUser({ role: "company_admin" });
     const res = await request(app)
       .post("/api/auth/login")
       .send({ username: user.username, password });
@@ -72,7 +72,7 @@ describe("POST /api/auth/login", () => {
   });
 
   it("rejects a wrong password with 401 and no cookie", async () => {
-    const { user } = await newUser({ role: "admin" });
+    const { user } = await newUser({ role: "company_admin" });
     const res = await request(app)
       .post("/api/auth/login")
       .send({ username: user.username, password: "definitely-wrong" });
@@ -108,7 +108,7 @@ describe("admin surface session enforcement", () => {
   });
 
   it("rejects an expired session (401)", async () => {
-    const { user } = await newUser({ role: "admin" });
+    const { user } = await newUser({ role: "company_admin" });
     const cookie = await makeSessionCookie(user.id, {
       expiresAt: new Date(Date.now() - 60_000),
     });
@@ -119,7 +119,7 @@ describe("admin surface session enforcement", () => {
   });
 
   it("rejects a revoked session (401)", async () => {
-    const { user } = await newUser({ role: "admin" });
+    const { user } = await newUser({ role: "company_admin" });
     const cookie = await makeSessionCookie(user.id, {
       revokedAt: new Date(),
     });
@@ -147,7 +147,7 @@ describe("admin surface role enforcement", () => {
   });
 
   it("admits an admin session across the admin surface (not 401/403)", async () => {
-    const { user, password } = await newUser({ role: "admin" });
+    const { user, password } = await newUser({ role: "company_admin" });
     const login = await request(app)
       .post("/api/auth/login")
       .send({ username: user.username, password });
@@ -161,7 +161,10 @@ describe("admin surface role enforcement", () => {
     }
   });
 
-  it("admits a super_user session too (not 401/403)", async () => {
+  it("rejects a super_user from the TENANT admin surface (403) — no company scope", async () => {
+    // A Super User manages companies, not any single tenant's data. They have no
+    // companyId, so every tenant-scoped admin route must reject them (403). This
+    // is the multi-tenant posture: cross-tenant power lives on /api/companies.
     const { user, password } = await newUser({ role: "super_user" });
     const login = await request(app)
       .post("/api/auth/login")
@@ -170,16 +173,38 @@ describe("admin surface role enforcement", () => {
 
     for (const route of ADMIN_ROUTES) {
       const res = await request(app).get(route).set("Cookie", cookie);
-      expect([401, 403], `${route} should admit super_user`).not.toContain(
-        res.status,
-      );
+      expect(res.status, `${route} should reject super_user`).toBe(403);
     }
+  });
+
+  it("admits a super_user on the companies surface (not 401/403)", async () => {
+    const { user, password } = await newUser({ role: "super_user" });
+    const login = await request(app)
+      .post("/api/auth/login")
+      .send({ username: user.username, password });
+    const cookie = login.headers["set-cookie"];
+
+    const res = await request(app).get("/api/companies").set("Cookie", cookie);
+    expect([401, 403], "super_user should access /api/companies").not.toContain(
+      res.status,
+    );
+  });
+
+  it("rejects a company_admin from the super-user companies surface (403)", async () => {
+    const { user, password } = await newUser({ role: "company_admin" });
+    const login = await request(app)
+      .post("/api/auth/login")
+      .send({ username: user.username, password });
+    const cookie = login.headers["set-cookie"];
+
+    const res = await request(app).get("/api/companies").set("Cookie", cookie);
+    expect(res.status).toBe(403);
   });
 });
 
 describe("login brute-force protection", () => {
   it("locks out after repeated failures, even for the correct password", async () => {
-    const { user, password } = await newUser({ role: "admin" });
+    const { user, password } = await newUser({ role: "company_admin" });
 
     // Five wrong attempts: all should be 401 (not yet locked).
     for (let i = 0; i < 5; i++) {
@@ -206,9 +231,9 @@ describe("login brute-force protection", () => {
   });
 
   it("does not lock out an unrelated account", async () => {
-    const { user: victim } = await newUser({ role: "admin" });
+    const { user: victim } = await newUser({ role: "company_admin" });
     const { user: other, password: otherPassword } = await newUser({
-      role: "admin",
+      role: "company_admin",
     });
 
     // Hammer the victim account into a lockout.
@@ -231,7 +256,7 @@ describe("login brute-force protection", () => {
   });
 
   it("resets the failure counter after a successful login", async () => {
-    const { user, password } = await newUser({ role: "admin" });
+    const { user, password } = await newUser({ role: "company_admin" });
 
     // Four failures (one short of the 5-failure threshold).
     for (let i = 0; i < 4; i++) {
@@ -259,7 +284,7 @@ describe("login brute-force protection", () => {
 
 describe("POST /api/auth/logout", () => {
   it("revokes the session so the cookie no longer authenticates", async () => {
-    const { user, password } = await newUser({ role: "admin" });
+    const { user, password } = await newUser({ role: "company_admin" });
     const login = await request(app)
       .post("/api/auth/login")
       .send({ username: user.username, password });

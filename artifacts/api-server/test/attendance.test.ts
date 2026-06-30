@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import request from "supertest";
-import { and, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import {
   db,
   devicesTable,
@@ -15,6 +15,7 @@ import {
   seedActivity,
   seedActivityAt,
   setGlobalSettings,
+  TEST_COMPANY_ID,
 } from "./helpers";
 
 const app = makeApp();
@@ -630,6 +631,7 @@ describe("override CRUD endpoints", () => {
     // The true global row is the only one with BOTH device_id and device_group
     // null; group overrides also have a null device_id.
     const globalWhere = and(
+      eq(attendanceSettingsTable.companyId, TEST_COMPANY_ID),
       isNull(attendanceSettingsTable.deviceId),
       isNull(attendanceSettingsTable.deviceGroup),
     );
@@ -652,10 +654,13 @@ describe("override CRUD endpoints", () => {
 
 describe("getGlobalSettings single-row guarantee", () => {
   it("keeps exactly one global row under concurrent reads", async () => {
-    // Remove the global row so concurrent callers race to seed it.
-    await db
-      .delete(attendanceSettingsTable)
-      .where(isNull(attendanceSettingsTable.deviceId));
+    // Remove this tenant's global row so concurrent callers race to seed it.
+    const tenantGlobalWhere = and(
+      eq(attendanceSettingsTable.companyId, TEST_COMPANY_ID),
+      isNull(attendanceSettingsTable.deviceId),
+      isNull(attendanceSettingsTable.deviceGroup),
+    );
+    await db.delete(attendanceSettingsTable).where(tenantGlobalWhere);
 
     const responses = await Promise.all(
       Array.from({ length: 12 }, () =>
@@ -670,7 +675,7 @@ describe("getGlobalSettings single-row guarantee", () => {
     const globals = await db
       .select()
       .from(attendanceSettingsTable)
-      .where(isNull(attendanceSettingsTable.deviceId));
+      .where(tenantGlobalWhere);
     expect(globals).toHaveLength(1);
   });
 });

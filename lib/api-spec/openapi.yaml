@@ -1279,6 +1279,195 @@ paths:
                 items:
                   $ref: "#/components/schemas/AuthUser"
 
+  /companies:
+    get:
+      operationId: listCompanies
+      tags: [companies]
+      summary: List all tenants (Super User)
+      responses:
+        "200":
+          description: Companies
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Company"
+    post:
+      operationId: createCompany
+      tags: [companies]
+      summary: Create a tenant and (optionally) its first Company Admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCompanyRequest"
+      responses:
+        "201":
+          description: Company created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateCompanyResult"
+  /companies/{id}:
+    get:
+      operationId: getCompany
+      tags: [companies]
+      summary: Get a tenant with its security settings and admins
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Company detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompanyDetail"
+  /companies/{id}/admins:
+    post:
+      operationId: addCompanyAdmin
+      tags: [companies]
+      summary: Add a Company Admin to an existing tenant
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAdminRequest"
+      responses:
+        "201":
+          description: Admin created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompanyUser"
+  /companies/{id}/suspend:
+    post:
+      operationId: suspendCompany
+      tags: [companies]
+      summary: Suspend a tenant
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Company suspended
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Company"
+  /companies/{id}/reactivate:
+    post:
+      operationId: reactivateCompany
+      tags: [companies]
+      summary: Reactivate a suspended tenant
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Company reactivated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Company"
+
+  /managers:
+    get:
+      operationId: listManagers
+      tags: [managers]
+      summary: List this tenant's managers and team members
+      responses:
+        "200":
+          description: Managers and team members
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CompanyUser"
+    post:
+      operationId: createManager
+      tags: [managers]
+      summary: Create a manager or team member in this tenant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateManagerRequest"
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompanyUser"
+  /managers/{id}:
+    patch:
+      operationId: updateManager
+      tags: [managers]
+      summary: Update a manager or team member in this tenant
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateManagerRequest"
+      responses:
+        "200":
+          description: User updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompanyUser"
+    delete:
+      operationId: deleteManager
+      tags: [managers]
+      summary: Remove a manager or team member from this tenant
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: User removed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResult"
+
+  /security-settings:
+    get:
+      operationId: getSecuritySettings
+      tags: [security-settings]
+      summary: Get this tenant's security policy
+      responses:
+        "200":
+          description: Security settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SecuritySettings"
+    put:
+      operationId: updateSecuritySettings
+      tags: [security-settings]
+      summary: Update this tenant's security policy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSecuritySettingsRequest"
+      responses:
+        "200":
+          description: Security settings updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SecuritySettings"
+
   /sync/heartbeat:
     post:
       operationId: heartbeat
@@ -1349,11 +1538,193 @@ components:
           type: string
         role:
           type: string
-          enum: [super_user, admin, team_member]
+          enum: [super_user, company_admin, manager, team_member]
+        companyId:
+          type: [string, "null"]
+          format: uuid
         createdAt:
           type: string
           format: date-time
       required: [id, username, email, role, createdAt]
+    OkResult:
+      type: object
+      properties:
+        ok:
+          type: boolean
+      required: [ok]
+    Company:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        status:
+          type: string
+          enum: [active, suspended]
+        createdById:
+          type: [string, "null"]
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, name, status, createdAt, updatedAt]
+    CompanyUser:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+          enum: [super_user, company_admin, manager, team_member]
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, username, email, role]
+    SecuritySettings:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        companyId:
+          type: string
+          format: uuid
+        passwordMinLength:
+          type: integer
+        passwordRequireUppercase:
+          type: boolean
+        passwordRequireNumber:
+          type: boolean
+        passwordRequireSymbol:
+          type: boolean
+        sessionTimeoutMinutes:
+          type: integer
+        allowedIpRanges:
+          type: array
+          items:
+            type: string
+        mfaRequired:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - companyId
+        - passwordMinLength
+        - passwordRequireUppercase
+        - passwordRequireNumber
+        - passwordRequireSymbol
+        - sessionTimeoutMinutes
+        - allowedIpRanges
+        - mfaRequired
+    CompanyDetail:
+      allOf:
+        - $ref: "#/components/schemas/Company"
+        - type: object
+          properties:
+            securitySettings:
+              oneOf:
+                - $ref: "#/components/schemas/SecuritySettings"
+                - type: "null"
+            admins:
+              type: array
+              items:
+                $ref: "#/components/schemas/CompanyUser"
+          required: [admins]
+    CreateAdminRequest:
+      type: object
+      properties:
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+      required: [username, email, password]
+    CreateCompanyRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        admin:
+          $ref: "#/components/schemas/CreateAdminRequest"
+      required: [name]
+    CreateCompanyResult:
+      type: object
+      properties:
+        company:
+          $ref: "#/components/schemas/Company"
+        admin:
+          oneOf:
+            - $ref: "#/components/schemas/CompanyUser"
+            - type: "null"
+      required: [company]
+    CreateManagerRequest:
+      type: object
+      properties:
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+        role:
+          type: string
+          enum: [manager, team_member]
+      required: [username, email, password]
+    UpdateManagerRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+        role:
+          type: string
+          enum: [manager, team_member]
+    UpdateSecuritySettingsRequest:
+      type: object
+      properties:
+        passwordMinLength:
+          type: integer
+          minimum: 6
+          maximum: 128
+        passwordRequireUppercase:
+          type: boolean
+        passwordRequireNumber:
+          type: boolean
+        passwordRequireSymbol:
+          type: boolean
+        sessionTimeoutMinutes:
+          type: integer
+          minimum: 5
+          maximum: 43200
+        allowedIpRanges:
+          type: array
+          items:
+            type: string
+        mfaRequired:
+          type: boolean
     DeviceAlertItem:
       type: object
       properties:

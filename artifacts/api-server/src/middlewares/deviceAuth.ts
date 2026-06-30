@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from "express";
 import { eq } from "drizzle-orm";
-import { db, devicesTable, type Device } from "@workspace/db";
+import { db, devicesTable, companiesTable, type Device } from "@workspace/db";
 import { hashSecret, safeEqualHex } from "../lib/secrets";
 
 export interface DeviceRequest extends Request {
@@ -27,13 +27,21 @@ export async function deviceAuth(
     return;
   }
 
-  const [device] = await db
-    .select()
+  const [row] = await db
+    .select({ device: devicesTable, companyStatus: companiesTable.status })
     .from(devicesTable)
+    .leftJoin(companiesTable, eq(devicesTable.companyId, companiesTable.id))
     .where(eq(devicesTable.id, deviceId));
 
+  const device = row?.device;
   if (!device || !safeEqualHex(device.secretHash, hashSecret(deviceSecret))) {
     res.status(401).json({ error: "Invalid device credentials" });
+    return;
+  }
+
+  // A suspended tenant loses all sync access immediately.
+  if (row.companyStatus === "suspended") {
+    res.status(403).json({ error: "Company account is suspended" });
     return;
   }
 

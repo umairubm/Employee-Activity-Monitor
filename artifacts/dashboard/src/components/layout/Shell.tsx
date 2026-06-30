@@ -1,47 +1,20 @@
 import React from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/lib/auth-context";
-import { 
-  LayoutDashboard, 
-  MonitorSmartphone, 
-  Activity, 
-  Image as ImageIcon, 
-  CalendarCheck,
-  Clock,
-  Clock4,
-  CalendarOff,
-  FolderKanban,
-  Tags, 
-  KeyRound, 
-  LogOut,
-  ShieldCheck,
-  Settings,
-  Download
-} from "lucide-react";
+import { LogOut, ShieldCheck } from "lucide-react";
 import { useLogout, getGetCurrentUserQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-
-const NAV_ITEMS = [
-  { href: "/", label: "Overview", icon: LayoutDashboard },
-  { href: "/devices", label: "Devices", icon: MonitorSmartphone },
-  { href: "/activity", label: "Activity Logs", icon: Activity },
-  { href: "/screenshots", label: "Screenshots", icon: ImageIcon },
-  { href: "/attendance", label: "Attendance", icon: CalendarCheck },
-  { href: "/timesheets", label: "Timesheets", icon: Clock },
-  { href: "/projects", label: "Projects & Tasks", icon: FolderKanban },
-  { href: "/shifts", label: "Shifts", icon: Clock4 },
-  { href: "/leave", label: "Leave", icon: CalendarOff },
-  { href: "/categories", label: "App Categories", icon: Tags },
-  { href: "/tokens", label: "Enrollment Tokens", icon: KeyRound },
-  { href: "/settings", label: "Agent Settings", icon: Settings },
-  { href: "/downloads", label: "Download Agent", icon: Download },
-];
+import { APP_ROUTES, canAccess } from "@/lib/navigation";
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const logout = useLogout();
+
+  const navItems = APP_ROUTES.filter(
+    (route) => route.nav && canAccess(route, user?.role),
+  );
 
   const handleLogout = () => {
     logout.mutate(undefined, {
@@ -65,7 +38,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </div>
         
         <nav className="flex-1 px-4 flex flex-col gap-1 overflow-y-auto">
-          {NAV_ITEMS.map((item) => {
+          {navItems.map((item) => {
             const isActive = location === item.href || (item.href !== "/" && location.startsWith(item.href));
             const Icon = item.icon;
             return (

@@ -7,6 +7,7 @@ import {
   type LeaveBalance,
 } from "@workspace/db";
 import { and, desc, eq } from "drizzle-orm";
+import { getCompanyId } from "../middlewares/tenant";
 import {
   isForeignKeyViolation,
   isUuid,
@@ -16,7 +17,19 @@ const router: IRouter = Router();
 
 const leaveTypes = ["annual", "sick", "casual", "unpaid"] as const;
 
-function shapeBalance(row: LeaveBalance & { username?: string | null }) {
+function shapeBalance(
+  row: Pick<
+    LeaveBalance,
+    | "id"
+    | "userId"
+    | "year"
+    | "leaveType"
+    | "allocatedDays"
+    | "usedDays"
+    | "createdAt"
+    | "updatedAt"
+  > & { username?: string | null },
+) {
   return {
     id: row.id,
     userId: row.userId,
@@ -34,6 +47,7 @@ function shapeBalance(row: LeaveBalance & { username?: string | null }) {
 // GET /api/leave-balances?userId=&year= - list balances
 router.get("/", async (req, res) => {
   try {
+    const companyId = getCompanyId(req);
     const userId = req.query.userId as string | undefined;
     const yearRaw = req.query.year as string | undefined;
     if (userId && !isUuid(userId)) {
@@ -48,7 +62,7 @@ router.get("/", async (req, res) => {
         return;
       }
     }
-    const conditions = [];
+    const conditions = [eq(leaveBalancesTable.companyId, companyId)];
     if (userId) conditions.push(eq(leaveBalancesTable.userId, userId));
     if (year !== undefined) conditions.push(eq(leaveBalancesTable.year, year));
 
@@ -66,7 +80,7 @@ router.get("/", async (req, res) => {
       })
       .from(leaveBalancesTable)
       .leftJoin(usersTable, eq(leaveBalancesTable.userId, usersTable.id))
-      .where(conditions.length ? and(...conditions) : undefined)
+      .where(and(...conditions))
       .orderBy(desc(leaveBalancesTable.year));
     res.json(rows.map(shapeBalance));
   } catch (error) {
@@ -84,6 +98,7 @@ const upsertSchema = z.object({
 // POST /api/leave-balances - create or update an allocation (preserves usedDays)
 router.post("/", async (req, res) => {
   try {
+    const companyId = getCompanyId(req);
     const parsed = upsertSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: "Invalid balance payload" });
@@ -92,6 +107,7 @@ router.post("/", async (req, res) => {
     const [row] = await db
       .insert(leaveBalancesTable)
       .values({
+        companyId,
         userId: parsed.data.userId,
         year: parsed.data.year,
         leaveType: parsed.data.leaveType,
@@ -126,13 +142,19 @@ router.post("/", async (req, res) => {
 // DELETE /api/leave-balances/:id - delete an allocation
 router.delete("/:id", async (req, res) => {
   try {
+    const companyId = getCompanyId(req);
     if (!isUuid(String(req.params.id))) {
       res.status(400).json({ error: "Invalid balance id" });
       return;
     }
     const [deleted] = await db
       .delete(leaveBalancesTable)
-      .where(eq(leaveBalancesTable.id, String(req.params.id)))
+      .where(
+        and(
+          eq(leaveBalancesTable.id, String(req.params.id)),
+          eq(leaveBalancesTable.companyId, companyId),
+        ),
+      )
       .returning({ id: leaveBalancesTable.id });
     if (!deleted) {
       res.status(404).json({ error: "Balance not found" });

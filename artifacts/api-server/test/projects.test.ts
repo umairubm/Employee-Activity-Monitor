@@ -21,9 +21,9 @@ let seededUserId: string;
 const createdProjectIds: string[] = [];
 
 beforeAll(async () => {
-  const { user } = await createUser({ role: "admin" });
+  const { user } = await createUser({ role: "company_admin" });
   seededUserId = user.id;
-  featureApp = makeApp({ role: "admin", userId: user.id });
+  featureApp = makeApp({ role: "company_admin", userId: user.id });
 });
 
 async function createProject(name: string) {

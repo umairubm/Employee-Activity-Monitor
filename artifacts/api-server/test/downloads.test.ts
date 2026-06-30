@@ -29,7 +29,7 @@ function makeDownloadsApp(role: string | null): Express {
     if (role) (req as any).user = { id: "u1", role };
     next();
   });
-  app.use("/downloads", requireRole("super_user", "admin"), downloadsRouter);
+  app.use("/downloads", requireRole("super_user", "company_admin"), downloadsRouter);
   return app;
 }
 
@@ -47,7 +47,7 @@ describe("downloads route", () => {
   });
 
   it("lists all platforms as unavailable when no release is reachable", async () => {
-    const app = makeDownloadsApp("admin");
+    const app = makeDownloadsApp("company_admin");
     const res = await request(app).get("/downloads");
     expect(res.status).toBe(200);
     const platforms = res.body.items.map((i: any) => i.platform).sort();
@@ -59,13 +59,13 @@ describe("downloads route", () => {
   });
 
   it("404s for an unknown platform", async () => {
-    const app = makeDownloadsApp("admin");
+    const app = makeDownloadsApp("company_admin");
     const res = await request(app).get("/downloads/solaris");
     expect(res.status).toBe(404);
   });
 
   it("404s for a known platform with no published installer", async () => {
-    const app = makeDownloadsApp("admin");
+    const app = makeDownloadsApp("company_admin");
     const res = await request(app).get("/downloads/windows");
     expect(res.status).toBe(404);
   });
@@ -91,7 +91,7 @@ describe("downloads route", () => {
     ];
     vi.mocked(getReleases).mockResolvedValueOnce(releases);
 
-    const app = makeDownloadsApp("admin");
+    const app = makeDownloadsApp("company_admin");
     const res = await request(app).get("/downloads");
     expect(res.status).toBe(200);
 
@@ -125,7 +125,7 @@ describe("downloads route", () => {
     ];
     vi.mocked(getReleases).mockResolvedValueOnce(releases);
 
-    const app = makeDownloadsApp("admin");
+    const app = makeDownloadsApp("company_admin");
     const res = await request(app).get("/downloads");
     expect(res.status).toBe(200);
 
@@ -151,7 +151,7 @@ describe("downloads route", () => {
     ];
     vi.mocked(getReleases).mockResolvedValueOnce(releases);
 
-    const app = makeDownloadsApp("admin");
+    const app = makeDownloadsApp("company_admin");
     const res = await request(app).get("/downloads");
     expect(res.status).toBe(200);
 

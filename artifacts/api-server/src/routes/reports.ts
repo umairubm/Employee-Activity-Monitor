@@ -19,6 +19,7 @@ import {
   sql,
 } from "drizzle-orm";
 import { coveredSecondsByKey, spanSecondsByKey, correctOverlap } from "../lib/activityTime";
+import { getCompanyId } from "../middlewares/tenant";
 
 const router: IRouter = Router();
 
@@ -68,6 +69,7 @@ function parseDateParam(raw: unknown): string | null {
 // GET /api/reports/summary?from=YYYY-MM-DD&to=YYYY-MM-DD - dashboard overview KPIs
 router.get("/summary", async (req, res) => {
   try {
+    const companyId = getCompanyId(req);
     const { group } = req.query as Record<string, string | undefined>;
     const from = parseDateParam(req.query.from);
     const to = parseDateParam(req.query.to);
@@ -89,7 +91,12 @@ router.get("/summary", async (req, res) => {
       ? db
           .select({ id: devicesTable.id })
           .from(devicesTable)
-          .where(eq(devicesTable.deviceGroup, group))
+          .where(
+            and(
+              eq(devicesTable.deviceGroup, group),
+              eq(devicesTable.companyId, companyId),
+            ),
+          )
       : null;
 
     const deviceGroupFilter = group
@@ -110,41 +117,41 @@ router.get("/summary", async (req, res) => {
         db
           .select({ value: count() })
           .from(devicesTable)
-          .where(deviceGroupFilter),
+          .where(and(eq(devicesTable.companyId, companyId), deviceGroupFilter)),
         db
           .select({ value: count() })
           .from(devicesTable)
           .where(
-            deviceGroupFilter
-              ? and(gt(devicesTable.lastSeenAt, onlineSince), deviceGroupFilter)
-              : gt(devicesTable.lastSeenAt, onlineSince),
+            and(
+              eq(devicesTable.companyId, companyId),
+              gt(devicesTable.lastSeenAt, onlineSince),
+              deviceGroupFilter,
+            ),
           ),
-        db.select({ value: count() }).from(usersTable),
+        db
+          .select({ value: count() })
+          .from(usersTable)
+          .where(eq(usersTable.companyId, companyId)),
         db
           .select({ value: count() })
           .from(screenshotsTable)
           .where(
-            screenshotGroupFilter
-              ? and(
-                  gte(screenshotsTable.capturedAt, rangeStart),
-                  lt(screenshotsTable.capturedAt, rangeEnd),
-                  screenshotGroupFilter,
-                )
-              : and(
-                  gte(screenshotsTable.capturedAt, rangeStart),
-                  lt(screenshotsTable.capturedAt, rangeEnd),
-                ),
+            and(
+              eq(screenshotsTable.companyId, companyId),
+              gte(screenshotsTable.capturedAt, rangeStart),
+              lt(screenshotsTable.capturedAt, rangeEnd),
+              screenshotGroupFilter,
+            ),
           ),
         db
           .select({ value: count() })
           .from(deviceCommandsTable)
           .where(
-            commandGroupFilter
-              ? and(
-                  eq(deviceCommandsTable.status, "pending"),
-                  commandGroupFilter,
-                )
-              : eq(deviceCommandsTable.status, "pending"),
+            and(
+              eq(deviceCommandsTable.companyId, companyId),
+              eq(deviceCommandsTable.status, "pending"),
+              commandGroupFilter,
+            ),
           ),
       ]);
 
@@ -168,24 +175,24 @@ router.get("/summary", async (req, res) => {
         eq(activityLogsTable.categoryId, appCategoriesTable.id),
       )
       .where(
-        activityGroupFilter
-          ? and(
-              gte(activityLogsTable.startedAt, rangeStart),
-              lt(activityLogsTable.startedAt, rangeEnd),
-              activityGroupFilter,
-            )
-          : and(
-              gte(activityLogsTable.startedAt, rangeStart),
-              lt(activityLogsTable.startedAt, rangeEnd),
-            ),
+        and(
+          eq(activityLogsTable.companyId, companyId),
+          gte(activityLogsTable.startedAt, rangeStart),
+          lt(activityLogsTable.startedAt, rangeEnd),
+          activityGroupFilter,
+        ),
       )
       .groupBy(activityLogsTable.deviceId);
 
+    const activityExtraWhere = and(
+      eq(activityLogsTable.companyId, companyId),
+      activityGroupFilter,
+    );
     const coveredByDevice = await coveredSecondsByKey({
       rangeStart,
       rangeEnd,
       keyExpr: sql`${activityLogsTable.deviceId}::text`,
-      extraWhere: activityGroupFilter,
+      extraWhere: activityExtraWhere,
     });
     // First→last span per device+day, summed per device for the range total.
     const spanByDevice = sumSpansByDevice(
@@ -193,7 +200,7 @@ router.get("/summary", async (req, res) => {
         rangeStart,
         rangeEnd,
         keyExpr: deviceDayKeyExpr,
-        extraWhere: activityGroupFilter,
+        extraWhere: activityExtraWhere,
       }),
     );
 
@@ -240,6 +247,7 @@ router.get("/summary", async (req, res) => {
 // GET /api/reports/leaderboard?from=YYYY-MM-DD&to=YYYY-MM-DD - per-device productivity
 router.get("/leaderboard", async (req, res) => {
   try {
+    const companyId = getCompanyId(req);
     const { group } = req.query as Record<string, string | undefined>;
     const from = parseDateParam(req.query.from);
     const to = parseDateParam(req.query.to);
@@ -275,11 +283,13 @@ router.get("/leaderboard", async (req, res) => {
       .where(
         group
           ? and(
+              eq(activityLogsTable.companyId, companyId),
               gte(activityLogsTable.startedAt, rangeStart),
               lt(activityLogsTable.startedAt, rangeEnd),
               eq(devicesTable.deviceGroup, group),
             )
           : and(
+              eq(activityLogsTable.companyId, companyId),
               gte(activityLogsTable.startedAt, rangeStart),
               lt(activityLogsTable.startedAt, rangeEnd),
             ),
@@ -288,14 +298,22 @@ router.get("/leaderboard", async (req, res) => {
 
     // Correct each device's naive sums for overlapping duplicate-agent logs.
     const leaderboardExtraWhere = group
-      ? inArray(
-          activityLogsTable.deviceId,
-          db
-            .select({ id: devicesTable.id })
-            .from(devicesTable)
-            .where(eq(devicesTable.deviceGroup, group)),
+      ? and(
+          eq(activityLogsTable.companyId, companyId),
+          inArray(
+            activityLogsTable.deviceId,
+            db
+              .select({ id: devicesTable.id })
+              .from(devicesTable)
+              .where(
+                and(
+                  eq(devicesTable.deviceGroup, group),
+                  eq(devicesTable.companyId, companyId),
+                ),
+              ),
+          ),
         )
-      : undefined;
+      : eq(activityLogsTable.companyId, companyId);
     const coveredByDevice = await coveredSecondsByKey({
       rangeStart,
       rangeEnd,
@@ -351,6 +369,7 @@ router.get("/leaderboard", async (req, res) => {
 // Per-group productivity aggregated over a date range (defaults to today).
 router.get("/group-comparison", async (req, res) => {
   try {
+    const companyId = getCompanyId(req);
     const from = parseDateParam(req.query.from);
     const to = parseDateParam(req.query.to);
     if (from === null || to === null) {
@@ -375,6 +394,7 @@ router.get("/group-comparison", async (req, res) => {
           deviceCount: count(devicesTable.id),
         })
         .from(devicesTable)
+        .where(eq(devicesTable.companyId, companyId))
         .groupBy(devicesTable.deviceGroup),
       // Per-device activity totals within the range (aggregated to groups in JS
       // after correcting each device for overlapping duplicate-agent logs).
@@ -393,6 +413,7 @@ router.get("/group-comparison", async (req, res) => {
         )
         .where(
           and(
+            eq(activityLogsTable.companyId, companyId),
             gte(activityLogsTable.startedAt, rangeStart),
             lt(activityLogsTable.startedAt, rangeEnd),
           ),
@@ -400,16 +421,22 @@ router.get("/group-comparison", async (req, res) => {
         .groupBy(activityLogsTable.deviceId, devicesTable.deviceGroup),
     ]);
 
+    const groupComparisonExtraWhere = eq(
+      activityLogsTable.companyId,
+      companyId,
+    );
     const coveredByDevice = await coveredSecondsByKey({
       rangeStart,
       rangeEnd,
       keyExpr: sql`${activityLogsTable.deviceId}::text`,
+      extraWhere: groupComparisonExtraWhere,
     });
     const spanByDevice = sumSpansByDevice(
       await spanSecondsByKey({
         rangeStart,
         rangeEnd,
         keyExpr: deviceDayKeyExpr,
+        extraWhere: groupComparisonExtraWhere,
       }),
     );
 

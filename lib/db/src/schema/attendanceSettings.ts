@@ -12,6 +12,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { devicesTable } from "./devices";
 import { shiftsTable } from "./shifts";
+import { companiesTable } from "./companies";
 
 /**
  * Attendance rules resolved with a most-specific-wins precedence:
@@ -22,6 +23,9 @@ import { shiftsTable } from "./shifts";
  */
 export const attendanceSettingsTable = pgTable("attendance_settings", {
   id: uuid("id").primaryKey().defaultRandom(),
+  companyId: uuid("company_id").references(() => companiesTable.id, {
+    onDelete: "cascade",
+  }),
   deviceId: uuid("device_id").references(() => devicesTable.id, {
     onDelete: "cascade",
   }),
@@ -78,7 +82,7 @@ export const attendanceSettingsTable = pgTable("attendance_settings", {
   // NULLs as distinct, so many null rows would be allowed. Indexing a constant
   // expression over the partial set forces every global row to share one key.
   uniqueIndex("attendance_settings_global_uniq")
-    .on(sql`((${t.deviceId} IS NULL))`)
+    .on(t.companyId)
     .where(sql`${t.deviceId} is null and ${t.deviceGroup} is null`),
   // At most one override row per device.
   uniqueIndex("attendance_settings_device_uniq")
@@ -86,7 +90,7 @@ export const attendanceSettingsTable = pgTable("attendance_settings", {
     .where(sql`${t.deviceId} is not null`),
   // At most one override row per team/group.
   uniqueIndex("attendance_settings_group_uniq")
-    .on(t.deviceGroup)
+    .on(t.companyId, t.deviceGroup)
     .where(sql`${t.deviceGroup} is not null`),
 ]);
 

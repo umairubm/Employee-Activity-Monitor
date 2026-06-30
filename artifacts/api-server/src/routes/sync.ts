@@ -97,6 +97,9 @@ router.post("/enroll", async (req: Request, res: Response): Promise<void> => {
           consentName: body.consentName,
           enrolledAt: existing.enrolledAt ?? now,
           enrolledViaTokenId: token.id,
+          // Bind the device to the token's tenant (re-enrollment can move a
+          // device between tenants if the new token belongs to another company).
+          companyId: token.companyId ?? existing.companyId,
           assignedUserId: token.assignedUserId ?? existing.assignedUserId,
           updatedAt: now,
         })
@@ -139,6 +142,8 @@ router.post("/enroll", async (req: Request, res: Response): Promise<void> => {
         consentName: body.consentName,
         enrolledAt: now,
         enrolledViaTokenId: token.id,
+        // The device inherits the enrolling token's tenant.
+        companyId: token.companyId,
         assignedUserId: token.assignedUserId ?? null,
       })
       .returning();
@@ -241,6 +246,7 @@ router.post(
       const category = classify(log.processName, categories);
       return {
         deviceId: device.id,
+        companyId: device.companyId,
         userId: device.assignedUserId,
         processName: log.processName,
         windowTitle: log.windowTitle ?? null,
@@ -264,6 +270,7 @@ router.post(
         await db.insert(deviceAlertsTable).values(
           changes.map((c) => ({
             deviceId: device.id,
+            companyId: device.companyId,
             field: c.field,
             oldValue: c.oldValue,
             newValue: c.newValue,
@@ -323,6 +330,7 @@ router.post(
       .insert(screenshotsTable)
       .values({
         deviceId: device.id,
+        companyId: device.companyId,
         userId: device.assignedUserId,
         storageKey: body.storageKey,
         fileSizeBytes: body.fileSizeBytes,

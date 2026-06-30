@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { activityLogsTable, devicesTable } from "@workspace/db";
 import { and, asc, desc, eq, gte, inArray, lt } from "drizzle-orm";
+import { getCompanyId } from "../middlewares/tenant";
 
 const router: IRouter = Router();
 
@@ -14,10 +15,11 @@ function parseLimit(raw: unknown, fallback: number, max: number): number {
 // GET /api/activity - activity log feed (filter by device/user)
 router.get("/", async (req, res) => {
   try {
+    const companyId = getCompanyId(req);
     const { deviceId, userId, group } = req.query as Record<string, string | undefined>;
     const limit = parseLimit(req.query.limit, 50, 200);
 
-    const conditions = [];
+    const conditions = [eq(activityLogsTable.companyId, companyId)];
     if (deviceId) conditions.push(eq(activityLogsTable.deviceId, deviceId));
     if (userId) conditions.push(eq(activityLogsTable.userId, userId));
     if (group)
@@ -27,12 +29,17 @@ router.get("/", async (req, res) => {
           db
             .select({ id: devicesTable.id })
             .from(devicesTable)
-            .where(eq(devicesTable.deviceGroup, group)),
+            .where(
+              and(
+                eq(devicesTable.deviceGroup, group),
+                eq(devicesTable.companyId, companyId),
+              ),
+            ),
         ),
       );
 
     const logs = await db.query.activityLogsTable.findMany({
-      where: conditions.length ? and(...conditions) : undefined,
+      where: and(...conditions),
       limit,
       orderBy: [desc(activityLogsTable.startedAt)],
     });
@@ -47,6 +54,7 @@ router.get("/", async (req, res) => {
 // bounded by a generous safety limit.
 router.get("/range", async (req, res) => {
   try {
+    const companyId = getCompanyId(req);
     const { deviceId, group } = req.query as Record<string, string | undefined>;
     const fromRaw = req.query.from;
     const toRaw = req.query.to;
@@ -62,6 +70,7 @@ router.get("/range", async (req, res) => {
     }
 
     const conditions = [
+      eq(activityLogsTable.companyId, companyId),
       gte(activityLogsTable.startedAt, from),
       lt(activityLogsTable.startedAt, to),
     ];
@@ -73,7 +82,12 @@ router.get("/range", async (req, res) => {
           db
             .select({ id: devicesTable.id })
             .from(devicesTable)
-            .where(eq(devicesTable.deviceGroup, group)),
+            .where(
+              and(
+                eq(devicesTable.deviceGroup, group),
+                eq(devicesTable.companyId, companyId),
+              ),
+            ),
         ),
       );
 
@@ -91,9 +105,15 @@ router.get("/range", async (req, res) => {
 // GET /api/activity/timeline - recent timeline view (app switches + idle gaps)
 router.get("/timeline", async (req, res) => {
   try {
+    const companyId = getCompanyId(req);
     const { deviceId } = req.query as Record<string, string | undefined>;
     const logs = await db.query.activityLogsTable.findMany({
-      where: deviceId ? eq(activityLogsTable.deviceId, deviceId) : undefined,
+      where: deviceId
+        ? and(
+            eq(activityLogsTable.companyId, companyId),
+            eq(activityLogsTable.deviceId, deviceId),
+          )
+        : eq(activityLogsTable.companyId, companyId),
       limit: 100,
       orderBy: [desc(activityLogsTable.startedAt)],
     });

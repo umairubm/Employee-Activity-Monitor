@@ -60,9 +60,9 @@ async function commandCount(deviceId: string): Promise<number> {
 }
 
 beforeAll(async () => {
-  const admin = await newUser({ role: "admin" });
+  const admin = await newUser({ role: "company_admin" });
   adminUserId = admin.user.id;
-  adminApp = makeApp({ role: "admin", userId: admin.user.id });
+  adminApp = makeApp({ role: "company_admin", userId: admin.user.id });
 
   const superUser = await newUser({ role: "super_user" });
   superApp = makeApp({ role: "super_user", userId: superUser.user.id });
@@ -119,14 +119,20 @@ describe("POST /devices/:id/commands", () => {
     expect(res.body.status).toBe("pending");
   });
 
-  it("lets a super_user issue commands as well", async () => {
+  it("rejects a super_user issuing tenant commands (403) — no company scope", async () => {
     const device = await newDevice();
     const res = await request(superApp)
       .post(`/devices/${device.id}/commands`)
       .send({ commandType: "lock_screen" });
 
-    expect(res.status).toBe(201);
-    expect(res.body.deviceId).toBe(device.id);
+    expect(res.status).toBe(403);
+
+    // Nothing was written.
+    const rows = await db
+      .select()
+      .from(deviceCommandsTable)
+      .where(eq(deviceCommandsTable.deviceId, device.id));
+    expect(rows).toHaveLength(0);
   });
 
   it("rejects a non-admin caller (403) and writes no command", async () => {
@@ -308,7 +314,7 @@ describe("PATCH /devices/:id/commands/:commandId/cancel", () => {
     expect(row.status).toBe("cancelled");
   });
 
-  it("lets a super_user cancel a pending command too", async () => {
+  it("rejects a super_user cancelling a tenant command (403) — no company scope", async () => {
     const device = await newDevice();
     const command = await createDeviceCommand(device.id, {
       issuedById: adminUserId,
@@ -318,8 +324,14 @@ describe("PATCH /devices/:id/commands/:commandId/cancel", () => {
       `/devices/${device.id}/commands/${command.id}/cancel`,
     );
 
-    expect(res.status).toBe(200);
-    expect(res.body.status).toBe("cancelled");
+    expect(res.status).toBe(403);
+
+    // The command is untouched.
+    const [row] = await db
+      .select()
+      .from(deviceCommandsTable)
+      .where(eq(deviceCommandsTable.id, command.id));
+    expect(row.status).toBe("pending");
   });
 
   it("records the cancel reason and the cancelling admin's id + timestamp", async () => {

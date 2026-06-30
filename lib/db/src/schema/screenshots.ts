@@ -12,6 +12,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { devicesTable } from "./devices";
 import { usersTable } from "./users";
+import { companiesTable } from "./companies";
 
 export const screenshotsTable = pgTable(
   "screenshots",
@@ -20,6 +21,9 @@ export const screenshotsTable = pgTable(
     deviceId: uuid("device_id")
       .notNull()
       .references(() => devicesTable.id, { onDelete: "cascade" }),
+    companyId: uuid("company_id").references(() => companiesTable.id, {
+      onDelete: "cascade",
+    }),
     userId: uuid("user_id").references(() => usersTable.id, {
       onDelete: "set null",
     }),

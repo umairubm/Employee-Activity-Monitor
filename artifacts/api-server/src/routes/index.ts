@@ -17,7 +17,11 @@ import leaveBalancesRouter from "./leaveBalances";
 import tokensRouter from "./tokens";
 import downloadsRouter from "./downloads";
 import syncRouter from "./sync";
+import companiesRouter from "./companies";
+import managersRouter from "./managers";
+import securitySettingsRouter from "./securitySettings";
 import { userAuth, requireRole } from "../middlewares/userAuth";
+import { requireCompany } from "../middlewares/tenant";
 
 const router: IRouter = Router();
 
@@ -26,26 +30,43 @@ router.use(healthRouter);
 router.use("/auth", authRouter); // login is public; me/logout guarded internally
 router.use("/sync", syncRouter); // device-authenticated internally
 
-// Admin surface: requires a valid session AND an admin/super_user role.
-// This is an admin-only console; enrollment tokens are credentials and the
-// monitoring data is sensitive, so the entire surface is role-gated, not just
-// the mutation handlers.
-const admin = [userAuth, requireRole("super_user", "admin")];
+// --- Super User surface (cross-tenant; no company context) ------------------
+// The SaaS owner manages tenants here. Super Users have NO company, so these
+// routes must NOT use requireCompany.
+const superUser = [userAuth, requireRole("super_user")];
+router.use("/companies", ...superUser, companiesRouter);
 
-router.use("/users", ...admin, usersRouter);
-router.use("/devices", ...admin, devicesRouter);
-router.use("/categories", ...admin, categoriesRouter);
-router.use("/activity", ...admin, activityRouter);
-router.use("/reports", ...admin, reportsRouter);
-router.use("/screenshots", ...admin, screenshotsRouter);
-router.use("/attendance", ...admin, attendanceRouter);
-router.use("/timesheets", ...admin, timesheetsRouter);
-router.use("/projects", ...admin, projectsRouter);
-router.use("/tasks", ...admin, tasksRouter);
-router.use("/shifts", ...admin, shiftsRouter);
-router.use("/leave-requests", ...admin, leaveRequestsRouter);
-router.use("/leave-balances", ...admin, leaveBalancesRouter);
-router.use("/tokens", ...admin, tokensRouter);
-router.use("/downloads", ...admin, downloadsRouter);
+// --- Company Admin surface (tenant-scoped, admin-only) ----------------------
+// Managing other users and the company's security policy is reserved for the
+// tenant's own Company Admin.
+const companyAdmin = [userAuth, requireRole("company_admin"), requireCompany];
+router.use("/managers", ...companyAdmin, managersRouter);
+router.use("/security-settings", ...companyAdmin, securitySettingsRouter);
+
+// --- Tenant console (Company Admin + Manager) -------------------------------
+// The monitoring console. requireCompany locks every query to the caller's
+// tenant; enrollment tokens are credentials and monitoring data is sensitive,
+// so the entire surface is role-gated, not just the mutation handlers.
+const tenant = [
+  userAuth,
+  requireRole("company_admin", "manager"),
+  requireCompany,
+];
+
+router.use("/users", ...tenant, usersRouter);
+router.use("/devices", ...tenant, devicesRouter);
+router.use("/categories", ...tenant, categoriesRouter);
+router.use("/activity", ...tenant, activityRouter);
+router.use("/reports", ...tenant, reportsRouter);
+router.use("/screenshots", ...tenant, screenshotsRouter);
+router.use("/attendance", ...tenant, attendanceRouter);
+router.use("/timesheets", ...tenant, timesheetsRouter);
+router.use("/projects", ...tenant, projectsRouter);
+router.use("/tasks", ...tenant, tasksRouter);
+router.use("/shifts", ...tenant, shiftsRouter);
+router.use("/leave-requests", ...tenant, leaveRequestsRouter);
+router.use("/leave-balances", ...tenant, leaveBalancesRouter);
+router.use("/tokens", ...tenant, tokensRouter);
+router.use("/downloads", ...tenant, downloadsRouter);
 
 export default router;

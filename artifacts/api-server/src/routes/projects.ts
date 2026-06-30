@@ -6,8 +6,9 @@ import {
   tasksTable,
   usersTable,
 } from "@workspace/db";
-import { asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import type { AuthedRequest } from "../middlewares/userAuth";
+import { getCompanyId } from "../middlewares/tenant";
 import {
   calendarDateSchema,
   isForeignKeyViolation,
@@ -22,7 +23,25 @@ const taskPriorities = ["low", "medium", "high"] as const;
 
 const dueDateSchema = calendarDateSchema.nullable();
 
-function shapeTask(row: typeof tasksTable.$inferSelect & { assignedUsername?: string | null }) {
+function shapeTask(
+  row: Pick<
+    typeof tasksTable.$inferSelect,
+    | "id"
+    | "projectId"
+    | "title"
+    | "description"
+    | "status"
+    | "priority"
+    | "assignedUserId"
+    | "estimatedMinutes"
+    | "loggedMinutes"
+    | "dueDate"
+    | "completedAt"
+    | "createdById"
+    | "createdAt"
+    | "updatedAt"
+  > & { assignedUsername?: string | null },
+) {
   return {
     id: row.id,
     projectId: row.projectId,
@@ -45,6 +64,7 @@ function shapeTask(row: typeof tasksTable.$inferSelect & { assignedUsername?: st
 // GET /api/projects?status= - list projects with task aggregates
 router.get("/", async (req, res) => {
   try {
+    const companyId = getCompanyId(req);
     const status = req.query.status as string | undefined;
     if (status && !projectStatuses.includes(status as never)) {
       res.status(400).json({ error: "Invalid status filter" });
@@ -54,7 +74,14 @@ router.get("/", async (req, res) => {
     const projects = await db
       .select()
       .from(projectsTable)
-      .where(status ? eq(projectsTable.status, status as never) : undefined)
+      .where(
+        status
+          ? and(
+              eq(projectsTable.companyId, companyId),
+              eq(projectsTable.status, status as never),
+            )
+          : eq(projectsTable.companyId, companyId),
+      )
       .orderBy(desc(projectsTable.createdAt));
 
     const agg = await db
@@ -68,6 +95,7 @@ router.get("/", async (req, res) => {
         loggedMinutes: sql<number>`coalesce(sum(${tasksTable.loggedMinutes}), 0)::int`,
       })
       .from(tasksTable)
+      .where(eq(tasksTable.companyId, companyId))
       .groupBy(tasksTable.projectId);
 
     const byProject = new Map(agg.map((a) => [a.projectId, a]));
@@ -105,6 +133,7 @@ const createProjectSchema = z.object({
 // POST /api/projects - create a project
 router.post("/", async (req, res) => {
   try {
+    const companyId = getCompanyId(req);
     const parsed = createProjectSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: "Invalid project payload" });
@@ -113,6 +142,7 @@ router.post("/", async (req, res) => {
     const [created] = await db
       .insert(projectsTable)
       .values({
+        companyId,
         name: parsed.data.name,
         description: parsed.data.description ?? null,
         client: parsed.data.client ?? null,
@@ -155,6 +185,7 @@ const updateProjectSchema = z.object({
 // PATCH /api/projects/:id - update a project
 router.patch("/:id", async (req, res) => {
   try {
+    const companyId = getCompanyId(req);
     if (!isUuid(String(req.params.id))) {
       res.status(400).json({ error: "Invalid project id" });
       return;
@@ -167,7 +198,12 @@ router.patch("/:id", async (req, res) => {
     const [updated] = await db
       .update(projectsTable)
       .set({ ...parsed.data, updatedAt: new Date() })
-      .where(eq(projectsTable.id, String(req.params.id)))
+      .where(
+        and(
+          eq(projectsTable.id, String(req.params.id)),
+          eq(projectsTable.companyId, companyId),
+        ),
+      )
       .returning();
     if (!updated) {
       res.status(404).json({ error: "Project not found" });
@@ -184,7 +220,12 @@ router.patch("/:id", async (req, res) => {
         loggedMinutes: sql<number>`coalesce(sum(${tasksTable.loggedMinutes}), 0)::int`,
       })
       .from(tasksTable)
-      .where(eq(tasksTable.projectId, updated.id));
+      .where(
+        and(
+          eq(tasksTable.projectId, updated.id),
+          eq(tasksTable.companyId, companyId),
+        ),
+      );
 
     const taskCount = a?.taskCount ?? 0;
     const doneCount = a?.doneCount ?? 0;
@@ -206,13 +247,19 @@ router.patch("/:id", async (req, res) => {
 // DELETE /api/projects/:id - delete a project (cascades tasks)
 router.delete("/:id", async (req, res) => {
   try {
+    const companyId = getCompanyId(req);
     if (!isUuid(String(req.params.id))) {
       res.status(400).json({ error: "Invalid project id" });
       return;
     }
     const [deleted] = await db
       .delete(projectsTable)
-      .where(eq(projectsTable.id, String(req.params.id)))
+      .where(
+        and(
+          eq(projectsTable.id, String(req.params.id)),
+          eq(projectsTable.companyId, companyId),
+        ),
+      )
       .returning({ id: projectsTable.id });
     if (!deleted) {
       res.status(404).json({ error: "Project not found" });
@@ -227,6 +274,7 @@ router.delete("/:id", async (req, res) => {
 // GET /api/projects/:id/tasks - list tasks for a project
 router.get("/:id/tasks", async (req, res) => {
   try {
+    const companyId = getCompanyId(req);
     const projectId = String(req.params.id);
     if (!isUuid(projectId)) {
       res.status(400).json({ error: "Invalid project id" });
@@ -235,7 +283,12 @@ router.get("/:id/tasks", async (req, res) => {
     const [project] = await db
       .select({ id: projectsTable.id })
       .from(projectsTable)
-      .where(eq(projectsTable.id, projectId));
+      .where(
+        and(
+          eq(projectsTable.id, projectId),
+          eq(projectsTable.companyId, companyId),
+        ),
+      );
     if (!project) {
       res.status(404).json({ error: "Project not found" });
       return;
@@ -260,7 +313,12 @@ router.get("/:id/tasks", async (req, res) => {
       })
       .from(tasksTable)
       .leftJoin(usersTable, eq(tasksTable.assignedUserId, usersTable.id))
-      .where(eq(tasksTable.projectId, projectId))
+      .where(
+        and(
+          eq(tasksTable.projectId, projectId),
+          eq(tasksTable.companyId, companyId),
+        ),
+      )
       .orderBy(asc(tasksTable.status), desc(tasksTable.createdAt));
     res.json(rows.map(shapeTask));
   } catch (error) {
@@ -281,6 +339,7 @@ const createTaskSchema = z.object({
 // POST /api/projects/:id/tasks - create a task in a project
 router.post("/:id/tasks", async (req, res) => {
   try {
+    const companyId = getCompanyId(req);
     const projectId = String(req.params.id);
     if (!isUuid(projectId)) {
       res.status(400).json({ error: "Invalid project id" });
@@ -289,7 +348,12 @@ router.post("/:id/tasks", async (req, res) => {
     const [project] = await db
       .select({ id: projectsTable.id })
       .from(projectsTable)
-      .where(eq(projectsTable.id, projectId));
+      .where(
+        and(
+          eq(projectsTable.id, projectId),
+          eq(projectsTable.companyId, companyId),
+        ),
+      );
     if (!project) {
       res.status(404).json({ error: "Project not found" });
       return;
@@ -303,6 +367,7 @@ router.post("/:id/tasks", async (req, res) => {
     const [created] = await db
       .insert(tasksTable)
       .values({
+        companyId,
         projectId,
         title: parsed.data.title,
         description: parsed.data.description ?? null,

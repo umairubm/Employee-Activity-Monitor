@@ -1,17 +1,20 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod/v4";
 import { db, appCategoriesTable } from "@workspace/db";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { requireRole } from "../middlewares/userAuth";
+import { getCompanyId } from "../middlewares/tenant";
 
 const router: IRouter = Router();
 
-// GET /api/categories - list app classification rules
-router.get("/", async (_req, res) => {
+// GET /api/categories - list app classification rules for this tenant
+router.get("/", async (req, res) => {
   try {
+    const companyId = getCompanyId(req);
     const rows = await db
       .select()
       .from(appCategoriesTable)
+      .where(eq(appCategoriesTable.companyId, companyId))
       .orderBy(asc(appCategoriesTable.displayName));
     res.json(rows);
   } catch (error) {
@@ -27,7 +30,7 @@ const updateSchema = z.object({
 });
 
 // PATCH /api/categories/:id - classify or rename an app category
-router.patch("/:id", requireRole("admin", "super_user"), async (req, res) => {
+router.patch("/:id", requireRole("company_admin", "manager"), async (req, res) => {
   try {
     const parsed = updateSchema.safeParse(req.body);
     if (!parsed.success || Object.keys(parsed.data).length === 0) {
@@ -35,10 +38,16 @@ router.patch("/:id", requireRole("admin", "super_user"), async (req, res) => {
       return;
     }
 
+    const companyId = getCompanyId(req);
     const [updated] = await db
       .update(appCategoriesTable)
       .set({ ...parsed.data, updatedAt: new Date() })
-      .where(eq(appCategoriesTable.id, String(req.params.id)))
+      .where(
+        and(
+          eq(appCategoriesTable.id, String(req.params.id)),
+          eq(appCategoriesTable.companyId, companyId),
+        ),
+      )
       .returning();
 
     if (!updated) {
