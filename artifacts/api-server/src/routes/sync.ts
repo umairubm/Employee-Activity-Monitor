@@ -8,6 +8,7 @@ import {
   screenshotsTable,
   deviceCommandsTable,
   deviceAlertsTable,
+  companiesTable,
   type Device,
 } from "@workspace/db";
 import {
@@ -41,6 +42,37 @@ class TenantMismatchError extends Error {
   constructor() {
     super("Device is already bound to a different company");
     this.name = "TenantMismatchError";
+  }
+}
+
+/**
+ * Raised inside the enroll transaction when the enrolling token's company is
+ * suspended. A suspended tenant loses ALL sync access — including the
+ * enroll/re-enroll path, not just authenticated heartbeat/activity. Caught
+ * below and mapped to 403.
+ */
+class SuspendedCompanyError extends Error {
+  constructor() {
+    super("Company account is suspended");
+    this.name = "SuspendedCompanyError";
+  }
+}
+
+/**
+ * Throws SuspendedCompanyError if the given company is suspended. Legacy tokens
+ * with a null companyId have no tenant to check and are left to other validation.
+ */
+async function assertCompanyActive(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  companyId: string | null,
+): Promise<void> {
+  if (!companyId) return;
+  const [company] = await tx
+    .select({ status: companiesTable.status })
+    .from(companiesTable)
+    .where(eq(companiesTable.id, companyId));
+  if (company?.status === "suspended") {
+    throw new SuspendedCompanyError();
   }
 }
 
@@ -99,6 +131,9 @@ router.post("/enroll", async (req: Request, res: Response): Promise<void> => {
 
       if (!token) return null; // invalid/expired/revoked -> 403 below
 
+      // A suspended tenant loses all sync access, including re-enrollment.
+      await assertCompanyActive(tx, existing.companyId ?? token.companyId);
+
       // A device's tenant binding is permanent. Once a device has been enrolled
       // into a company, re-enrolling with a token from a DIFFERENT company is
       // rejected — devices cannot be moved across tenant boundaries.
@@ -154,6 +189,10 @@ router.post("/enroll", async (req: Request, res: Response): Promise<void> => {
 
     if (!token) return null; // invalid/exhausted -> 403 below; nothing committed
 
+    // A suspended tenant cannot enroll new devices. Throwing here rolls back the
+    // use-count increment claimed above, so a suspended company never burns a use.
+    await assertCompanyActive(tx, token.companyId);
+
     const [created] = await tx
       .insert(devicesTable)
       .values({
@@ -176,6 +215,10 @@ router.post("/enroll", async (req: Request, res: Response): Promise<void> => {
   } catch (error) {
     if (error instanceof TenantMismatchError) {
       res.status(409).json({ error: error.message });
+      return;
+    }
+    if (error instanceof SuspendedCompanyError) {
+      res.status(403).json({ error: error.message });
       return;
     }
     throw error;

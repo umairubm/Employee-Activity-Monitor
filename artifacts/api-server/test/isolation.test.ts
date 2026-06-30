@@ -401,6 +401,101 @@ describe("a device's tenant binding is permanent", () => {
   });
 });
 
+describe("a suspended company cannot enroll devices", () => {
+  // Suspension must block the enroll/re-enroll path too, not just authenticated
+  // heartbeat/activity — otherwise a suspended tenant with previously-minted
+  // valid tokens could keep onboarding devices.
+  async function suspend(): Promise<void> {
+    await db
+      .insert(companiesTable)
+      .values({ id: COMPANY_SUSPENDED, name: "suspended-co", status: "suspended" })
+      .onConflictDoUpdate({
+        target: companiesTable.id,
+        set: { status: "suspended" },
+      });
+  }
+
+  it("rejects first-time enrollment with a suspended company's token (403) and does not create a device or burn a use", async () => {
+    await suspend();
+    const token = await createEnrollmentToken({
+      companyId: COMPANY_SUSPENDED,
+      maxUses: 5,
+    });
+    const hardwareHash = `hw-${randomUUID()}`;
+
+    const syncApp = makeSyncApp();
+    const res = await request(syncApp)
+      .post("/sync/enroll")
+      .send({
+        token: token.token,
+        hardwareHash,
+        systemName: "Suspended PC",
+        osType: "linux",
+        agentVersion: "1.0.0",
+        consentAcknowledged: true,
+        consentName: "Jane Operator",
+      });
+    expect(res.status, JSON.stringify(res.body)).toBe(403);
+
+    // No device was created and the token's use-count was rolled back.
+    const devices = await db
+      .select({ id: devicesTable.id })
+      .from(devicesTable)
+      .where(eq(devicesTable.hardwareHash, hardwareHash));
+    expect(devices).toHaveLength(0);
+    const [tokenRow] = await db
+      .select({ useCount: enrollmentTokensTable.useCount })
+      .from(enrollmentTokensTable)
+      .where(eq(enrollmentTokensTable.id, token.id));
+    expect(tokenRow.useCount).toBe(0);
+  });
+
+  it("rejects re-enrollment once the device's company is suspended (403)", async () => {
+    const syncApp = makeSyncApp();
+    const hardwareHash = `hw-${randomUUID()}`;
+
+    // Enroll while active.
+    const token = await createEnrollmentToken({
+      companyId: COMPANY_SUSPENDED,
+      maxUses: 5,
+    });
+    await db
+      .insert(companiesTable)
+      .values({ id: COMPANY_SUSPENDED, name: "suspended-co", status: "active" })
+      .onConflictDoUpdate({
+        target: companiesTable.id,
+        set: { status: "active" },
+      });
+    const enroll = await request(syncApp)
+      .post("/sync/enroll")
+      .send({
+        token: token.token,
+        hardwareHash,
+        systemName: "Suspended PC",
+        osType: "linux",
+        agentVersion: "1.0.0",
+        consentAcknowledged: true,
+        consentName: "Jane Operator",
+      });
+    expect(enroll.status, JSON.stringify(enroll.body)).toBe(201);
+
+    // Now suspend the company and try to re-enroll.
+    await suspend();
+    const reenroll = await request(syncApp)
+      .post("/sync/enroll")
+      .send({
+        token: token.token,
+        hardwareHash,
+        systemName: "Suspended PC",
+        osType: "linux",
+        agentVersion: "1.0.0",
+        consentAcknowledged: true,
+        consentName: "Jane Operator",
+      });
+    expect(reenroll.status).toBe(403);
+  });
+});
+
 describe("session lifetime honors the tenant's configured timeout", () => {
   // createSession must read company_security_settings.sessionTimeoutMinutes and
   // size the session TTL accordingly, instead of a fixed global 7-day TTL.
