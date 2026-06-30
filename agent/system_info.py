@@ -195,3 +195,25 @@ def collect() -> dict[str, Value]:
 
     # Drop empty strings so the dashboard never shows blank rows.
     return {k: v for k, v in info.items() if v not in ("", None)}
+
+
+# Hardware inventory changes rarely; refresh at most once an hour to avoid
+# spawning PowerShell/sysctl on every sync.
+_CACHE_TTL_SECONDS = 60 * 60
+_cache: dict[str, Value] = {}
+_cache_at: float = 0.0
+
+
+def get_cached(force: bool = False) -> dict[str, Value]:
+    """Return a cached system-info snapshot, refreshing at most hourly."""
+    global _cache, _cache_at
+    now = time.time()
+    if force or not _cache or (now - _cache_at) >= _CACHE_TTL_SECONDS:
+        try:
+            collected = collect()
+            if collected:
+                _cache = collected
+                _cache_at = now
+        except Exception:  # noqa: BLE001 - never let inventory break the sync
+            pass
+    return _cache

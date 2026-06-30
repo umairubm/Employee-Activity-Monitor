@@ -29,6 +29,7 @@ if __package__ in (None, ""):
     from agent import identity as identity_mod
     from agent import monitor as monitor_mod
     from agent import screenshot as screenshot_mod
+    from agent import system_info as system_info_mod
     from agent import tray as tray_mod
 else:
     from . import api as api_mod
@@ -37,9 +38,10 @@ else:
     from . import identity as identity_mod
     from . import monitor as monitor_mod
     from . import screenshot as screenshot_mod
+    from . import system_info as system_info_mod
     from . import tray as tray_mod
 
-AGENT_VERSION = "0.1.7"
+AGENT_VERSION = "1.2.0"
 POLL_SECONDS = 15
 
 
@@ -223,7 +225,7 @@ class MonitoringAgent:
             self._pending_logs.clear()
         if batch:
             try:
-                self.api.send_activity(batch)
+                self.api.send_activity(batch, system_info_mod.get_cached())
             except Exception as exc:  # noqa: BLE001
                 with self._lock:  # requeue on failure
                     self._pending_logs[0:0] = batch

@@ -26,3 +26,25 @@ server. The server (`artifacts/api-server/src/routes/sync.ts`, `deviceAuth.ts`,
 
 **How to apply:** when a new/changed client appears, diff its payloads against
 `lib/syncValidation.ts` and mirror `agent/api.py`. Never add a public sync route.
+
+## systemInfo is a flat record keyed by the dashboard's display field names
+
+The optional `systemInfo` on `POST /sync/activity` is a FLAT
+`record<string, string|number|boolean|null>` — NOT nested. For values to render,
+the keys must match the dashboard's `SYSTEM_INFO_GROUPS` field names *exactly*
+(`Host Name`, `Operating System`, `OS Version`, `Manufacturer`, `Model`,
+`Serial_Number`, `Processor`, `CPU`, `CPU_Core`, `Ram_Size`, `Ram_Type`,
+`Total Disk Space`, `HD Size`, `HD_Type`, `Available Space`, `Ip`). Send it as
+`systemInfo` (camelCase); `system_info` (snake_case) is silently ignored.
+
+**Why:** all 4 prod devices showed empty "System Information" because the Python
+agent's `send_activity` only ever sent `{logs}` — it collected no system info,
+while the Node agent already did. A nested payload would 400 the whole activity
+batch; a snake_case key would be dropped without error. The Windows installer
+packages the **Python** agent (PyInstaller), so the Node agent sending it did not
+help production.
+
+**How to apply:** keep both agents' systemInfo field sets aligned; collect
+best-effort and OMIT empty snapshots (don't send `{}`). Missing optional fields
+are fine — they just don't render. A non-NULL `devices.system_info` only appears
+after a *rebuilt* agent is redeployed and sends its next activity batch.
