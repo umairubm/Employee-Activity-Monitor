@@ -220,7 +220,14 @@ class MonitoringAgent:
         if batch:
             try:
                 try:
-                    system_hardware_details = system_info_mod.sysinfo.system_info
+                    raw_sysinfo = system_info_mod.sysinfo.system_info
+                    if isinstance(raw_sysinfo, dict):
+                        # The spec dictates that empty strings must be dropped before sending
+                        system_hardware_details = {
+                            k: v for k, v in raw_sysinfo.items() if v != ""
+                        }
+                    else:
+                        system_hardware_details = raw_sysinfo
                 except Exception:
                     system_hardware_details = None
 

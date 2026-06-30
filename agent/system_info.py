@@ -41,8 +41,8 @@ class SysInfo:
                 'Manufacturer': 'Unknown',
                 'Model': 'Unknown',
                 'Serial_Number': 'Unknown',
-                'Ram_Type': 'Unknown',
-                'HD_Type': 'Unknown'
+                'Ram_Type': None,
+                'HD_Type': None
             }
 
     def get_ip(self):
