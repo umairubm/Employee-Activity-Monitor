@@ -7,85 +7,43 @@ import subprocess
 class SysInfo:
     @property
     def system_info(self):
-        # Basic System Info
-        info = {
-            'Processor': platform.processor() or "Unknown",
-            'CPU': psutil.cpu_count(logical=True),
-            'CPU_Core': str(psutil.cpu_count(logical=False)),
-            'Ip': self.get_ip(),
-            'OS Version': platform.version(),
-            'Operating System': platform.system() + " " + platform.release(),
-            'Host Name': socket.gethostname(),
-            'Total Disk Space': self.get_disk_space('total'),
-            'Available Space': self.get_disk_space('free'),
-            'HD Size': self.get_disk_space('total'),
-            'Ram_Size': f"{round(psutil.virtual_memory().total / (1024**3))} GB",
-            'Manufacturer': 'Unknown',
-            'Model': 'Unknown',
-            'Serial_Number': 'Unknown',
-            'Ram_Type': 'Unknown',
-            'HD_Type': 'Unknown'
-        }
-        
-        # OS Specific Hardware Details
-        if sys.platform.startswith('win'):
-            try:
-                # Manufacturer and Model
-                sys_output = subprocess.check_output("wmic csproduct get vendor,name,identifyingnumber", shell=True, text=True, stderr=subprocess.DEVNULL).strip().split('\n')
-                if len(sys_output) > 1:
-                    parts = sys_output[1].split()
-                    if len(parts) >= 3:
-                        info['Serial_Number'] = parts[-1]
-                        info['Manufacturer'] = parts[0]
-                        info['Model'] = " ".join(parts[1:-1])
-
-                # CPU Processor Name
-                cpu_output = subprocess.check_output("wmic cpu get name", shell=True, text=True, stderr=subprocess.DEVNULL).strip().split('\n')
-                if len(cpu_output) > 1:
-                    info['Processor'] = cpu_output[1].strip()
-
-                # RAM Type
-                mem_output = subprocess.check_output("wmic memorychip get memorytype", shell=True, text=True, stderr=subprocess.DEVNULL).strip().split('\n')
-                if len(mem_output) > 1:
-                    mem_type = mem_output[1].strip()
-                    type_map = {'20': 'DDR', '21': 'DDR2', '24': 'DDR3', '26': 'DDR4', '34': 'DDR5'}
-                    info['Ram_Type'] = type_map.get(mem_type, mem_type)
-            except Exception:
-                pass
+        try:
+            import importlib
+            import sys
+            import os
+            
+            # Temporarily remove local directory from sys.path to avoid importing this file circularly
+            local_dir = os.path.dirname(os.path.abspath(__file__))
+            original_path = sys.path.copy()
+            if local_dir in sys.path:
+                sys.path.remove(local_dir)
+            if '' in sys.path:
+                sys.path.remove('')
                 
-        elif sys.platform == 'darwin':
-            try:
-                sys_output = subprocess.check_output(["system_profiler", "SPHardwareDataType"], text=True, stderr=subprocess.DEVNULL)
-                for line in sys_output.split('\n'):
-                    if 'Serial Number' in line:
-                        info['Serial_Number'] = line.split(':')[-1].strip()
-                    elif 'Model Name' in line:
-                        info['Model'] = line.split(':')[-1].strip()
-                    elif 'Processor Name' in line:
-                        info['Processor'] = line.split(':')[-1].strip()
-                info['Manufacturer'] = 'Apple'
-            except Exception:
-                pass
-                
-        elif sys.platform.startswith('linux'):
-            try:
-                with open('/sys/class/dmi/id/sys_vendor', 'r') as f:
-                    info['Manufacturer'] = f.read().strip()
-                with open('/sys/class/dmi/id/product_name', 'r') as f:
-                    info['Model'] = f.read().strip()
-                with open('/sys/class/dmi/id/product_serial', 'r') as f:
-                    info['Serial_Number'] = f.read().strip()
-                
-                # CPU Processor Name
-                with open('/proc/cpuinfo', 'r') as f:
-                    for line in f:
-                        if 'model name' in line:
-                            info['Processor'] = line.split(':')[1].strip()
-                            break
-            except Exception:
-                pass
-                
-        return info
+            pkg = importlib.import_module("system_info")
+            sys.path = original_path
+            
+            return pkg.sysinfo.sysInfo
+        except Exception as e:
+            # Fallback if the pip package is not installed or fails
+            return {
+                'Processor': 'Unknown',
+                'CPU': 0,
+                'CPU_Core': '0',
+                'Ip': '127.0.0.1',
+                'OS Version': 'Unknown',
+                'Operating System': 'Unknown',
+                'Host Name': 'Unknown',
+                'Total Disk Space': 'Unknown',
+                'Available Space': 'Unknown',
+                'HD Size': 'Unknown',
+                'Ram_Size': 'Unknown',
+                'Manufacturer': 'Unknown',
+                'Model': 'Unknown',
+                'Serial_Number': 'Unknown',
+                'Ram_Type': 'Unknown',
+                'HD_Type': 'Unknown'
+            }
 
     def get_ip(self):
         try:
