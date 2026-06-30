@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, it } from "vitest";
 import { randomUUID } from "crypto";
 import { and, eq, inArray } from "drizzle-orm";
+import express from "express";
 import request from "supertest";
 import {
   db,
@@ -10,10 +11,13 @@ import {
   screenshotsTable,
   activityLogsTable,
   companiesTable,
+  companySecuritySettingsTable,
   usersTable,
   pool,
 } from "@workspace/db";
 import realApp from "../src/app";
+import managersRouter from "../src/routes/managers";
+import { createSession } from "../src/lib/session";
 import {
   makeApp,
   makeSyncApp,
@@ -340,5 +344,146 @@ describe("sync activity classification is tenant-scoped", () => {
       );
     expect(inA).toHaveLength(1);
     expect(inB).toHaveLength(0);
+  });
+});
+
+describe("a device's tenant binding is permanent", () => {
+  // Once a device is enrolled into a company, re-enrolling it with a token that
+  // belongs to a DIFFERENT company must be rejected — devices cannot be moved
+  // across tenant boundaries (that would transfer device ownership/data).
+  it("rejects re-enrollment with another company's token (409) and keeps the original binding", async () => {
+    const syncApp = makeSyncApp();
+    const hardwareHash = `hw-${randomUUID()}`;
+
+    const tokenA = await createEnrollmentToken({
+      companyId: COMPANY_A,
+      maxUses: 5,
+    });
+    const enroll = await request(syncApp)
+      .post("/sync/enroll")
+      .send({
+        token: tokenA.token,
+        hardwareHash,
+        systemName: "Roaming PC",
+        osType: "linux",
+        agentVersion: "1.0.0",
+        consentAcknowledged: true,
+        consentName: "Jane Operator",
+      });
+    expect(enroll.status, JSON.stringify(enroll.body)).toBe(201);
+    const deviceId = enroll.body.deviceId as string;
+
+    const tokenB = await createEnrollmentToken({
+      companyId: COMPANY_B,
+      maxUses: 5,
+    });
+    const reenroll = await request(syncApp)
+      .post("/sync/enroll")
+      .send({
+        token: tokenB.token,
+        hardwareHash,
+        systemName: "Roaming PC",
+        osType: "linux",
+        agentVersion: "1.0.0",
+        consentAcknowledged: true,
+        consentName: "Jane Operator",
+      });
+    expect(reenroll.status).toBe(409);
+
+    // The device is still bound to company A — B's token did not move it.
+    const [row] = await db
+      .select({ companyId: devicesTable.companyId })
+      .from(devicesTable)
+      .where(eq(devicesTable.id, deviceId));
+    expect(row.companyId).toBe(COMPANY_A);
+  });
+});
+
+describe("session lifetime honors the tenant's configured timeout", () => {
+  // createSession must read company_security_settings.sessionTimeoutMinutes and
+  // size the session TTL accordingly, instead of a fixed global 7-day TTL.
+  function stubReq() {
+    return { headers: {}, ip: "127.0.0.1" } as unknown as import("express").Request;
+  }
+
+  it("uses the company's sessionTimeoutMinutes for tenant users", async () => {
+    const companyId = randomUUID();
+    createdCompanyIds.push(companyId);
+    await db.insert(companiesTable).values({ id: companyId, name: `tz-${companyId}` });
+    await db
+      .insert(companySecuritySettingsTable)
+      .values({ companyId, sessionTimeoutMinutes: 5 });
+    const { user } = await createUser({ role: "company_admin", companyId });
+
+    const before = Date.now();
+    const { expiresAt } = await createSession(user.id, stubReq(), companyId);
+    const ttlMs = expiresAt.getTime() - before;
+    // ~5 minutes (allow a generous window for test/DB latency).
+    expect(ttlMs).toBeGreaterThan(4 * 60_000);
+    expect(ttlMs).toBeLessThan(6 * 60_000);
+  });
+
+  it("falls back to the 7-day default for Super Users (no company)", async () => {
+    const { user } = await createUser({ role: "super_user" });
+    createdUserIds.push(user.id);
+    const before = Date.now();
+    const { expiresAt } = await createSession(user.id, stubReq(), null);
+    const ttlMs = expiresAt.getTime() - before;
+    const sevenDays = 7 * 24 * 60 * 60_000;
+    expect(Math.abs(ttlMs - sevenDays)).toBeLessThan(60_000);
+  });
+});
+
+describe("user creation enforces the tenant's password policy", () => {
+  function makeManagersApp(companyId: string) {
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => {
+      (req as express.Request & { user: unknown }).user = {
+        id: randomUUID(),
+        role: "company_admin",
+        companyId,
+      };
+      next();
+    });
+    app.use("/managers", managersRouter);
+    return app;
+  }
+
+  it("rejects a weak password and accepts a compliant one (per company_security_settings)", async () => {
+    const companyId = randomUUID();
+    createdCompanyIds.push(companyId);
+    await db
+      .insert(companiesTable)
+      .values({ id: companyId, name: `pw-${companyId}` });
+    await db.insert(companySecuritySettingsTable).values({
+      companyId,
+      passwordMinLength: 12,
+      passwordRequireUppercase: true,
+      passwordRequireNumber: true,
+    });
+    const app = makeManagersApp(companyId);
+
+    // Passes the static zod min(8) but fails the tenant policy (too short,
+    // no uppercase, no number) -> 400 from the policy check, not a 201.
+    const weak = await request(app)
+      .post("/managers")
+      .send({
+        username: `weak-${randomUUID()}`,
+        email: `${randomUUID()}@test.local`,
+        password: "lowercase",
+        role: "manager",
+      });
+    expect(weak.status).toBe(400);
+
+    const strong = await request(app)
+      .post("/managers")
+      .send({
+        username: `strong-${randomUUID()}`,
+        email: `${randomUUID()}@test.local`,
+        password: "StrongPass123",
+        role: "manager",
+      });
+    expect(strong.status, JSON.stringify(strong.body)).toBe(201);
   });
 });

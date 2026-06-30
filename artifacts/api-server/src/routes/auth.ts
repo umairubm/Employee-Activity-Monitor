@@ -70,7 +70,11 @@ router.post("/login", loginRateLimit, async (req, res) => {
   }
 
   clearLoginFailures(req, username);
-  const { token, expiresAt } = await createSession(user.id, req);
+  const { token, expiresAt } = await createSession(
+    user.id,
+    req,
+    user.companyId,
+  );
   setSessionCookie(res, token, expiresAt);
   res.json(publicUser(user));
 });

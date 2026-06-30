@@ -33,6 +33,17 @@ import { ObjectStorageService } from "../lib/objectStorage";
 
 const router: IRouter = Router();
 
+/**
+ * Raised inside the enroll transaction when a re-enrollment would move an
+ * already-bound device to a different tenant. Caught below and mapped to 409.
+ */
+class TenantMismatchError extends Error {
+  constructor() {
+    super("Device is already bound to a different company");
+    this.name = "TenantMismatchError";
+  }
+}
+
 /** Config block the agent uses to schedule its own work. */
 function deviceConfig(device: Device) {
   return {
@@ -60,7 +71,9 @@ router.post("/enroll", async (req: Request, res: Response): Promise<void> => {
   const secret = generateSecret();
   const secretHash = hashSecret(secret);
 
-  const device = await db.transaction(async (tx): Promise<Device | null> => {
+  let device: Device | null;
+  try {
+    device = await db.transaction(async (tx): Promise<Device | null> => {
     const [existing] = await tx
       .select()
       .from(devicesTable)
@@ -86,6 +99,17 @@ router.post("/enroll", async (req: Request, res: Response): Promise<void> => {
 
       if (!token) return null; // invalid/expired/revoked -> 403 below
 
+      // A device's tenant binding is permanent. Once a device has been enrolled
+      // into a company, re-enrolling with a token from a DIFFERENT company is
+      // rejected — devices cannot be moved across tenant boundaries.
+      if (
+        existing.companyId &&
+        token.companyId &&
+        existing.companyId !== token.companyId
+      ) {
+        throw new TenantMismatchError();
+      }
+
       const [updated] = await tx
         .update(devicesTable)
         .set({
@@ -97,9 +121,9 @@ router.post("/enroll", async (req: Request, res: Response): Promise<void> => {
           consentName: body.consentName,
           enrolledAt: existing.enrolledAt ?? now,
           enrolledViaTokenId: token.id,
-          // Bind the device to the token's tenant (re-enrollment can move a
-          // device between tenants if the new token belongs to another company).
-          companyId: token.companyId ?? existing.companyId,
+          // Keep the device's existing tenant binding; only adopt the token's
+          // company for a legacy device that has none yet.
+          companyId: existing.companyId ?? token.companyId,
           assignedUserId: token.assignedUserId ?? existing.assignedUserId,
           updatedAt: now,
         })
@@ -148,7 +172,14 @@ router.post("/enroll", async (req: Request, res: Response): Promise<void> => {
       })
       .returning();
     return created;
-  });
+    });
+  } catch (error) {
+    if (error instanceof TenantMismatchError) {
+      res.status(409).json({ error: error.message });
+      return;
+    }
+    throw error;
+  }
 
   if (!device) {
     res.status(403).json({ error: "Enrollment token invalid or exhausted" });

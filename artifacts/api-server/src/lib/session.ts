@@ -4,6 +4,7 @@ import {
   sessionsTable,
   usersTable,
   companiesTable,
+  companySecuritySettingsTable,
   type User,
   type CompanyStatus,
 } from "@workspace/db";
@@ -11,15 +12,31 @@ import { and, eq, gt, isNull } from "drizzle-orm";
 import { generateSecret, hashSecret } from "./secrets";
 
 export const SESSION_COOKIE = "wa_session";
-const TTL_MS = 1000 * 60 * 60 * 24 * 7;
+const DEFAULT_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 
-/** Create a session row (storing only the token hash) and return the plaintext token. */
+/**
+ * Create a session row (storing only the token hash) and return the plaintext
+ * token. The session lifetime is the caller's tenant `sessionTimeoutMinutes`
+ * (from `company_security_settings`); Super Users and tenants without a
+ * settings row fall back to the default 7-day TTL.
+ */
 export async function createSession(
   userId: string,
   req: Request,
+  companyId: string | null,
 ): Promise<{ token: string; expiresAt: Date }> {
   const token = generateSecret();
-  const expiresAt = new Date(Date.now() + TTL_MS);
+  let ttlMs = DEFAULT_TTL_MS;
+  if (companyId) {
+    const [settings] = await db
+      .select({ minutes: companySecuritySettingsTable.sessionTimeoutMinutes })
+      .from(companySecuritySettingsTable)
+      .where(eq(companySecuritySettingsTable.companyId, companyId));
+    if (settings) {
+      ttlMs = settings.minutes * 60 * 1000;
+    }
+  }
+  const expiresAt = new Date(Date.now() + ttlMs);
   await db.insert(sessionsTable).values({
     userId,
     tokenHash: hashSecret(token),

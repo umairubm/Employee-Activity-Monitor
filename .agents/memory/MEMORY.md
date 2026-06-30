@@ -1,3 +1,4 @@
+- [Tenant scoping & policy enforcement in shared helpers](tenant-scoping-shared-helpers.md) — every helper touching a tenant-owned table (incl. sync auto-discovery, session/password policy, device binding) must take+apply companyId; routes alone aren't enough.
 - [Admin API authorization posture](admin-surface-authz.md) — whole admin API + dashboard is role-gated to admin/super_user (reads too), because the token list returns plaintext credentials.
 - [Inno Setup [Code] gotchas](inno-setup-pascal.md) — Windows installer .iss only compiles in CI; never start a line with `#` (ISPP directive) and TNewCheckBox has no WordWrap.
 - [Desktop agent installers + downloads](agent-installers.md) — agent can't cross-compile from Linux (build .exe/.dmg on GitHub Actions); dashboard resolves each platform's installer across recent Releases.

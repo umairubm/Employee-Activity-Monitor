@@ -2,7 +2,11 @@ import { Router, type IRouter } from "express";
 import { z } from "zod/v4";
 import { db, usersTable } from "@workspace/db";
 import { and, asc, eq, inArray } from "drizzle-orm";
-import { hashPassword } from "../lib/passwords";
+import {
+  hashPassword,
+  validatePasswordPolicy,
+  PasswordPolicyError,
+} from "../lib/passwords";
 import { getCompanyId } from "../middlewares/tenant";
 
 const router: IRouter = Router();
@@ -65,6 +69,7 @@ router.post("/", async (req, res) => {
   }
   try {
     const companyId = getCompanyId(req);
+    await validatePasswordPolicy(companyId, parsed.data.password);
     const [user] = await db
       .insert(usersTable)
       .values({
@@ -87,6 +92,10 @@ router.post("/", async (req, res) => {
       res.status(409).json({ error: "Username or email already in use" });
       return;
     }
+    if (error instanceof PasswordPolicyError) {
+      res.status(400).json({ error: error.message });
+      return;
+    }
     res.status(500).json({ error: (error as Error).message });
   }
 });
@@ -103,8 +112,10 @@ router.patch("/:id", async (req, res) => {
     const updates: Record<string, unknown> = { updatedAt: new Date() };
     if (parsed.data.email) updates.email = parsed.data.email;
     if (parsed.data.role) updates.role = parsed.data.role;
-    if (parsed.data.password)
+    if (parsed.data.password) {
+      await validatePasswordPolicy(companyId, parsed.data.password);
       updates.passwordHash = hashPassword(parsed.data.password);
+    }
 
     const [updated] = await db
       .update(usersTable)
@@ -133,6 +144,10 @@ router.patch("/:id", async (req, res) => {
   } catch (error) {
     if (uniqueViolation(error)) {
       res.status(409).json({ error: "Email already in use" });
+      return;
+    }
+    if (error instanceof PasswordPolicyError) {
+      res.status(400).json({ error: error.message });
       return;
     }
     res.status(500).json({ error: (error as Error).message });

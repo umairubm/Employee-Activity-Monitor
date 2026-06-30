@@ -7,7 +7,11 @@ import {
   usersTable,
 } from "@workspace/db";
 import { asc, eq } from "drizzle-orm";
-import { hashPassword } from "../lib/passwords";
+import {
+  hashPassword,
+  validatePasswordPolicy,
+  PasswordPolicyError,
+} from "../lib/passwords";
 import { type AuthedRequest } from "../middlewares/userAuth";
 
 const router: IRouter = Router();
@@ -146,6 +150,7 @@ router.post("/:id/admins", async (req, res) => {
       res.status(404).json({ error: "Company not found" });
       return;
     }
+    await validatePasswordPolicy(id, parsed.data.password);
     const [user] = await db
       .insert(usersTable)
       .values({
@@ -165,6 +170,10 @@ router.post("/:id/admins", async (req, res) => {
   } catch (error) {
     if (uniqueViolation(error)) {
       res.status(409).json({ error: "Username or email already in use" });
+      return;
+    }
+    if (error instanceof PasswordPolicyError) {
+      res.status(400).json({ error: error.message });
       return;
     }
     res.status(500).json({ error: (error as Error).message });
