@@ -17,8 +17,9 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Building2, Plus, Ban, Play, Users } from "lucide-react";
+import { Building2, Plus, Ban, Play, Users, SlidersHorizontal } from "lucide-react";
 import { format } from "date-fns";
+import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
@@ -68,6 +69,7 @@ function UsageCell({
 export default function Companies() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const [, navigate] = useLocation();
   const { data: companies, isLoading } = useListCompanies();
   const createCompany = useCreateCompany();
   const suspendCompany = useSuspendCompany();
@@ -212,6 +214,11 @@ export default function Companies() {
                 ) : (
                   companies?.map((c) => {
                     const suspended = c.status === "suspended";
+                    const flagged =
+                      usageState(c.managerCount, c.maxManagers) === "at" ||
+                      usageState(c.managerCount, c.maxManagers) === "near" ||
+                      usageState(c.deviceCount, c.maxDevices) === "at" ||
+                      usageState(c.deviceCount, c.maxDevices) === "near";
                     return (
                       <TableRow key={c.id} className={suspended ? "opacity-60" : ""}>
                         <TableCell className="font-medium">{c.name}</TableCell>
@@ -233,6 +240,14 @@ export default function Companies() {
                           <div className="flex items-center justify-end gap-1">
                             <Button variant="ghost" size="sm" className="gap-1" onClick={() => setDetailId(c.id)}>
                               <Users className="h-4 w-4" /> Admins
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className={cn("gap-1", flagged && "text-amber-700")}
+                              onClick={() => navigate(`/company-limits?company=${c.id}`)}
+                            >
+                              <SlidersHorizontal className="h-4 w-4" /> Adjust limits
                             </Button>
                             {suspended ? (
                               <Button variant="ghost" size="sm" className="gap-1 text-emerald-600" onClick={() => setStatus(c.id, "reactivate")}>

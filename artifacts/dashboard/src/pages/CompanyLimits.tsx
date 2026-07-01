@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearch } from "wouter";
 import {
   useListCompanies,
   getListCompaniesQueryKey,
@@ -37,9 +38,21 @@ export default function CompanyLimits() {
   const { data: companies, isLoading } = useListCompanies();
   const updateLimits = useUpdateCompanyLimits();
 
+  const search = useSearch();
+  const preselectId = new URLSearchParams(search).get("company") ?? "";
+
   const [selectedId, setSelectedId] = useState<string>("");
   const [maxManagers, setMaxManagers] = useState<string>("");
   const [maxDevices, setMaxDevices] = useState<string>("");
+
+  // Honor a company pre-selected via ?company=<id> (e.g. from the Companies list),
+  // once that company is present in the loaded list.
+  useEffect(() => {
+    if (!preselectId) return;
+    if (companies?.some((c) => c.id === preselectId)) {
+      setSelectedId(preselectId);
+    }
+  }, [preselectId, companies]);
 
   const selected = companies?.find((c) => c.id === selectedId);
 
