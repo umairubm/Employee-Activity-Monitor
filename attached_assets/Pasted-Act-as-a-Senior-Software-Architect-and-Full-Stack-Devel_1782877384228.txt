@@ -1,0 +1,46 @@
+Act as a Senior Software Architect and Full-Stack Developer. I need to design and implement a Multi-Tenant B2B SaaS system with a strict four-tier user hierarchy and isolated tenant security. 
+
+Please provide the Database Schema (SQL/Prisma/NoSQL), API Architecture, and Middleware logic required to implement the following specifications:
+
+### 1. System Hierarchy Diagram
+Please use the following structural hierarchy as the blueprint for the database relationships and access control boundaries:
+
+[Super User (SaaS Owner)]
+       │
+       └─── Creates & Manages ───► [Company Accounts (Tenants)]
+                                           │
+                                           ├─── Configures: Company Security Settings
+                                           │
+                                           └─── Creates & Manages ───► [Managers]
+                                                                          │
+                                                                          └─── Registers & Monitors ───► [End Devices]
+
+### 2. The Hierarchy & Roles
+* **Tier 1: Super User (SaaS Owner / Global Admin)**
+    * Has a global dashboard.
+    * Can create, suspend, and manage "Company Accounts" (Tenants).
+    * Monitors overall system health, billing, and global configurations.
+    * Cannot access a company's internal operational data unless explicitly granted for support.
+* **Tier 2: Company Admin (Tenant Root)**
+    * Represents the organization that bought the software.
+    * Can create, update, and delete "Managers" within their own company.
+    * Configures company-specific security settings (e.g., password policies, session timeouts, allowed IP ranges, or MFA requirements).
+    * Strictly isolated: Must never be able to see or interact with any other company's data.
+* **Tier 3: Manager**
+    * Created by the Company Admin.
+    * Responsible for registering, managing, and monitoring "End Devices."
+    * Has read/write permissions for devices, but cannot modify company-level settings or manage other managers.
+* **Tier 4: End Devices**
+    * Hardware or software endpoints registered by a Manager.
+    * Must be uniquely tied to a specific Company ID and assigned to a Manager/Location context.
+    * Authenticates via a secure token/key mechanism (e.g., API keys or MTLS) to report data or receive commands.
+
+### 3. Core Architectural Requirements
+* **Multi-Tenancy Security:** Detail how data isolation will be enforced at the database level. (Explain whether to use a logical separation via a `tenant_id` foreign key on every table, or separate schemas).
+* **Authentication & Authorization:** Propose an auth system (e.g., JWT-based RBAC) that validates the user's role and their `tenant_id` on every API request.
+* **Device Onboarding Flow:** Outline a secure workflow for how a Manager generates a registration token, how the End Device uses that token to register itself, and how it receives its unique device credentials.
+
+### 4. What to Generate
+1.  **Database Entity-Relationship Diagram (ERD) / Schema:** Show the exact tables/collections (Users, Tenants, Roles, Devices, SecurityConfigs) and their relationships based on the diagram provided above.
+2.  **API Route Architecture:** List the critical REST endpoints or GraphQL mutations/queries required for setting up this hierarchy.
+3.  **Security Middleware Example:** Provide a code snippet (in Node.js/Express, Python/FastAPI, or Go) showing a middleware function that checks if a user has the correct role and is locked into their specific company's context.
