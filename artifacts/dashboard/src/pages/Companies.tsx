@@ -20,6 +20,50 @@ import { Badge } from "@/components/ui/badge";
 import { Building2, Plus, Ban, Play, Users } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
+
+/** How a company's usage compares to its quota. */
+type UsageState = "ok" | "near" | "at" | "unlimited";
+
+function usageState(used: number | undefined, max: number | null | undefined): UsageState {
+  if (max == null) return "unlimited";
+  if (used == null) return "ok";
+  if (used >= max) return "at";
+  if (max > 0 && used / max >= 0.8) return "near";
+  return "ok";
+}
+
+/** A small usage pill like "3 / 5" (or "3 · ∞" when unlimited), flagged by state. */
+function UsageCell({
+  used,
+  max,
+  noun,
+}: {
+  used: number | undefined;
+  max: number | null | undefined;
+  noun: string;
+}) {
+  const state = usageState(used, max);
+  const usedText = used == null ? "—" : String(used);
+  const label = max == null ? `${usedText} · ∞` : `${usedText} / ${max}`;
+  return (
+    <div className="flex items-center gap-2">
+      <Badge
+        variant="outline"
+        className={cn(
+          "font-mono tabular-nums",
+          state === "at" && "bg-destructive/10 text-destructive border-destructive/30",
+          state === "near" && "bg-amber-500/15 text-amber-700 border-amber-500/30",
+        )}
+      >
+        {label}
+      </Badge>
+      <span className="text-xs text-muted-foreground">{noun}</span>
+      {state === "at" && <span className="text-xs font-medium text-destructive">At limit</span>}
+      {state === "near" && <span className="text-xs font-medium text-amber-700">Near limit</span>}
+    </div>
+  );
+}
 
 export default function Companies() {
   const queryClient = useQueryClient();
@@ -149,6 +193,8 @@ export default function Companies() {
                 <TableRow>
                   <TableHead>Company</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Managers</TableHead>
+                  <TableHead>Devices</TableHead>
                   <TableHead>Created</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -156,7 +202,7 @@ export default function Companies() {
               <TableBody>
                 {companies?.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={4} className="h-32 text-center text-muted-foreground">
+                    <TableCell colSpan={6} className="h-32 text-center text-muted-foreground">
                       <div className="flex flex-col items-center justify-center">
                         <Building2 className="h-8 w-8 mb-2 opacity-20" />
                         No companies yet.
@@ -175,6 +221,12 @@ export default function Companies() {
                           ) : (
                             <Badge className="bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/25 border-emerald-500/20">Active</Badge>
                           )}
+                        </TableCell>
+                        <TableCell>
+                          <UsageCell used={c.managerCount} max={c.maxManagers} noun="managers" />
+                        </TableCell>
+                        <TableCell>
+                          <UsageCell used={c.deviceCount} max={c.maxDevices} noun="devices" />
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">{format(new Date(c.createdAt), "MMM d, yyyy")}</TableCell>
                         <TableCell className="text-right">
