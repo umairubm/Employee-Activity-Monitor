@@ -37,7 +37,10 @@ const createSchema = z.object({
 // GET /api/companies - list all tenants (Super User surface). Each row carries
 // its current usage counts (managerCount = users with role="manager", matching
 // how the maxManagers quota is enforced; deviceCount = enrolled devices) so the
-// Super User can see usage vs. quota.
+// Super User can see usage vs. quota. Counts come from LEFT JOINs +
+// count(distinct) rather than correlated subqueries: a bare column in a drizzle
+// `sql` template renders UNQUALIFIED, so `companies.id` inside a `from users`
+// subquery would resolve to users.id and silently always count 0.
 router.get("/", async (_req, res) => {
   try {
     const rows = await db
@@ -50,10 +53,13 @@ router.get("/", async (_req, res) => {
         createdById: companiesTable.createdById,
         createdAt: companiesTable.createdAt,
         updatedAt: companiesTable.updatedAt,
-        managerCount: sql<number>`(select count(*)::int from ${usersTable} where ${usersTable.companyId} = ${companiesTable.id} and ${usersTable.role} = 'manager')`,
-        deviceCount: sql<number>`(select count(*)::int from ${devicesTable} where ${devicesTable.companyId} = ${companiesTable.id})`,
+        managerCount: sql<number>`(count(distinct ${usersTable.id}) filter (where ${usersTable.role} = 'manager'))::int`,
+        deviceCount: sql<number>`(count(distinct ${devicesTable.id}))::int`,
       })
       .from(companiesTable)
+      .leftJoin(usersTable, eq(usersTable.companyId, companiesTable.id))
+      .leftJoin(devicesTable, eq(devicesTable.companyId, companiesTable.id))
+      .groupBy(companiesTable.id)
       .orderBy(asc(companiesTable.name));
     res.json(rows);
   } catch (error) {
