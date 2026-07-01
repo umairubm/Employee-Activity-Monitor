@@ -18,7 +18,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { Building2, Plus, Ban, Play, Users, SlidersHorizontal, Search } from "lucide-react";
+import { Building2, Plus, Ban, Play, Users, SlidersHorizontal, Search, ArrowUp, ArrowDown, ChevronsUpDown } from "lucide-react";
 import { format } from "date-fns";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
@@ -37,6 +37,10 @@ function usageState(used: number | undefined, max: number | null | undefined): U
 
 /** How the Companies table is narrowed by usage. */
 type UsageFilter = "all" | "near" | "at";
+
+/** Which column the Companies table is sorted by. */
+type SortColumn = "name" | "managers" | "devices" | "created";
+type SortDirection = "asc" | "desc";
 
 /**
  * True when a company (managers OR devices) is at its quota.
@@ -91,6 +95,46 @@ function UsageCell({
   );
 }
 
+/** A clickable table header that toggles sorting and shows the active direction. */
+function SortableHead({
+  column,
+  label,
+  sortColumn,
+  sortDirection,
+  onSort,
+  className,
+}: {
+  column: SortColumn;
+  label: string;
+  sortColumn: SortColumn | null;
+  sortDirection: SortDirection;
+  onSort: (column: SortColumn) => void;
+  className?: string;
+}) {
+  const active = sortColumn === column;
+  return (
+    <TableHead className={className}>
+      <button
+        type="button"
+        onClick={() => onSort(column)}
+        className="inline-flex items-center gap-1 -mx-1 px-1 rounded-md hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors"
+        aria-label={`Sort by ${label}${active ? (sortDirection === "asc" ? ", currently ascending" : ", currently descending") : ""}`}
+      >
+        {label}
+        {active ? (
+          sortDirection === "asc" ? (
+            <ArrowUp className="h-3.5 w-3.5" />
+          ) : (
+            <ArrowDown className="h-3.5 w-3.5" />
+          )
+        ) : (
+          <ChevronsUpDown className="h-3.5 w-3.5 opacity-40" />
+        )}
+      </button>
+    </TableHead>
+  );
+}
+
 export default function Companies() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -109,6 +153,17 @@ export default function Companies() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [usageFilter, setUsageFilter] = useState<UsageFilter>("all");
   const [query, setQuery] = useState("");
+  const [sortColumn, setSortColumn] = useState<SortColumn | null>(null);
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+
+  const toggleSort = (column: SortColumn) => {
+    if (sortColumn === column) {
+      setSortDirection((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortColumn(column);
+      setSortDirection("asc");
+    }
+  };
 
   const trimmedQuery = query.trim().toLowerCase();
   const filteredCompanies = companies?.filter((c) => {
@@ -117,6 +172,24 @@ export default function Companies() {
     if (usageFilter === "near") return companyNearOrAtLimit(c);
     return true;
   });
+
+  const sortedCompanies = sortColumn && filteredCompanies
+    ? [...filteredCompanies].sort((a, b) => {
+        const dir = sortDirection === "asc" ? 1 : -1;
+        switch (sortColumn) {
+          case "name":
+            return a.name.localeCompare(b.name) * dir;
+          case "managers":
+            return ((a.managerCount ?? 0) - (b.managerCount ?? 0)) * dir;
+          case "devices":
+            return ((a.deviceCount ?? 0) - (b.deviceCount ?? 0)) * dir;
+          case "created":
+            return (new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()) * dir;
+          default:
+            return 0;
+        }
+      })
+    : filteredCompanies;
 
   const atLimitCount = companies?.filter(companyAtLimit).length ?? 0;
   const nearOrAtLimitCount = companies?.filter(companyNearOrAtLimit).length ?? 0;
@@ -295,11 +368,11 @@ export default function Companies() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Company</TableHead>
+                  <SortableHead column="name" label="Company" sortColumn={sortColumn} sortDirection={sortDirection} onSort={toggleSort} />
                   <TableHead>Status</TableHead>
-                  <TableHead>Managers</TableHead>
-                  <TableHead>Devices</TableHead>
-                  <TableHead>Created</TableHead>
+                  <SortableHead column="managers" label="Managers" sortColumn={sortColumn} sortDirection={sortDirection} onSort={toggleSort} />
+                  <SortableHead column="devices" label="Devices" sortColumn={sortColumn} sortDirection={sortDirection} onSort={toggleSort} />
+                  <SortableHead column="created" label="Created" sortColumn={sortColumn} sortDirection={sortDirection} onSort={toggleSort} />
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -326,7 +399,7 @@ export default function Companies() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredCompanies?.map((c) => {
+                  sortedCompanies?.map((c) => {
                     const suspended = c.status === "suspended";
                     const flagged =
                       usageState(c.managerCount, c.maxManagers) === "at" ||
