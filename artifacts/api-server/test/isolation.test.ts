@@ -1032,4 +1032,52 @@ describe("device enrollment enforces the company's maxDevices quota", () => {
       .where(eq(enrollmentTokensTable.id, token.id));
     expect(row.useCount).toBe(1);
   });
+
+  it("two simultaneous enrollments with DIFFERENT tokens of the same company let exactly one through", async () => {
+    // Same company, one seat below the limit (maxDevices=1, zero devices), but
+    // each concurrent enroll uses its OWN token. This is the case the company-row
+    // FOR UPDATE lock — NOT the token's max-uses guard — must serialize: with a
+    // single shared token the two transactions could also serialize on the
+    // token-row lock during the use-count UPDATE, masking a missing company lock.
+    // Distinct tokens remove that incidental serialization, so a passing result
+    // proves the count+insert critical section is guarded by the company row.
+    const companyId = randomUUID();
+    createdCompanyIds.push(companyId);
+    await db
+      .insert(companiesTable)
+      .values({ id: companyId, name: `drace2-${companyId}`, maxDevices: 1 });
+    const syncApp = makeSyncApp();
+    const tokenA = await createEnrollmentToken({ companyId, maxUses: 5 });
+    const tokenB = await createEnrollmentToken({ companyId, maxUses: 5 });
+
+    const [a, b] = await Promise.all([
+      request(syncApp).post("/sync/enroll").send(enrollBody(tokenA.token)),
+      request(syncApp).post("/sync/enroll").send(enrollBody(tokenB.token)),
+    ]);
+
+    const statuses = [a.status, b.status].sort();
+    expect(
+      statuses,
+      `expected exactly one 201 and one 403, got ${JSON.stringify([
+        { status: a.status, body: a.body },
+        { status: b.status, body: b.body },
+      ])}`,
+    ).toEqual([201, 403]);
+
+    // The DB holds exactly the limit of devices for the company.
+    const [{ n }] = await db
+      .select({ n: count() })
+      .from(devicesTable)
+      .where(eq(devicesTable.companyId, companyId));
+    expect(n).toBe(1);
+
+    // The blocked enrollment threw inside the transaction AFTER claiming a use of
+    // its own token, so that claim rolled back: exactly one token was consumed
+    // (the winner's), the other stays at zero.
+    const rows = await db
+      .select({ useCount: enrollmentTokensTable.useCount })
+      .from(enrollmentTokensTable)
+      .where(inArray(enrollmentTokensTable.id, [tokenA.id, tokenB.id]));
+    expect(rows.map((r) => r.useCount).sort()).toEqual([0, 1]);
+  });
 });
