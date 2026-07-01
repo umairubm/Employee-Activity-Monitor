@@ -285,10 +285,6 @@ router.post("/enroll", async (req: Request, res: Response): Promise<void> => {
       res.status(403).json({ error: error.message });
       return;
     }
-    if (error instanceof DeviceLimitError) {
-      res.status(403).json({ error: error.message });
-      return;
-    }
     throw error;
   }
 
