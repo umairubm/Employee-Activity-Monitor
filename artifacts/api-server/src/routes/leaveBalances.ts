@@ -8,6 +8,7 @@ import {
 } from "@workspace/db";
 import { and, desc, eq } from "drizzle-orm";
 import { getCompanyId } from "../middlewares/tenant";
+import { userBelongsToCompany } from "../lib/tenantGuards";
 import {
   isForeignKeyViolation,
   isUuid,
@@ -102,6 +103,10 @@ router.post("/", async (req, res) => {
     const parsed = upsertSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: "Invalid balance payload" });
+      return;
+    }
+    if (!(await userBelongsToCompany(companyId, parsed.data.userId))) {
+      res.status(400).json({ error: "Invalid user reference" });
       return;
     }
     const [row] = await db

@@ -14,6 +14,9 @@ import {
   companySecuritySettingsTable,
   sessionsTable,
   usersTable,
+  leaveRequestsTable,
+  leaveBalancesTable,
+  tasksTable,
   pool,
 } from "@workspace/db";
 import realApp from "../src/app";
@@ -215,6 +218,94 @@ describe("cross-tenant write isolation", () => {
     expect((stillThere.body as { id: string }[]).map((s) => s.id)).toContain(
       shotB.id,
     );
+  });
+});
+
+describe("cross-tenant FK injection on write paths is rejected", () => {
+  // The DB FK to users.id only guarantees the user EXISTS, not that it belongs
+  // to the caller's tenant. Company A must not be able to link its rows to a
+  // user owned by company B by supplying B's user id.
+
+  it("cannot create a leave request for another company's user (400, no write)", async () => {
+    const { user: userB } = await createUser({
+      role: "team_member",
+      companyId: COMPANY_B,
+    });
+    createdUserIds.push(userB.id);
+
+    const res = await request(appA)
+      .post("/leave-requests")
+      .send({
+        userId: userB.id,
+        startDate: "2026-07-01",
+        endDate: "2026-07-02",
+      });
+    expect(res.status, JSON.stringify(res.body)).toBe(400);
+
+    const rows = await db
+      .select({ id: leaveRequestsTable.id })
+      .from(leaveRequestsTable)
+      .where(eq(leaveRequestsTable.userId, userB.id));
+    expect(rows).toHaveLength(0);
+  });
+
+  it("cannot create a leave balance for another company's user (400, no write)", async () => {
+    const { user: userB } = await createUser({
+      role: "team_member",
+      companyId: COMPANY_B,
+    });
+    createdUserIds.push(userB.id);
+
+    const res = await request(appA)
+      .post("/leave-balances")
+      .send({
+        userId: userB.id,
+        year: 2026,
+        leaveType: "annual",
+        allocatedDays: 20,
+      });
+    expect(res.status, JSON.stringify(res.body)).toBe(400);
+
+    const rows = await db
+      .select({ id: leaveBalancesTable.id })
+      .from(leaveBalancesTable)
+      .where(eq(leaveBalancesTable.userId, userB.id));
+    expect(rows).toHaveLength(0);
+  });
+
+  it("cannot assign a task to another company's user (400, no write)", async () => {
+    const { user: userB } = await createUser({
+      role: "team_member",
+      companyId: COMPANY_B,
+    });
+    createdUserIds.push(userB.id);
+
+    // Project creation stamps createdById = req.user.id, so drive this scenario
+    // with an app whose caller is a REAL company-A user.
+    const { user: adminA } = await createUser({
+      role: "company_admin",
+      companyId: COMPANY_A,
+    });
+    createdUserIds.push(adminA.id);
+    const appAReal = makeApp({ companyId: COMPANY_A, userId: adminA.id });
+
+    // A owns the project it creates the task under.
+    const project = await request(appAReal)
+      .post("/projects")
+      .send({ name: `Proj ${randomUUID()}` });
+    expect(project.status, JSON.stringify(project.body)).toBe(201);
+    const projectId = project.body.id as string;
+
+    const res = await request(appAReal)
+      .post(`/projects/${projectId}/tasks`)
+      .send({ title: "Cross-tenant assign", assignedUserId: userB.id });
+    expect(res.status, JSON.stringify(res.body)).toBe(400);
+
+    const rows = await db
+      .select({ id: tasksTable.id })
+      .from(tasksTable)
+      .where(eq(tasksTable.assignedUserId, userB.id));
+    expect(rows).toHaveLength(0);
   });
 });
 

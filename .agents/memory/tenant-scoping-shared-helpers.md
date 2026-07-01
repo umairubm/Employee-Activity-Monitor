@@ -32,6 +32,12 @@ results before being fixed to take `companyId`.
   and exposing CRUD is not enforcement.
 - A device's tenant binding is permanent: re-enrollment with a token from a
   different company must be rejected, never silently rebind the device.
+- FK writes to tenant principals need an explicit same-tenant ownership check.
+  A DB foreign key to `users.id` only proves the row EXISTS, not that it belongs
+  to the caller's company — so any write that accepts a `userId`/`assignedUserId`
+  from the client (leave requests, leave balances, task assignment) must verify
+  the target user's `company_id` matches the caller before inserting, or a caller
+  who knows another tenant's user id can link rows across tenants.
 
 ## Testing cross-tenant isolation in this repo
 

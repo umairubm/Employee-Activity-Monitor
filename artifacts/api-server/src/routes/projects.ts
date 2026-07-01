@@ -9,6 +9,7 @@ import {
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import type { AuthedRequest } from "../middlewares/userAuth";
 import { getCompanyId } from "../middlewares/tenant";
+import { userBelongsToCompany } from "../lib/tenantGuards";
 import {
   calendarDateSchema,
   isForeignKeyViolation,
@@ -361,6 +362,13 @@ router.post("/:id/tasks", async (req, res) => {
     const parsed = createTaskSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: "Invalid task payload" });
+      return;
+    }
+    if (
+      parsed.data.assignedUserId &&
+      !(await userBelongsToCompany(companyId, parsed.data.assignedUserId))
+    ) {
+      res.status(400).json({ error: "Invalid assigned user reference" });
       return;
     }
     const status = parsed.data.status ?? "todo";

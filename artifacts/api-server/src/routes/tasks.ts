@@ -3,6 +3,7 @@ import { z } from "zod/v4";
 import { db, tasksTable, usersTable } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
 import { getCompanyId } from "../middlewares/tenant";
+import { userBelongsToCompany } from "../lib/tenantGuards";
 import {
   calendarDateSchema,
   isForeignKeyViolation,
@@ -36,6 +37,13 @@ router.patch("/:id", async (req, res) => {
     const parsed = updateTaskSchema.safeParse(req.body);
     if (!parsed.success || Object.keys(parsed.data).length === 0) {
       res.status(400).json({ error: "Nothing to update" });
+      return;
+    }
+    if (
+      parsed.data.assignedUserId &&
+      !(await userBelongsToCompany(companyId, parsed.data.assignedUserId))
+    ) {
+      res.status(400).json({ error: "Invalid assigned user reference" });
       return;
     }
 

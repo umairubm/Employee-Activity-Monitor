@@ -17,6 +17,7 @@ import {
   isUuid,
 } from "../lib/validators";
 import { businessDaysBetween, businessDaysByYear } from "../lib/leave";
+import { userBelongsToCompany } from "../lib/tenantGuards";
 import type { db as Db } from "@workspace/db";
 
 type Tx = Parameters<Parameters<typeof Db.transaction>[0]>[0];
@@ -142,6 +143,10 @@ router.post("/", async (req, res) => {
     const parsed = createLeaveSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: "Invalid leave payload" });
+      return;
+    }
+    if (!(await userBelongsToCompany(companyId, parsed.data.userId))) {
+      res.status(400).json({ error: "Invalid user reference" });
       return;
     }
     const [created] = await db
