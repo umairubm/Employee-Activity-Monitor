@@ -8,6 +8,7 @@
     "mint-token": "tsx ./src/mint-enrollment-token.ts",
     "create-admin": "tsx ./src/create-admin.ts",
     "migrate-multitenancy": "tsx ./src/migrate-multitenancy.ts",
+    "check-api-codegen": "tsx ./src/check-api-codegen.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
