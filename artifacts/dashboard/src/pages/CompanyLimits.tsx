@@ -7,7 +7,9 @@ import {
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -44,6 +46,7 @@ export default function CompanyLimits() {
   const [selectedId, setSelectedId] = useState<string>("");
   const [maxManagers, setMaxManagers] = useState<string>("");
   const [maxDevices, setMaxDevices] = useState<string>("");
+  const [confirmUnderUsage, setConfirmUnderUsage] = useState(false);
 
   // Honor a company pre-selected via ?company=<id> (e.g. from the Companies list),
   // once that company is present in the loaded list.
@@ -61,6 +64,7 @@ export default function CompanyLimits() {
     if (!selected) return;
     setMaxManagers(selected.maxManagers == null ? "" : String(selected.maxManagers));
     setMaxDevices(selected.maxDevices == null ? "" : String(selected.maxDevices));
+    setConfirmUnderUsage(false);
   }, [selected]);
 
   const parseLimit = (v: string): number | null => {
@@ -72,6 +76,7 @@ export default function CompanyLimits() {
 
   const handleSave = () => {
     if (!selectedId) return;
+    if (underUsage && !confirmUnderUsage) return;
     updateLimits.mutate(
       {
         id: selectedId,
@@ -93,6 +98,18 @@ export default function CompanyLimits() {
   const invalid =
     (maxManagers.trim() !== "" && Number(maxManagers) < 0) ||
     (maxDevices.trim() !== "" && Number(maxDevices) < 0);
+
+  const parsedManagers = parseLimit(maxManagers);
+  const parsedDevices = parseLimit(maxDevices);
+
+  const managerCount = selected?.managerCount;
+  const deviceCount = selected?.deviceCount;
+
+  const managersBelow =
+    parsedManagers != null && managerCount != null && parsedManagers < managerCount;
+  const devicesBelow =
+    parsedDevices != null && deviceCount != null && parsedDevices < deviceCount;
+  const underUsage = managersBelow || devicesBelow;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 max-w-2xl">
@@ -145,7 +162,10 @@ export default function CompanyLimits() {
                     min={0}
                     placeholder="Unlimited"
                     value={maxManagers}
-                    onChange={(e) => setMaxManagers(e.target.value)}
+                    onChange={(e) => {
+                      setMaxManagers(e.target.value);
+                      setConfirmUnderUsage(false);
+                    }}
                   />
                 </div>
                 <div className="grid gap-2">
@@ -161,7 +181,10 @@ export default function CompanyLimits() {
                     min={0}
                     placeholder="Unlimited"
                     value={maxDevices}
-                    onChange={(e) => setMaxDevices(e.target.value)}
+                    onChange={(e) => {
+                      setMaxDevices(e.target.value);
+                      setConfirmUnderUsage(false);
+                    }}
                   />
                 </div>
               </div>
@@ -171,8 +194,49 @@ export default function CompanyLimits() {
                 A blank field means no limit for that resource.
               </div>
 
+              {underUsage && (
+                <Alert variant="destructive">
+                  <AlertTitle>Limit is below current usage</AlertTitle>
+                  <AlertDescription className="space-y-2">
+                    <div>
+                      {managersBelow && (
+                        <p>
+                          Max Managers ({parsedManagers}) is below the {managerCount}{" "}
+                          {managerCount === 1 ? "manager" : "managers"} already in use.
+                        </p>
+                      )}
+                      {devicesBelow && (
+                        <p>
+                          Max Devices ({parsedDevices}) is below the {deviceCount}{" "}
+                          {deviceCount === 1 ? "device" : "devices"} already enrolled.
+                        </p>
+                      )}
+                      <p>
+                        Saving will leave this company over its limit. Existing managers
+                        and devices are not removed, but no new ones can be added until
+                        usage drops below the limit.
+                      </p>
+                    </div>
+                    <label className="flex items-center gap-2 font-medium">
+                      <Checkbox
+                        checked={confirmUnderUsage}
+                        onCheckedChange={(v) => setConfirmUnderUsage(v === true)}
+                      />
+                      I understand and want to save this limit anyway.
+                    </label>
+                  </AlertDescription>
+                </Alert>
+              )}
+
               <div className="flex justify-end">
-                <Button onClick={handleSave} disabled={invalid || updateLimits.isPending}>
+                <Button
+                  onClick={handleSave}
+                  disabled={
+                    invalid ||
+                    updateLimits.isPending ||
+                    (underUsage && !confirmUnderUsage)
+                  }
+                >
                   {updateLimits.isPending ? "Saving…" : "Save Limits"}
                 </Button>
               </div>
