@@ -59,7 +59,15 @@ export default function Managers() {
           setCreateOpen(false);
           resetCreate();
         },
-        onError: () => toast({ title: "Could not create user", description: "Username or email may already be in use.", variant: "destructive" }),
+        onError: (err) => {
+          const serverMsg = (err as { data?: { error?: string } })?.data?.error;
+          toast({
+            title: "Could not create user",
+            description:
+              serverMsg ?? "Username or email may already be in use.",
+            variant: "destructive",
+          });
+        },
       },
     );
   };

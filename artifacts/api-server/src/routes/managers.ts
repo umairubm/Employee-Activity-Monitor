@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod/v4";
-import { db, usersTable } from "@workspace/db";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { db, usersTable, companiesTable } from "@workspace/db";
+import { and, asc, count, eq, inArray } from "drizzle-orm";
 import {
   hashPassword,
   validatePasswordPolicy,
@@ -20,6 +20,46 @@ function uniqueViolation(error: unknown): boolean {
 // Managers and team members are the tenant-internal roles a Company Admin can
 // create. Super Users and Company Admins are NOT manageable here.
 const MANAGEABLE_ROLES = ["manager", "team_member"] as const;
+
+/**
+ * Raised inside the create transaction when adding another manager would push
+ * the company past its Super-User-configured `maxManagers` quota. Caught below
+ * and mapped to 409. A NULL quota means unlimited and never throws.
+ */
+class ManagerLimitError extends Error {
+  constructor(limit: number) {
+    super(
+      `Manager limit reached (${limit}). Ask your provider to raise the limit before adding more managers.`,
+    );
+    this.name = "ManagerLimitError";
+  }
+}
+
+/**
+ * Throws ManagerLimitError if the company is already at (or over) its
+ * `maxManagers` quota. NULL quota = unlimited. Call this inside a transaction,
+ * right before adding one more "manager" seat (a create or a promotion), so the
+ * count and the write share a consistent view. Only role="manager" is counted.
+ */
+async function assertWithinManagerLimit(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  companyId: string,
+): Promise<void> {
+  const [company] = await tx
+    .select({ maxManagers: companiesTable.maxManagers })
+    .from(companiesTable)
+    .where(eq(companiesTable.id, companyId));
+  if (company?.maxManagers == null) return;
+  const [{ n }] = await tx
+    .select({ n: count() })
+    .from(usersTable)
+    .where(
+      and(eq(usersTable.companyId, companyId), eq(usersTable.role, "manager")),
+    );
+  if (n >= company.maxManagers) {
+    throw new ManagerLimitError(company.maxManagers);
+  }
+}
 
 const createSchema = z.object({
   username: z.string().min(1).max(100),
@@ -70,24 +110,38 @@ router.post("/", async (req, res) => {
   try {
     const companyId = getCompanyId(req);
     await validatePasswordPolicy(companyId, parsed.data.password);
-    const [user] = await db
-      .insert(usersTable)
-      .values({
-        username: parsed.data.username,
-        email: parsed.data.email,
-        passwordHash: hashPassword(parsed.data.password),
-        role: parsed.data.role,
-        companyId,
-      })
-      .returning({
-        id: usersTable.id,
-        username: usersTable.username,
-        email: usersTable.email,
-        role: usersTable.role,
-        createdAt: usersTable.createdAt,
-      });
+    const user = await db.transaction(async (tx) => {
+      // Enforce the company's Super-User-configured manager quota. Only the
+      // "manager" role counts against `maxManagers`; team members are unbounded.
+      // Done inside the transaction so the count and the insert see a consistent
+      // view. NULL quota = unlimited.
+      if (parsed.data.role === "manager") {
+        await assertWithinManagerLimit(tx, companyId);
+      }
+      const [created] = await tx
+        .insert(usersTable)
+        .values({
+          username: parsed.data.username,
+          email: parsed.data.email,
+          passwordHash: hashPassword(parsed.data.password),
+          role: parsed.data.role,
+          companyId,
+        })
+        .returning({
+          id: usersTable.id,
+          username: usersTable.username,
+          email: usersTable.email,
+          role: usersTable.role,
+          createdAt: usersTable.createdAt,
+        });
+      return created;
+    });
     res.status(201).json(user);
   } catch (error) {
+    if (error instanceof ManagerLimitError) {
+      res.status(409).json({ error: error.message });
+      return;
+    }
     if (uniqueViolation(error)) {
       res.status(409).json({ error: "Username or email already in use" });
       return;
@@ -117,31 +171,59 @@ router.patch("/:id", async (req, res) => {
       updates.passwordHash = hashPassword(parsed.data.password);
     }
 
-    const [updated] = await db
-      .update(usersTable)
-      .set(updates)
-      // Tenant + manageable-role scope: a Company Admin can never touch another
-      // tenant's users, nor escalate a Company Admin / Super User here.
-      .where(
-        and(
-          eq(usersTable.id, String(req.params.id)),
-          eq(usersTable.companyId, companyId),
-          inArray(usersTable.role, [...MANAGEABLE_ROLES]),
-        ),
-      )
-      .returning({
-        id: usersTable.id,
-        username: usersTable.username,
-        email: usersTable.email,
-        role: usersTable.role,
-        createdAt: usersTable.createdAt,
-      });
+    const updated = await db.transaction(async (tx) => {
+      // Look up the target within the tenant + manageable-role scope first, so a
+      // promotion to "manager" can be quota-checked against its CURRENT role.
+      const [existing] = await tx
+        .select({ role: usersTable.role })
+        .from(usersTable)
+        .where(
+          and(
+            eq(usersTable.id, String(req.params.id)),
+            eq(usersTable.companyId, companyId),
+            inArray(usersTable.role, [...MANAGEABLE_ROLES]),
+          ),
+        );
+      if (!existing) return null;
+
+      // Only a NET-NEW manager seat counts: promoting team_member -> manager must
+      // respect the quota; editing an existing manager (or a non-role change)
+      // consumes no new seat.
+      if (parsed.data.role === "manager" && existing.role !== "manager") {
+        await assertWithinManagerLimit(tx, companyId);
+      }
+
+      const [row] = await tx
+        .update(usersTable)
+        .set(updates)
+        // Tenant + manageable-role scope: a Company Admin can never touch another
+        // tenant's users, nor escalate a Company Admin / Super User here.
+        .where(
+          and(
+            eq(usersTable.id, String(req.params.id)),
+            eq(usersTable.companyId, companyId),
+            inArray(usersTable.role, [...MANAGEABLE_ROLES]),
+          ),
+        )
+        .returning({
+          id: usersTable.id,
+          username: usersTable.username,
+          email: usersTable.email,
+          role: usersTable.role,
+          createdAt: usersTable.createdAt,
+        });
+      return row;
+    });
     if (!updated) {
       res.status(404).json({ error: "User not found" });
       return;
     }
     res.json(updated);
   } catch (error) {
+    if (error instanceof ManagerLimitError) {
+      res.status(409).json({ error: error.message });
+      return;
+    }
     if (uniqueViolation(error)) {
       res.status(409).json({ error: "Email already in use" });
       return;

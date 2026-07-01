@@ -759,3 +759,152 @@ describe("user creation enforces the tenant's password policy", () => {
     expect(strong.status, JSON.stringify(strong.body)).toBe(201);
   });
 });
+
+describe("manager creation enforces the company's maxManagers quota", () => {
+  function makeManagersApp(companyId: string) {
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => {
+      (req as express.Request & { user: unknown }).user = {
+        id: randomUUID(),
+        role: "company_admin",
+        companyId,
+      };
+      next();
+    });
+    app.use("/managers", managersRouter);
+    return app;
+  }
+
+  const makeUser = (role: "manager" | "team_member") => ({
+    username: `u-${randomUUID()}`,
+    email: `${randomUUID()}@test.local`,
+    password: "StrongPass123",
+    role,
+  });
+
+  it("blocks creating a manager past the limit (409) but still allows team members", async () => {
+    const companyId = randomUUID();
+    createdCompanyIds.push(companyId);
+    await db
+      .insert(companiesTable)
+      .values({ id: companyId, name: `lim-${companyId}`, maxManagers: 1 });
+    const app = makeManagersApp(companyId);
+
+    const first = await request(app).post("/managers").send(makeUser("manager"));
+    expect(first.status, JSON.stringify(first.body)).toBe(201);
+
+    const second = await request(app)
+      .post("/managers")
+      .send(makeUser("manager"));
+    expect(second.status).toBe(409);
+    expect(second.body.error).toMatch(/limit/i);
+
+    // Team members are unbounded even when the manager quota is exhausted.
+    const teamMember = await request(app)
+      .post("/managers")
+      .send(makeUser("team_member"));
+    expect(teamMember.status, JSON.stringify(teamMember.body)).toBe(201);
+  });
+
+  it("treats a NULL maxManagers as unlimited", async () => {
+    const companyId = randomUUID();
+    createdCompanyIds.push(companyId);
+    await db
+      .insert(companiesTable)
+      .values({ id: companyId, name: `unl-${companyId}` });
+    const app = makeManagersApp(companyId);
+
+    for (let i = 0; i < 3; i++) {
+      const res = await request(app).post("/managers").send(makeUser("manager"));
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+    }
+  });
+
+  it("blocks promoting a team member to manager when at the limit (409), but allows other edits", async () => {
+    const companyId = randomUUID();
+    createdCompanyIds.push(companyId);
+    await db
+      .insert(companiesTable)
+      .values({ id: companyId, name: `promo-${companyId}`, maxManagers: 1 });
+    const app = makeManagersApp(companyId);
+
+    // Fill the single manager seat, then create a team member.
+    const mgr = await request(app).post("/managers").send(makeUser("manager"));
+    expect(mgr.status, JSON.stringify(mgr.body)).toBe(201);
+    const tm = await request(app).post("/managers").send(makeUser("team_member"));
+    expect(tm.status, JSON.stringify(tm.body)).toBe(201);
+    const tmId = tm.body.id as string;
+
+    // Promoting the team member to manager would exceed the quota -> 409.
+    const promote = await request(app)
+      .patch(`/managers/${tmId}`)
+      .send({ role: "manager" });
+    expect(promote.status).toBe(409);
+    expect(promote.body.error).toMatch(/limit/i);
+
+    // A non-promotion edit on the same user still succeeds at the limit.
+    const rename = await request(app)
+      .patch(`/managers/${tmId}`)
+      .send({ email: `${randomUUID()}@test.local` });
+    expect(rename.status, JSON.stringify(rename.body)).toBe(200);
+    expect(rename.body.role).toBe("team_member");
+  });
+});
+
+describe("device enrollment enforces the company's maxDevices quota", () => {
+  const enrollBody = (token: string) => ({
+    token,
+    hardwareHash: `hw-${randomUUID()}`,
+    systemName: "Test PC",
+    osType: "linux",
+    agentVersion: "1.0.0",
+    consentAcknowledged: true,
+    consentName: "Jane Operator",
+  });
+
+  it("blocks enrolling a device past the limit (403) without burning a token use", async () => {
+    const companyId = randomUUID();
+    createdCompanyIds.push(companyId);
+    await db
+      .insert(companiesTable)
+      .values({ id: companyId, name: `dlim-${companyId}`, maxDevices: 1 });
+    const syncApp = makeSyncApp();
+    const token = await createEnrollmentToken({ companyId, maxUses: 5 });
+
+    const first = await request(syncApp)
+      .post("/sync/enroll")
+      .send(enrollBody(token.token));
+    expect(first.status, JSON.stringify(first.body)).toBe(201);
+
+    const second = await request(syncApp)
+      .post("/sync/enroll")
+      .send(enrollBody(token.token));
+    expect(second.status).toBe(403);
+    expect(second.body.error).toMatch(/limit/i);
+
+    // The blocked enrollment must not have consumed a token use.
+    const [row] = await db
+      .select({ useCount: enrollmentTokensTable.useCount })
+      .from(enrollmentTokensTable)
+      .where(eq(enrollmentTokensTable.id, token.id));
+    expect(row.useCount).toBe(1);
+  });
+
+  it("treats a NULL maxDevices as unlimited", async () => {
+    const companyId = randomUUID();
+    createdCompanyIds.push(companyId);
+    await db
+      .insert(companiesTable)
+      .values({ id: companyId, name: `dunl-${companyId}` });
+    const syncApp = makeSyncApp();
+    const token = await createEnrollmentToken({ companyId, maxUses: 5 });
+
+    for (let i = 0; i < 3; i++) {
+      const res = await request(syncApp)
+        .post("/sync/enroll")
+        .send(enrollBody(token.token));
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+    }
+  });
+});

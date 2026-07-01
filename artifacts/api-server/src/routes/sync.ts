@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { and, eq, sql, isNull, or, gt, lt, inArray } from "drizzle-orm";
+import { and, count, eq, sql, isNull, or, gt, lt, inArray } from "drizzle-orm";
 import {
   db,
   devicesTable,
@@ -55,6 +55,45 @@ class SuspendedCompanyError extends Error {
   constructor() {
     super("Company account is suspended");
     this.name = "SuspendedCompanyError";
+  }
+}
+
+/**
+ * Raised inside the enroll transaction when a first-time enrollment would push
+ * the token's company past its Super-User-configured `maxDevices` quota. Caught
+ * below and mapped to 403. A NULL quota means unlimited and never throws.
+ */
+class DeviceLimitError extends Error {
+  constructor(limit: number) {
+    super(
+      `Device limit reached (${limit}). Ask your provider to raise the limit before enrolling more devices.`,
+    );
+    this.name = "DeviceLimitError";
+  }
+}
+
+/**
+ * Throws DeviceLimitError if enrolling one more device would exceed the
+ * company's `maxDevices` quota. NULL quota = unlimited; legacy tokens with no
+ * company are unbounded. Called only on the first-time enrollment path so that
+ * re-enrollment of an already-counted device is never blocked.
+ */
+async function assertWithinDeviceLimit(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  companyId: string | null,
+): Promise<void> {
+  if (!companyId) return;
+  const [company] = await tx
+    .select({ maxDevices: companiesTable.maxDevices })
+    .from(companiesTable)
+    .where(eq(companiesTable.id, companyId));
+  if (company?.maxDevices == null) return;
+  const [{ n }] = await tx
+    .select({ n: count() })
+    .from(devicesTable)
+    .where(eq(devicesTable.companyId, companyId));
+  if (n >= company.maxDevices) {
+    throw new DeviceLimitError(company.maxDevices);
   }
 }
 
@@ -193,6 +232,10 @@ router.post("/enroll", async (req: Request, res: Response): Promise<void> => {
     // use-count increment claimed above, so a suspended company never burns a use.
     await assertCompanyActive(tx, token.companyId);
 
+    // Enforce the company's Super-User-configured device quota. Throwing rolls
+    // back the claimed token-use so a blocked enrollment never burns a use.
+    await assertWithinDeviceLimit(tx, token.companyId);
+
     const [created] = await tx
       .insert(devicesTable)
       .values({
@@ -217,7 +260,10 @@ router.post("/enroll", async (req: Request, res: Response): Promise<void> => {
       res.status(409).json({ error: error.message });
       return;
     }
-    if (error instanceof SuspendedCompanyError) {
+    if (
+      error instanceof SuspendedCompanyError ||
+      error instanceof DeviceLimitError
+    ) {
       res.status(403).json({ error: error.message });
       return;
     }
