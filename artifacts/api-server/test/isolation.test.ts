@@ -1080,4 +1080,182 @@ describe("device enrollment enforces the company's maxDevices quota", () => {
       .where(inArray(enrollmentTokensTable.id, [tokenA.id, tokenB.id]));
     expect(rows.map((r) => r.useCount).sort()).toEqual([0, 1]);
   });
+
+  // Adopting a legacy device (one with a null companyId) into a token's company
+  // is the SECOND path that ADDS to a company's device count — it must be
+  // subject to the same quota as first-time enrollment. Create a legacy device
+  // directly (createDevice can't seed a null companyId because it ensures the
+  // company row exists first).
+  async function createLegacyDevice(): Promise<{ id: string; hash: string }> {
+    const hash = `hw-legacy-${randomUUID()}`;
+    const [device] = await db
+      .insert(devicesTable)
+      .values({
+        hardwareHash: hash,
+        systemName: "Legacy PC",
+        osType: "linux",
+        secretHash: "legacy-secret-hash",
+        deviceGroup: "Unassigned",
+        companyId: null,
+      })
+      .returning();
+    return { id: device.id, hash };
+  }
+
+  it("blocks adopting a legacy device that would push the company past its limit (403) and leaves it unadopted", async () => {
+    const companyId = randomUUID();
+    createdCompanyIds.push(companyId);
+    await db
+      .insert(companiesTable)
+      .values({ id: companyId, name: `dadopt-${companyId}`, maxDevices: 1 });
+    const syncApp = makeSyncApp();
+    const token = await createEnrollmentToken({ companyId, maxUses: 5 });
+
+    // The company is already at its single-device limit.
+    await createDevice({ companyId });
+
+    // A legacy device with no company yet.
+    const legacy = await createLegacyDevice();
+
+    // Re-enrolling (adopting) the legacy device into the full company is
+    // rejected by the quota, just like a first-time enroll would be.
+    const res = await request(syncApp)
+      .post("/sync/enroll")
+      .send({
+        token: token.token,
+        hardwareHash: legacy.hash,
+        systemName: "Legacy PC",
+        osType: "linux",
+        agentVersion: "1.0.0",
+        consentAcknowledged: true,
+        consentName: "Jane Operator",
+      });
+    expect(res.status, JSON.stringify(res.body)).toBe(403);
+    expect(res.body.error).toMatch(/limit/i);
+
+    // The legacy device stayed unadopted (still no company), so the block did
+    // not partially move it into the tenant.
+    const [row] = await db
+      .select({ companyId: devicesTable.companyId })
+      .from(devicesTable)
+      .where(eq(devicesTable.id, legacy.id));
+    expect(row.companyId).toBeNull();
+
+    // And the company still holds exactly its one allowed device.
+    const [{ n }] = await db
+      .select({ n: count() })
+      .from(devicesTable)
+      .where(eq(devicesTable.companyId, companyId));
+    expect(n).toBe(1);
+  });
+
+  it("two simultaneous adoptions at limit-minus-one let exactly one through", async () => {
+    // Company one seat below the limit (maxDevices=1, zero devices) with TWO
+    // legacy devices. Two concurrent adoptions both ADD to the company count, so
+    // without the company-row FOR UPDATE lock they could both read a count under
+    // the limit and both adopt. The lock serializes count+write, so exactly one
+    // wins (201) and the other is rejected (403). Adoption reads the token with
+    // a plain SELECT and never touches its use-count, so there is no incidental
+    // token-row serialization masking a missing company lock.
+    const companyId = randomUUID();
+    createdCompanyIds.push(companyId);
+    await db
+      .insert(companiesTable)
+      .values({ id: companyId, name: `dadopt-race-${companyId}`, maxDevices: 1 });
+    const syncApp = makeSyncApp();
+    const token = await createEnrollmentToken({ companyId, maxUses: 5 });
+
+    const legacy1 = await createLegacyDevice();
+    const legacy2 = await createLegacyDevice();
+
+    const adoptBody = (hash: string) => ({
+      token: token.token,
+      hardwareHash: hash,
+      systemName: "Legacy PC",
+      osType: "linux",
+      agentVersion: "1.0.0",
+      consentAcknowledged: true,
+      consentName: "Jane Operator",
+    });
+
+    const [a, b] = await Promise.all([
+      request(syncApp).post("/sync/enroll").send(adoptBody(legacy1.hash)),
+      request(syncApp).post("/sync/enroll").send(adoptBody(legacy2.hash)),
+    ]);
+
+    const statuses = [a.status, b.status].sort();
+    expect(
+      statuses,
+      `expected exactly one 201 and one 403, got ${JSON.stringify([
+        { status: a.status, body: a.body },
+        { status: b.status, body: b.body },
+      ])}`,
+    ).toEqual([201, 403]);
+
+    // Exactly one legacy device was adopted; the other stays unbound.
+    const [{ n }] = await db
+      .select({ n: count() })
+      .from(devicesTable)
+      .where(eq(devicesTable.companyId, companyId));
+    expect(n).toBe(1);
+  });
+
+  it("an adoption racing a first-time enroll at limit-minus-one lets exactly one through", async () => {
+    // Company one seat below the limit (maxDevices=1, zero devices). One legacy
+    // device is adopted while a brand-new device enrolls for the first time —
+    // both paths ADD to the company count. Each uses its OWN token so the
+    // first-time enroll's use-count UPDATE can't incidentally serialize the
+    // adoption; only the company-row FOR UPDATE lock guards the count+write, so
+    // exactly one wins (201) and the other is rejected (403).
+    const companyId = randomUUID();
+    createdCompanyIds.push(companyId);
+    await db
+      .insert(companiesTable)
+      .values({ id: companyId, name: `dmix-race-${companyId}`, maxDevices: 1 });
+    const syncApp = makeSyncApp();
+    const adoptToken = await createEnrollmentToken({ companyId, maxUses: 5 });
+    const enrollToken = await createEnrollmentToken({ companyId, maxUses: 5 });
+
+    const legacy = await createLegacyDevice();
+
+    const adoptBody = {
+      token: adoptToken.token,
+      hardwareHash: legacy.hash,
+      systemName: "Legacy PC",
+      osType: "linux",
+      agentVersion: "1.0.0",
+      consentAcknowledged: true,
+      consentName: "Jane Operator",
+    };
+    const freshBody = {
+      token: enrollToken.token,
+      hardwareHash: `hw-fresh-${randomUUID()}`,
+      systemName: "Fresh PC",
+      osType: "linux",
+      agentVersion: "1.0.0",
+      consentAcknowledged: true,
+      consentName: "Jane Operator",
+    };
+
+    const [a, b] = await Promise.all([
+      request(syncApp).post("/sync/enroll").send(adoptBody),
+      request(syncApp).post("/sync/enroll").send(freshBody),
+    ]);
+
+    const statuses = [a.status, b.status].sort();
+    expect(
+      statuses,
+      `expected exactly one 201 and one 403, got ${JSON.stringify([
+        { status: a.status, body: a.body },
+        { status: b.status, body: b.body },
+      ])}`,
+    ).toEqual([201, 403]);
+
+    // The company holds exactly its one allowed device, whichever path won.
+    const [{ n }] = await db
+      .select({ n: count() })
+      .from(devicesTable)
+      .where(eq(devicesTable.companyId, companyId));
+    expect(n).toBe(1);
+  });
 });
