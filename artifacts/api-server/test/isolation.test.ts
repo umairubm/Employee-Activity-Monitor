@@ -886,6 +886,52 @@ describe("manager creation enforces the company's maxManagers quota", () => {
     expect(rename.status, JSON.stringify(rename.body)).toBe(200);
     expect(rename.body.role).toBe("team_member");
   });
+
+  it("two simultaneous promotions at limit-minus-one let exactly one through", async () => {
+    // Company one seat below the limit (maxManagers=1, zero managers) with two
+    // team members. Two concurrent PATCH promotions must not BOTH read a count
+    // under the limit and both promote: the promotion path uses the same
+    // FOR UPDATE-serialized assertWithinManagerLimit helper as create, so
+    // exactly one wins with 200 and the other is rejected with 409.
+    const companyId = randomUUID();
+    createdCompanyIds.push(companyId);
+    await db
+      .insert(companiesTable)
+      .values({ id: companyId, name: `promo-race-${companyId}`, maxManagers: 1 });
+    const app = makeManagersApp(companyId);
+
+    const tm1 = await request(app)
+      .post("/managers")
+      .send(makeUser("team_member"));
+    expect(tm1.status, JSON.stringify(tm1.body)).toBe(201);
+    const tm2 = await request(app)
+      .post("/managers")
+      .send(makeUser("team_member"));
+    expect(tm2.status, JSON.stringify(tm2.body)).toBe(201);
+
+    const [a, b] = await Promise.all([
+      request(app).patch(`/managers/${tm1.body.id}`).send({ role: "manager" }),
+      request(app).patch(`/managers/${tm2.body.id}`).send({ role: "manager" }),
+    ]);
+
+    const statuses = [a.status, b.status].sort();
+    expect(
+      statuses,
+      `expected exactly one 200 and one 409, got ${JSON.stringify([
+        { status: a.status, body: a.body },
+        { status: b.status, body: b.body },
+      ])}`,
+    ).toEqual([200, 409]);
+
+    // And the DB really holds only one manager for the company (the limit).
+    const [{ n }] = await db
+      .select({ n: count() })
+      .from(usersTable)
+      .where(
+        and(eq(usersTable.companyId, companyId), eq(usersTable.role, "manager")),
+      );
+    expect(n).toBe(1);
+  });
 });
 
 describe("device enrollment enforces the company's maxDevices quota", () => {
