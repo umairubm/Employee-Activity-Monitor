@@ -16,3 +16,4 @@
 - [Overlapping-agent time correction](overlap-time-correction.md) — merge intervals per device(+day), never across devices; correctOverlap ratio-scales each class + sum-preserving rounding; don't re-normalize.
 - [Orval query-key prefixes](orval-query-key-prefix.md) — generated React Query keys are prefixed with the FULL `/api/...` path; always invalidate via the generated `getXxxQueryKey()` helper, never a hand-written prefix.
 - [Attendance: any activity ≠ absent](attendance-any-activity.md) — a working day with any reported activity is at minimum half_day; only zero worked seconds is absent.
+- [Composite lib dist staleness](composite-lib-dist-staleness.md) — artifact typechecks read a lib's built dist (not src) via project references; stale/absent dist gives phantom "property does not exist"/TS6305; rebuild libs (post-merge must too).
