@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Building2, Plus, Ban, Play, Users, SlidersHorizontal } from "lucide-react";
 import { format } from "date-fns";
 import { useLocation } from "wouter";
@@ -32,6 +33,21 @@ function usageState(used: number | undefined, max: number | null | undefined): U
   if (used >= max) return "at";
   if (max > 0 && used / max >= 0.8) return "near";
   return "ok";
+}
+
+/** How the Companies table is narrowed by usage. */
+type UsageFilter = "all" | "near" | "at";
+
+/** True when a company (managers OR devices) is at its quota. */
+function companyAtLimit(c: { managerCount?: number; maxManagers?: number | null; deviceCount?: number; maxDevices?: number | null }): boolean {
+  return usageState(c.managerCount, c.maxManagers) === "at" || usageState(c.deviceCount, c.maxDevices) === "at";
+}
+
+/** True when a company (managers OR devices) is near or at its quota. */
+function companyNearOrAtLimit(c: { managerCount?: number; maxManagers?: number | null; deviceCount?: number; maxDevices?: number | null }): boolean {
+  const ms = usageState(c.managerCount, c.maxManagers);
+  const ds = usageState(c.deviceCount, c.maxDevices);
+  return ms === "near" || ms === "at" || ds === "near" || ds === "at";
 }
 
 /** A small usage pill like "3 / 5" (or "3 · ∞" when unlimited), flagged by state. */
@@ -82,6 +98,13 @@ export default function Companies() {
   const [adminEmail, setAdminEmail] = useState("");
   const [adminPassword, setAdminPassword] = useState("");
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [usageFilter, setUsageFilter] = useState<UsageFilter>("all");
+
+  const filteredCompanies = companies?.filter((c) => {
+    if (usageFilter === "at") return companyAtLimit(c);
+    if (usageFilter === "near") return companyNearOrAtLimit(c);
+    return true;
+  });
 
   const resetCreate = () => {
     setName("");
@@ -183,6 +206,22 @@ export default function Companies() {
         </Dialog>
       </div>
 
+      <div className="flex items-center gap-3">
+        <span className="text-sm text-muted-foreground">Filter</span>
+        <ToggleGroup
+          type="single"
+          value={usageFilter}
+          onValueChange={(v) => setUsageFilter((v as UsageFilter) || "all")}
+          variant="outline"
+          size="sm"
+          className="justify-start"
+        >
+          <ToggleGroupItem value="all" aria-label="Show all companies">All</ToggleGroupItem>
+          <ToggleGroupItem value="near" aria-label="Show companies near or at their limit">Near limit</ToggleGroupItem>
+          <ToggleGroupItem value="at" aria-label="Show companies at their limit">At limit</ToggleGroupItem>
+        </ToggleGroup>
+      </div>
+
       <Card>
         <CardContent className="p-0">
           {isLoading ? (
@@ -202,17 +241,23 @@ export default function Companies() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {companies?.length === 0 ? (
+                {filteredCompanies?.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={6} className="h-32 text-center text-muted-foreground">
                       <div className="flex flex-col items-center justify-center">
                         <Building2 className="h-8 w-8 mb-2 opacity-20" />
-                        No companies yet.
+                        {companies?.length === 0
+                          ? "No companies yet."
+                          : usageFilter === "at"
+                            ? "No companies are at their limit."
+                            : usageFilter === "near"
+                              ? "No companies are near or at their limit."
+                              : "No companies match this filter."}
                       </div>
                     </TableCell>
                   </TableRow>
                 ) : (
-                  companies?.map((c) => {
+                  filteredCompanies?.map((c) => {
                     const suspended = c.status === "suspended";
                     const flagged =
                       usageState(c.managerCount, c.maxManagers) === "at" ||
