@@ -38,13 +38,22 @@ function usageState(used: number | undefined, max: number | null | undefined): U
 /** How the Companies table is narrowed by usage. */
 type UsageFilter = "all" | "near" | "at";
 
-/** True when a company (managers OR devices) is at its quota. */
-function companyAtLimit(c: { managerCount?: number; maxManagers?: number | null; deviceCount?: number; maxDevices?: number | null }): boolean {
+/**
+ * True when a company (managers OR devices) is at its quota.
+ * Suspended companies never count — they don't consume active quota that needs
+ * Super User attention, so they're excluded from both counts and the usage filter.
+ */
+function companyAtLimit(c: { status?: string; managerCount?: number; maxManagers?: number | null; deviceCount?: number; maxDevices?: number | null }): boolean {
+  if (c.status === "suspended") return false;
   return usageState(c.managerCount, c.maxManagers) === "at" || usageState(c.deviceCount, c.maxDevices) === "at";
 }
 
-/** True when a company (managers OR devices) is near or at its quota. */
-function companyNearOrAtLimit(c: { managerCount?: number; maxManagers?: number | null; deviceCount?: number; maxDevices?: number | null }): boolean {
+/**
+ * True when a company (managers OR devices) is near or at its quota.
+ * Suspended companies are excluded (see {@link companyAtLimit}).
+ */
+function companyNearOrAtLimit(c: { status?: string; managerCount?: number; maxManagers?: number | null; deviceCount?: number; maxDevices?: number | null }): boolean {
+  if (c.status === "suspended") return false;
   const ms = usageState(c.managerCount, c.maxManagers);
   const ds = usageState(c.deviceCount, c.maxDevices);
   return ms === "near" || ms === "at" || ds === "near" || ds === "at";
