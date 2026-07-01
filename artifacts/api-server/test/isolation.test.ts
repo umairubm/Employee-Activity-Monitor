@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, it } from "vitest";
 import { randomUUID } from "crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, count, eq, inArray } from "drizzle-orm";
 import express from "express";
 import request from "supertest";
 import {
@@ -821,6 +821,42 @@ describe("manager creation enforces the company's maxManagers quota", () => {
     }
   });
 
+  it("two simultaneous creates at limit-minus-one let exactly one through", async () => {
+    // Company one seat below the limit (maxManagers=1, zero managers). Two
+    // concurrent creates must not BOTH read a count under the limit and both
+    // insert: the count+insert is a FOR UPDATE-serialized critical section, so
+    // exactly one wins with 201 and the other is rejected with 409.
+    const companyId = randomUUID();
+    createdCompanyIds.push(companyId);
+    await db
+      .insert(companiesTable)
+      .values({ id: companyId, name: `race-${companyId}`, maxManagers: 1 });
+    const app = makeManagersApp(companyId);
+
+    const [a, b] = await Promise.all([
+      request(app).post("/managers").send(makeUser("manager")),
+      request(app).post("/managers").send(makeUser("manager")),
+    ]);
+
+    const statuses = [a.status, b.status].sort();
+    expect(
+      statuses,
+      `expected exactly one 201 and one 409, got ${JSON.stringify([
+        { status: a.status, body: a.body },
+        { status: b.status, body: b.body },
+      ])}`,
+    ).toEqual([201, 409]);
+
+    // And the DB really holds only one manager for the company.
+    const [{ n }] = await db
+      .select({ n: count() })
+      .from(usersTable)
+      .where(
+        and(eq(usersTable.companyId, companyId), eq(usersTable.role, "manager")),
+      );
+    expect(n).toBe(1);
+  });
+
   it("blocks promoting a team member to manager when at the limit (409), but allows other edits", async () => {
     const companyId = randomUUID();
     createdCompanyIds.push(companyId);
@@ -906,5 +942,48 @@ describe("device enrollment enforces the company's maxDevices quota", () => {
         .send(enrollBody(token.token));
       expect(res.status, JSON.stringify(res.body)).toBe(201);
     }
+  });
+
+  it("two simultaneous enrollments at limit-minus-one let exactly one through", async () => {
+    // Company one seat below the limit (maxDevices=1, zero devices). A token with
+    // spare uses so max-uses is NOT what gates the race. Two concurrent enrolls
+    // (distinct hardware) must not BOTH read a count under the limit and both
+    // insert: the count+insert is a FOR UPDATE-serialized critical section, so
+    // exactly one wins with 201 and the other is rejected with 403.
+    const companyId = randomUUID();
+    createdCompanyIds.push(companyId);
+    await db
+      .insert(companiesTable)
+      .values({ id: companyId, name: `drace-${companyId}`, maxDevices: 1 });
+    const syncApp = makeSyncApp();
+    const token = await createEnrollmentToken({ companyId, maxUses: 5 });
+
+    const [a, b] = await Promise.all([
+      request(syncApp).post("/sync/enroll").send(enrollBody(token.token)),
+      request(syncApp).post("/sync/enroll").send(enrollBody(token.token)),
+    ]);
+
+    const statuses = [a.status, b.status].sort();
+    expect(
+      statuses,
+      `expected exactly one 201 and one 403, got ${JSON.stringify([
+        { status: a.status, body: a.body },
+        { status: b.status, body: b.body },
+      ])}`,
+    ).toEqual([201, 403]);
+
+    // Only one device was actually created for the company, and the blocked
+    // enrollment rolled back its claimed token use (exactly one use consumed).
+    const [{ n }] = await db
+      .select({ n: count() })
+      .from(devicesTable)
+      .where(eq(devicesTable.companyId, companyId));
+    expect(n).toBe(1);
+
+    const [row] = await db
+      .select({ useCount: enrollmentTokensTable.useCount })
+      .from(enrollmentTokensTable)
+      .where(eq(enrollmentTokensTable.id, token.id));
+    expect(row.useCount).toBe(1);
   });
 });

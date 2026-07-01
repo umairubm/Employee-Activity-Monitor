@@ -40,6 +40,12 @@ class ManagerLimitError extends Error {
  * `maxManagers` quota. NULL quota = unlimited. Call this inside a transaction,
  * right before adding one more "manager" seat (a create or a promotion), so the
  * count and the write share a consistent view. Only role="manager" is counted.
+ *
+ * The company row is locked FOR UPDATE before counting so the count+insert is
+ * a serialized critical section per company: two simultaneous creates can't both
+ * read a count just under the limit and both insert (a check-then-act race). The
+ * second transaction blocks on the row lock until the first commits, then sees
+ * the updated count.
  */
 async function assertWithinManagerLimit(
   tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
@@ -48,7 +54,8 @@ async function assertWithinManagerLimit(
   const [company] = await tx
     .select({ maxManagers: companiesTable.maxManagers })
     .from(companiesTable)
-    .where(eq(companiesTable.id, companyId));
+    .where(eq(companiesTable.id, companyId))
+    .for("update");
   if (company?.maxManagers == null) return;
   const [{ n }] = await tx
     .select({ n: count() })

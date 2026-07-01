@@ -80,6 +80,12 @@ class DeviceLimitError extends Error {
  * unlimited. Counts the devices currently bound to the company. Called on the
  * first-time enrollment path and when a legacy device with no company is adopted
  * into one, so re-enrollment of an already-counted device is never blocked.
+ *
+ * The company row is locked FOR UPDATE before counting so the count+insert is a
+ * serialized critical section per company: two simultaneous enrollments (even
+ * with different tokens of the same company) can't both read a count just under
+ * the limit and both insert (a check-then-act race). The second transaction
+ * blocks on the row lock until the first commits, then sees the updated count.
  */
 async function assertWithinDeviceLimit(
   tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
@@ -89,7 +95,8 @@ async function assertWithinDeviceLimit(
   const [company] = await tx
     .select({ maxDevices: companiesTable.maxDevices })
     .from(companiesTable)
-    .where(eq(companiesTable.id, companyId));
+    .where(eq(companiesTable.id, companyId))
+    .for("update");
   if (company?.maxDevices == null) return;
   const [{ n }] = await tx
     .select({ n: count() })

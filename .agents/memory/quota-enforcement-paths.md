@@ -25,5 +25,15 @@ weakest seat-adding path.
   the rule can't drift between endpoints.
 - Enrollment/claim-style endpoints: put the limit check AFTER the token-use claim
   so throwing rolls back the claim and a blocked attempt never burns a use.
-- Known gap: count-then-write is not race-safe under simultaneous requests (TOCTOU)
-  without row locking / a DB constraint — track separately if strict caps matter.
+- Race-safety: lock the COMPANY row `.for("update")` in the shared assert helper
+  BEFORE counting, so count+insert is a serialized critical section per company.
+  Two simultaneous seat-adds then can't both read a count under the limit and
+  both insert (TOCTOU). The token max-uses race is closed separately by an atomic
+  conditional UPDATE; the company-row lock also covers different-token,
+  same-company enrollments. Enroll locks the token row first, then the company
+  row — keep that order to avoid deadlocks.
+- Testing a TOCTOU fix through the HTTP route is timing-dependent: on a fast local
+  DB two parallel requests often serialize naturally and pass even WITHOUT the
+  lock. To actually exercise the race, temporarily add a `setTimeout` between the
+  count and the insert to force interleaving (both succeed without the lock, one
+  is rejected with it), then remove it.
