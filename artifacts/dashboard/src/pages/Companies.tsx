@@ -18,7 +18,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { Building2, Plus, Ban, Play, Users, SlidersHorizontal } from "lucide-react";
+import { Building2, Plus, Ban, Play, Users, SlidersHorizontal, Search } from "lucide-react";
 import { format } from "date-fns";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
@@ -108,8 +108,11 @@ export default function Companies() {
   const [adminPassword, setAdminPassword] = useState("");
   const [detailId, setDetailId] = useState<string | null>(null);
   const [usageFilter, setUsageFilter] = useState<UsageFilter>("all");
+  const [query, setQuery] = useState("");
 
+  const trimmedQuery = query.trim().toLowerCase();
   const filteredCompanies = companies?.filter((c) => {
+    if (trimmedQuery && !c.name.toLowerCase().includes(trimmedQuery)) return false;
     if (usageFilter === "at") return companyAtLimit(c);
     if (usageFilter === "near") return companyNearOrAtLimit(c);
     return true;
@@ -219,20 +222,32 @@ export default function Companies() {
       </div>
 
       <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between">
-        <div className="flex items-center gap-3">
-          <span className="text-sm text-muted-foreground">Filter</span>
-          <ToggleGroup
-            type="single"
-            value={usageFilter}
-            onValueChange={(v) => setUsageFilter((v as UsageFilter) || "all")}
-            variant="outline"
-            size="sm"
-            className="justify-start"
-          >
-            <ToggleGroupItem value="all" aria-label="Show all companies">All</ToggleGroupItem>
-            <ToggleGroupItem value="near" aria-label="Show companies near or at their limit">Near limit</ToggleGroupItem>
-            <ToggleGroupItem value="at" aria-label="Show companies at their limit">At limit</ToggleGroupItem>
-          </ToggleGroup>
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="relative sm:w-64">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search companies…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="pl-8"
+              aria-label="Search companies by name"
+            />
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-muted-foreground">Filter</span>
+            <ToggleGroup
+              type="single"
+              value={usageFilter}
+              onValueChange={(v) => setUsageFilter((v as UsageFilter) || "all")}
+              variant="outline"
+              size="sm"
+              className="justify-start"
+            >
+              <ToggleGroupItem value="all" aria-label="Show all companies">All</ToggleGroupItem>
+              <ToggleGroupItem value="near" aria-label="Show companies near or at their limit">Near limit</ToggleGroupItem>
+              <ToggleGroupItem value="at" aria-label="Show companies at their limit">At limit</ToggleGroupItem>
+            </ToggleGroup>
+          </div>
         </div>
 
         {!isLoading && (
@@ -296,11 +311,17 @@ export default function Companies() {
                         <Building2 className="h-8 w-8 mb-2 opacity-20" />
                         {companies?.length === 0
                           ? "No companies yet."
-                          : usageFilter === "at"
-                            ? "No companies are at their limit."
-                            : usageFilter === "near"
-                              ? "No companies are near or at their limit."
-                              : "No companies match this filter."}
+                          : trimmedQuery
+                            ? usageFilter === "at"
+                              ? `No companies at their limit match “${query.trim()}”.`
+                              : usageFilter === "near"
+                                ? `No companies near or at their limit match “${query.trim()}”.`
+                                : `No companies match “${query.trim()}”.`
+                            : usageFilter === "at"
+                              ? "No companies are at their limit."
+                              : usageFilter === "near"
+                                ? "No companies are near or at their limit."
+                                : "No companies match this filter."}
                       </div>
                     </TableCell>
                   </TableRow>
