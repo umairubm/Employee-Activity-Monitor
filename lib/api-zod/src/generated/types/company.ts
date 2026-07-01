@@ -12,6 +12,10 @@ export interface Company {
   name: string;
   status: CompanyStatus;
   /** @nullable */
+  maxManagers?: number | null;
+  /** @nullable */
+  maxDevices?: number | null;
+  /** @nullable */
   createdById?: string | null;
   createdAt: Date;
   updatedAt: Date;

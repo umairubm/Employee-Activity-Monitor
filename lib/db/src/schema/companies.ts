@@ -26,6 +26,10 @@ export const companiesTable = pgTable("companies", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull().unique(),
   status: companyStatusEnum("status").notNull().default("active"),
+  // Per-tenant quotas set by the Super User. NULL means "unlimited".
+  // Enforcement lives in the manager-create and device-enroll paths.
+  maxManagers: integer("max_managers"),
+  maxDevices: integer("max_devices"),
   // Super User who created the company (audit only; no FK to avoid a schema
   // import cycle with users).
   createdById: uuid("created_by_id"),

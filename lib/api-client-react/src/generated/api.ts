@@ -90,6 +90,7 @@ import type {
   TaskItem,
   TimesheetReport,
   UpdateCategoryRequest,
+  UpdateCompanyLimitsRequest,
   UpdateLeaveRequest,
   UpdateManagerRequest,
   UpdateProjectRequest,
@@ -5803,6 +5804,94 @@ export const useAddCompanyAdmin = <
   TContext
 > => {
   return useMutation(getAddCompanyAdminMutationOptions(options));
+};
+
+/**
+ * @summary Set per-tenant quotas (max managers, max devices)
+ */
+export const getUpdateCompanyLimitsUrl = (id: string) => {
+  return `/api/companies/${id}/limits`;
+};
+
+export const updateCompanyLimits = async (
+  id: string,
+  updateCompanyLimitsRequest: UpdateCompanyLimitsRequest,
+  options?: RequestInit,
+): Promise<Company> => {
+  return customFetch<Company>(getUpdateCompanyLimitsUrl(id), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateCompanyLimitsRequest),
+  });
+};
+
+export const getUpdateCompanyLimitsMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateCompanyLimits>>,
+    TError,
+    { id: string; data: BodyType<UpdateCompanyLimitsRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateCompanyLimits>>,
+  TError,
+  { id: string; data: BodyType<UpdateCompanyLimitsRequest> },
+  TContext
+> => {
+  const mutationKey = ["updateCompanyLimits"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateCompanyLimits>>,
+    { id: string; data: BodyType<UpdateCompanyLimitsRequest> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateCompanyLimits(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateCompanyLimitsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateCompanyLimits>>
+>;
+export type UpdateCompanyLimitsMutationBody =
+  BodyType<UpdateCompanyLimitsRequest>;
+export type UpdateCompanyLimitsMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Set per-tenant quotas (max managers, max devices)
+ */
+export const useUpdateCompanyLimits = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateCompanyLimits>>,
+    TError,
+    { id: string; data: BodyType<UpdateCompanyLimitsRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateCompanyLimits>>,
+  TError,
+  { id: string; data: BodyType<UpdateCompanyLimitsRequest> },
+  TContext
+> => {
+  return useMutation(getUpdateCompanyLimitsMutationOptions(options));
 };
 
 /**

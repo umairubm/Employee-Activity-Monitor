@@ -189,6 +189,73 @@ describe("tenant isolation through the real /api app stack", () => {
   });
 });
 
+describe("company limits (Super User) via the real /api app stack", () => {
+  it("a super_user can set a company's max managers/devices (persisted)", async () => {
+    const companyId = randomUUID();
+    createdCompanyIds.push(companyId);
+    await db.insert(companiesTable).values({ id: companyId, name: `lim-${companyId}` });
+
+    const { user } = await createUser({ role: "super_user", companyId: null });
+    createdUserIds.push(user.id);
+    const cookie = await makeSessionCookie(user.id);
+
+    const res = await request(realApp)
+      .put(`/api/companies/${companyId}/limits`)
+      .set("Cookie", cookie)
+      .send({ maxManagers: 5, maxDevices: 20 });
+    expect(`${res.status}:${JSON.stringify(res.body)}`).toContain("200");
+    expect(res.body.maxManagers).toBe(5);
+    expect(res.body.maxDevices).toBe(20);
+
+    const [row] = await db
+      .select()
+      .from(companiesTable)
+      .where(eq(companiesTable.id, companyId));
+    expect(row.maxManagers).toBe(5);
+    expect(row.maxDevices).toBe(20);
+  });
+
+  it("a company_admin cannot set company limits (403)", async () => {
+    const companyId = randomUUID();
+    createdCompanyIds.push(companyId);
+    await db.insert(companiesTable).values({ id: companyId, name: `lim-${companyId}` });
+
+    const { user } = await createUser({ role: "company_admin", companyId });
+    createdUserIds.push(user.id);
+    const cookie = await makeSessionCookie(user.id);
+
+    const res = await request(realApp)
+      .put(`/api/companies/${companyId}/limits`)
+      .set("Cookie", cookie)
+      .send({ maxManagers: 1 });
+    expect(res.status).toBe(403);
+  });
+
+  it("an empty limits payload is rejected (400), not a 500", async () => {
+    const { user } = await createUser({ role: "super_user", companyId: null });
+    createdUserIds.push(user.id);
+    const cookie = await makeSessionCookie(user.id);
+
+    const res = await request(realApp)
+      .put(`/api/companies/${randomUUID()}/limits`)
+      .set("Cookie", cookie)
+      .send({});
+    expect(res.status).toBe(400);
+  });
+
+  it("setting limits on a missing company returns 404", async () => {
+    const { user } = await createUser({ role: "super_user", companyId: null });
+    createdUserIds.push(user.id);
+    const cookie = await makeSessionCookie(user.id);
+
+    const res = await request(realApp)
+      .put(`/api/companies/${randomUUID()}/limits`)
+      .set("Cookie", cookie)
+      .send({ maxManagers: 3 });
+    expect(res.status).toBe(404);
+  });
+});
+
 describe("cross-tenant write isolation", () => {
   it("cannot issue a command to another company's device (404)", async () => {
     const devB = await createDevice({ companyId: COMPANY_B });

@@ -1619,6 +1619,8 @@ export const ListCompaniesResponseItem = zod.object({
   id: zod.string().uuid(),
   name: zod.string(),
   status: zod.enum(["active", "suspended"]),
+  maxManagers: zod.number().nullish(),
+  maxDevices: zod.number().nullish(),
   createdById: zod.string().uuid().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -1653,6 +1655,8 @@ export const GetCompanyResponse = zod
     id: zod.string().uuid(),
     name: zod.string(),
     status: zod.enum(["active", "suspended"]),
+    maxManagers: zod.number().nullish(),
+    maxDevices: zod.number().nullish(),
     createdById: zod.string().uuid().nullish(),
     createdAt: zod.coerce.date(),
     updatedAt: zod.coerce.date(),
@@ -1710,6 +1714,36 @@ export const AddCompanyAdminBody = zod.object({
 });
 
 /**
+ * @summary Set per-tenant quotas (max managers, max devices)
+ */
+export const UpdateCompanyLimitsParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
+
+export const updateCompanyLimitsBodyMaxManagersMin = 0;
+
+export const updateCompanyLimitsBodyMaxDevicesMin = 0;
+
+export const UpdateCompanyLimitsBody = zod.object({
+  maxManagers: zod
+    .number()
+    .min(updateCompanyLimitsBodyMaxManagersMin)
+    .nullish(),
+  maxDevices: zod.number().min(updateCompanyLimitsBodyMaxDevicesMin).nullish(),
+});
+
+export const UpdateCompanyLimitsResponse = zod.object({
+  id: zod.string().uuid(),
+  name: zod.string(),
+  status: zod.enum(["active", "suspended"]),
+  maxManagers: zod.number().nullish(),
+  maxDevices: zod.number().nullish(),
+  createdById: zod.string().uuid().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
  * @summary Suspend a tenant
  */
 export const SuspendCompanyParams = zod.object({
@@ -1720,6 +1754,8 @@ export const SuspendCompanyResponse = zod.object({
   id: zod.string().uuid(),
   name: zod.string(),
   status: zod.enum(["active", "suspended"]),
+  maxManagers: zod.number().nullish(),
+  maxDevices: zod.number().nullish(),
   createdById: zod.string().uuid().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -1736,6 +1772,8 @@ export const ReactivateCompanyResponse = zod.object({
   id: zod.string().uuid(),
   name: zod.string(),
   status: zod.enum(["active", "suspended"]),
+  maxManagers: zod.number().nullish(),
+  maxDevices: zod.number().nullish(),
   createdById: zod.string().uuid().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),

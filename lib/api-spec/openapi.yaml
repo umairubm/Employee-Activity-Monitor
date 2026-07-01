@@ -1344,6 +1344,26 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CompanyUser"
+  /companies/{id}/limits:
+    put:
+      operationId: updateCompanyLimits
+      tags: [companies]
+      summary: Set per-tenant quotas (max managers, max devices)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCompanyLimitsRequest"
+      responses:
+        "200":
+          description: Limits updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Company"
   /companies/{id}/suspend:
     post:
       operationId: suspendCompany
@@ -1563,6 +1583,10 @@ components:
         status:
           type: string
           enum: [active, suspended]
+        maxManagers:
+          type: [integer, "null"]
+        maxDevices:
+          type: [integer, "null"]
         createdById:
           type: [string, "null"]
           format: uuid
@@ -1657,6 +1681,15 @@ components:
           type: string
           minLength: 8
       required: [username, email, password]
+    UpdateCompanyLimitsRequest:
+      type: object
+      properties:
+        maxManagers:
+          type: [integer, "null"]
+          minimum: 0
+        maxDevices:
+          type: [integer, "null"]
+          minimum: 0
     CreateCompanyRequest:
       type: object
       properties:

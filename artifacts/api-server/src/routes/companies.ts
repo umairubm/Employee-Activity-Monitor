@@ -180,6 +180,44 @@ router.post("/:id/admins", async (req, res) => {
   }
 });
 
+const limitsSchema = z
+  .object({
+    maxManagers: z.number().int().min(0).nullable().optional(),
+    maxDevices: z.number().int().min(0).nullable().optional(),
+  })
+  .refine((d) => "maxManagers" in d || "maxDevices" in d, {
+    message: "At least one of maxManagers or maxDevices is required",
+  });
+
+// PUT /api/companies/:id/limits - set per-tenant quotas (Super User surface).
+router.put("/:id/limits", async (req, res) => {
+  const parsed = limitsSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid limits payload" });
+    return;
+  }
+  try {
+    const id = String(req.params.id);
+    const patch: { maxManagers?: number | null; maxDevices?: number | null } =
+      {};
+    if ("maxManagers" in parsed.data) patch.maxManagers = parsed.data.maxManagers ?? null;
+    if ("maxDevices" in parsed.data) patch.maxDevices = parsed.data.maxDevices ?? null;
+
+    const [updated] = await db
+      .update(companiesTable)
+      .set(patch)
+      .where(eq(companiesTable.id, id))
+      .returning();
+    if (!updated) {
+      res.status(404).json({ error: "Company not found" });
+      return;
+    }
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
 async function setStatus(
   id: string,
   status: "active" | "suspended",

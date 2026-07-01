@@ -123,6 +123,7 @@ export * from "./timesheetRow";
 export * from "./timesheetTotals";
 export * from "./updateCategoryRequest";
 export * from "./updateCategoryRequestClassification";
+export * from "./updateCompanyLimitsRequest";
 export * from "./updateLeaveRequest";
 export * from "./updateLeaveRequestLeaveType";
 export * from "./updateManagerRequest";

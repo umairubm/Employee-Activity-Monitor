@@ -45,6 +45,10 @@ export interface Company {
   name: string;
   status: CompanyStatus;
   /** @nullable */
+  maxManagers?: number | null;
+  /** @nullable */
+  maxDevices?: number | null;
+  /** @nullable */
   createdById?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -92,6 +96,19 @@ export interface CreateAdminRequest {
   email: string;
   /** @minLength 8 */
   password: string;
+}
+
+export interface UpdateCompanyLimitsRequest {
+  /**
+   * @minimum 0
+   * @nullable
+   */
+  maxManagers?: number | null;
+  /**
+   * @minimum 0
+   * @nullable
+   */
+  maxDevices?: number | null;
 }
 
 export interface CreateCompanyRequest {
