@@ -48,6 +48,10 @@ export interface Company {
   maxManagers?: number | null;
   /** @nullable */
   maxDevices?: number | null;
+  /** Current number of non-super users in the company (present on the list endpoint only). */
+  managerCount?: number;
+  /** Current number of enrolled devices in the company (present on the list endpoint only). */
+  deviceCount?: number;
   /** @nullable */
   createdById?: string | null;
   createdAt: string;

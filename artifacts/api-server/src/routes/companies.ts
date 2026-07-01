@@ -5,8 +5,9 @@ import {
   companiesTable,
   companySecuritySettingsTable,
   usersTable,
+  devicesTable,
 } from "@workspace/db";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import {
   hashPassword,
   validatePasswordPolicy,
@@ -33,11 +34,24 @@ const createSchema = z.object({
   admin: adminSchema.optional(),
 });
 
-// GET /api/companies - list all tenants (Super User surface).
+// GET /api/companies - list all tenants (Super User surface). Each row carries
+// its current usage counts (managerCount = non-super users in the company,
+// deviceCount = enrolled devices) so the Super User can see usage vs. quota.
 router.get("/", async (_req, res) => {
   try {
     const rows = await db
-      .select()
+      .select({
+        id: companiesTable.id,
+        name: companiesTable.name,
+        status: companiesTable.status,
+        maxManagers: companiesTable.maxManagers,
+        maxDevices: companiesTable.maxDevices,
+        createdById: companiesTable.createdById,
+        createdAt: companiesTable.createdAt,
+        updatedAt: companiesTable.updatedAt,
+        managerCount: sql<number>`(select count(*)::int from ${usersTable} where ${usersTable.companyId} = ${companiesTable.id})`,
+        deviceCount: sql<number>`(select count(*)::int from ${devicesTable} where ${devicesTable.companyId} = ${companiesTable.id})`,
+      })
       .from(companiesTable)
       .orderBy(asc(companiesTable.name));
     res.json(rows);

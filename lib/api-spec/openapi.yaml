@@ -1587,6 +1587,16 @@ components:
           type: [integer, "null"]
         maxDevices:
           type: [integer, "null"]
+        managerCount:
+          type: integer
+          description: >-
+            Current number of non-super users in the company (present on the
+            list endpoint only).
+        deviceCount:
+          type: integer
+          description: >-
+            Current number of enrolled devices in the company (present on the
+            list endpoint only).
         createdById:
           type: [string, "null"]
           format: uuid

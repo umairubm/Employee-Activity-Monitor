@@ -59,9 +59,11 @@ class SuspendedCompanyError extends Error {
 }
 
 /**
- * Raised inside the enroll transaction when a first-time enrollment would push
- * the token's company past its Super-User-configured `maxDevices` quota. Caught
- * below and mapped to 403. A NULL quota means unlimited and never throws.
+ * Raised inside the enroll transaction when creating (or adopting) a device
+ * would push the token's company past its Super-User-configured `maxDevices`
+ * quota. Caught below and mapped to 403. A NULL quota means unlimited and never
+ * throws. Throwing inside the transaction rolls back any token-use increment
+ * claimed earlier, so a blocked enrollment never burns a use.
  */
 class DeviceLimitError extends Error {
   constructor(limit: number) {
@@ -74,9 +76,10 @@ class DeviceLimitError extends Error {
 
 /**
  * Throws DeviceLimitError if enrolling one more device would exceed the
- * company's `maxDevices` quota. NULL quota = unlimited; legacy tokens with no
- * company are unbounded. Called only on the first-time enrollment path so that
- * re-enrollment of an already-counted device is never blocked.
+ * company's `maxDevices` quota. NULL quota (or a legacy null companyId) means
+ * unlimited. Counts the devices currently bound to the company. Called on the
+ * first-time enrollment path and when a legacy device with no company is adopted
+ * into one, so re-enrollment of an already-counted device is never blocked.
  */
 async function assertWithinDeviceLimit(
   tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
@@ -184,6 +187,14 @@ router.post("/enroll", async (req: Request, res: Response): Promise<void> => {
         throw new TenantMismatchError();
       }
 
+      // A re-enrolling device already bound to its company is already counted,
+      // so it must never be blocked by the quota. Only a legacy device with no
+      // company yet actually ADDS to the token company's count on adoption —
+      // enforce the limit just for that case.
+      if (!existing.companyId && token.companyId) {
+        await assertWithinDeviceLimit(tx, token.companyId);
+      }
+
       const [updated] = await tx
         .update(devicesTable)
         .set({
@@ -264,6 +275,10 @@ router.post("/enroll", async (req: Request, res: Response): Promise<void> => {
       error instanceof SuspendedCompanyError ||
       error instanceof DeviceLimitError
     ) {
+      res.status(403).json({ error: error.message });
+      return;
+    }
+    if (error instanceof DeviceLimitError) {
       res.status(403).json({ error: error.message });
       return;
     }

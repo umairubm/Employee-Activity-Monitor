@@ -1621,6 +1621,18 @@ export const ListCompaniesResponseItem = zod.object({
   status: zod.enum(["active", "suspended"]),
   maxManagers: zod.number().nullish(),
   maxDevices: zod.number().nullish(),
+  managerCount: zod
+    .number()
+    .optional()
+    .describe(
+      "Current number of non-super users in the company (present on the list endpoint only).",
+    ),
+  deviceCount: zod
+    .number()
+    .optional()
+    .describe(
+      "Current number of enrolled devices in the company (present on the list endpoint only).",
+    ),
   createdById: zod.string().uuid().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -1657,6 +1669,18 @@ export const GetCompanyResponse = zod
     status: zod.enum(["active", "suspended"]),
     maxManagers: zod.number().nullish(),
     maxDevices: zod.number().nullish(),
+    managerCount: zod
+      .number()
+      .optional()
+      .describe(
+        "Current number of non-super users in the company (present on the list endpoint only).",
+      ),
+    deviceCount: zod
+      .number()
+      .optional()
+      .describe(
+        "Current number of enrolled devices in the company (present on the list endpoint only).",
+      ),
     createdById: zod.string().uuid().nullish(),
     createdAt: zod.coerce.date(),
     updatedAt: zod.coerce.date(),
@@ -1738,6 +1762,18 @@ export const UpdateCompanyLimitsResponse = zod.object({
   status: zod.enum(["active", "suspended"]),
   maxManagers: zod.number().nullish(),
   maxDevices: zod.number().nullish(),
+  managerCount: zod
+    .number()
+    .optional()
+    .describe(
+      "Current number of non-super users in the company (present on the list endpoint only).",
+    ),
+  deviceCount: zod
+    .number()
+    .optional()
+    .describe(
+      "Current number of enrolled devices in the company (present on the list endpoint only).",
+    ),
   createdById: zod.string().uuid().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -1756,6 +1792,18 @@ export const SuspendCompanyResponse = zod.object({
   status: zod.enum(["active", "suspended"]),
   maxManagers: zod.number().nullish(),
   maxDevices: zod.number().nullish(),
+  managerCount: zod
+    .number()
+    .optional()
+    .describe(
+      "Current number of non-super users in the company (present on the list endpoint only).",
+    ),
+  deviceCount: zod
+    .number()
+    .optional()
+    .describe(
+      "Current number of enrolled devices in the company (present on the list endpoint only).",
+    ),
   createdById: zod.string().uuid().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -1774,6 +1822,18 @@ export const ReactivateCompanyResponse = zod.object({
   status: zod.enum(["active", "suspended"]),
   maxManagers: zod.number().nullish(),
   maxDevices: zod.number().nullish(),
+  managerCount: zod
+    .number()
+    .optional()
+    .describe(
+      "Current number of non-super users in the company (present on the list endpoint only).",
+    ),
+  deviceCount: zod
+    .number()
+    .optional()
+    .describe(
+      "Current number of enrolled devices in the company (present on the list endpoint only).",
+    ),
   createdById: zod.string().uuid().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),

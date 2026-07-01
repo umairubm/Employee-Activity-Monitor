@@ -19,6 +19,18 @@ import {
 import { SlidersHorizontal, Infinity as InfinityIcon } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
+/** Render "3 / 5 managers", "3 managers (unlimited)", or "— managers". */
+function usageLabel(
+  used: number | undefined,
+  max: number | null | undefined,
+  noun: string,
+): string {
+  const plural = `${noun}s`;
+  if (used == null) return `— ${plural}`;
+  if (max == null) return `${used} ${used === 1 ? noun : plural} (unlimited)`;
+  return `${used} / ${max} ${plural}`;
+}
+
 export default function CompanyLimits() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -108,7 +120,12 @@ export default function CompanyLimits() {
             <>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="grid gap-2">
-                  <Label htmlFor="maxManagers">Max Managers</Label>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="maxManagers">Max Managers</Label>
+                    <span className="text-sm text-muted-foreground">
+                      {usageLabel(selected?.managerCount, selected?.maxManagers, "manager")}
+                    </span>
+                  </div>
                   <Input
                     id="maxManagers"
                     type="number"
@@ -119,7 +136,12 @@ export default function CompanyLimits() {
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="maxDevices">Max Devices</Label>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="maxDevices">Max Devices</Label>
+                    <span className="text-sm text-muted-foreground">
+                      {usageLabel(selected?.deviceCount, selected?.maxDevices, "device")}
+                    </span>
+                  </div>
                   <Input
                     id="maxDevices"
                     type="number"
