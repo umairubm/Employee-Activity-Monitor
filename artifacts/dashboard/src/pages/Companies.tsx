@@ -106,6 +106,9 @@ export default function Companies() {
     return true;
   });
 
+  const atLimitCount = companies?.filter(companyAtLimit).length ?? 0;
+  const nearOrAtLimitCount = companies?.filter(companyNearOrAtLimit).length ?? 0;
+
   const resetCreate = () => {
     setName("");
     setWithAdmin(true);
@@ -206,20 +209,56 @@ export default function Companies() {
         </Dialog>
       </div>
 
-      <div className="flex items-center gap-3">
-        <span className="text-sm text-muted-foreground">Filter</span>
-        <ToggleGroup
-          type="single"
-          value={usageFilter}
-          onValueChange={(v) => setUsageFilter((v as UsageFilter) || "all")}
-          variant="outline"
-          size="sm"
-          className="justify-start"
-        >
-          <ToggleGroupItem value="all" aria-label="Show all companies">All</ToggleGroupItem>
-          <ToggleGroupItem value="near" aria-label="Show companies near or at their limit">Near limit</ToggleGroupItem>
-          <ToggleGroupItem value="at" aria-label="Show companies at their limit">At limit</ToggleGroupItem>
-        </ToggleGroup>
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between">
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-muted-foreground">Filter</span>
+          <ToggleGroup
+            type="single"
+            value={usageFilter}
+            onValueChange={(v) => setUsageFilter((v as UsageFilter) || "all")}
+            variant="outline"
+            size="sm"
+            className="justify-start"
+          >
+            <ToggleGroupItem value="all" aria-label="Show all companies">All</ToggleGroupItem>
+            <ToggleGroupItem value="near" aria-label="Show companies near or at their limit">Near limit</ToggleGroupItem>
+            <ToggleGroupItem value="at" aria-label="Show companies at their limit">At limit</ToggleGroupItem>
+          </ToggleGroup>
+        </div>
+
+        {!isLoading && (
+          <div className="flex items-center gap-2 text-sm">
+            {nearOrAtLimitCount === 0 ? (
+              <span className="text-muted-foreground">All companies are within their quotas.</span>
+            ) : (
+              <>
+                <span className="text-muted-foreground">Needs attention:</span>
+                <button
+                  type="button"
+                  onClick={() => setUsageFilter("near")}
+                  className="focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-md"
+                  aria-label={`${nearOrAtLimitCount} companies near or at their limit`}
+                >
+                  <Badge variant="outline" className="bg-amber-500/15 text-amber-700 border-amber-500/30 tabular-nums">
+                    {nearOrAtLimitCount} near or at limit
+                  </Badge>
+                </button>
+                {atLimitCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setUsageFilter("at")}
+                    className="focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-md"
+                    aria-label={`${atLimitCount} companies at their limit`}
+                  >
+                    <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/30 tabular-nums">
+                      {atLimitCount} at limit
+                    </Badge>
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       <Card>
