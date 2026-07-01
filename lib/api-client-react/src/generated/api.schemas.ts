@@ -48,7 +48,7 @@ export interface Company {
   maxManagers?: number | null;
   /** @nullable */
   maxDevices?: number | null;
-  /** Current number of non-super users in the company (present on the list endpoint only). */
+  /** Current number of users with role=manager in the company (matches how the maxManagers quota is enforced; present on the list endpoint only). */
   managerCount?: number;
   /** Current number of enrolled devices in the company (present on the list endpoint only). */
   deviceCount?: number;

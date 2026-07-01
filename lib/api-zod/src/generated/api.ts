@@ -1625,7 +1625,7 @@ export const ListCompaniesResponseItem = zod.object({
     .number()
     .optional()
     .describe(
-      "Current number of non-super users in the company (present on the list endpoint only).",
+      "Current number of users with role=manager in the company (matches how the maxManagers quota is enforced; present on the list endpoint only).",
     ),
   deviceCount: zod
     .number()
@@ -1673,7 +1673,7 @@ export const GetCompanyResponse = zod
       .number()
       .optional()
       .describe(
-        "Current number of non-super users in the company (present on the list endpoint only).",
+        "Current number of users with role=manager in the company (matches how the maxManagers quota is enforced; present on the list endpoint only).",
       ),
     deviceCount: zod
       .number()
@@ -1766,7 +1766,7 @@ export const UpdateCompanyLimitsResponse = zod.object({
     .number()
     .optional()
     .describe(
-      "Current number of non-super users in the company (present on the list endpoint only).",
+      "Current number of users with role=manager in the company (matches how the maxManagers quota is enforced; present on the list endpoint only).",
     ),
   deviceCount: zod
     .number()
@@ -1796,7 +1796,7 @@ export const SuspendCompanyResponse = zod.object({
     .number()
     .optional()
     .describe(
-      "Current number of non-super users in the company (present on the list endpoint only).",
+      "Current number of users with role=manager in the company (matches how the maxManagers quota is enforced; present on the list endpoint only).",
     ),
   deviceCount: zod
     .number()
@@ -1826,7 +1826,7 @@ export const ReactivateCompanyResponse = zod.object({
     .number()
     .optional()
     .describe(
-      "Current number of non-super users in the company (present on the list endpoint only).",
+      "Current number of users with role=manager in the company (matches how the maxManagers quota is enforced; present on the list endpoint only).",
     ),
   deviceCount: zod
     .number()

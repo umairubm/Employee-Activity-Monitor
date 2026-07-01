@@ -1590,8 +1590,9 @@ components:
         managerCount:
           type: integer
           description: >-
-            Current number of non-super users in the company (present on the
-            list endpoint only).
+            Current number of users with role=manager in the company (matches
+            how the maxManagers quota is enforced; present on the list endpoint
+            only).
         deviceCount:
           type: integer
           description: >-

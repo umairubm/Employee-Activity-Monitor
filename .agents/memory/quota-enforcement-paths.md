@@ -32,6 +32,14 @@ weakest seat-adding path.
   conditional UPDATE; the company-row lock also covers different-token,
   same-company enrollments. Enroll locks the token row first, then the company
   row — keep that order to avoid deadlocks.
+- The USAGE-DISPLAY count must use the SAME definition as enforcement. maxManagers
+  is enforced counting only `role='manager'`, so the `managerCount` returned by
+  GET /companies (and every dashboard usage label/badge that reads it) must ALSO
+  count only `role='manager'` — NOT all tenant users. Counting all users made a
+  company with 1 admin + 1 manager show "2 / 1" while enforcement saw 1 manager,
+  confusing the Super User ("it's not showing the manager I created"). If you ever
+  change what a quota counts, update the matching display subquery + its OpenAPI
+  description in lockstep.
 - Testing a TOCTOU fix through the HTTP route is timing-dependent: on a fast local
   DB two parallel requests often serialize naturally and pass even WITHOUT the
   lock. To actually exercise the race, temporarily add a `setTimeout` between the

@@ -35,8 +35,9 @@ const createSchema = z.object({
 });
 
 // GET /api/companies - list all tenants (Super User surface). Each row carries
-// its current usage counts (managerCount = non-super users in the company,
-// deviceCount = enrolled devices) so the Super User can see usage vs. quota.
+// its current usage counts (managerCount = users with role="manager", matching
+// how the maxManagers quota is enforced; deviceCount = enrolled devices) so the
+// Super User can see usage vs. quota.
 router.get("/", async (_req, res) => {
   try {
     const rows = await db
@@ -49,7 +50,7 @@ router.get("/", async (_req, res) => {
         createdById: companiesTable.createdById,
         createdAt: companiesTable.createdAt,
         updatedAt: companiesTable.updatedAt,
-        managerCount: sql<number>`(select count(*)::int from ${usersTable} where ${usersTable.companyId} = ${companiesTable.id})`,
+        managerCount: sql<number>`(select count(*)::int from ${usersTable} where ${usersTable.companyId} = ${companiesTable.id} and ${usersTable.role} = 'manager')`,
         deviceCount: sql<number>`(select count(*)::int from ${devicesTable} where ${devicesTable.companyId} = ${companiesTable.id})`,
       })
       .from(companiesTable)
