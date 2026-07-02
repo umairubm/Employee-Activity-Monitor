@@ -310,34 +310,36 @@ export default function Timesheets() {
               </SelectContent>
             </Select>
           </div>
-          <div>
-            <Label htmlFor="ts-filter-hrs" className="text-xs text-muted-foreground mb-1 block">Hours</Label>
-            <Input
-              id="ts-filter-hrs"
-              type="number"
-              min={0}
-              inputMode="numeric"
-              placeholder="e.g. 2"
-              value={filterHours}
-              onChange={(e) => setFilterHours(e.target.value)}
-              disabled={filterField === "none"}
-              className="w-24"
-            />
-          </div>
-          <div>
-            <Label htmlFor="ts-filter-min" className="text-xs text-muted-foreground mb-1 block">Minutes</Label>
-            <Input
-              id="ts-filter-min"
-              type="number"
-              min={0}
-              max={59}
-              inputMode="numeric"
-              placeholder="e.g. 30"
-              value={filterMinutes}
-              onChange={(e) => setFilterMinutes(e.target.value)}
-              disabled={filterField === "none"}
-              className="w-24"
-            />
+          <div className="flex items-end gap-2">
+            <div>
+              <Label htmlFor="ts-filter-hrs" className="text-xs text-muted-foreground mb-1 block">Hours</Label>
+              <Input
+                id="ts-filter-hrs"
+                type="number"
+                min={0}
+                inputMode="numeric"
+                placeholder="e.g. 2"
+                value={filterHours}
+                onChange={(e) => setFilterHours(e.target.value)}
+                disabled={filterField === "none"}
+                className="w-24"
+              />
+            </div>
+            <div>
+              <Label htmlFor="ts-filter-min" className="text-xs text-muted-foreground mb-1 block">Minutes</Label>
+              <Input
+                id="ts-filter-min"
+                type="number"
+                min={0}
+                max={59}
+                inputMode="numeric"
+                placeholder="e.g. 30"
+                value={filterMinutes}
+                onChange={(e) => setFilterMinutes(e.target.value)}
+                disabled={filterField === "none"}
+                className="w-24"
+              />
+            </div>
           </div>
           {filterActive && (
             <Button variant="ghost" size="sm" onClick={clearFilter}>
