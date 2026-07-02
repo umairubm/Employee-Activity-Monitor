@@ -192,25 +192,31 @@ export default function Timesheets() {
     });
   };
 
-  // Conditional filter on Active Time / Total Time (value entered in minutes).
+  // Conditional filter on Active Time / Total Time (threshold as hours + minutes).
   const [filterField, setFilterField] = useState<"none" | "activeSeconds" | "totalSeconds">("none");
   const [filterOp, setFilterOp] = useState<"lt" | "gt">("gt");
+  const [filterHours, setFilterHours] = useState<string>("");
   const [filterMinutes, setFilterMinutes] = useState<string>("");
 
-  const filterActive =
-    filterField !== "none" && filterMinutes.trim() !== "" && Number(filterMinutes) >= 0 && Number.isFinite(Number(filterMinutes));
+  const hoursNum = filterHours.trim() === "" ? 0 : Number(filterHours);
+  const minsNum = filterMinutes.trim() === "" ? 0 : Number(filterMinutes);
+  const durationProvided = filterHours.trim() !== "" || filterMinutes.trim() !== "";
+  const durationValid =
+    Number.isFinite(hoursNum) && Number.isFinite(minsNum) && hoursNum >= 0 && minsNum >= 0;
+  const filterActive = filterField !== "none" && durationProvided && durationValid;
 
   const filteredRows = useMemo(() => {
     if (!filterActive) return rows;
-    const threshold = Math.max(0, Number(filterMinutes)) * 60;
+    const threshold = hoursNum * 3600 + minsNum * 60;
     return rows.filter((r) => {
       const v = filterField === "activeSeconds" ? r.activeSeconds : r.totalSeconds;
       return filterOp === "lt" ? v < threshold : v > threshold;
     });
-  }, [rows, filterActive, filterField, filterOp, filterMinutes]);
+  }, [rows, filterActive, filterField, filterOp, hoursNum, minsNum]);
 
   const clearFilter = () => {
     setFilterField("none");
+    setFilterHours("");
     setFilterMinutes("");
   };
 
@@ -305,17 +311,32 @@ export default function Timesheets() {
             </Select>
           </div>
           <div>
+            <Label htmlFor="ts-filter-hrs" className="text-xs text-muted-foreground mb-1 block">Hours</Label>
+            <Input
+              id="ts-filter-hrs"
+              type="number"
+              min={0}
+              inputMode="numeric"
+              placeholder="e.g. 2"
+              value={filterHours}
+              onChange={(e) => setFilterHours(e.target.value)}
+              disabled={filterField === "none"}
+              className="w-24"
+            />
+          </div>
+          <div>
             <Label htmlFor="ts-filter-min" className="text-xs text-muted-foreground mb-1 block">Minutes</Label>
             <Input
               id="ts-filter-min"
               type="number"
               min={0}
+              max={59}
               inputMode="numeric"
-              placeholder="e.g. 120"
+              placeholder="e.g. 30"
               value={filterMinutes}
               onChange={(e) => setFilterMinutes(e.target.value)}
               disabled={filterField === "none"}
-              className="w-28"
+              className="w-24"
             />
           </div>
           {filterActive && (
