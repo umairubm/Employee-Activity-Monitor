@@ -1878,6 +1878,12 @@ components:
         tokenLabel:
           type: [string, "null"]
           description: Label of the enrollment token this device was enrolled with.
+        tokenEmployeeId:
+          type: [string, "null"]
+          description: Employee ID of the enrollment token this device was enrolled with.
+        tokenRegion:
+          type: [string, "null"]
+          description: Region of the enrollment token this device was enrolled with.
         online:
           type: boolean
         createdAt:

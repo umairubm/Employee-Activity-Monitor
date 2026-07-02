@@ -39,11 +39,19 @@ router.get("/", async (req, res) => {
   try {
     const companyId = getCompanyId(req);
     const rows = await db
-      .select({ ...publicDeviceColumns, tokenLabel: enrollmentTokensTable.label })
+      .select({
+        ...publicDeviceColumns,
+        tokenLabel: enrollmentTokensTable.label,
+        tokenEmployeeId: enrollmentTokensTable.employeeId,
+        tokenRegion: enrollmentTokensTable.region,
+      })
       .from(devicesTable)
       .leftJoin(
         enrollmentTokensTable,
-        eq(devicesTable.enrolledViaTokenId, enrollmentTokensTable.id),
+        and(
+          eq(devicesTable.enrolledViaTokenId, enrollmentTokensTable.id),
+          eq(enrollmentTokensTable.companyId, companyId),
+        ),
       )
       .where(eq(devicesTable.companyId, companyId))
       .orderBy(desc(devicesTable.lastSeenAt));
@@ -76,11 +84,19 @@ router.get("/:id", async (req, res) => {
   try {
     const companyId = getCompanyId(req);
     const [row] = await db
-      .select({ ...publicDeviceColumns, tokenLabel: enrollmentTokensTable.label })
+      .select({
+        ...publicDeviceColumns,
+        tokenLabel: enrollmentTokensTable.label,
+        tokenEmployeeId: enrollmentTokensTable.employeeId,
+        tokenRegion: enrollmentTokensTable.region,
+      })
       .from(devicesTable)
       .leftJoin(
         enrollmentTokensTable,
-        eq(devicesTable.enrolledViaTokenId, enrollmentTokensTable.id),
+        and(
+          eq(devicesTable.enrolledViaTokenId, enrollmentTokensTable.id),
+          eq(enrollmentTokensTable.companyId, companyId),
+        ),
       )
       .where(
         and(

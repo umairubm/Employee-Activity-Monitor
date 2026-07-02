@@ -75,6 +75,16 @@ export const ListDevicesResponseItem = zod.object({
     .string()
     .nullish()
     .describe("Label of the enrollment token this device was enrolled with."),
+  tokenEmployeeId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Employee ID of the enrollment token this device was enrolled with.",
+    ),
+  tokenRegion: zod
+    .string()
+    .nullish()
+    .describe("Region of the enrollment token this device was enrolled with."),
   online: zod.boolean(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -122,6 +132,16 @@ export const GetDeviceResponse = zod.object({
     .string()
     .nullish()
     .describe("Label of the enrollment token this device was enrolled with."),
+  tokenEmployeeId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Employee ID of the enrollment token this device was enrolled with.",
+    ),
+  tokenRegion: zod
+    .string()
+    .nullish()
+    .describe("Region of the enrollment token this device was enrolled with."),
   online: zod.boolean(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -254,6 +274,16 @@ export const SetDeviceGroupResponse = zod.object({
     .string()
     .nullish()
     .describe("Label of the enrollment token this device was enrolled with."),
+  tokenEmployeeId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Employee ID of the enrollment token this device was enrolled with.",
+    ),
+  tokenRegion: zod
+    .string()
+    .nullish()
+    .describe("Region of the enrollment token this device was enrolled with."),
   online: zod.boolean(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -367,6 +397,16 @@ export const UpdateDeviceConfigResponse = zod.object({
     .string()
     .nullish()
     .describe("Label of the enrollment token this device was enrolled with."),
+  tokenEmployeeId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Employee ID of the enrollment token this device was enrolled with.",
+    ),
+  tokenRegion: zod
+    .string()
+    .nullish()
+    .describe("Region of the enrollment token this device was enrolled with."),
   online: zod.boolean(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),

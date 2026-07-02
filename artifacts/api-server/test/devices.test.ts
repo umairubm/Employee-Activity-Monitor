@@ -2,11 +2,12 @@ import { afterAll, describe, expect, it } from "vitest";
 import { randomUUID } from "crypto";
 import request from "supertest";
 import { inArray } from "drizzle-orm";
-import { db, devicesTable, pool } from "@workspace/db";
-import { createDevice, makeApp } from "./helpers";
+import { db, devicesTable, enrollmentTokensTable, pool } from "@workspace/db";
+import { createDevice, createEnrollmentToken, makeApp } from "./helpers";
 
 const app = makeApp();
 const createdDeviceIds: string[] = [];
+const createdTokenIds: string[] = [];
 
 async function newDevice(overrides = {}) {
   const d = await createDevice(overrides);
@@ -19,6 +20,11 @@ afterAll(async () => {
     await db
       .delete(devicesTable)
       .where(inArray(devicesTable.id, createdDeviceIds));
+  }
+  if (createdTokenIds.length) {
+    await db
+      .delete(enrollmentTokensTable)
+      .where(inArray(enrollmentTokensTable.id, createdTokenIds));
   }
   await pool.end();
 });
@@ -188,5 +194,34 @@ describe("PATCH /devices/config (apply to all)", () => {
     const res = await request(memberApp).patch("/devices/config").send(validConfig);
 
     expect(res.status).toBe(403);
+  });
+});
+
+describe("GET /devices (enrolling-token metadata)", () => {
+  it("surfaces the enrolling token's employeeId, region, and label", async () => {
+    const token = await createEnrollmentToken({
+      label: "Batch 9",
+      employeeId: "EMP-4242",
+      region: "APAC",
+    });
+    createdTokenIds.push(token.id);
+    const device = await newDevice({ enrolledViaTokenId: token.id });
+
+    const res = await request(app).get("/devices");
+    expect(res.status).toBe(200);
+    const row = (res.body as any[]).find((d) => d.id === device.id);
+    expect(row).toBeDefined();
+    expect(row.tokenEmployeeId).toBe("EMP-4242");
+    expect(row.tokenRegion).toBe("APAC");
+    expect(row.tokenLabel).toBe("Batch 9");
+  });
+
+  it("returns null token metadata for a device with no enrolling token", async () => {
+    const device = await newDevice();
+
+    const res = await request(app).get(`/devices/${device.id}`);
+    expect(res.status).toBe(200);
+    expect(res.body.tokenEmployeeId).toBeNull();
+    expect(res.body.tokenRegion).toBeNull();
   });
 });

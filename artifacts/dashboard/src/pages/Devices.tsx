@@ -158,7 +158,9 @@ export default function Devices() {
             <TableHeader>
               <TableRow>
                 <TableHead>System Name</TableHead>
+                <TableHead>Employee ID</TableHead>
                 <TableHead>Group</TableHead>
+                <TableHead>Region</TableHead>
                 <TableHead>Label</TableHead>
                 <TableHead>OS</TableHead>
                 <TableHead>Status</TableHead>
@@ -170,7 +172,7 @@ export default function Devices() {
             <TableBody>
               {filteredDevices?.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="h-32 text-center text-muted-foreground">
+                  <TableCell colSpan={10} className="h-32 text-center text-muted-foreground">
                     No devices found.
                   </TableCell>
                 </TableRow>
@@ -191,6 +193,13 @@ export default function Devices() {
                       </div>
                       <div className="text-xs text-muted-foreground font-mono mt-1">{device.hardwareHash.substring(0, 8)}...</div>
                     </TableCell>
+                    <TableCell className="text-sm">
+                      {device.tokenEmployeeId ? (
+                        <span className="font-medium">{device.tokenEmployeeId}</span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
                     <TableCell>
                       <button
                         onClick={() => openEdit(device.id, device.deviceGroup)}
@@ -200,6 +209,13 @@ export default function Devices() {
                         <Badge variant="secondary" className="font-normal">{device.deviceGroup}</Badge>
                         <FolderPen className="h-3.5 w-3.5 opacity-0 group-hover:opacity-60" />
                       </button>
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {device.tokenRegion ? (
+                        <Badge variant="outline" className="font-normal">{device.tokenRegion}</Badge>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
                     </TableCell>
                     <TableCell className="text-sm">
                       {device.tokenLabel ? (

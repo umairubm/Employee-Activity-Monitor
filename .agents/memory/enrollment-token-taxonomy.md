@@ -24,3 +24,10 @@ a groups/regions table exists. If adding a new taxonomy field to tokens, mirror 
 pattern (nullable string column + distinct-union list endpoint + combobox with
 create-new + optional undefined sentinel). Length bound is 1..100 in both Zod and
 OpenAPI.
+
+**Devices show token metadata via join, not their own columns.** Devices have no
+employeeId/label/region of their own; the Devices list/detail endpoints LEFT JOIN
+the enrolling token (`devices.enrolledViaTokenId`) and expose `tokenEmployeeId`,
+`tokenRegion`, `tokenLabel` (all nullable — a device may have no enrolling token).
+Scope the token join by `enrollment_tokens.companyId = <caller company>` too
+(defense-in-depth), not just the device's own companyId filter.

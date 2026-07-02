@@ -37,6 +37,16 @@ export interface DeviceItem {
    * @nullable
    */
   tokenLabel?: string | null;
+  /**
+   * Employee ID of the enrollment token this device was enrolled with.
+   * @nullable
+   */
+  tokenEmployeeId?: string | null;
+  /**
+   * Region of the enrollment token this device was enrolled with.
+   * @nullable
+   */
+  tokenRegion?: string | null;
   online: boolean;
   createdAt: Date;
   updatedAt: Date;
