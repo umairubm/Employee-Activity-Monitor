@@ -5,7 +5,7 @@ import {
   useListDevices,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,7 +19,7 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Clock, Download, CalendarClock, LogOut, Columns3 } from "lucide-react";
+import { Clock, Download, CalendarClock, LogOut, Columns3, Sigma } from "lucide-react";
 import { useGroupFilter, ALL_GROUPS as ALL } from "@/hooks/use-group-filter";
 import { useDateRange, daysAgoStr } from "@/hooks/use-date-filter";
 
@@ -107,7 +107,15 @@ export default function Timesheets() {
   const totals = report?.totals;
 
   type Row = (typeof rows)[number];
-  const columns: { id: string; header: string; accessor: (r: Row) => string | number }[] = [
+  // `sumValue` marks a column as numeric/summable; `formatSum` renders its total.
+  type Column = {
+    id: string;
+    header: string;
+    accessor: (r: Row) => string | number;
+    sumValue?: (r: Row) => number;
+    formatSum?: (n: number) => string;
+  };
+  const columns: Column[] = [
     { id: "date", header: "Date", accessor: (r) => `${r.date}T00:00:00` },
     { id: "deviceGroup", header: "Groups", accessor: (r) => r.deviceGroup },
     { id: "systemName", header: "Computer", accessor: (r) => r.systemName },
@@ -117,13 +125,14 @@ export default function Timesheets() {
     { id: "firstActivity", header: "First Activity", accessor: (r) => fmtTime(r.firstActivity) },
     { id: "lastActivity", header: "Last Activity", accessor: (r) => fmtTime(r.lastActivity) },
     { id: "lastActivityLog", header: "Last Activity Log", accessor: (r) => fmtDateTime(r.lastActivityLog) },
-    { id: "productiveSeconds", header: "Productive", accessor: (r) => fmtDuration(r.productiveSeconds) },
-    { id: "unproductiveSeconds", header: "Unproductive", accessor: (r) => fmtDuration(r.unproductiveSeconds) },
-    { id: "undefinedSeconds", header: "Undefined", accessor: (r) => fmtDuration(r.undefinedSeconds) },
-    { id: "totalSeconds", header: "Total Time", accessor: (r) => fmtDuration(r.totalSeconds) },
-    { id: "activeSeconds", header: "Active Time", accessor: (r) => fmtDuration(r.activeSeconds) },
+    { id: "productiveSeconds", header: "Productive", accessor: (r) => fmtDuration(r.productiveSeconds), sumValue: (r) => r.productiveSeconds, formatSum: fmtDuration },
+    { id: "unproductiveSeconds", header: "Unproductive", accessor: (r) => fmtDuration(r.unproductiveSeconds), sumValue: (r) => r.unproductiveSeconds, formatSum: fmtDuration },
+    { id: "undefinedSeconds", header: "Undefined", accessor: (r) => fmtDuration(r.undefinedSeconds), sumValue: (r) => r.undefinedSeconds, formatSum: fmtDuration },
+    { id: "totalSeconds", header: "Total Time", accessor: (r) => fmtDuration(r.totalSeconds), sumValue: (r) => r.totalSeconds, formatSum: fmtDuration },
+    { id: "activeSeconds", header: "Active Time", accessor: (r) => fmtDuration(r.activeSeconds), sumValue: (r) => r.activeSeconds, formatSum: fmtDuration },
   ];
   const allColumnIds = columns.map((c) => c.id);
+  const summableColumns = columns.filter((c) => c.sumValue && c.formatSum);
 
   // Which columns to include in the export, persisted so the choice sticks.
   const [selectedIds, setSelectedIds] = useState<string[]>(() => {
@@ -157,12 +166,81 @@ export default function Timesheets() {
     });
   };
 
+  // Which numeric columns to total in the export/footer, persisted.
+  const [sumIds, setSumIds] = useState<string[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const raw = window.localStorage.getItem("timesheet-sum-columns");
+      if (!raw) return [];
+      const parsed = JSON.parse(raw) as string[];
+      return parsed.filter((id) => summableColumns.some((c) => c.id === id));
+    } catch {
+      return [];
+    }
+  });
+  const isSummed = (id: string) => sumIds.includes(id);
+  const toggleSum = (id: string) => {
+    setSumIds((prev) => {
+      const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
+      const ordered = allColumnIds.filter((c) => next.includes(c));
+      try {
+        window.localStorage.setItem("timesheet-sum-columns", JSON.stringify(ordered));
+      } catch {
+        /* ignore storage failures */
+      }
+      return ordered;
+    });
+  };
+
+  // Conditional filter on Active Time / Total Time (value entered in minutes).
+  const [filterField, setFilterField] = useState<"none" | "activeSeconds" | "totalSeconds">("none");
+  const [filterOp, setFilterOp] = useState<"lt" | "gt">("gt");
+  const [filterMinutes, setFilterMinutes] = useState<string>("");
+
+  const filterActive =
+    filterField !== "none" && filterMinutes.trim() !== "" && Number(filterMinutes) >= 0 && Number.isFinite(Number(filterMinutes));
+
+  const filteredRows = useMemo(() => {
+    if (!filterActive) return rows;
+    const threshold = Math.max(0, Number(filterMinutes)) * 60;
+    return rows.filter((r) => {
+      const v = filterField === "activeSeconds" ? r.activeSeconds : r.totalSeconds;
+      return filterOp === "lt" ? v < threshold : v > threshold;
+    });
+  }, [rows, filterActive, filterField, filterOp, filterMinutes]);
+
+  const clearFilter = () => {
+    setFilterField("none");
+    setFilterMinutes("");
+  };
+
+  // Totals for the currently-displayed (filtered) rows, keyed by column id.
+  const sumsById = useMemo(() => {
+    const acc: Record<string, number> = {};
+    for (const c of summableColumns) {
+      if (!sumIds.includes(c.id)) continue;
+      acc[c.id] = filteredRows.reduce((sum, r) => sum + (c.sumValue!(r) ?? 0), 0);
+    }
+    return acc;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredRows, sumIds]);
+
   const exportCsv = () => {
     if (!report) return;
     const chosen = columns.filter((c) => selectedIds.includes(c.id));
     const cols = chosen.length > 0 ? chosen : columns;
     const header = cols.map((c) => c.header);
-    const body: (string | number)[][] = rows.map((r) => cols.map((c) => c.accessor(r)));
+    const body: (string | number)[][] = filteredRows.map((r) => cols.map((c) => c.accessor(r)));
+    // Append a totals row only when at least one summed column is actually exported.
+    if (cols.some((c) => sumIds.includes(c.id))) {
+      const sumRow = cols.map((c, idx) => {
+        if (sumIds.includes(c.id) && c.sumValue && c.formatSum) {
+          return c.formatSum(filteredRows.reduce((s, r) => s + (c.sumValue!(r) ?? 0), 0));
+        }
+        return idx === 0 ? "TOTAL" : "";
+      });
+      body.push(sumRow);
+    }
     downloadCsv(`timesheet-${from}_to_${to}.csv`, [header, ...body]);
   };
 
@@ -197,6 +275,54 @@ export default function Timesheets() {
               </SelectContent>
             </Select>
           </div>
+          <div>
+            <Label htmlFor="ts-filter-field" className="text-xs text-muted-foreground mb-1 block">Filter</Label>
+            <Select value={filterField} onValueChange={(v) => setFilterField(v as typeof filterField)}>
+              <SelectTrigger id="ts-filter-field" className="w-full sm:w-36">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No filter</SelectItem>
+                <SelectItem value="activeSeconds">Active Time</SelectItem>
+                <SelectItem value="totalSeconds">Total Time</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="ts-filter-op" className="text-xs text-muted-foreground mb-1 block">Is</Label>
+            <Select
+              value={filterOp}
+              onValueChange={(v) => setFilterOp(v as typeof filterOp)}
+              disabled={filterField === "none"}
+            >
+              <SelectTrigger id="ts-filter-op" className="w-full sm:w-28">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="gt">&gt; (more than)</SelectItem>
+                <SelectItem value="lt">&lt; (less than)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="ts-filter-min" className="text-xs text-muted-foreground mb-1 block">Minutes</Label>
+            <Input
+              id="ts-filter-min"
+              type="number"
+              min={0}
+              inputMode="numeric"
+              placeholder="e.g. 120"
+              value={filterMinutes}
+              onChange={(e) => setFilterMinutes(e.target.value)}
+              disabled={filterField === "none"}
+              className="w-28"
+            />
+          </div>
+          {filterActive && (
+            <Button variant="ghost" size="sm" onClick={clearFilter}>
+              Clear
+            </Button>
+          )}
         </div>
         <div className="flex flex-wrap items-end gap-2">
           <div>
@@ -233,7 +359,29 @@ export default function Timesheets() {
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
-          <Button variant="outline" onClick={exportCsv} disabled={!report || rows.length === 0}>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline">
+                <Sigma className="h-4 w-4 mr-2" />
+                Sum ({sumIds.length})
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel>Columns to total</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {summableColumns.map((c) => (
+                <DropdownMenuCheckboxItem
+                  key={c.id}
+                  checked={isSummed(c.id)}
+                  onCheckedChange={() => toggleSum(c.id)}
+                  onSelect={(e) => e.preventDefault()}
+                >
+                  {c.header}
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button variant="outline" onClick={exportCsv} disabled={!report || filteredRows.length === 0}>
             <Download className="h-4 w-4 mr-2" />
             Export CSV
           </Button>
@@ -303,10 +451,10 @@ export default function Timesheets() {
               <TableBody>
                 {isLoading ? (
                   <TableRow><TableCell colSpan={14} className="h-32 text-center text-muted-foreground">Loading...</TableCell></TableRow>
-                ) : rows.length === 0 ? (
-                  <TableRow><TableCell colSpan={14} className="h-32 text-center text-muted-foreground">No activity in this range.</TableCell></TableRow>
+                ) : filteredRows.length === 0 ? (
+                  <TableRow><TableCell colSpan={14} className="h-32 text-center text-muted-foreground">{filterActive ? "No rows match the filter." : "No activity in this range."}</TableCell></TableRow>
                 ) : (
-                  rows.map((r) => (
+                  filteredRows.map((r) => (
                     <TableRow key={`${r.deviceId}-${r.date}`}>
                       <TableCell className="whitespace-nowrap text-sm tabular-nums">{`${r.date}T00:00:00`}</TableCell>
                       <TableCell><Badge variant="secondary" className="font-normal">{r.deviceGroup}</Badge></TableCell>
@@ -326,6 +474,20 @@ export default function Timesheets() {
                   ))
                 )}
               </TableBody>
+              {sumIds.length > 0 && filteredRows.length > 0 && (
+                <TableFooter>
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-sm font-medium">
+                      Sum{filterActive ? " (filtered)" : ""}
+                    </TableCell>
+                    <TableCell className="text-right text-sm tabular-nums font-medium">{isSummed("productiveSeconds") ? fmtDuration(sumsById.productiveSeconds ?? 0) : ""}</TableCell>
+                    <TableCell className="text-right text-sm tabular-nums font-medium">{isSummed("unproductiveSeconds") ? fmtDuration(sumsById.unproductiveSeconds ?? 0) : ""}</TableCell>
+                    <TableCell className="text-right text-sm tabular-nums font-medium">{isSummed("undefinedSeconds") ? fmtDuration(sumsById.undefinedSeconds ?? 0) : ""}</TableCell>
+                    <TableCell className="text-right text-sm tabular-nums font-medium">{isSummed("totalSeconds") ? fmtDuration(sumsById.totalSeconds ?? 0) : ""}</TableCell>
+                    <TableCell className="text-right text-sm tabular-nums font-medium">{isSummed("activeSeconds") ? fmtDuration(sumsById.activeSeconds ?? 0) : ""}</TableCell>
+                  </TableRow>
+                </TableFooter>
+              )}
             </Table>
           </div>
         </CardContent>
