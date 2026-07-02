@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useListTokens, getListTokensQueryKey, useListTokenGroups, useListTokenRegions, useCreateToken, useRevokeToken } from "@workspace/api-client-react";
+import type { EnrollmentTokenItem } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -11,7 +12,7 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator } from "@/components/ui/command";
-import { KeyRound, Plus, Trash2, Copy, CheckCircle2, Monitor, ChevronsUpDown, Check } from "lucide-react";
+import { KeyRound, Plus, Trash2, Copy, CheckCircle2, Monitor, ChevronsUpDown, Check, Eye } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 
@@ -23,6 +24,29 @@ const CREATE_NEW_REGION = "__create_new_region__";
 const UNDEFINED_REGION = "__undefined_region__";
 // Employee ID: starts alphanumeric, then alphanumeric/hyphen/underscore, 2-64 chars.
 const EMPLOYEE_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{1,63}$/;
+
+// A single token row as returned by the list endpoint (carries every field we
+// need for the details view, so no extra request is required).
+type TokenRow = EnrollmentTokenItem;
+
+// Derive the lifecycle status of a token from its counters/timestamps.
+function tokenStatus(token: TokenRow): "revoked" | "expired" | "exhausted" | "active" {
+  if (token.revokedAt) return "revoked";
+  if (token.expiresAt && new Date(token.expiresAt) < new Date()) return "expired";
+  if (token.useCount >= token.maxUses) return "exhausted";
+  return "active";
+}
+
+function StatusBadge({ status }: { status: ReturnType<typeof tokenStatus> }) {
+  if (status === "revoked") return <Badge variant="destructive">Revoked</Badge>;
+  if (status === "expired") return <Badge variant="secondary">Expired</Badge>;
+  if (status === "exhausted") return <Badge variant="secondary">Exhausted</Badge>;
+  return (
+    <Badge className="bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/25 border-emerald-500/20">
+      Active
+    </Badge>
+  );
+}
 
 export default function Tokens() {
   const queryClient = useQueryClient();
@@ -47,6 +71,7 @@ export default function Tokens() {
   const [neverExpires, setNeverExpires] = useState(true);
   const [createdTokenStr, setCreatedTokenStr] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [detailsToken, setDetailsToken] = useState<TokenRow | null>(null);
 
   const creatingNewGroup = groupChoice === CREATE_NEW_GROUP;
   const creatingNewRegion = regionChoice === CREATE_NEW_REGION;
@@ -424,10 +449,9 @@ export default function Tokens() {
                   </TableRow>
                 ) : (
                   tokens?.map(token => {
-                    const isRevoked = !!token.revokedAt;
-                    const isExpired = token.expiresAt ? new Date(token.expiresAt) < new Date() : false;
-                    const isExhausted = token.useCount >= token.maxUses;
-                    const isActive = !isRevoked && !isExpired && !isExhausted;
+                    const status = tokenStatus(token);
+                    const isRevoked = status === "revoked";
+                    const isActive = status === "active";
 
                     return (
                       <TableRow key={token.id} className={!isActive ? "opacity-60" : ""}>
@@ -445,10 +469,7 @@ export default function Tokens() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          {isRevoked ? <Badge variant="destructive">Revoked</Badge> :
-                           isExpired ? <Badge variant="secondary">Expired</Badge> :
-                           isExhausted ? <Badge variant="secondary">Exhausted</Badge> :
-                           <Badge className="bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/25 border-emerald-500/20">Active</Badge>}
+                          <StatusBadge status={status} />
                         </TableCell>
                         <TableCell className="text-sm">
                           {token.useCount} / {token.maxUses}
@@ -474,16 +495,27 @@ export default function Tokens() {
                           {token.expiresAt ? format(new Date(token.expiresAt), "MMM d, yyyy") : "Never"}
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="text-muted-foreground hover:text-destructive"
-                            onClick={() => handleRevoke(token.id)}
-                            disabled={isRevoked || revokeToken.isPending}
-                            title={isRevoked ? "Already revoked" : "Revoke token"}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="text-muted-foreground hover:text-foreground"
+                              onClick={() => setDetailsToken(token)}
+                              title="View details"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="text-muted-foreground hover:text-destructive"
+                              onClick={() => handleRevoke(token.id)}
+                              disabled={isRevoked || revokeToken.isPending}
+                              title={isRevoked ? "Already revoked" : "Revoke token"}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     );
@@ -494,6 +526,84 @@ export default function Tokens() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={!!detailsToken} onOpenChange={(open) => { if (!open) setDetailsToken(null); }}>
+        <DialogContent className="max-w-lg">
+          {detailsToken && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <KeyRound className="h-5 w-5" />
+                  Token Details
+                </DialogTitle>
+                <DialogDescription>
+                  {detailsToken.label || "Enrollment token"}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-2 text-sm">
+                <div className="flex items-center justify-between rounded-lg border border-border bg-secondary/50 p-3">
+                  <code className="font-mono break-all">{detailsToken.token}</code>
+                  <StatusBadge status={tokenStatus(detailsToken)} />
+                </div>
+
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
+                  <div className="space-y-0.5">
+                    <dt className="text-xs text-muted-foreground">Employee ID</dt>
+                    <dd className="font-medium">{detailsToken.employeeId || "—"}</dd>
+                  </div>
+                  <div className="space-y-0.5">
+                    <dt className="text-xs text-muted-foreground">Uses</dt>
+                    <dd className="font-medium">{detailsToken.useCount} / {detailsToken.maxUses}</dd>
+                  </div>
+                  <div className="space-y-0.5">
+                    <dt className="text-xs text-muted-foreground">Group</dt>
+                    <dd>{detailsToken.deviceGroup ? <Badge variant="secondary" className="font-normal">{detailsToken.deviceGroup}</Badge> : <span className="text-muted-foreground">—</span>}</dd>
+                  </div>
+                  <div className="space-y-0.5">
+                    <dt className="text-xs text-muted-foreground">Region</dt>
+                    <dd>{detailsToken.region ? <Badge variant="outline" className="font-normal">{detailsToken.region}</Badge> : <span className="text-muted-foreground">Undefined</span>}</dd>
+                  </div>
+                  <div className="space-y-0.5">
+                    <dt className="text-xs text-muted-foreground">Created</dt>
+                    <dd className="font-medium">{format(new Date(detailsToken.createdAt), "MMM d, yyyy p")}</dd>
+                  </div>
+                  <div className="space-y-0.5">
+                    <dt className="text-xs text-muted-foreground">Expires</dt>
+                    <dd className="font-medium">{detailsToken.expiresAt ? format(new Date(detailsToken.expiresAt), "MMM d, yyyy p") : "Never"}</dd>
+                  </div>
+                  {detailsToken.revokedAt && (
+                    <div className="space-y-0.5">
+                      <dt className="text-xs text-muted-foreground">Revoked</dt>
+                      <dd className="font-medium text-destructive">{format(new Date(detailsToken.revokedAt), "MMM d, yyyy p")}</dd>
+                    </div>
+                  )}
+                </dl>
+
+                <div className="space-y-1.5">
+                  <div className="text-xs text-muted-foreground">
+                    Enrolled Devices ({detailsToken.enrolledDevices.length})
+                  </div>
+                  {detailsToken.enrolledDevices.length === 0 ? (
+                    <p className="text-muted-foreground">No devices have enrolled with this token yet.</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-1">
+                      {detailsToken.enrolledDevices.map((d) => (
+                        <Badge key={d.id} variant="secondary" className="gap-1 font-normal">
+                          <Monitor className="h-3 w-3" />
+                          {d.systemName}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setDetailsToken(null)}>Close</Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

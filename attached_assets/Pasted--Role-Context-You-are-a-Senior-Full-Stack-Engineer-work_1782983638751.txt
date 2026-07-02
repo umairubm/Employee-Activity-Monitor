@@ -1,0 +1,37 @@
+### Role & Context
+You are a Senior Full-Stack Engineer working on a productivity analytics application. I need you to design and implement an **Export/Download Feature** based on a specific set of data filtering and column customization requirements.
+
+### Technical Objective
+Build or update an export utility (API endpoint + Frontend configuration modal) that allows users to filter tracking logs, customize exportable columns, and calculate cumulative activity time.
+
+### Requirements (Derived from image_6d347c.jpg)
+
+1. **Export Date Filters (Temporal Granularity)**
+   - The user must be able to export data based on three structural conditions:
+     - **Day-wise** (Daily breakdown)
+     - **Month-wise** (Monthly aggregation)
+     - **Range-wise** (Custom date range selector, e.g., Start Date to End Date)
+
+2. **Aggregated Summary Fields**
+   - The export payload must automatically compute and append global summaries:
+     - `Total Time Sum` (Cumulative tracked time)
+     - `Active Time Sum` (Cumulative active/productive time)
+
+3. **Dynamic Column Selection (Field Customization)**
+   - While downloading/configuring the export, the frontend must display a checklist of all available data fields.
+   - The user can select/deselect fields to choose exactly which columns to keep in the generated file (e.g., CSV, Excel).
+
+4. **Data Sync Priority & Source Tracing**
+   - **Device Priority:** Data should first save locally to the device, then trigger an upload sync sequence.
+   - **Source Identifier:** Track and record metadata for specific nodes/users (e.g., tracking data tagged with flags like "Asim bhai data").
+
+5. **Advanced Activity Metrics & Query Constraints**
+   - **First/Last Bounds:** Extract and expose the timestamp for the `First Activity` and `Last Activity` within the selected range.
+   - **Conditional Value Filtering:** Add strict conditional query logic for filtering records based on `Active Time` and `Total Time` benchmarks:
+     - Filter where time is `< [specified duration]`
+     - Filter where time is `> [specified duration]`
+
+### Expected Output
+Please provide:
+1. **Database Query/Backend Logic:** An optimized pseudo-query or backend function (e.g., Node.js/Python FastAPI) that handles the date grouping, conditional duration filtering (`<` or `>`), and calculates the `Sum` metrics.
+2. **UI Design/State Structure:** A layout plan or React state schema showing how the "Field Selection Checklist" and filter inputs map to the export API call payload.
