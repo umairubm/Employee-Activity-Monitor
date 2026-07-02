@@ -133,8 +133,23 @@ async function clean(companyId: string): Promise<void> {
   );
 }
 
+// Small deterministic PRNG (mulberry32) so a given seed always yields the same
+// sequence — the demo data varies across rows but is fully reproducible.
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 // One day of realistic, non-overlapping activity blocks for a device, starting
 // at `startHour` UTC. Alternates productive / unproductive / uncategorized work.
+// `rand` (seeded per device+day) varies block lengths, block count and idle so
+// each row lands on a distinct Total Time / Active Time — useful for exercising
+// the Timesheets conditional filter and per-column sum features.
 function buildDayLogs(
   companyId: string,
   deviceId: string,
@@ -142,9 +157,10 @@ function buildDayLogs(
   startHour: number,
   productiveId: string,
   unproductiveId: string,
+  rand: () => number,
 ): (typeof activityLogsTable.$inferInsert)[] {
-  // minutes of work, and the category for each block (null = undefined bucket).
-  const blocks: { min: number; process: string; categoryId: string | null }[] = [
+  // Base minutes of work, and the category for each block (null = undefined).
+  const baseBlocks: { min: number; process: string; categoryId: string | null }[] = [
     { min: 95, process: "Visual Studio Code", categoryId: productiveId },
     { min: 20, process: "Slack", categoryId: null },
     { min: 130, process: "Google Chrome — Docs", categoryId: productiveId },
@@ -152,12 +168,22 @@ function buildDayLogs(
     { min: 105, process: "Excel", categoryId: productiveId },
     { min: 25, process: "File Explorer", categoryId: null },
   ];
+  // Per-day intensity (≈0.25x..1.4x) spreads Total Time across a wide range.
+  const dayScale = 0.25 + rand() * 1.15;
+  // ~20% of days are short (3–4 blocks) to create clearly low-hour rows.
+  const blockCount = rand() < 0.2 ? 3 + Math.floor(rand() * 2) : baseBlocks.length;
+  const blocks = baseBlocks.slice(0, blockCount);
+
   const rows: (typeof activityLogsTable.$inferInsert)[] = [];
   let cursor = new Date(day);
-  cursor.setUTCHours(startHour, 0, 0, 0);
+  cursor.setUTCHours(startHour, Math.floor(rand() * 30), 0, 0);
   for (const b of blocks) {
+    const jitter = 0.8 + rand() * 0.4; // per-block ±20%
+    const min = Math.max(5, Math.round(b.min * dayScale * jitter));
     const startedAt = new Date(cursor);
-    const endedAt = new Date(cursor.getTime() + b.min * 60 * 1000);
+    const endedAt = new Date(cursor.getTime() + min * 60 * 1000);
+    // Idle fraction varies 5%..20% so Active Time moves independently of Total.
+    const idleFrac = 0.05 + rand() * 0.15;
     rows.push({
       companyId,
       deviceId,
@@ -166,8 +192,8 @@ function buildDayLogs(
       categoryId: b.categoryId,
       startedAt,
       endedAt,
-      durationSeconds: b.min * 60,
-      idleSeconds: Math.round(b.min * 60 * 0.08),
+      durationSeconds: min * 60,
+      idleSeconds: Math.round(min * 60 * idleFrac),
     });
     cursor = endedAt;
   }
@@ -254,7 +280,9 @@ async function seed(companyId: string): Promise<void> {
     // Vary the clock-in hour so some devices read as late arrivals (9 vs 10).
     const startHour = idx % 3 === 0 ? 10 : 9;
     const logRows: (typeof activityLogsTable.$inferInsert)[] = [];
-    for (const day of days) {
+    for (const [dayIdx, day] of days.entries()) {
+      // Deterministic per-device+day seed → varied but reproducible durations.
+      const rand = mulberry32((idx + 1) * 7919 + dayIdx * 104729);
       logRows.push(
         ...buildDayLogs(
           companyId,
@@ -263,6 +291,7 @@ async function seed(companyId: string): Promise<void> {
           startHour,
           productiveCat.id,
           unproductiveCat.id,
+          rand,
         ),
       );
     }
