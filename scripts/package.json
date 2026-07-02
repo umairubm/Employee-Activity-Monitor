@@ -6,6 +6,7 @@
   "scripts": {
     "hello": "tsx ./src/hello.ts",
     "mint-token": "tsx ./src/mint-enrollment-token.ts",
+    "seed-dummy": "tsx ./src/seed-dummy-devices.ts",
     "create-admin": "tsx ./src/create-admin.ts",
     "migrate-multitenancy": "tsx ./src/migrate-multitenancy.ts",
     "check-api-codegen": "tsx ./src/check-api-codegen.ts",
