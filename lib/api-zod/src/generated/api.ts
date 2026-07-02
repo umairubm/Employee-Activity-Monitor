@@ -1101,6 +1101,12 @@ export const GetTimesheetResponse = zod.object({
         .describe(
           "Label of the enrollment token this device was enrolled with.",
         ),
+      tokenRegion: zod
+        .string()
+        .nullish()
+        .describe(
+          "Region of the enrollment token this device was enrolled with.",
+        ),
       username: zod.string().nullable(),
       firstActivity: zod
         .string()

@@ -2618,6 +2618,10 @@ components:
           type: string
           nullable: true
           description: Label of the enrollment token this device was enrolled with.
+        tokenRegion:
+          type: string
+          nullable: true
+          description: Region of the enrollment token this device was enrolled with.
         username:
           type: string
           nullable: true

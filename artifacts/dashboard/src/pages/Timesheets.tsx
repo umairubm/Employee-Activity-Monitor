@@ -65,17 +65,6 @@ function fmtDateTime(iso: string | null): string {
   });
 }
 
-function fmtDay(day: string): string {
-  const d = new Date(`${day}T00:00:00Z`);
-  if (Number.isNaN(d.getTime())) return day;
-  return d.toLocaleDateString("en-US", {
-    month: "2-digit",
-    day: "2-digit",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-}
-
 function downloadCsv(filename: string, rows: (string | number)[][]) {
   const escape = (v: string | number) => {
     const s = String(v);
@@ -119,10 +108,11 @@ export default function Timesheets() {
 
   type Row = (typeof rows)[number];
   const columns: { id: string; header: string; accessor: (r: Row) => string | number }[] = [
-    { id: "date", header: "Date", accessor: (r) => fmtDay(r.date) },
+    { id: "date", header: "Date", accessor: (r) => `${r.date}T00:00:00` },
     { id: "deviceGroup", header: "Groups", accessor: (r) => r.deviceGroup },
     { id: "systemName", header: "Computer", accessor: (r) => r.systemName },
     { id: "tokenLabel", header: "Label", accessor: (r) => r.tokenLabel ?? "" },
+    { id: "tokenRegion", header: "Region", accessor: (r) => r.tokenRegion ?? "" },
     { id: "username", header: "User", accessor: (r) => r.username ?? "" },
     { id: "firstActivity", header: "First Activity", accessor: (r) => fmtTime(r.firstActivity) },
     { id: "lastActivity", header: "Last Activity", accessor: (r) => fmtTime(r.lastActivity) },
@@ -298,6 +288,7 @@ export default function Timesheets() {
                   <TableHead>Groups</TableHead>
                   <TableHead>Computer</TableHead>
                   <TableHead>Label</TableHead>
+                  <TableHead>Region</TableHead>
                   <TableHead>User</TableHead>
                   <TableHead>First Activity</TableHead>
                   <TableHead>Last Activity</TableHead>
@@ -311,16 +302,17 @@ export default function Timesheets() {
               </TableHeader>
               <TableBody>
                 {isLoading ? (
-                  <TableRow><TableCell colSpan={13} className="h-32 text-center text-muted-foreground">Loading...</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={14} className="h-32 text-center text-muted-foreground">Loading...</TableCell></TableRow>
                 ) : rows.length === 0 ? (
-                  <TableRow><TableCell colSpan={13} className="h-32 text-center text-muted-foreground">No activity in this range.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={14} className="h-32 text-center text-muted-foreground">No activity in this range.</TableCell></TableRow>
                 ) : (
                   rows.map((r) => (
                     <TableRow key={`${r.deviceId}-${r.date}`}>
-                      <TableCell className="whitespace-nowrap text-sm">{fmtDay(r.date)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-sm tabular-nums">{`${r.date}T00:00:00`}</TableCell>
                       <TableCell><Badge variant="secondary" className="font-normal">{r.deviceGroup}</Badge></TableCell>
                       <TableCell className="font-medium whitespace-nowrap">{r.systemName}</TableCell>
                       <TableCell className="whitespace-nowrap text-sm">{r.tokenLabel ?? <span className="text-muted-foreground">—</span>}</TableCell>
+                      <TableCell className="whitespace-nowrap text-sm">{r.tokenRegion ? <Badge variant="outline" className="font-normal">{r.tokenRegion}</Badge> : <span className="text-muted-foreground">—</span>}</TableCell>
                       <TableCell className="whitespace-nowrap text-sm">{r.username ?? <span className="text-muted-foreground">—</span>}</TableCell>
                       <TableCell className="whitespace-nowrap text-sm tabular-nums">{fmtTime(r.firstActivity)}</TableCell>
                       <TableCell className="whitespace-nowrap text-sm tabular-nums">{fmtTime(r.lastActivity)}</TableCell>

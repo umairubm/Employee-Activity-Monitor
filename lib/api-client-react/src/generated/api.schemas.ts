@@ -697,6 +697,8 @@ export interface TimesheetRow {
   deviceGroup: string;
   /** Label of the enrollment token this device was enrolled with. */
   tokenLabel?: string | null;
+  /** Region of the enrollment token this device was enrolled with. */
+  tokenRegion?: string | null;
   username: string | null;
   /** ISO timestamp of the day's first activity */
   firstActivity: string | null;

@@ -99,12 +99,16 @@ router.get("/", async (req, res) => {
         deviceGroup: devicesTable.deviceGroup,
         username: usersTable.username,
         tokenLabel: enrollmentTokensTable.label,
+        tokenRegion: enrollmentTokensTable.region,
       })
       .from(devicesTable)
       .leftJoin(usersTable, eq(devicesTable.assignedUserId, usersTable.id))
       .leftJoin(
         enrollmentTokensTable,
-        eq(devicesTable.enrolledViaTokenId, enrollmentTokensTable.id),
+        and(
+          eq(devicesTable.enrolledViaTokenId, enrollmentTokensTable.id),
+          eq(enrollmentTokensTable.companyId, companyId),
+        ),
       )
       .where(
         and(
@@ -225,6 +229,7 @@ router.get("/", async (req, res) => {
       systemName: string;
       deviceGroup: string;
       tokenLabel: string | null;
+      tokenRegion: string | null;
       username: string | null;
       firstActivity: string | null;
       lastActivity: string | null;
@@ -278,6 +283,7 @@ router.get("/", async (req, res) => {
           systemName: device.systemName,
           deviceGroup: device.deviceGroup,
           tokenLabel: device.tokenLabel,
+          tokenRegion: device.tokenRegion,
           username: device.username,
           firstActivity: act.firstActivity,
           lastActivity: act.lastActivity,
