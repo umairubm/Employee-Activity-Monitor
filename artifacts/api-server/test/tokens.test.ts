@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
+import { randomUUID } from "node:crypto";
 import { inArray } from "drizzle-orm";
 import {
   db,
@@ -148,11 +149,52 @@ describe("token create/revoke responses match the enriched contract", () => {
     expect(groups.body).toContain(groupName);
   });
 
-  it("rejects an invalid region", async () => {
+  it("accepts a custom region and lists it for future tokens", async () => {
+    const regionName = `APAC-${Date.now()}`;
+    const res = await request(realAdminApp).post("/tokens").send({
+      employeeId: "EMP-8888",
+      region: regionName,
+      maxUses: 1,
+    });
+    expect(res.status).toBe(201);
+    createdTokenIds.push(res.body.id);
+    expect(res.body.region).toBe(regionName);
+
+    // A region created on a token is immediately known for future tokens.
+    const regions = await request(realAdminApp).get("/tokens/regions");
+    expect(regions.status).toBe(200);
+    expect(regions.body).toContain(regionName);
+  });
+
+  it("allows an undefined (omitted) region", async () => {
     const res = await request(realAdminApp)
       .post("/tokens")
-      .send({ employeeId: "EMP-1234", region: "Central" });
-    expect(res.status).toBe(400);
+      .send({ employeeId: "EMP-7777", maxUses: 1 });
+    expect(res.status).toBe(201);
+    createdTokenIds.push(res.body.id);
+    expect(res.body.region).toBeNull();
+  });
+
+  it("scopes /tokens/regions to the caller's company", async () => {
+    // A region minted under a DIFFERENT company must not leak to this caller.
+    const otherCompanyId = randomUUID();
+    const foreignRegion = `Foreign-${Date.now()}`;
+    const foreign = await createEnrollmentToken({
+      companyId: otherCompanyId,
+      region: foreignRegion,
+    });
+    createdTokenIds.push(foreign.id);
+
+    const ownRegion = `Own-${Date.now()}`;
+    const own = await request(realAdminApp)
+      .post("/tokens")
+      .send({ employeeId: "EMP-6666", region: ownRegion, maxUses: 1 });
+    createdTokenIds.push(own.body.id);
+
+    const res = await request(realAdminApp).get("/tokens/regions");
+    expect(res.status).toBe(200);
+    expect(res.body).toContain(ownRegion);
+    expect(res.body).not.toContain(foreignRegion);
   });
 
   it("includes enrolledDevices on revoke", async () => {

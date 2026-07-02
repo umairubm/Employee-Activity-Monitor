@@ -5,7 +5,6 @@
  * API specification for Workforce Analytics & IT Management
  * OpenAPI spec version: 0.1.0
  */
-import type { CreateTokenRequestRegion } from "./createTokenRequestRegion";
 
 export interface CreateTokenRequest {
   label?: string;
@@ -15,5 +14,10 @@ export interface CreateTokenRequest {
   employeeId: string;
   /** Group the enrolled device joins. New names are accepted verbatim. */
   deviceGroup?: string;
-  region?: CreateTokenRequestRegion;
+  /**
+   * Region the enrolled device belongs to. New names are accepted verbatim.
+   * @minLength 1
+   * @maxLength 100
+   */
+  region?: string;
 }

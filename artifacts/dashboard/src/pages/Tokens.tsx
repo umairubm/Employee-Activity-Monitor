@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useListTokens, getListTokensQueryKey, useListTokenGroups, useCreateToken, useRevokeToken } from "@workspace/api-client-react";
+import { useListTokens, getListTokensQueryKey, useListTokenGroups, useListTokenRegions, useCreateToken, useRevokeToken } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -9,16 +9,18 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator } from "@/components/ui/command";
 import { KeyRound, Plus, Trash2, Copy, CheckCircle2, Monitor, ChevronsUpDown, Check } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 
-const REGIONS = ["North", "South", "East", "West"] as const;
 // Sentinel value for the "＋ Create new group" option in the group dropdown.
 const CREATE_NEW_GROUP = "__create_new__";
+// Sentinel values for the region combobox: create-new toggles an inline input,
+// undefined leaves the token's region unset (null).
+const CREATE_NEW_REGION = "__create_new_region__";
+const UNDEFINED_REGION = "__undefined_region__";
 // Employee ID: starts alphanumeric, then alphanumeric/hyphen/underscore, 2-64 chars.
 const EMPLOYEE_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{1,63}$/;
 
@@ -27,6 +29,7 @@ export default function Tokens() {
   const { toast } = useToast();
   const { data: tokens, isLoading } = useListTokens();
   const { data: groups } = useListTokenGroups();
+  const { data: regions } = useListTokenRegions();
   const createToken = useCreateToken();
   const revokeToken = useRevokeToken();
 
@@ -36,7 +39,9 @@ export default function Tokens() {
   const [groupChoice, setGroupChoice] = useState(""); // selected existing group, or CREATE_NEW_GROUP
   const [groupOpen, setGroupOpen] = useState(false); // searchable combobox popover
   const [newGroupName, setNewGroupName] = useState(""); // inline "create new" input
-  const [region, setRegion] = useState("");
+  const [regionChoice, setRegionChoice] = useState(""); // existing region, CREATE_NEW_REGION, or UNDEFINED_REGION
+  const [regionOpen, setRegionOpen] = useState(false); // searchable combobox popover
+  const [newRegionName, setNewRegionName] = useState(""); // inline "create new" input
   const [maxUses, setMaxUses] = useState("1");
   const [expiresDays, setExpiresDays] = useState("30");
   const [neverExpires, setNeverExpires] = useState(true);
@@ -44,11 +49,27 @@ export default function Tokens() {
   const [copied, setCopied] = useState(false);
 
   const creatingNewGroup = groupChoice === CREATE_NEW_GROUP;
+  const creatingNewRegion = regionChoice === CREATE_NEW_REGION;
   const employeeIdValid = EMPLOYEE_ID_RE.test(employeeId.trim());
   // The group actually submitted: the typed new name, or the picked existing one.
   const resolvedGroup = creatingNewGroup ? newGroupName.trim() : groupChoice.trim();
   const groupValid = !creatingNewGroup || resolvedGroup.length > 0;
-  const canSubmit = employeeIdValid && groupValid && !createToken.isPending;
+  // The region actually submitted: undefined leaves it unset; create-new uses the
+  // typed name; otherwise the picked existing one.
+  const resolvedRegion =
+    regionChoice === UNDEFINED_REGION || regionChoice === ""
+      ? ""
+      : creatingNewRegion
+        ? newRegionName.trim()
+        : regionChoice.trim();
+  const regionValid = !creatingNewRegion || resolvedRegion.length > 0;
+  const canSubmit = employeeIdValid && groupValid && regionValid && !createToken.isPending;
+
+  const regionTriggerLabel = creatingNewRegion
+    ? "New region…"
+    : regionChoice === UNDEFINED_REGION
+      ? "Undefined"
+      : regionChoice || "Select a region";
 
   const resetForm = () => {
     setNewLabel("");
@@ -56,7 +77,9 @@ export default function Tokens() {
     setGroupChoice("");
     setGroupOpen(false);
     setNewGroupName("");
-    setRegion("");
+    setRegionChoice("");
+    setRegionOpen(false);
+    setNewRegionName("");
     setMaxUses("1");
     setExpiresDays("30");
     setNeverExpires(true);
@@ -69,7 +92,7 @@ export default function Tokens() {
         label: newLabel || undefined,
         employeeId: employeeId.trim(),
         deviceGroup: resolvedGroup || undefined,
-        region: (region || undefined) as (typeof REGIONS)[number] | undefined,
+        region: resolvedRegion || undefined,
         maxUses: maxUses ? parseInt(maxUses) : undefined,
         expiresDays: neverExpires ? undefined : (expiresDays ? parseInt(expiresDays) : undefined),
       }
@@ -231,16 +254,75 @@ export default function Tokens() {
                     </div>
                     <div className="grid gap-2">
                       <Label htmlFor="region">Region</Label>
-                      <Select value={region} onValueChange={setRegion}>
-                        <SelectTrigger id="region">
-                          <SelectValue placeholder="Select a region" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {REGIONS.map(r => (
-                            <SelectItem key={r} value={r}>{r}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <Popover open={regionOpen} onOpenChange={setRegionOpen}>
+                        <PopoverTrigger asChild>
+                          <Button
+                            id="region"
+                            type="button"
+                            variant="outline"
+                            role="combobox"
+                            aria-expanded={regionOpen}
+                            className="justify-between font-normal"
+                          >
+                            <span className={regionChoice && !creatingNewRegion && regionChoice !== UNDEFINED_REGION ? "" : "text-muted-foreground"}>
+                              {regionTriggerLabel}
+                            </span>
+                            <ChevronsUpDown className="h-4 w-4 opacity-50 shrink-0" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                          <Command>
+                            <CommandInput placeholder="Search regions…" />
+                            <CommandList>
+                              <CommandEmpty>No matching region.</CommandEmpty>
+                              <CommandGroup>
+                                <CommandItem
+                                  value="Undefined"
+                                  onSelect={() => {
+                                    setRegionChoice(UNDEFINED_REGION);
+                                    setNewRegionName("");
+                                    setRegionOpen(false);
+                                  }}
+                                >
+                                  <Check className={`mr-2 h-4 w-4 ${regionChoice === UNDEFINED_REGION ? "opacity-100" : "opacity-0"}`} />
+                                  Undefined
+                                </CommandItem>
+                              </CommandGroup>
+                              {(regions ?? []).length > 0 && (
+                                <CommandGroup>
+                                  {(regions ?? []).map(r => (
+                                    <CommandItem
+                                      key={r}
+                                      value={r}
+                                      onSelect={() => {
+                                        setRegionChoice(r);
+                                        setNewRegionName("");
+                                        setRegionOpen(false);
+                                      }}
+                                    >
+                                      <Check className={`mr-2 h-4 w-4 ${regionChoice === r ? "opacity-100" : "opacity-0"}`} />
+                                      {r}
+                                    </CommandItem>
+                                  ))}
+                                </CommandGroup>
+                              )}
+                              <CommandSeparator />
+                              <CommandGroup>
+                                <CommandItem
+                                  value="__create_new_region_option__"
+                                  onSelect={() => {
+                                    setRegionChoice(CREATE_NEW_REGION);
+                                    setRegionOpen(false);
+                                  }}
+                                >
+                                  <Plus className="mr-2 h-4 w-4" />
+                                  Create new region…
+                                </CommandItem>
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
                     </div>
                   </div>
 
@@ -256,6 +338,22 @@ export default function Tokens() {
                       />
                       <p className="text-xs text-muted-foreground">
                         Devices enrolled with this token join this group. It becomes selectable for future tokens.
+                      </p>
+                    </div>
+                  )}
+
+                  {creatingNewRegion && (
+                    <div className="grid gap-2">
+                      <Label htmlFor="newRegion">New Region Name</Label>
+                      <Input
+                        id="newRegion"
+                        placeholder="e.g. APAC"
+                        value={newRegionName}
+                        onChange={e => setNewRegionName(e.target.value)}
+                        autoFocus
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        This region is stored on the token and becomes selectable for future tokens.
                       </p>
                     </div>
                   )}

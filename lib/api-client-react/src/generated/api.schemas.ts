@@ -1107,16 +1107,6 @@ export interface EnrollmentTokenItem {
   enrolledDevices: EnrolledDeviceRef[];
 }
 
-export type CreateTokenRequestRegion =
-  (typeof CreateTokenRequestRegion)[keyof typeof CreateTokenRequestRegion];
-
-export const CreateTokenRequestRegion = {
-  North: "North",
-  South: "South",
-  East: "East",
-  West: "West",
-} as const;
-
 export interface CreateTokenRequest {
   label?: string;
   maxUses?: number;
@@ -1125,7 +1115,12 @@ export interface CreateTokenRequest {
   employeeId: string;
   /** Group the enrolled device joins. New names are accepted verbatim. */
   deviceGroup?: string;
-  region?: CreateTokenRequestRegion;
+  /**
+   * Region the enrolled device belongs to. New names are accepted verbatim.
+   * @minLength 1
+   * @maxLength 100
+   */
+  region?: string;
 }
 
 export type HeartbeatRequestOsType =

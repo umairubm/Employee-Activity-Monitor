@@ -1570,6 +1570,8 @@ export const ListTokensResponse = zod.array(ListTokensResponseItem);
 /**
  * @summary Mint a new enrollment token
  */
+export const createTokenBodyRegionMax = 100;
+
 export const CreateTokenBody = zod.object({
   label: zod.string().optional(),
   maxUses: zod.number().optional(),
@@ -1583,7 +1585,14 @@ export const CreateTokenBody = zod.object({
     .describe(
       "Group the enrolled device joins. New names are accepted verbatim.",
     ),
-  region: zod.enum(["North", "South", "East", "West"]).optional(),
+  region: zod
+    .string()
+    .min(1)
+    .max(createTokenBodyRegionMax)
+    .optional()
+    .describe(
+      "Region the enrolled device belongs to. New names are accepted verbatim.",
+    ),
 });
 
 /**
@@ -1591,6 +1600,12 @@ export const CreateTokenBody = zod.object({
  */
 export const ListTokenGroupsResponseItem = zod.string();
 export const ListTokenGroupsResponse = zod.array(ListTokenGroupsResponseItem);
+
+/**
+ * @summary List known region names (for the enrollment form dropdown)
+ */
+export const ListTokenRegionsResponseItem = zod.string();
+export const ListTokenRegionsResponse = zod.array(ListTokenRegionsResponseItem);
 
 /**
  * @summary Revoke an enrollment token

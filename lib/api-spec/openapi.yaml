@@ -1263,6 +1263,20 @@ paths:
                 type: array
                 items:
                   type: string
+  /tokens/regions:
+    get:
+      operationId: listTokenRegions
+      tags: [tokens]
+      summary: List known region names (for the enrollment form dropdown)
+      responses:
+        "200":
+          description: Known region names for this company
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
   /tokens/{id}/revoke:
     post:
       operationId: revokeToken
@@ -3080,7 +3094,9 @@ components:
           description: Group the enrolled device joins. New names are accepted verbatim.
         region:
           type: string
-          enum: [North, South, East, West]
+          minLength: 1
+          maxLength: 100
+          description: Region the enrolled device belongs to. New names are accepted verbatim.
       required: [employeeId]
     HeartbeatRequest:
       type: object

@@ -64,8 +64,6 @@ router.get("/", async (req, res) => {
   }
 });
 
-const REGIONS = ["North", "South", "East", "West"] as const;
-
 // Employee IDs are alphanumeric org identifiers: must start with a letter or
 // digit, then letters/digits/hyphen/underscore, 2-64 chars total.
 const EMPLOYEE_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{1,63}$/;
@@ -79,7 +77,9 @@ const createSchema = z.object({
     .trim()
     .regex(EMPLOYEE_ID_RE, "Employee ID must be 2-64 alphanumeric characters"),
   deviceGroup: z.string().trim().min(1).max(100).optional(),
-  region: z.enum(REGIONS).optional(),
+  // Regions are free-form like groups: new names are accepted verbatim and
+  // become selectable for future tokens via GET /tokens/regions.
+  region: z.string().trim().min(1).max(100).optional(),
 });
 
 // GET /api/tokens/groups - the set of known device-group names for this company,
@@ -109,6 +109,30 @@ router.get("/groups", async (req, res) => {
     for (const r of fromDevices) if (r.group) groups.add(r.group);
     for (const r of fromTokens) if (r.group) groups.add(r.group);
     res.json([...groups].sort((a, b) => a.localeCompare(b)));
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// GET /api/tokens/regions - the set of known region names for this company,
+// used to populate the enrollment form's region dropdown. Like groups, regions
+// are free-form strings (no relational table): a name is "known" once any token
+// was minted with it, so a region created on one token appears for the next.
+router.get("/regions", async (req, res) => {
+  try {
+    const companyId = getCompanyId(req);
+    const fromTokens = await db
+      .selectDistinct({ region: enrollmentTokensTable.region })
+      .from(enrollmentTokensTable)
+      .where(
+        and(
+          eq(enrollmentTokensTable.companyId, companyId),
+          isNotNull(enrollmentTokensTable.region),
+        ),
+      );
+    const regions = new Set<string>();
+    for (const r of fromTokens) if (r.region) regions.add(r.region);
+    res.json([...regions].sort((a, b) => a.localeCompare(b)));
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }

@@ -18,3 +18,4 @@
 - [Attendance: any activity ≠ absent](attendance-any-activity.md) — a working day with any reported activity is at minimum half_day; only zero worked seconds is absent.
 - [Drizzle sql`` columns render unqualified](drizzle-sql-template-unqualified-columns.md) — bare `${t.col}` has no table prefix, so correlated count subqueries silently return 0; use LEFT JOIN + groupBy + count(distinct) filter.
 - [Composite lib dist staleness](composite-lib-dist-staleness.md) — artifact typechecks read a lib's built dist (not src) via project references; stale/absent dist gives phantom "property does not exist"/TS6305; rebuild libs (post-merge must too).
+- [Enrollment token group & region taxonomy](enrollment-token-taxonomy.md) — token deviceGroup/region are free-form strings (no relational table); known values via tenant-scoped distinct-union endpoints; never re-add region enum.
