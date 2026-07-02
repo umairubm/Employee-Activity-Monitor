@@ -1088,6 +1088,12 @@ export interface EnrollmentTokenItem {
   /** @nullable */
   label?: string | null;
   /** @nullable */
+  employeeId?: string | null;
+  /** @nullable */
+  deviceGroup?: string | null;
+  /** @nullable */
+  region?: string | null;
+  /** @nullable */
   createdById?: string | null;
   /** @nullable */
   assignedUserId?: string | null;
@@ -1101,10 +1107,25 @@ export interface EnrollmentTokenItem {
   enrolledDevices: EnrolledDeviceRef[];
 }
 
+export type CreateTokenRequestRegion =
+  (typeof CreateTokenRequestRegion)[keyof typeof CreateTokenRequestRegion];
+
+export const CreateTokenRequestRegion = {
+  North: "North",
+  South: "South",
+  East: "East",
+  West: "West",
+} as const;
+
 export interface CreateTokenRequest {
   label?: string;
   maxUses?: number;
   expiresDays?: number;
+  /** Employee identifier the device is for (alphanumeric). */
+  employeeId: string;
+  /** Group the enrolled device joins. New names are accepted verbatim. */
+  deviceGroup?: string;
+  region?: CreateTokenRequestRegion;
 }
 
 export type HeartbeatRequestOsType =

@@ -18,6 +18,13 @@ export const enrollmentTokensTable = pgTable("enrollment_tokens", {
   }),
   token: text("token").notNull().unique(),
   label: text("label"),
+  // Enrollment presets captured at mint time. Applied to the device server-side
+  // at /sync/enroll (no agent involvement). `employeeId` identifies the person
+  // the device is for; `deviceGroup` is the group the enrolled device joins
+  // (string model, matches devices.deviceGroup); `region` is a coarse locale tag.
+  employeeId: text("employee_id"),
+  deviceGroup: text("device_group"),
+  region: text("region"),
   createdById: uuid("created_by_id").references(() => usersTable.id, {
     onDelete: "set null",
   }),

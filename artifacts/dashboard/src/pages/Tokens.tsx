@@ -1,7 +1,7 @@
 import React, { useState } from "react";
-import { useListTokens, getListTokensQueryKey, useCreateToken, useRevokeToken } from "@workspace/api-client-react";
+import { useListTokens, getListTokensQueryKey, useListTokenGroups, useCreateToken, useRevokeToken } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,29 +9,67 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { KeyRound, Plus, Trash2, Copy, CheckCircle2, Monitor } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator } from "@/components/ui/command";
+import { KeyRound, Plus, Trash2, Copy, CheckCircle2, Monitor, ChevronsUpDown, Check } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
+
+const REGIONS = ["North", "South", "East", "West"] as const;
+// Sentinel value for the "＋ Create new group" option in the group dropdown.
+const CREATE_NEW_GROUP = "__create_new__";
+// Employee ID: starts alphanumeric, then alphanumeric/hyphen/underscore, 2-64 chars.
+const EMPLOYEE_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{1,63}$/;
 
 export default function Tokens() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { data: tokens, isLoading } = useListTokens();
+  const { data: groups } = useListTokenGroups();
   const createToken = useCreateToken();
   const revokeToken = useRevokeToken();
 
   const [createOpen, setCreateOpen] = useState(false);
   const [newLabel, setNewLabel] = useState("");
+  const [employeeId, setEmployeeId] = useState("");
+  const [groupChoice, setGroupChoice] = useState(""); // selected existing group, or CREATE_NEW_GROUP
+  const [groupOpen, setGroupOpen] = useState(false); // searchable combobox popover
+  const [newGroupName, setNewGroupName] = useState(""); // inline "create new" input
+  const [region, setRegion] = useState("");
   const [maxUses, setMaxUses] = useState("1");
   const [expiresDays, setExpiresDays] = useState("30");
   const [neverExpires, setNeverExpires] = useState(true);
   const [createdTokenStr, setCreatedTokenStr] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
+  const creatingNewGroup = groupChoice === CREATE_NEW_GROUP;
+  const employeeIdValid = EMPLOYEE_ID_RE.test(employeeId.trim());
+  // The group actually submitted: the typed new name, or the picked existing one.
+  const resolvedGroup = creatingNewGroup ? newGroupName.trim() : groupChoice.trim();
+  const groupValid = !creatingNewGroup || resolvedGroup.length > 0;
+  const canSubmit = employeeIdValid && groupValid && !createToken.isPending;
+
+  const resetForm = () => {
+    setNewLabel("");
+    setEmployeeId("");
+    setGroupChoice("");
+    setGroupOpen(false);
+    setNewGroupName("");
+    setRegion("");
+    setMaxUses("1");
+    setExpiresDays("30");
+    setNeverExpires(true);
+  };
+
   const handleCreate = () => {
+    if (!canSubmit) return;
     createToken.mutate({
       data: {
         label: newLabel || undefined,
+        employeeId: employeeId.trim(),
+        deviceGroup: resolvedGroup || undefined,
+        region: (region || undefined) as (typeof REGIONS)[number] | undefined,
         maxUses: maxUses ? parseInt(maxUses) : undefined,
         expiresDays: neverExpires ? undefined : (expiresDays ? parseInt(expiresDays) : undefined),
       }
@@ -39,10 +77,7 @@ export default function Tokens() {
       onSuccess: (data) => {
         setCreatedTokenStr(data.token); // Plaintext token only available once
         queryClient.invalidateQueries({ queryKey: getListTokensQueryKey() });
-        setNewLabel("");
-        setMaxUses("1");
-        setExpiresDays("30");
-        setNeverExpires(true);
+        resetForm();
       }
     });
   };
@@ -119,6 +154,113 @@ export default function Tokens() {
                 </DialogHeader>
                 <div className="grid gap-4 py-4">
                   <div className="grid gap-2">
+                    <Label htmlFor="employeeId">Employee ID <span className="text-destructive">*</span></Label>
+                    <Input
+                      id="employeeId"
+                      placeholder="e.g. EMP-01423"
+                      value={employeeId}
+                      onChange={e => setEmployeeId(e.target.value)}
+                      aria-invalid={employeeId.length > 0 && !employeeIdValid}
+                    />
+                    {employeeId.length > 0 && !employeeIdValid && (
+                      <p className="text-xs text-destructive">
+                        2–64 characters: letters, numbers, hyphen or underscore (must start alphanumeric).
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="grid gap-2">
+                      <Label htmlFor="group">Group</Label>
+                      <Popover open={groupOpen} onOpenChange={setGroupOpen}>
+                        <PopoverTrigger asChild>
+                          <Button
+                            id="group"
+                            type="button"
+                            variant="outline"
+                            role="combobox"
+                            aria-expanded={groupOpen}
+                            className="justify-between font-normal"
+                          >
+                            <span className={groupChoice && !creatingNewGroup ? "" : "text-muted-foreground"}>
+                              {creatingNewGroup ? "New group…" : groupChoice || "Select a group"}
+                            </span>
+                            <ChevronsUpDown className="h-4 w-4 opacity-50 shrink-0" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                          <Command>
+                            <CommandInput placeholder="Search groups…" />
+                            <CommandList>
+                              <CommandEmpty>No matching group.</CommandEmpty>
+                              {(groups ?? []).length > 0 && (
+                                <CommandGroup>
+                                  {(groups ?? []).map(g => (
+                                    <CommandItem
+                                      key={g}
+                                      value={g}
+                                      onSelect={() => {
+                                        setGroupChoice(g);
+                                        setNewGroupName("");
+                                        setGroupOpen(false);
+                                      }}
+                                    >
+                                      <Check className={`mr-2 h-4 w-4 ${groupChoice === g ? "opacity-100" : "opacity-0"}`} />
+                                      {g}
+                                    </CommandItem>
+                                  ))}
+                                </CommandGroup>
+                              )}
+                              <CommandSeparator />
+                              <CommandGroup>
+                                <CommandItem
+                                  value="__create_new_group_option__"
+                                  onSelect={() => {
+                                    setGroupChoice(CREATE_NEW_GROUP);
+                                    setGroupOpen(false);
+                                  }}
+                                >
+                                  <Plus className="mr-2 h-4 w-4" />
+                                  Create new group…
+                                </CommandItem>
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="region">Region</Label>
+                      <Select value={region} onValueChange={setRegion}>
+                        <SelectTrigger id="region">
+                          <SelectValue placeholder="Select a region" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {REGIONS.map(r => (
+                            <SelectItem key={r} value={r}>{r}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  {creatingNewGroup && (
+                    <div className="grid gap-2">
+                      <Label htmlFor="newGroup">New Group Name</Label>
+                      <Input
+                        id="newGroup"
+                        placeholder="e.g. Finance Floor 2"
+                        value={newGroupName}
+                        onChange={e => setNewGroupName(e.target.value)}
+                        autoFocus
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Devices enrolled with this token join this group. It becomes selectable for future tokens.
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="grid gap-2">
                     <Label htmlFor="label">Label (Optional)</Label>
                     <Input id="label" placeholder="e.g. IT Dept Batch 3" value={newLabel} onChange={e => setNewLabel(e.target.value)} />
                   </div>
@@ -142,7 +284,7 @@ export default function Tokens() {
                 </div>
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
-                  <Button onClick={handleCreate} disabled={createToken.isPending}>
+                  <Button onClick={handleCreate} disabled={!canSubmit}>
                     {createToken.isPending ? "Generating..." : "Generate"}
                   </Button>
                 </DialogFooter>
@@ -163,6 +305,7 @@ export default function Tokens() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Token / Label</TableHead>
+                  <TableHead>Employee / Group / Region</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Uses</TableHead>
                   <TableHead>Enrolled Devices</TableHead>
@@ -174,7 +317,7 @@ export default function Tokens() {
               <TableBody>
                 {tokens?.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="h-32 text-center text-muted-foreground">
+                    <TableCell colSpan={8} className="h-32 text-center text-muted-foreground">
                       <div className="flex flex-col items-center justify-center">
                         <KeyRound className="h-8 w-8 mb-2 opacity-20" />
                         No enrollment tokens exist.
@@ -193,6 +336,15 @@ export default function Tokens() {
                         <TableCell>
                           <div className="font-mono text-sm">{token.token}</div>
                           {token.label && <div className="text-xs text-muted-foreground mt-1">{token.label}</div>}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          <div className="flex flex-col gap-1">
+                            <span className="font-medium">{token.employeeId ?? <span className="text-muted-foreground">—</span>}</span>
+                            <div className="flex flex-wrap gap-1">
+                              {token.deviceGroup && <Badge variant="secondary" className="font-normal">{token.deviceGroup}</Badge>}
+                              {token.region && <Badge variant="outline" className="font-normal">{token.region}</Badge>}
+                            </div>
+                          </div>
                         </TableCell>
                         <TableCell>
                           {isRevoked ? <Badge variant="destructive">Revoked</Badge> :

@@ -1548,6 +1548,9 @@ export const ListTokensResponseItem = zod.object({
   id: zod.string().uuid(),
   token: zod.string(),
   label: zod.string().nullish(),
+  employeeId: zod.string().nullish(),
+  deviceGroup: zod.string().nullish(),
+  region: zod.string().nullish(),
   createdById: zod.string().uuid().nullish(),
   assignedUserId: zod.string().uuid().nullish(),
   maxUses: zod.number(),
@@ -1571,7 +1574,23 @@ export const CreateTokenBody = zod.object({
   label: zod.string().optional(),
   maxUses: zod.number().optional(),
   expiresDays: zod.number().optional(),
+  employeeId: zod
+    .string()
+    .describe("Employee identifier the device is for (alphanumeric)."),
+  deviceGroup: zod
+    .string()
+    .optional()
+    .describe(
+      "Group the enrolled device joins. New names are accepted verbatim.",
+    ),
+  region: zod.enum(["North", "South", "East", "West"]).optional(),
 });
+
+/**
+ * @summary List known device group names (for the enrollment form dropdown)
+ */
+export const ListTokenGroupsResponseItem = zod.string();
+export const ListTokenGroupsResponse = zod.array(ListTokenGroupsResponseItem);
 
 /**
  * @summary Revoke an enrollment token
@@ -1584,6 +1603,9 @@ export const RevokeTokenResponse = zod.object({
   id: zod.string().uuid(),
   token: zod.string(),
   label: zod.string().nullish(),
+  employeeId: zod.string().nullish(),
+  deviceGroup: zod.string().nullish(),
+  region: zod.string().nullish(),
   createdById: zod.string().uuid().nullish(),
   assignedUserId: zod.string().uuid().nullish(),
   maxUses: zod.number(),

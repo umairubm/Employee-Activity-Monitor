@@ -110,10 +110,49 @@ describe("token create/revoke responses match the enriched contract", () => {
   it("includes an empty enrolledDevices array on create", async () => {
     const res = await request(realAdminApp)
       .post("/tokens")
-      .send({ label: "contract-create", maxUses: 1 });
+      .send({ label: "contract-create", maxUses: 1, employeeId: "EMP-0001" });
     expect(res.status).toBe(201);
     createdTokenIds.push(res.body.id);
     expect(res.body.enrolledDevices).toEqual([]);
+  });
+
+  it("requires a valid Employee ID", async () => {
+    const missing = await request(realAdminApp)
+      .post("/tokens")
+      .send({ label: "no-emp", maxUses: 1 });
+    expect(missing.status).toBe(400);
+
+    const bad = await request(realAdminApp)
+      .post("/tokens")
+      .send({ maxUses: 1, employeeId: "has space!" });
+    expect(bad.status).toBe(400);
+  });
+
+  it("persists and returns employeeId, deviceGroup, and region", async () => {
+    const groupName = `QA-${Date.now()}`;
+    const res = await request(realAdminApp).post("/tokens").send({
+      employeeId: "EMP-9999",
+      deviceGroup: groupName,
+      region: "North",
+      maxUses: 1,
+    });
+    expect(res.status).toBe(201);
+    createdTokenIds.push(res.body.id);
+    expect(res.body.employeeId).toBe("EMP-9999");
+    expect(res.body.deviceGroup).toBe(groupName);
+    expect(res.body.region).toBe("North");
+
+    // A group created on a token is immediately known for future tokens.
+    const groups = await request(realAdminApp).get("/tokens/groups");
+    expect(groups.status).toBe(200);
+    expect(groups.body).toContain(groupName);
+  });
+
+  it("rejects an invalid region", async () => {
+    const res = await request(realAdminApp)
+      .post("/tokens")
+      .send({ employeeId: "EMP-1234", region: "Central" });
+    expect(res.status).toBe(400);
   });
 
   it("includes enrolledDevices on revoke", async () => {

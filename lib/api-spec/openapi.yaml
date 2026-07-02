@@ -1249,6 +1249,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/EnrollmentTokenItem"
+  /tokens/groups:
+    get:
+      operationId: listTokenGroups
+      tags: [tokens]
+      summary: List known device group names (for the enrollment form dropdown)
+      responses:
+        "200":
+          description: Known group names for this company
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
   /tokens/{id}/revoke:
     post:
       operationId: revokeToken
@@ -3010,6 +3024,12 @@ components:
           type: string
         label:
           type: [string, "null"]
+        employeeId:
+          type: [string, "null"]
+        deviceGroup:
+          type: [string, "null"]
+        region:
+          type: [string, "null"]
         createdById:
           type: [string, "null"]
           format: uuid
@@ -3052,6 +3072,16 @@ components:
           type: integer
         expiresDays:
           type: integer
+        employeeId:
+          type: string
+          description: Employee identifier the device is for (alphanumeric).
+        deviceGroup:
+          type: string
+          description: Group the enrolled device joins. New names are accepted verbatim.
+        region:
+          type: string
+          enum: [North, South, East, West]
+      required: [employeeId]
     HeartbeatRequest:
       type: object
       properties:

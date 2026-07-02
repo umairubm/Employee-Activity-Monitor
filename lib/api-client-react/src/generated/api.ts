@@ -5323,6 +5323,81 @@ export const useCreateToken = <
 };
 
 /**
+ * @summary List known device group names (for the enrollment form dropdown)
+ */
+export const getListTokenGroupsUrl = () => {
+  return `/api/tokens/groups`;
+};
+
+export const listTokenGroups = async (
+  options?: RequestInit,
+): Promise<string[]> => {
+  return customFetch<string[]>(getListTokenGroupsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListTokenGroupsQueryKey = () => {
+  return [`/api/tokens/groups`] as const;
+};
+
+export const getListTokenGroupsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listTokenGroups>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listTokenGroups>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListTokenGroupsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listTokenGroups>>> = ({
+    signal,
+  }) => listTokenGroups({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listTokenGroups>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListTokenGroupsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listTokenGroups>>
+>;
+export type ListTokenGroupsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List known device group names (for the enrollment form dropdown)
+ */
+
+export function useListTokenGroups<
+  TData = Awaited<ReturnType<typeof listTokenGroups>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listTokenGroups>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListTokenGroupsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
  * @summary Revoke an enrollment token
  */
 export const getRevokeTokenUrl = (id: string) => {

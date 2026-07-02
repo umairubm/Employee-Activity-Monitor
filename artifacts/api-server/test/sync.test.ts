@@ -91,6 +91,47 @@ describe("POST /sync/enroll", () => {
     expect(tk.useCount).toBe(1);
   });
 
+  it("inherits the token's deviceGroup on first enrollment", async () => {
+    const token = await createEnrollmentToken({ deviceGroup: "Engineering" });
+    createdTokenIds.push(token.id);
+
+    const res = await request(app).post("/sync/enroll").send(enrollBody(token.token));
+    expect(res.status).toBe(201);
+    const deviceId = trackDevice(res.body.deviceId);
+
+    const [row] = await db
+      .select()
+      .from(devicesTable)
+      .where(eq(devicesTable.id, deviceId));
+    expect(row.deviceGroup).toBe("Engineering");
+  });
+
+  it("re-enrolling with a token that carries a group moves the device into it", async () => {
+    const hardwareHash = `hw-${randomUUID()}`;
+
+    const first = await createEnrollmentToken({ maxUses: 5, deviceGroup: "Sales" });
+    createdTokenIds.push(first.id);
+    const firstRes = await request(app)
+      .post("/sync/enroll")
+      .send({ ...enrollBody(first.token), hardwareHash });
+    expect(firstRes.status).toBe(201);
+    const deviceId = trackDevice(firstRes.body.deviceId);
+
+    const second = await createEnrollmentToken({ maxUses: 5, deviceGroup: "Support" });
+    createdTokenIds.push(second.id);
+    const secondRes = await request(app)
+      .post("/sync/enroll")
+      .send({ ...enrollBody(second.token), hardwareHash });
+    expect(secondRes.status).toBe(201);
+    expect(secondRes.body.deviceId).toBe(deviceId);
+
+    const [row] = await db
+      .select()
+      .from(devicesTable)
+      .where(eq(devicesTable.id, deviceId));
+    expect(row.deviceGroup).toBe("Support");
+  });
+
   it("rejects an unknown token with 403 and creates no device", async () => {
     const before = await db.select().from(devicesTable);
     const res = await request(app)

@@ -217,6 +217,9 @@ router.post("/enroll", async (req: Request, res: Response): Promise<void> => {
           // company for a legacy device that has none yet.
           companyId: existing.companyId ?? token.companyId,
           assignedUserId: token.assignedUserId ?? existing.assignedUserId,
+          // Adopt the token's group preset if it carries one; otherwise keep
+          // whatever group the device already had.
+          deviceGroup: token.deviceGroup ?? existing.deviceGroup,
           updatedAt: now,
         })
         .where(eq(devicesTable.id, existing.id))
@@ -269,6 +272,9 @@ router.post("/enroll", async (req: Request, res: Response): Promise<void> => {
         // The device inherits the enrolling token's tenant.
         companyId: token.companyId,
         assignedUserId: token.assignedUserId ?? null,
+        // Apply the token's group preset; falls back to the column default
+        // ("Unassigned") when the token carries none.
+        ...(token.deviceGroup ? { deviceGroup: token.deviceGroup } : {}),
       })
       .returning();
     return created;

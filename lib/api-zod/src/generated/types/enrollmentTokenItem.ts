@@ -13,6 +13,12 @@ export interface EnrollmentTokenItem {
   /** @nullable */
   label?: string | null;
   /** @nullable */
+  employeeId?: string | null;
+  /** @nullable */
+  deviceGroup?: string | null;
+  /** @nullable */
+  region?: string | null;
+  /** @nullable */
   createdById?: string | null;
   /** @nullable */
   assignedUserId?: string | null;

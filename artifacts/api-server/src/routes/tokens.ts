@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod/v4";
 import { db, enrollmentTokensTable, devicesTable } from "@workspace/db";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import { generateEnrollmentToken } from "../lib/secrets";
 import { requireRole, type AuthedRequest } from "../middlewares/userAuth";
 import { getCompanyId } from "../middlewares/tenant";
@@ -64,10 +64,54 @@ router.get("/", async (req, res) => {
   }
 });
 
+const REGIONS = ["North", "South", "East", "West"] as const;
+
+// Employee IDs are alphanumeric org identifiers: must start with a letter or
+// digit, then letters/digits/hyphen/underscore, 2-64 chars total.
+const EMPLOYEE_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{1,63}$/;
+
 const createSchema = z.object({
   label: z.string().max(200).optional(),
   maxUses: z.number().int().min(1).max(1000).optional(),
   expiresDays: z.number().int().min(1).max(365).optional(),
+  employeeId: z
+    .string()
+    .trim()
+    .regex(EMPLOYEE_ID_RE, "Employee ID must be 2-64 alphanumeric characters"),
+  deviceGroup: z.string().trim().min(1).max(100).optional(),
+  region: z.enum(REGIONS).optional(),
+});
+
+// GET /api/tokens/groups - the set of known device-group names for this company,
+// used to populate the enrollment form's group dropdown. Groups are string-based
+// (no relational table): a name is "known" once any device carries it OR any
+// token was minted with it, so a group created on one token appears immediately
+// for the next.
+router.get("/groups", async (req, res) => {
+  try {
+    const companyId = getCompanyId(req);
+    const [fromDevices, fromTokens] = await Promise.all([
+      db
+        .selectDistinct({ group: devicesTable.deviceGroup })
+        .from(devicesTable)
+        .where(eq(devicesTable.companyId, companyId)),
+      db
+        .selectDistinct({ group: enrollmentTokensTable.deviceGroup })
+        .from(enrollmentTokensTable)
+        .where(
+          and(
+            eq(enrollmentTokensTable.companyId, companyId),
+            isNotNull(enrollmentTokensTable.deviceGroup),
+          ),
+        ),
+    ]);
+    const groups = new Set<string>();
+    for (const r of fromDevices) if (r.group) groups.add(r.group);
+    for (const r of fromTokens) if (r.group) groups.add(r.group);
+    res.json([...groups].sort((a, b) => a.localeCompare(b)));
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
 });
 
 // POST /api/tokens - mint a new enrollment token
@@ -78,7 +122,8 @@ router.post("/", requireRole("company_admin", "manager"), async (req, res) => {
       res.status(400).json({ error: "Invalid token request" });
       return;
     }
-    const { label, maxUses, expiresDays } = parsed.data;
+    const { label, maxUses, expiresDays, employeeId, deviceGroup, region } =
+      parsed.data;
     const companyId = getCompanyId(req);
 
     const [token] = await db
@@ -86,6 +131,9 @@ router.post("/", requireRole("company_admin", "manager"), async (req, res) => {
       .values({
         token: generateEnrollmentToken(),
         label: label ?? null,
+        employeeId,
+        deviceGroup: deviceGroup ?? null,
+        region: region ?? null,
         maxUses: maxUses ?? 1,
         expiresAt: expiresDays
           ? new Date(Date.now() + expiresDays * 24 * 60 * 60 * 1000)
