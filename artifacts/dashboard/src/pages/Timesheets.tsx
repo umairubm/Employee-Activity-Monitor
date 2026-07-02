@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import {
   useGetTimesheet,
   getGetTimesheetQueryKey,
@@ -11,7 +11,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Clock, Download, CalendarClock, LogOut } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuCheckboxItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Clock, Download, CalendarClock, LogOut, Columns3 } from "lucide-react";
 import { useGroupFilter, ALL_GROUPS as ALL } from "@/hooks/use-group-filter";
 import { useDateRange, daysAgoStr } from "@/hooks/use-date-filter";
 
@@ -109,38 +117,62 @@ export default function Timesheets() {
   const rows = report?.rows ?? [];
   const totals = report?.totals;
 
+  type Row = (typeof rows)[number];
+  const columns: { id: string; header: string; accessor: (r: Row) => string | number }[] = [
+    { id: "date", header: "Date", accessor: (r) => fmtDay(r.date) },
+    { id: "deviceGroup", header: "Groups", accessor: (r) => r.deviceGroup },
+    { id: "systemName", header: "Computer", accessor: (r) => r.systemName },
+    { id: "tokenLabel", header: "Label", accessor: (r) => r.tokenLabel ?? "" },
+    { id: "username", header: "User", accessor: (r) => r.username ?? "" },
+    { id: "firstActivity", header: "First Activity", accessor: (r) => fmtTime(r.firstActivity) },
+    { id: "lastActivity", header: "Last Activity", accessor: (r) => fmtTime(r.lastActivity) },
+    { id: "lastActivityLog", header: "Last Activity Log", accessor: (r) => fmtDateTime(r.lastActivityLog) },
+    { id: "productiveSeconds", header: "Productive", accessor: (r) => fmtDuration(r.productiveSeconds) },
+    { id: "unproductiveSeconds", header: "Unproductive", accessor: (r) => fmtDuration(r.unproductiveSeconds) },
+    { id: "undefinedSeconds", header: "Undefined", accessor: (r) => fmtDuration(r.undefinedSeconds) },
+    { id: "totalSeconds", header: "Total Time", accessor: (r) => fmtDuration(r.totalSeconds) },
+    { id: "activeSeconds", header: "Active Time", accessor: (r) => fmtDuration(r.activeSeconds) },
+  ];
+  const allColumnIds = columns.map((c) => c.id);
+
+  // Which columns to include in the export, persisted so the choice sticks.
+  const [selectedIds, setSelectedIds] = useState<string[]>(() => {
+    if (typeof window === "undefined") return allColumnIds;
+    try {
+      const raw = window.localStorage.getItem("timesheet-export-columns");
+      if (!raw) return allColumnIds;
+      const parsed = JSON.parse(raw) as string[];
+      const valid = parsed.filter((id) => allColumnIds.includes(id));
+      return valid.length > 0 ? valid : allColumnIds;
+    } catch {
+      return allColumnIds;
+    }
+  });
+
+  const isSelected = (id: string) => selectedIds.includes(id);
+  const toggleColumn = (id: string) => {
+    setSelectedIds((prev) => {
+      // Keep the canonical column order and never allow an empty selection.
+      const next = prev.includes(id)
+        ? prev.filter((x) => x !== id)
+        : [...prev, id];
+      const ordered = allColumnIds.filter((c) => next.includes(c));
+      const final = ordered.length > 0 ? ordered : [id];
+      try {
+        window.localStorage.setItem("timesheet-export-columns", JSON.stringify(final));
+      } catch {
+        /* ignore storage failures */
+      }
+      return final;
+    });
+  };
+
   const exportCsv = () => {
     if (!report) return;
-    const header = [
-      "Date",
-      "Groups",
-      "Computer",
-      "Label",
-      "User",
-      "First Activity",
-      "Last Activity",
-      "Last Activity Log",
-      "Productive",
-      "Unproductive",
-      "Undefined",
-      "Total Time",
-      "Active Time",
-    ];
-    const body: (string | number)[][] = rows.map((r) => [
-      fmtDay(r.date),
-      r.deviceGroup,
-      r.systemName,
-      r.tokenLabel ?? "",
-      r.username ?? "",
-      fmtTime(r.firstActivity),
-      fmtTime(r.lastActivity),
-      fmtDateTime(r.lastActivityLog),
-      fmtDuration(r.productiveSeconds),
-      fmtDuration(r.unproductiveSeconds),
-      fmtDuration(r.undefinedSeconds),
-      fmtDuration(r.totalSeconds),
-      fmtDuration(r.activeSeconds),
-    ]);
+    const chosen = columns.filter((c) => selectedIds.includes(c.id));
+    const cols = chosen.length > 0 ? chosen : columns;
+    const header = cols.map((c) => c.header);
+    const body: (string | number)[][] = rows.map((r) => cols.map((c) => c.accessor(r)));
     downloadCsv(`timesheet-${from}_to_${to}.csv`, [header, ...body]);
   };
 
@@ -189,6 +221,28 @@ export default function Timesheets() {
               onChange={(e) => setRange({ to: e.target.value || from })}
               className="w-40" />
           </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline">
+                <Columns3 className="h-4 w-4 mr-2" />
+                Columns ({selectedIds.length})
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel>Columns to export</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {columns.map((c) => (
+                <DropdownMenuCheckboxItem
+                  key={c.id}
+                  checked={isSelected(c.id)}
+                  onCheckedChange={() => toggleColumn(c.id)}
+                  onSelect={(e) => e.preventDefault()}
+                >
+                  {c.header}
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button variant="outline" onClick={exportCsv} disabled={!report || rows.length === 0}>
             <Download className="h-4 w-4 mr-2" />
             Export CSV
