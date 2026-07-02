@@ -7,15 +7,20 @@ import {
   companiesTable,
   devicesTable,
   enrollmentTokensTable,
+  appCategoriesTable,
+  activityLogsTable,
 } from "@workspace/db";
 
 /**
- * DEV-ONLY dummy data seeder for the Devices / Tokens tables.
+ * DEV-ONLY dummy data seeder for the Devices / Tokens / Timesheets tables.
  *
- * Inserts a handful of fake enrollment tokens + enrolled devices so the
- * dashboard tables have something to look at during local testing. Every row
- * it creates is tagged with the `demo-seed-` marker (token string, hardware
- * hash) so `--clean` can remove ALL of them again without touching real data.
+ * Inserts a handful of fake enrollment tokens + enrolled devices, plus a couple
+ * of app categories and several days of activity logs per device, so the
+ * dashboard tables (Devices, Tokens, Timesheets, Activity Logs, reports) have
+ * something to look at during local testing. Every row it creates is tagged
+ * with the `demo-seed-` marker (token string, hardware hash, category pattern)
+ * so `--clean` removes ALL of them again without touching real data. Activity
+ * logs cascade-delete with their demo devices.
  *
  * This must NEVER run against production. It hard-refuses when it detects a
  * Replit deployment environment.
@@ -28,6 +33,9 @@ import {
 
 // Shared marker so seeded rows are always identifiable and removable.
 const MARKER = "demo-seed-";
+
+// How many recent days (working days only) of activity to generate per device.
+const ACTIVITY_DAYS = 14;
 
 function assertNotProduction(): void {
   const isDeployment =
@@ -109,9 +117,61 @@ async function clean(companyId: string): Promise<void> {
       ),
     )
     .returning({ id: enrollmentTokensTable.id });
+  // Activity logs cascade-delete with their demo devices; demo categories are
+  // removed by their marker pattern.
+  const cats = await db
+    .delete(appCategoriesTable)
+    .where(
+      and(
+        eq(appCategoriesTable.companyId, companyId),
+        like(appCategoriesTable.pattern, `${MARKER}%`),
+      ),
+    )
+    .returning({ id: appCategoriesTable.id });
   console.log(
-    `Removed ${devs.length} demo device(s) and ${toks.length} demo token(s).`,
+    `Removed ${devs.length} demo device(s), ${toks.length} demo token(s), and ${cats.length} demo category(ies) (activity logs cascaded).`,
   );
+}
+
+// One day of realistic, non-overlapping activity blocks for a device, starting
+// at `startHour` UTC. Alternates productive / unproductive / uncategorized work.
+function buildDayLogs(
+  companyId: string,
+  deviceId: string,
+  day: Date,
+  startHour: number,
+  productiveId: string,
+  unproductiveId: string,
+): (typeof activityLogsTable.$inferInsert)[] {
+  // minutes of work, and the category for each block (null = undefined bucket).
+  const blocks: { min: number; process: string; categoryId: string | null }[] = [
+    { min: 95, process: "Visual Studio Code", categoryId: productiveId },
+    { min: 20, process: "Slack", categoryId: null },
+    { min: 130, process: "Google Chrome — Docs", categoryId: productiveId },
+    { min: 40, process: "YouTube", categoryId: unproductiveId },
+    { min: 105, process: "Excel", categoryId: productiveId },
+    { min: 25, process: "File Explorer", categoryId: null },
+  ];
+  const rows: (typeof activityLogsTable.$inferInsert)[] = [];
+  let cursor = new Date(day);
+  cursor.setUTCHours(startHour, 0, 0, 0);
+  for (const b of blocks) {
+    const startedAt = new Date(cursor);
+    const endedAt = new Date(cursor.getTime() + b.min * 60 * 1000);
+    rows.push({
+      companyId,
+      deviceId,
+      processName: b.process,
+      windowTitle: b.process,
+      categoryId: b.categoryId,
+      startedAt,
+      endedAt,
+      durationSeconds: b.min * 60,
+      idleSeconds: Math.round(b.min * 60 * 0.08),
+    });
+    cursor = endedAt;
+  }
+  return rows;
 }
 
 async function seed(companyId: string): Promise<void> {
@@ -119,8 +179,40 @@ async function seed(companyId: string): Promise<void> {
   await clean(companyId);
 
   const now = Date.now();
-  let created = 0;
-  for (const spec of DEMO_ROWS) {
+
+  // Two categories drive the productive / unproductive split on the timesheet;
+  // blocks with a null category fall into the "undefined" bucket.
+  const [productiveCat] = await db
+    .insert(appCategoriesTable)
+    .values({
+      companyId,
+      pattern: `${MARKER}productive`,
+      displayName: "Productive Work (demo)",
+      classification: "productive",
+    })
+    .returning();
+  const [unproductiveCat] = await db
+    .insert(appCategoriesTable)
+    .values({
+      companyId,
+      pattern: `${MARKER}social`,
+      displayName: "Social Media (demo)",
+      classification: "unproductive",
+    })
+    .returning();
+
+  // Build the list of recent working days (skip Sat/Sun), newest-inclusive.
+  const days: Date[] = [];
+  for (let i = 0; days.length < ACTIVITY_DAYS && i < ACTIVITY_DAYS * 2; i++) {
+    const d = new Date(now - i * 24 * 60 * 60 * 1000);
+    d.setUTCHours(0, 0, 0, 0);
+    const weekday = d.getUTCDay();
+    if (weekday !== 0 && weekday !== 6) days.push(d);
+  }
+
+  let devicesCreated = 0;
+  let logsCreated = 0;
+  for (const [idx, spec] of DEMO_ROWS.entries()) {
     const tag = randomBytes(6).toString("hex");
     const [token] = await db
       .insert(enrollmentTokensTable)
@@ -140,23 +232,48 @@ async function seed(companyId: string): Promise<void> {
       ? new Date(now - 30 * 1000)
       : new Date(now - 3 * 24 * 60 * 60 * 1000);
 
-    await db.insert(devicesTable).values({
-      companyId,
-      hardwareHash: `${MARKER}${tag}`,
-      systemName: spec.systemName,
-      osType: spec.osType,
-      secretHash: createHash("sha256").update(tag).digest("hex"),
-      deviceGroup: spec.deviceGroup,
-      enrolledViaTokenId: token.id,
-      enrolledAt: new Date(now - 7 * 24 * 60 * 60 * 1000),
-      lastSeenAt,
-      consentAcknowledgedAt: spec.consented ? new Date(now - 7 * 24 * 60 * 60 * 1000) : null,
-      consentName: spec.consented ? spec.employeeId : null,
-      agentVersion: "1.0.0-demo",
-    });
-    created += 1;
+    const [device] = await db
+      .insert(devicesTable)
+      .values({
+        companyId,
+        hardwareHash: `${MARKER}${tag}`,
+        systemName: spec.systemName,
+        osType: spec.osType,
+        secretHash: createHash("sha256").update(tag).digest("hex"),
+        deviceGroup: spec.deviceGroup,
+        enrolledViaTokenId: token.id,
+        enrolledAt: new Date(now - 7 * 24 * 60 * 60 * 1000),
+        lastSeenAt,
+        consentAcknowledgedAt: spec.consented ? new Date(now - 7 * 24 * 60 * 60 * 1000) : null,
+        consentName: spec.consented ? spec.employeeId : null,
+        agentVersion: "1.0.0-demo",
+      })
+      .returning();
+    devicesCreated += 1;
+
+    // Vary the clock-in hour so some devices read as late arrivals (9 vs 10).
+    const startHour = idx % 3 === 0 ? 10 : 9;
+    const logRows: (typeof activityLogsTable.$inferInsert)[] = [];
+    for (const day of days) {
+      logRows.push(
+        ...buildDayLogs(
+          companyId,
+          device.id,
+          day,
+          startHour,
+          productiveCat.id,
+          unproductiveCat.id,
+        ),
+      );
+    }
+    if (logRows.length > 0) {
+      await db.insert(activityLogsTable).values(logRows);
+      logsCreated += logRows.length;
+    }
   }
-  console.log(`Seeded ${created} demo device(s) + token(s) into company ${companyId}.`);
+  console.log(
+    `Seeded ${devicesCreated} demo device(s) + token(s), 2 categories, and ${logsCreated} activity log(s) across ${days.length} working days into company ${companyId}.`,
+  );
   console.log(`All rows are tagged "${MARKER}" — remove them with:  pnpm --filter @workspace/scripts run seed-dummy -- --clean`);
 }
 
