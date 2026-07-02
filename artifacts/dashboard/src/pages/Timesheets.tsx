@@ -265,7 +265,7 @@ export default function Timesheets() {
         </p>
       </div>
 
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+      <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-wrap items-end gap-2">
           <div>
             <Label htmlFor="ts-group" className="text-xs text-muted-foreground mb-1 block">Team</Label>
