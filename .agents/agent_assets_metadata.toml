@@ -36,3 +36,9 @@ id = "cteHWrkOhq3-6z_DAgb4r"
 uri = "file://docs/pdf/Technical-Documentation.pdf"
 type = "pdf"
 title = "Technical Documentation (PDF)"
+
+[[outputs]]
+id = "RcNkXNZPX0Zd0Vx9foih0"
+uri = "file://agent/FIX_DEVICE_NOT_REGISTERING.md"
+type = "text"
+title = "Fix: Device Not Registering"
