@@ -97,6 +97,7 @@ import type {
   UpdateSecuritySettingsRequest,
   UpdateShiftRequest,
   UpdateTaskRequest,
+  UpdateTokenRequest,
   UpsertLeaveBalanceRequest,
 } from "./api.schemas";
 
@@ -5471,6 +5472,93 @@ export function useListTokenRegions<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary Update an enrollment token's editable fields (never the token value)
+ */
+export const getUpdateTokenUrl = (id: string) => {
+  return `/api/tokens/${id}`;
+};
+
+export const updateToken = async (
+  id: string,
+  updateTokenRequest: UpdateTokenRequest,
+  options?: RequestInit,
+): Promise<EnrollmentTokenItem> => {
+  return customFetch<EnrollmentTokenItem>(getUpdateTokenUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateTokenRequest),
+  });
+};
+
+export const getUpdateTokenMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateToken>>,
+    TError,
+    { id: string; data: BodyType<UpdateTokenRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateToken>>,
+  TError,
+  { id: string; data: BodyType<UpdateTokenRequest> },
+  TContext
+> => {
+  const mutationKey = ["updateToken"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateToken>>,
+    { id: string; data: BodyType<UpdateTokenRequest> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateToken(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateTokenMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateToken>>
+>;
+export type UpdateTokenMutationBody = BodyType<UpdateTokenRequest>;
+export type UpdateTokenMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Update an enrollment token's editable fields (never the token value)
+ */
+export const useUpdateToken = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateToken>>,
+    TError,
+    { id: string; data: BodyType<UpdateTokenRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateToken>>,
+  TError,
+  { id: string; data: BodyType<UpdateTokenRequest> },
+  TContext
+> => {
+  return useMutation(getUpdateTokenMutationOptions(options));
+};
 
 /**
  * @summary Revoke an enrollment token

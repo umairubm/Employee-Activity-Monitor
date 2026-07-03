@@ -136,5 +136,6 @@ export * from "./updateShiftRequestShiftType";
 export * from "./updateTaskRequest";
 export * from "./updateTaskRequestPriority";
 export * from "./updateTaskRequestStatus";
+export * from "./updateTokenRequest";
 export * from "./upsertLeaveBalanceRequest";
 export * from "./upsertLeaveBalanceRequestLeaveType";

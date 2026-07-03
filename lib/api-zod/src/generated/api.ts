@@ -1656,6 +1656,85 @@ export const ListTokenRegionsResponseItem = zod.string();
 export const ListTokenRegionsResponse = zod.array(ListTokenRegionsResponseItem);
 
 /**
+ * @summary Update an enrollment token's editable fields (never the token value)
+ */
+export const UpdateTokenParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
+
+export const updateTokenBodyLabelMax = 200;
+
+export const updateTokenBodyEmployeeIdMin = 2;
+export const updateTokenBodyEmployeeIdMax = 64;
+
+export const updateTokenBodyEmployeeIdRegExp = new RegExp(
+  "^[A-Za-z0-9][A-Za-z0-9_-]{1,63}$",
+);
+export const updateTokenBodyDeviceGroupMax = 100;
+
+export const updateTokenBodyRegionMax = 100;
+
+export const updateTokenBodyMaxUsesMax = 1000;
+
+export const UpdateTokenBody = zod
+  .object({
+    label: zod.string().max(updateTokenBodyLabelMax).nullish(),
+    employeeId: zod
+      .string()
+      .min(updateTokenBodyEmployeeIdMin)
+      .max(updateTokenBodyEmployeeIdMax)
+      .regex(updateTokenBodyEmployeeIdRegExp)
+      .optional()
+      .describe(
+        "Employee identifier the device is for (2-64 alphanumeric chars, starts alphanumeric).",
+      ),
+    deviceGroup: zod
+      .string()
+      .max(updateTokenBodyDeviceGroupMax)
+      .nullish()
+      .describe(
+        "Group the enrolled device joins. New names are accepted verbatim.",
+      ),
+    region: zod
+      .string()
+      .max(updateTokenBodyRegionMax)
+      .nullish()
+      .describe(
+        "Region the device belongs to. New names are accepted verbatim.",
+      ),
+    maxUses: zod.number().min(1).max(updateTokenBodyMaxUsesMax).optional(),
+    expiresAt: zod.coerce
+      .date()
+      .nullish()
+      .describe("Expiry instant, or null to never expire."),
+  })
+  .describe(
+    "Partial update of an enrollment token. Every field is optional; only provided fields are changed. The token value itself can never be edited. Send null on a nullable field to clear it.",
+  );
+
+export const UpdateTokenResponse = zod.object({
+  id: zod.string().uuid(),
+  token: zod.string(),
+  label: zod.string().nullish(),
+  employeeId: zod.string().nullish(),
+  deviceGroup: zod.string().nullish(),
+  region: zod.string().nullish(),
+  createdById: zod.string().uuid().nullish(),
+  assignedUserId: zod.string().uuid().nullish(),
+  maxUses: zod.number(),
+  useCount: zod.number(),
+  expiresAt: zod.coerce.date().nullish(),
+  revokedAt: zod.coerce.date().nullish(),
+  createdAt: zod.coerce.date(),
+  enrolledDevices: zod.array(
+    zod.object({
+      id: zod.string().uuid(),
+      systemName: zod.string(),
+    }),
+  ),
+});
+
+/**
  * @summary Revoke an enrollment token
  */
 export const RevokeTokenParams = zod.object({

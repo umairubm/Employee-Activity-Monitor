@@ -1137,6 +1137,46 @@ export interface CreateTokenRequest {
   region?: string;
 }
 
+/**
+ * Partial update of an enrollment token. Every field is optional; only provided fields are changed. The token value itself can never be edited. Send null on a nullable field to clear it.
+ */
+export interface UpdateTokenRequest {
+  /**
+   * @maxLength 200
+   * @nullable
+   */
+  label?: string | null;
+  /**
+   * Employee identifier the device is for (2-64 alphanumeric chars, starts alphanumeric).
+   * @minLength 2
+   * @maxLength 64
+   * @pattern ^[A-Za-z0-9][A-Za-z0-9_-]{1,63}$
+   */
+  employeeId?: string;
+  /**
+   * Group the enrolled device joins. New names are accepted verbatim.
+   * @maxLength 100
+   * @nullable
+   */
+  deviceGroup?: string | null;
+  /**
+   * Region the device belongs to. New names are accepted verbatim.
+   * @maxLength 100
+   * @nullable
+   */
+  region?: string | null;
+  /**
+   * @minimum 1
+   * @maximum 1000
+   */
+  maxUses?: number;
+  /**
+   * Expiry instant, or null to never expire.
+   * @nullable
+   */
+  expiresAt?: string | null;
+}
+
 export type HeartbeatRequestOsType =
   (typeof HeartbeatRequestOsType)[keyof typeof HeartbeatRequestOsType];
 

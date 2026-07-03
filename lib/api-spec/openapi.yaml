@@ -1277,6 +1277,26 @@ paths:
                 type: array
                 items:
                   type: string
+  /tokens/{id}:
+    patch:
+      operationId: updateToken
+      tags: [tokens]
+      summary: Update an enrollment token's editable fields (never the token value)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTokenRequest"
+      responses:
+        "200":
+          description: Token updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnrollmentTokenItem"
   /tokens/{id}/revoke:
     post:
       operationId: revokeToken
@@ -3110,6 +3130,38 @@ components:
           maxLength: 100
           description: Region the enrolled device belongs to. New names are accepted verbatim.
       required: [employeeId]
+    UpdateTokenRequest:
+      type: object
+      description: >-
+        Partial update of an enrollment token. Every field is optional; only
+        provided fields are changed. The token value itself can never be edited.
+        Send null on a nullable field to clear it.
+      properties:
+        label:
+          type: [string, "null"]
+          maxLength: 200
+        employeeId:
+          type: string
+          pattern: "^[A-Za-z0-9][A-Za-z0-9_-]{1,63}$"
+          minLength: 2
+          maxLength: 64
+          description: Employee identifier the device is for (2-64 alphanumeric chars, starts alphanumeric).
+        deviceGroup:
+          type: [string, "null"]
+          maxLength: 100
+          description: Group the enrolled device joins. New names are accepted verbatim.
+        region:
+          type: [string, "null"]
+          maxLength: 100
+          description: Region the device belongs to. New names are accepted verbatim.
+        maxUses:
+          type: integer
+          minimum: 1
+          maximum: 1000
+        expiresAt:
+          type: [string, "null"]
+          format: date-time
+          description: Expiry instant, or null to never expire.
     HeartbeatRequest:
       type: object
       properties:

@@ -175,6 +175,95 @@ router.post("/", requireRole("company_admin", "manager"), async (req, res) => {
   }
 });
 
+// PATCH /api/tokens/:id - edit an enrollment token's fields. Every field is
+// optional and independent; the token value itself is never editable. Nullable
+// fields accept null to clear them. Tenant-scoped by companyId.
+const updateSchema = z.object({
+  label: z.string().max(200).nullable().optional(),
+  employeeId: z
+    .string()
+    .trim()
+    .regex(EMPLOYEE_ID_RE, "Employee ID must be 2-64 alphanumeric characters")
+    .optional(),
+  deviceGroup: z.string().trim().min(1).max(100).nullable().optional(),
+  region: z.string().trim().min(1).max(100).nullable().optional(),
+  maxUses: z.number().int().min(1).max(1000).optional(),
+  expiresAt: z.coerce.date().nullable().optional(),
+});
+
+router.patch(
+  "/:id",
+  requireRole("company_admin", "manager"),
+  async (req, res) => {
+    try {
+      const companyId = getCompanyId(req);
+      const parsed = updateSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: "Invalid token update" });
+        return;
+      }
+      const data = parsed.data;
+
+      // Load the existing token first so we can (a) 404 correctly within this
+      // tenant and (b) reject a maxUses below what's already been consumed.
+      const [existing] = await db
+        .select()
+        .from(enrollmentTokensTable)
+        .where(
+          and(
+            eq(enrollmentTokensTable.id, String(req.params.id)),
+            eq(enrollmentTokensTable.companyId, companyId),
+          ),
+        );
+      if (!existing) {
+        res.status(404).json({ error: "Token not found" });
+        return;
+      }
+
+      const updates: Partial<typeof enrollmentTokensTable.$inferInsert> = {};
+      if (data.label !== undefined) updates.label = data.label;
+      if (data.employeeId !== undefined) updates.employeeId = data.employeeId;
+      if (data.deviceGroup !== undefined) updates.deviceGroup = data.deviceGroup;
+      if (data.region !== undefined) updates.region = data.region;
+      if (data.maxUses !== undefined) {
+        if (data.maxUses < existing.useCount) {
+          res.status(400).json({
+            error: `Max uses cannot be below the current use count (${existing.useCount})`,
+          });
+          return;
+        }
+        updates.maxUses = data.maxUses;
+      }
+      if (data.expiresAt !== undefined) updates.expiresAt = data.expiresAt;
+
+      if (Object.keys(updates).length === 0) {
+        const byToken = await enrolledDevicesByToken([existing.id]);
+        res.json({
+          ...existing,
+          enrolledDevices: byToken.get(existing.id) ?? [],
+        });
+        return;
+      }
+
+      const [updated] = await db
+        .update(enrollmentTokensTable)
+        .set(updates)
+        .where(
+          and(
+            eq(enrollmentTokensTable.id, existing.id),
+            eq(enrollmentTokensTable.companyId, companyId),
+          ),
+        )
+        .returning();
+
+      const byToken = await enrolledDevicesByToken([updated.id]);
+      res.json({ ...updated, enrolledDevices: byToken.get(updated.id) ?? [] });
+    } catch (error) {
+      res.status(500).json({ error: (error as Error).message });
+    }
+  },
+);
+
 // POST /api/tokens/:id/revoke - revoke an enrollment token
 router.post(
   "/:id/revoke",

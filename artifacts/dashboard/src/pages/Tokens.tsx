@@ -12,9 +12,10 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator } from "@/components/ui/command";
-import { KeyRound, Plus, Trash2, Copy, CheckCircle2, Monitor, ChevronsUpDown, Check, Eye } from "lucide-react";
+import { KeyRound, Plus, Trash2, Copy, CheckCircle2, Monitor, ChevronsUpDown, Check, Eye, Pencil } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
+import EditTokenDialog from "@/components/EditTokenDialog";
 
 // Sentinel value for the "＋ Create new group" option in the group dropdown.
 const CREATE_NEW_GROUP = "__create_new__";
@@ -72,6 +73,7 @@ export default function Tokens() {
   const [createdTokenStr, setCreatedTokenStr] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [detailsToken, setDetailsToken] = useState<TokenRow | null>(null);
+  const [editToken, setEditToken] = useState<TokenRow | null>(null);
 
   const creatingNewGroup = groupChoice === CREATE_NEW_GROUP;
   const creatingNewRegion = regionChoice === CREATE_NEW_REGION;
@@ -508,6 +510,16 @@ export default function Tokens() {
                             <Button
                               variant="ghost"
                               size="icon"
+                              className="text-muted-foreground hover:text-foreground"
+                              onClick={() => setEditToken(token)}
+                              disabled={isRevoked}
+                              title={isRevoked ? "Revoked tokens can't be edited" : "Edit token"}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
                               className="text-muted-foreground hover:text-destructive"
                               onClick={() => handleRevoke(token.id)}
                               disabled={isRevoked || revokeToken.isPending}
@@ -526,6 +538,14 @@ export default function Tokens() {
           )}
         </CardContent>
       </Card>
+
+      <EditTokenDialog
+        token={editToken}
+        open={!!editToken}
+        onOpenChange={(open) => { if (!open) setEditToken(null); }}
+        groups={groups}
+        regions={regions}
+      />
 
       <Dialog open={!!detailsToken} onOpenChange={(open) => { if (!open) setDetailsToken(null); }}>
         <DialogContent className="max-w-lg">
