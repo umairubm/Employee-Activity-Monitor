@@ -42,3 +42,9 @@ id = "RcNkXNZPX0Zd0Vx9foih0"
 uri = "file://agent/FIX_DEVICE_NOT_REGISTERING.md"
 type = "text"
 title = "Fix: Device Not Registering"
+
+[[outputs]]
+id = "_vrnb5pN9uO-uFuQqqzPW"
+uri = "file://agent/API_ROUTES.md"
+type = "text"
+title = "Agent API Routes"
