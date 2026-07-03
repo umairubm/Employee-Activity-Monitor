@@ -84,6 +84,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </div>
           <div className="flex items-center gap-3 ml-auto">
             <div className="flex flex-col items-end leading-tight">
+              {user?.companyName && (
+                <span className="text-xs font-semibold text-foreground truncate max-w-[14rem]">
+                  {user.companyName}
+                </span>
+              )}
               <span className="text-sm font-medium truncate max-w-[12rem]">{user?.username ?? "User"}</span>
               <span className="text-xs text-muted-foreground capitalize truncate">
                 {user?.role?.replace("_", " ")}

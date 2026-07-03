@@ -28,6 +28,7 @@ export const LoginResponse = zod.object({
   email: zod.string(),
   role: zod.enum(["super_user", "company_admin", "manager", "team_member"]),
   companyId: zod.string().uuid().nullish(),
+  companyName: zod.string().nullish(),
   createdAt: zod.coerce.date(),
 });
 
@@ -47,6 +48,7 @@ export const GetCurrentUserResponse = zod.object({
   email: zod.string(),
   role: zod.enum(["super_user", "company_admin", "manager", "team_member"]),
   companyId: zod.string().uuid().nullish(),
+  companyName: zod.string().nullish(),
   createdAt: zod.coerce.date(),
 });
 
@@ -1691,6 +1693,7 @@ export const ListUsersResponseItem = zod.object({
   email: zod.string(),
   role: zod.enum(["super_user", "company_admin", "manager", "team_member"]),
   companyId: zod.string().uuid().nullish(),
+  companyName: zod.string().nullish(),
   createdAt: zod.coerce.date(),
 });
 export const ListUsersResponse = zod.array(ListUsersResponseItem);

@@ -1590,6 +1590,8 @@ components:
         companyId:
           type: [string, "null"]
           format: uuid
+        companyName:
+          type: [string, "null"]
         createdAt:
           type: string
           format: date-time

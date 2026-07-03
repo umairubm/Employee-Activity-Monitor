@@ -23,15 +23,25 @@ const loginSchema = z.object({
   password: z.string().min(1),
 });
 
-function publicUser(u: User) {
+function publicUser(u: User, companyName: string | null = null) {
   return {
     id: u.id,
     username: u.username,
     email: u.email,
     role: u.role,
     companyId: u.companyId,
+    companyName,
     createdAt: u.createdAt,
   };
+}
+
+async function companyNameFor(companyId: string | null): Promise<string | null> {
+  if (!companyId) return null;
+  const [company] = await db
+    .select({ name: companiesTable.name })
+    .from(companiesTable)
+    .where(eq(companiesTable.id, companyId));
+  return company?.name ?? null;
 }
 
 // POST /api/auth/login - exchange credentials for a session cookie.
@@ -58,15 +68,17 @@ router.post("/login", loginRateLimit, async (req, res) => {
 
   // Block sign-in for users whose tenant has been suspended (Super Users have
   // no company and are never blocked here).
+  let companyName: string | null = null;
   if (user.companyId) {
     const [company] = await db
-      .select({ status: companiesTable.status })
+      .select({ status: companiesTable.status, name: companiesTable.name })
       .from(companiesTable)
       .where(eq(companiesTable.id, user.companyId));
     if (company?.status === "suspended") {
       res.status(403).json({ error: "Company account is suspended" });
       return;
     }
+    companyName = company?.name ?? null;
   }
 
   clearLoginFailures(req, username);
@@ -76,7 +88,7 @@ router.post("/login", loginRateLimit, async (req, res) => {
     user.companyId,
   );
   setSessionCookie(res, token, expiresAt);
-  res.json(publicUser(user));
+  res.json(publicUser(user, companyName));
 });
 
 // POST /api/auth/logout - revoke current session
@@ -87,8 +99,9 @@ router.post("/logout", userAuth, async (req, res) => {
 });
 
 // GET /api/auth/me - return current authenticated user
-router.get("/me", userAuth, (req, res) => {
-  res.json(publicUser((req as AuthedRequest).user));
+router.get("/me", userAuth, async (req, res) => {
+  const user = (req as AuthedRequest).user;
+  res.json(publicUser(user, await companyNameFor(user.companyId)));
 });
 
 export default router;
