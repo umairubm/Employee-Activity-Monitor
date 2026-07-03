@@ -191,6 +191,54 @@ Errors:
 
 ---
 
+## 6. Updating Agent Settings
+
+The agent does **not** push its own settings. Settings live on the device record
+and are changed from the **dashboard** by an admin/manager (user-authenticated,
+**not** device auth). The agent then receives the new values in the `config`
+object on its next `heartbeat` (and at `enroll`). So the update flow is:
+
+1. Admin calls one of the config routes below.
+2. Agent's next heartbeat returns the updated `config`.
+3. Agent applies the new intervals/thresholds locally.
+
+Both routes require the caller to be `company_admin` or `manager` and are scoped
+to the caller's company.
+
+### Update every device in the company
+`PATCH /api/devices/config` — user auth (admin/manager).
+
+### Update a single device
+`PATCH /api/devices/:id/config` — user auth (admin/manager).
+
+Both take the same body (all fields required):
+```json
+{
+  "monitoringEnabled": true,
+  "screenshotMinMinutes": 10,
+  "screenshotMaxMinutes": 30,
+  "idleThresholdSeconds": 300,
+  "syncIntervalSeconds": 60
+}
+```
+Field rules:
+- `monitoringEnabled` — boolean (master on/off for capture).
+- `screenshotMinMinutes` / `screenshotMaxMinutes` — int 1–1440, and
+  `min <= max` (screenshot cadence is randomized in this range).
+- `idleThresholdSeconds` — int 10–7200 (no-input time counted as idle).
+- `syncIntervalSeconds` — int 10–3600 (how often the agent reports).
+
+Responses:
+- `PATCH /api/devices/config` → `200 { "updated": <count> }`
+- `PATCH /api/devices/:id/config` → `200` with the updated device row; `404` if
+  the device isn't in the caller's company.
+- `400` — invalid configuration (out-of-range value, or min > max).
+
+The `config` object the agent receives (in `enroll` and `heartbeat`) mirrors
+exactly these five fields.
+
+---
+
 ## Route summary
 
 | Method | Path | Auth | Success |
@@ -202,3 +250,5 @@ Errors:
 | PUT | `<presigned uploadURL>` | signature | 200 |
 | POST | `/api/sync/screenshots` | device | 201 |
 | POST | `/api/sync/commands/ack` | device | 200 |
+| PATCH | `/api/devices/config` | user (admin/manager) | 200 |
+| PATCH | `/api/devices/:id/config` | user (admin/manager) | 200 |
