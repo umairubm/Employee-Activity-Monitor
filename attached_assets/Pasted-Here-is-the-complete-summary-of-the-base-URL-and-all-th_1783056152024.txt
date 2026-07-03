@@ -1,0 +1,84 @@
+Here is the complete summary of the base URL and all the communication routes used by the agent for registration and data synchronization.
+
+Base URL
+The default Base URL is https://activitymonitor.replit.app.
+
+How it gets resolved:
+
+Windows Setup Wizard: Hardcoded into the installer, which silently creates an enroll_seed.json file.
+Environment Variable: Can be overridden by setting AGENT_SERVER_URL before the agent runs.
+Manual Entry: If no seed or environment variable is found (e.g., running on Mac/Linux for the first time), the user is prompted to confirm or change the default URL in the graphical setup window.
+Persistent Config: Once enrolled, it is saved persistently in the local config.json file.
+All agent routes append /api/sync to this base URL.
+
+1. Registration / Enrollment
+POST /api/sync/enroll Registers a new device to the system. It consumes the one-time token provided by the IT administrator and returns a permanent deviceId and deviceSecret used for all subsequent requests.
+
+Payload:
+json
+{
+  "token": "admin-provided-token",
+  "hardwareHash": "unique-hardware-id",
+  "systemName": "user-pc-name",
+  "osType": "Windows/Darwin/Linux",
+  "agentVersion": "1.1.0",
+  "consentAcknowledged": true,
+  "consentName": "Employee Name"
+}
+2. General Data & Status Sync
+POST /api/sync/heartbeat Pings the server to show the agent is online and fetches any updated configuration (like changes to the screenshot interval or idle thresholds).
+
+Payload:
+json
+{
+  "agentVersion": "1.1.0"
+}
+POST /api/sync/activity Uploads the core monitoring data, including the active window titles, application usage durations, and hardware information.
+
+Payload:
+json
+{
+  "logs": [
+    {
+      "timestamp": "2026-07-03T10:21:49Z",
+      "app": "chrome.exe",
+      "title": "Employee Monitor - Dashboard",
+      "duration": 45,
+      "idle": false
+    }
+  ],
+  "systemInfo": {
+    "cpu": "Intel Core i7",
+    "ram": "16GB",
+    "os": "Windows 11"
+  }
+}
+3. Screenshot Upload Flow
+Screenshots use a secure three-step process to avoid sending heavy image data directly through the main API server.
+
+Step A: Request Upload URL POST /api/sync/screenshots/request-url Asks the server for a temporary, secure destination (like an AWS S3 presigned URL) to upload the image.
+
+Payload: None.
+Step B: Upload Image Bytes PUT {dynamic_upload_url} Directly uploads the PNG file bytes to the URL provided in Step A.
+
+Headers: Content-Type: image/png
+Payload: Raw binary image data.
+Step C: Confirm Upload POST /api/sync/screenshots Tells the main server that the upload to storage was successful, providing the metadata to link it to the employee's timeline.
+
+Payload:
+json
+{
+  "storageKey": "path/to/image.png",
+  "capturedAt": "2026-07-03T10:21:49Z",
+  "fileSizeBytes": 1048576
+}
+4. Remote Commands
+POST /api/sync/commands/ack If the server sends a command down to the agent (e.g., "force update" or "clear logs"), the agent uses this route to acknowledge that it received and executed the command.
+
+Payload:
+json
+{
+  "commandId": "uuid-of-command",
+  "status": "success"
+}
+(Note: All routes except /enroll and the PUT upload require the agent to send its x-device-id and x-device-secret in the HTTP headers to authenticate the request).
