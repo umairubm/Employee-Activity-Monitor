@@ -83,13 +83,18 @@ const leaveSelection = {
 };
 
 /** Re-fetch a single leave request with its user + reviewer joins, shaped. */
-async function fetchShapedLeave(id: string) {
+async function fetchShapedLeave(id: string, companyId: string) {
   const [row] = await db
     .select(leaveSelection)
     .from(leaveRequestsTable)
     .leftJoin(usersTable, eq(leaveRequestsTable.userId, usersTable.id))
     .leftJoin(reviewer, eq(leaveRequestsTable.reviewedById, reviewer.id))
-    .where(eq(leaveRequestsTable.id, id));
+    .where(
+      and(
+        eq(leaveRequestsTable.id, id),
+        eq(leaveRequestsTable.companyId, companyId),
+      ),
+    );
   return row ? shapeLeave(row) : null;
 }
 
@@ -169,7 +174,7 @@ router.post("/", async (req, res) => {
       res.status(400).json({ error: "Invalid user reference" });
       return;
     }
-    res.status(201).json((await fetchShapedLeave(created.id)) ?? shapeLeave(created));
+    res.status(201).json((await fetchShapedLeave(created.id, companyId)) ?? shapeLeave(created));
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }
@@ -293,7 +298,7 @@ router.post("/:id/review", async (req, res) => {
       return;
     }
 
-    res.json(await fetchShapedLeave(outcome.id));
+    res.json(await fetchShapedLeave(outcome.id, companyId));
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }
@@ -375,7 +380,7 @@ router.patch("/:id", async (req, res) => {
       return;
     }
 
-    res.json(await fetchShapedLeave(outcome.id));
+    res.json(await fetchShapedLeave(outcome.id, companyId));
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }
@@ -422,7 +427,7 @@ router.post("/:id/cancel", async (req, res) => {
       return;
     }
 
-    res.json(await fetchShapedLeave(updated.id));
+    res.json(await fetchShapedLeave(updated.id, companyId));
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }
