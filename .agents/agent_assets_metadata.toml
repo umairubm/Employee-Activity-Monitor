@@ -48,3 +48,9 @@ id = "_vrnb5pN9uO-uFuQqqzPW"
 uri = "file://agent/API_ROUTES.md"
 type = "text"
 title = "Agent API Routes"
+
+[[outputs]]
+id = "1dpAjc3gRpDePHfSixxVx"
+uri = "file://API_ROUTES_FULL.md"
+type = "text"
+title = "Complete API Route Reference"
