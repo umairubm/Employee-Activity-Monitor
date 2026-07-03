@@ -2,6 +2,8 @@ import React, { useMemo, useState } from "react";
 import {
   useListDevices,
   getListDevicesQueryKey,
+  getListTokensQueryKey,
+  getListTokenGroupsQueryKey,
   useSetDeviceGroup,
   useRenameDeviceGroup,
 } from "@workspace/api-client-react";
@@ -104,8 +106,13 @@ export default function Devices() {
       {
         onSuccess: (result) => {
           queryClient.invalidateQueries({ queryKey: getListDevicesQueryKey() });
+          queryClient.invalidateQueries({ queryKey: getListTokensQueryKey() });
+          queryClient.invalidateQueries({ queryKey: getListTokenGroupsQueryKey() });
           if (groupFilter === from) setGroupFilter(to);
-          toast({ title: "Group renamed", description: `${result.renamed} device(s) updated.` });
+          toast({
+            title: "Group renamed",
+            description: `${result.renamed} device(s) and ${result.tokensRenamed} token(s) updated.`,
+          });
           setRenameOpen(false);
         },
         onError: (error: any) => {

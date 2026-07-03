@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useUpdateToken, getListTokensQueryKey } from "@workspace/api-client-react";
+import { useUpdateToken, getListTokensQueryKey, getListTokenGroupsQueryKey, getListTokenRegionsQueryKey } from "@workspace/api-client-react";
 import type { EnrollmentTokenItem } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -129,6 +129,8 @@ export default function EditTokenDialog({
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListTokensQueryKey() });
+          queryClient.invalidateQueries({ queryKey: getListTokenGroupsQueryKey() });
+          queryClient.invalidateQueries({ queryKey: getListTokenRegionsQueryKey() });
           toast({ title: "Token updated" });
           onOpenChange(false);
         },

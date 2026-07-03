@@ -495,7 +495,7 @@ export const ListDownloadsResponse = zod.object({
 });
 
 /**
- * @summary Rename a device group across all devices
+ * @summary Rename a group tenant-wide (across devices and enrollment tokens)
  */
 
 export const RenameDeviceGroupBody = zod.object({
@@ -504,7 +504,8 @@ export const RenameDeviceGroupBody = zod.object({
 });
 
 export const RenameDeviceGroupResponse = zod.object({
-  renamed: zod.number(),
+  renamed: zod.number().describe("Number of devices updated."),
+  tokensRenamed: zod.number().describe("Number of enrollment tokens updated."),
 });
 
 /**

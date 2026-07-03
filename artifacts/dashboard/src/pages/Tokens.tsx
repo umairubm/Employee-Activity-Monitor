@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useListTokens, getListTokensQueryKey, useListTokenGroups, useListTokenRegions, useCreateToken, useRevokeToken } from "@workspace/api-client-react";
+import { useListTokens, getListTokensQueryKey, getListTokenGroupsQueryKey, getListDevicesQueryKey, useListTokenGroups, useListTokenRegions, useCreateToken, useRevokeToken, useRenameDeviceGroup } from "@workspace/api-client-react";
 import type { EnrollmentTokenItem } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
@@ -12,10 +12,12 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator } from "@/components/ui/command";
-import { KeyRound, Plus, Trash2, Copy, CheckCircle2, Monitor, ChevronsUpDown, Check, Eye, Pencil } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { KeyRound, Plus, Trash2, Copy, CheckCircle2, Monitor, ChevronsUpDown, Check, Eye, Pencil, FolderSync } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import EditTokenDialog from "@/components/EditTokenDialog";
+import { useGroupFilter, ALL_GROUPS } from "@/hooks/use-group-filter";
 
 // Sentinel value for the "＋ Create new group" option in the group dropdown.
 const CREATE_NEW_GROUP = "__create_new__";
@@ -57,6 +59,8 @@ export default function Tokens() {
   const { data: regions } = useListTokenRegions();
   const createToken = useCreateToken();
   const revokeToken = useRevokeToken();
+  const renameGroup = useRenameDeviceGroup();
+  const [groupFilter, setGroupFilter] = useGroupFilter();
 
   const [createOpen, setCreateOpen] = useState(false);
   const [newLabel, setNewLabel] = useState("");
@@ -74,6 +78,9 @@ export default function Tokens() {
   const [copied, setCopied] = useState(false);
   const [detailsToken, setDetailsToken] = useState<TokenRow | null>(null);
   const [editToken, setEditToken] = useState<TokenRow | null>(null);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameFrom, setRenameFrom] = useState("");
+  const [renameTo, setRenameTo] = useState("");
 
   const creatingNewGroup = groupChoice === CREATE_NEW_GROUP;
   const creatingNewRegion = regionChoice === CREATE_NEW_REGION;
@@ -132,6 +139,39 @@ export default function Tokens() {
     });
   };
 
+  const openRename = () => {
+    setRenameFrom((groups ?? [])[0] ?? "");
+    setRenameTo("");
+    setRenameOpen(true);
+  };
+
+  const handleRename = () => {
+    const from = renameFrom.trim();
+    const to = renameTo.trim();
+    if (!from || !to) return;
+    renameGroup.mutate(
+      { data: { from, to } },
+      {
+        onSuccess: (result) => {
+          queryClient.invalidateQueries({ queryKey: getListTokensQueryKey() });
+          queryClient.invalidateQueries({ queryKey: getListTokenGroupsQueryKey() });
+          queryClient.invalidateQueries({ queryKey: getListDevicesQueryKey() });
+          // Keep the shared team filter pointed at the renamed group so other
+          // group-aware pages don't stay pinned to a name that no longer exists.
+          if (groupFilter !== ALL_GROUPS && groupFilter === from) setGroupFilter(to);
+          toast({
+            title: "Group renamed",
+            description: `${result.tokensRenamed} token(s) and ${result.renamed} device(s) updated.`,
+          });
+          setRenameOpen(false);
+        },
+        onError: (error: any) => {
+          toast({ title: "Failed to rename group", description: error.message, variant: "destructive" });
+        },
+      },
+    );
+  };
+
   const handleRevoke = (id: string) => {
     if (!confirm("Are you sure you want to revoke this token? Devices currently using it to enroll will fail.")) return;
     
@@ -165,6 +205,16 @@ export default function Tokens() {
           <p className="text-muted-foreground mt-1">Manage tokens used to enroll new devices to the workspace.</p>
         </div>
         
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            className="gap-2"
+            onClick={openRename}
+            disabled={(groups ?? []).length === 0}
+          >
+            <FolderSync className="h-4 w-4" />
+            Rename group
+          </Button>
         <Dialog open={createOpen} onOpenChange={(open) => { if(!open) closeDialog(); else setCreateOpen(true); }}>
           <DialogTrigger asChild>
             <Button className="gap-2">
@@ -417,7 +467,50 @@ export default function Tokens() {
             )}
           </DialogContent>
         </Dialog>
+        </div>
       </div>
+
+      <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Rename Group</DialogTitle>
+            <DialogDescription>
+              Renames the group everywhere it's used — on every enrollment token and device assigned to it.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-2">
+              <Label htmlFor="rename-from">Existing group</Label>
+              <Select value={renameFrom} onValueChange={setRenameFrom}>
+                <SelectTrigger id="rename-from">
+                  <SelectValue placeholder="Select a group" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(groups ?? []).map((g) => (
+                    <SelectItem key={g} value={g}>{g}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="rename-to">New name</Label>
+              <Input
+                id="rename-to"
+                placeholder="e.g. Finance Floor 2"
+                value={renameTo}
+                onChange={(e) => setRenameTo(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleRename()}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRenameOpen(false)}>Cancel</Button>
+            <Button onClick={handleRename} disabled={renameGroup.isPending || !renameFrom.trim() || !renameTo.trim()}>
+              {renameGroup.isPending ? "Renaming..." : "Rename"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Card>
         <CardContent className="p-0">

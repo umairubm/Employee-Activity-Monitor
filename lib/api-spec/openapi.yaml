@@ -309,7 +309,7 @@ paths:
     post:
       operationId: renameDeviceGroup
       tags: [devices]
-      summary: Rename a device group across all devices
+      summary: Rename a group tenant-wide (across devices and enrollment tokens)
       requestBody:
         required: true
         content:
@@ -326,7 +326,11 @@ paths:
                 properties:
                   renamed:
                     type: integer
-                required: [renamed]
+                    description: Number of devices updated.
+                  tokensRenamed:
+                    type: integer
+                    description: Number of enrollment tokens updated.
+                required: [renamed, tokensRenamed]
 
   /activity:
     get:

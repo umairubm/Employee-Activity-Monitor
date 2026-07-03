@@ -1448,7 +1448,7 @@ export function useListDownloads<
 }
 
 /**
- * @summary Rename a device group across all devices
+ * @summary Rename a group tenant-wide (across devices and enrollment tokens)
  */
 export const getRenameDeviceGroupUrl = () => {
   return `/api/devices/groups/rename`;
@@ -1511,7 +1511,7 @@ export type RenameDeviceGroupMutationBody = BodyType<GroupRenameInput>;
 export type RenameDeviceGroupMutationError = ErrorType<unknown>;
 
 /**
- * @summary Rename a device group across all devices
+ * @summary Rename a group tenant-wide (across devices and enrollment tokens)
  */
 export const useRenameDeviceGroup = <
   TError = ErrorType<unknown>,

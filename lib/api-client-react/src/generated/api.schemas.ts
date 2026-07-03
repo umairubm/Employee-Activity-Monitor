@@ -1257,7 +1257,10 @@ export type Logout200 = {
 };
 
 export type RenameDeviceGroup200 = {
+  /** Number of devices updated. */
   renamed: number;
+  /** Number of enrollment tokens updated. */
+  tokensRenamed: number;
 };
 
 export type GetActivityLogsParams = {

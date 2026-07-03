@@ -505,7 +505,10 @@ const renameGroupSchema = z.object({
   to: groupNameSchema,
 });
 
-// POST /api/devices/groups/rename - rename a group across this tenant's devices
+// POST /api/devices/groups/rename - rename a group tenant-wide. A group is a
+// single label shared by devices AND enrollment tokens, so a rename must touch
+// both tables in one transaction; otherwise the two surfaces drift apart (the
+// Tokens page would still show the old name after a rename on the Devices page).
 router.post(
   "/groups/rename",
   requireRole("company_admin", "manager"),
@@ -517,17 +520,31 @@ router.post(
         return;
       }
       const companyId = getCompanyId(req);
-      const updated = await db
-        .update(devicesTable)
-        .set({ deviceGroup: parsed.data.to, updatedAt: new Date() })
-        .where(
-          and(
-            eq(devicesTable.deviceGroup, parsed.data.from),
-            eq(devicesTable.companyId, companyId),
-          ),
-        )
-        .returning({ id: devicesTable.id });
-      res.json({ renamed: updated.length });
+      const { from, to } = parsed.data;
+      const result = await db.transaction(async (tx) => {
+        const devices = await tx
+          .update(devicesTable)
+          .set({ deviceGroup: to, updatedAt: new Date() })
+          .where(
+            and(
+              eq(devicesTable.deviceGroup, from),
+              eq(devicesTable.companyId, companyId),
+            ),
+          )
+          .returning({ id: devicesTable.id });
+        const tokens = await tx
+          .update(enrollmentTokensTable)
+          .set({ deviceGroup: to })
+          .where(
+            and(
+              eq(enrollmentTokensTable.deviceGroup, from),
+              eq(enrollmentTokensTable.companyId, companyId),
+            ),
+          )
+          .returning({ id: enrollmentTokensTable.id });
+        return { renamed: devices.length, tokensRenamed: tokens.length };
+      });
+      res.json(result);
     } catch (error) {
       res.status(500).json({ error: (error as Error).message });
     }
