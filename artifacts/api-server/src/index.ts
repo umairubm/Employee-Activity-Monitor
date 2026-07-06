@@ -1,5 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { startScreenshotUploadWorker } from "./lib/screenshotUploadWorker";
 
 const rawPort = process.env["PORT"];
 
@@ -22,4 +23,9 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
+
+  // Start the background worker that uploads staged screenshots to Dropbox.
+  // Runs in-process; SKIP LOCKED claiming keeps it safe if multiple instances
+  // run. Started here (not in app.ts) so tests importing the app don't spawn it.
+  startScreenshotUploadWorker();
 });

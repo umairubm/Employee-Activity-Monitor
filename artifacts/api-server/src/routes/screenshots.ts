@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { z } from "zod/v4";
 import { db, screenshotsTable, devicesTable } from "@workspace/db";
 import { and, count, desc, eq, gte, inArray, lt } from "drizzle-orm";
-import { ObjectNotFoundError, ObjectStorageService } from "../lib/objectStorage";
+import { getTemporaryLink, deleteFile } from "../lib/dropbox";
 import { requireRole } from "../middlewares/userAuth";
 import { getCompanyId } from "../middlewares/tenant";
 
@@ -212,19 +212,23 @@ router.delete("/:id", requireRole("company_admin", "manager"), async (req, res) 
           eq(screenshotsTable.companyId, companyId),
         ),
       )
-      .returning({ storageKey: screenshotsTable.storageKey });
+      .returning({ dropboxPath: screenshotsTable.dropboxPath });
     if (!deleted) {
       res.status(404).json({ error: "Screenshot not found" });
       return;
     }
-    // Best-effort bytes cleanup; the row is already gone either way.
-    try {
-      await new ObjectStorageService().deleteObjectEntity(deleted.storageKey);
-    } catch (cleanupError) {
-      req.log.warn(
-        { err: cleanupError, storageKey: deleted.storageKey },
-        "screenshot row deleted but object cleanup failed",
-      );
+    // Best-effort Dropbox cleanup; the row (and any staged bytes) is already
+    // gone either way. Pending screenshots have no dropboxPath yet — nothing to
+    // remove remotely.
+    if (deleted.dropboxPath) {
+      try {
+        await deleteFile(deleted.dropboxPath);
+      } catch (cleanupError) {
+        req.log.warn(
+          { err: cleanupError, dropboxPath: deleted.dropboxPath },
+          "screenshot row deleted but Dropbox cleanup failed",
+        );
+      }
     }
     res.status(204).end();
   } catch (error) {
@@ -232,12 +236,23 @@ router.delete("/:id", requireRole("company_admin", "manager"), async (req, res) 
   }
 });
 
-// GET /api/screenshots/:id/image - stream the screenshot bytes (auth-gated)
+// GET /api/screenshots/:id/image - serve the screenshot bytes (auth-gated).
+//
+// A screenshot is viewable at all times, whether or not it has reached Dropbox:
+//   - uploaded  -> redirect to a fresh, short-lived Dropbox temporary link
+//                  (screenshots stay private; the link is generated per view
+//                  and never stored).
+//   - pending/  -> stream the DB-staged bytes directly, so the image is
+//     failed       available immediately, before the background upload runs.
 router.get("/:id/image", async (req, res) => {
   try {
     const companyId = getCompanyId(req);
     const [shot] = await db
-      .select({ storageKey: screenshotsTable.storageKey })
+      .select({
+        status: screenshotsTable.status,
+        dropboxPath: screenshotsTable.dropboxPath,
+        contentType: screenshotsTable.contentType,
+      })
       .from(screenshotsTable)
       .where(
         and(
@@ -250,31 +265,34 @@ router.get("/:id/image", async (req, res) => {
       return;
     }
 
-    const storage = new ObjectStorageService();
-    const file = await storage.getObjectEntityFile(shot.storageKey);
-    const [metadata] = await file.getMetadata();
-
-    // The agent sets the object's content-type at upload time (WebP for the
-    // Python agent, JPEG for the Node agent). Drive the response from that
-    // metadata; only fall back to a neutral type if it is somehow missing so we
-    // never actively mislabel the bytes.
-    res.setHeader(
-      "Content-Type",
-      (metadata.contentType as string) || "application/octet-stream",
-    );
-    res.setHeader("Cache-Control", "private, max-age=3600");
-
-    file
-      .createReadStream()
-      .on("error", () => {
-        if (!res.headersSent) res.status(500).end();
-      })
-      .pipe(res);
-  } catch (error) {
-    if (error instanceof ObjectNotFoundError) {
-      res.status(404).json({ error: "Screenshot image not found" });
+    if (shot.status === "uploaded" && shot.dropboxPath) {
+      const link = await getTemporaryLink(shot.dropboxPath);
+      // Don't let the browser cache the redirect target — temporary links
+      // expire (~4h), so each view must mint a fresh one.
+      res.setHeader("Cache-Control", "private, no-store");
+      res.redirect(302, link);
       return;
     }
+
+    // Not yet in Dropbox: serve the staged bytes from the DB.
+    const [staged] = await db
+      .select({ pendingData: screenshotsTable.pendingData })
+      .from(screenshotsTable)
+      .where(
+        and(
+          eq(screenshotsTable.id, String(req.params.id)),
+          eq(screenshotsTable.companyId, companyId),
+        ),
+      );
+    if (!staged?.pendingData) {
+      res.status(404).json({ error: "Screenshot image not available" });
+      return;
+    }
+
+    res.setHeader("Content-Type", shot.contentType || "application/octet-stream");
+    res.setHeader("Cache-Control", "private, max-age=60");
+    res.end(staged.pendingData);
+  } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }
 });

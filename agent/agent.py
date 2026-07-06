@@ -131,9 +131,7 @@ class MonitoringAgent:
         time.sleep(1.0)
         try:
             img = screenshot_mod.capture_webp_bytes()
-            url_info = self.api.request_screenshot_url()
-            self.api.upload_screenshot_bytes(url_info["uploadURL"], img)
-            self.api.report_screenshot(url_info["storageKey"], _now_iso(), len(img))
+            self.api.upload_screenshot(img, _now_iso(), content_type="image/webp")
         except Exception as exc:  # noqa: BLE001 — best-effort, never crash agent
             print(f"[agent] screenshot failed: {exc}", file=sys.stderr)
 

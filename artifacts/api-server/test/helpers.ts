@@ -229,7 +229,9 @@ export async function createScreenshot(
     .values({
       deviceId,
       companyId,
-      storageKey: `test/${randomUUID()}.png`,
+      status: "uploaded",
+      dropboxPath: `/AgentImages/test/${randomUUID()}.png`,
+      contentType: "image/png",
       fileSizeBytes: 1234,
       flagged: opts.flagged ?? false,
       capturedAt: opts.capturedAt ?? new Date(),

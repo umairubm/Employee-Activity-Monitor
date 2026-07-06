@@ -303,17 +303,24 @@ async function apiPost(syncPath, json, { auth = true } = {}) {
   throw new Error(`POST ${syncPath} -> ${status}: ${text}`);
 }
 
-async function putBytes(uploadUrl, buffer, contentType) {
-  const { status, text } = await httpRequest("PUT", uploadUrl, {
+// POST raw image bytes to a sync endpoint. The server stages the bytes and
+// enqueues them for upload to Dropbox, so image bytes go straight to our own
+// API (authenticated) instead of a third-party presigned URL.
+async function apiPostBytes(syncPath, buffer, { contentType, headers = {} } = {}) {
+  const { status, text } = await httpRequest("POST", `${SYNC_BASE}${syncPath}`, {
     headers: {
       "Content-Type": contentType,
       "Content-Length": buffer.length,
+      ...authHeaders(),
+      ...headers,
     },
     body: buffer,
   });
-  if (status < 200 || status >= 300) {
-    throw new Error(`Screenshot PUT -> ${status}: ${text}`);
+  if (status >= 200 && status < 300) {
+    clientState.isOfflineSince = null;
+    return text ? JSON.parse(text) : { ok: true };
   }
+  throw new Error(`POST ${syncPath} (bytes) -> ${status}: ${text}`);
 }
 
 // ── System inventory (transparent hardware snapshot) ──────────────────────────
@@ -863,7 +870,7 @@ class Program {
   }
 }
 
-// ── Screenshot upload via secure presigned object-storage flow ────────────────
+// ── Screenshot upload: POST raw bytes to our API (staged, then Dropbox) ───────
 async function captureAndUploadScreenshot() {
   // Transparency: always show a visible notice BEFORE capturing.
   await showNotice(
@@ -875,14 +882,17 @@ async function captureAndUploadScreenshot() {
   if (!shot) return;
 
   try {
-    const { uploadURL, storageKey } = await apiPost("/screenshots/request-url", {});
-    await putBytes(uploadURL, shot.buffer, shot.contentType);
-    await apiPost("/screenshots", {
-      storageKey,
-      capturedAt: getSyncDate().toISOString(),
-      fileSizeBytes: shot.buffer.length,
+    // The image bytes go straight to our authenticated API. The server stages
+    // them (viewable immediately) and later uploads them to Dropbox in the
+    // background — the agent does not talk to Dropbox directly.
+    const res = await apiPostBytes("/screenshots", shot.buffer, {
+      contentType: shot.contentType,
+      headers: { "x-captured-at": getSyncDate().toISOString() },
     });
-    console.log(`✅ Screenshot uploaded (${Math.ceil(shot.buffer.length / 1024)} KB).`);
+    const note = res && res.duplicate ? " (duplicate, already stored)" : "";
+    console.log(
+      `✅ Screenshot sent (${Math.ceil(shot.buffer.length / 1024)} KB)${note}.`
+    );
   } catch (err) {
     console.error("❌ Failed to upload screenshot:", err.message);
   }

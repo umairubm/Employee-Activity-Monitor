@@ -15,7 +15,7 @@ notification before every screenshot.
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
 - `pnpm --filter @workspace/scripts run mint-token -- --label "PC name" --max-uses 1 --expires-days 7` — mint a device enrollment token
 - `cd agent && python -m pip install -r requirements.txt && python agent.py` — run the desktop agent
-- Required env: `DATABASE_URL`; object storage vars (`DEFAULT_OBJECT_STORAGE_BUCKET_ID`, `PRIVATE_OBJECT_DIR`, `PUBLIC_OBJECT_SEARCH_PATHS`)
+- Required env: `DATABASE_URL`; Dropbox connection via the Replit Dropbox integration (screenshots)
 
 ## Stack
 
@@ -23,7 +23,7 @@ notification before every screenshot.
 - API: Express 5
 - DB: PostgreSQL + Drizzle ORM
 - Validation: Zod (`zod/v4`), `drizzle-zod`
-- Object storage: Replit App Storage via `@google-cloud/storage` (presigned URLs)
+- Screenshot storage: Dropbox (raw HTTP API, token via the Replit Dropbox connector)
 - Desktop agent: Python 3.11 (pystray, mss, Pillow, psutil, requests)
 
 ## Where things live
@@ -34,7 +34,8 @@ notification before every screenshot.
   - Device auth middleware: `middlewares/deviceAuth.ts`
   - Sync payload validation (hand-written Zod): `lib/syncValidation.ts`
   - Productivity classification: `lib/productivity.ts`
-  - Object storage helpers: `lib/objectStorage.ts`, `lib/objectAcl.ts`
+  - Dropbox service (raw HTTP, connector token): `lib/dropbox.ts`
+  - Background screenshot upload worker (SKIP LOCKED lease queue): `lib/screenshotUploadWorker.ts`
   - Secret hashing: `lib/secrets.ts`
 - Enrollment token mint script: `scripts/src/mint-enrollment-token.ts`
 - Desktop agent: `agent/` (see `agent/README.md`)
@@ -59,9 +60,15 @@ notification before every screenshot.
   failures fall back to the visible first-run consent dialog (`consent.py`).
 - **Sync schemas are hand-written Zod, not OpenAPI codegen.** The agent is an
   external client; its payloads live in `lib/syncValidation.ts`.
-- **Screenshots use presigned object-storage URLs.** The agent requests a PUT URL,
-  uploads bytes directly to storage, then reports the `storageKey` — image bytes
-  never pass through the API server.
+- **Screenshots are stored in Dropbox, staged through the DB.** The agent POSTs
+  raw image bytes to the authenticated `/sync/screenshots` endpoint (magic-byte
+  sniff, 8 MB cap, sha256 dedupe). The bytes are staged in the DB (`status=pending`,
+  `pendingData`) and a background worker (`screenshotUploadWorker.ts`) uploads them
+  to Dropbox and clears the staged bytes. Screenshots are viewable AT ALL TIMES:
+  the server streams the staged bytes while pending, and 302-redirects to a
+  short-lived Dropbox temporary link once uploaded. There are NO public URLs.
+  The upload queue uses a `SKIP LOCKED` single-statement lease claim with bounded
+  concurrency + jittered backoff so many devices/orgs never deadlock.
 - **Productivity auto-discovery.** Unknown processes auto-create an `undefined`
   `app_categories` row for an admin to classify later.
 
@@ -70,7 +77,7 @@ notification before every screenshot.
 - Token-based device enrollment with explicit, recorded user consent.
 - Activity logging (foreground app + window title + duration + idle), classified
   productive / unproductive / neutral / undefined.
-- Periodic screenshots stored in object storage, with visible capture notices.
+- Periodic screenshots stored in Dropbox (privately), with visible capture notices.
 - Heartbeat-driven config delivery + authorized IT command dispatch (lock/logout)
   with on-screen notice before execution.
 

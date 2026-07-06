@@ -12,9 +12,11 @@ the Python agent — **no public/unauthenticated endpoint is required**.
 - **Authenticates** every request with the per-device id + secret issued once at
   enrollment (`x-device-id` / `x-device-secret`).
 - Reports **foreground app + window title + active/idle time** in batches.
-- Captures **periodic screenshots**, uploaded directly to object storage via
-  short-lived **presigned URLs** (image bytes never pass through the API, never
-  base64). A **visible notice is shown before every capture**.
+- Captures **periodic screenshots**, POSTed as raw bytes to the authenticated
+  `/sync/screenshots` endpoint (`Content-Type: image/jpeg`, capture time in the
+  `x-captured-at` header). The server stages the bytes and uploads them to Dropbox
+  in the background — the agent never talks to Dropbox directly. A **visible notice
+  is shown before every capture**.
 - Pulls config + lock state and executes **authorized IT commands** (lock screen
   / sign out) **with an on-screen notice first**, then acknowledges them.
 

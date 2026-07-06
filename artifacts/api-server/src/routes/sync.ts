@@ -1,4 +1,11 @@
-import { Router, type IRouter, type Request, type Response } from "express";
+import {
+  Router,
+  type IRouter,
+  type Request,
+  type Response,
+  raw as rawBody,
+} from "express";
+import { createHash } from "node:crypto";
 import { and, count, eq, sql, isNull, or, gt, lt, inArray } from "drizzle-orm";
 import {
   db,
@@ -20,7 +27,7 @@ import {
   EnrollBody,
   HeartbeatBody,
   ActivityBody,
-  ScreenshotBody,
+  ScreenshotMeta,
   CommandAckBody,
 } from "../lib/syncValidation";
 import { generateSecret, hashSecret } from "../lib/secrets";
@@ -30,9 +37,43 @@ import {
   classify,
   ensureUndefinedCategories,
 } from "../lib/productivity";
-import { ObjectStorageService } from "../lib/objectStorage";
 
 const router: IRouter = Router();
+
+/** Max accepted screenshot upload size (raw bytes). */
+const MAX_SCREENSHOT_BYTES = 8 * 1024 * 1024;
+
+/** Content types the agent may upload, mapped to their magic-byte signatures. */
+const IMAGE_SIGNATURES: Array<{
+  contentType: string;
+  test: (b: Buffer) => boolean;
+}> = [
+  {
+    contentType: "image/jpeg",
+    test: (b) => b.length > 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff,
+  },
+  {
+    contentType: "image/png",
+    test: (b) =>
+      b.length > 8 &&
+      b[0] === 0x89 &&
+      b[1] === 0x50 &&
+      b[2] === 0x4e &&
+      b[3] === 0x47,
+  },
+  {
+    contentType: "image/webp",
+    test: (b) =>
+      b.length > 12 &&
+      b.toString("ascii", 0, 4) === "RIFF" &&
+      b.toString("ascii", 8, 12) === "WEBP",
+  },
+];
+
+/** Sniff the real image type from magic bytes; null if not an allowed image. */
+function sniffImageType(bytes: Buffer): string | null {
+  return IMAGE_SIGNATURES.find((s) => s.test(bytes))?.contentType ?? null;
+}
 
 /**
  * Raised inside the enroll transaction when a re-enrollment would move an
@@ -432,57 +473,99 @@ router.post(
 );
 
 /**
- * POST /api/sync/screenshots/request-url
- * Returns a short-lived presigned PUT URL the agent uploads the image to, plus
- * the storage key to report back once the upload completes.
- */
-router.post(
-  "/screenshots/request-url",
-  deviceAuth,
-  async (_req: Request, res: Response): Promise<void> => {
-    const storage = new ObjectStorageService();
-    const uploadURL = await storage.getObjectEntityUploadURL();
-    const storageKey = storage.normalizeObjectEntityPath(uploadURL);
-    res.json({ uploadURL, storageKey });
-  },
-);
-
-/**
  * POST /api/sync/screenshots
- * Records metadata for a screenshot the agent already uploaded to object storage.
+ *
+ * The agent uploads the raw image bytes as the request body (content type
+ * image/jpeg|png|webp) with the capture time in the `x-captured-at` header.
+ * The bytes are validated (magic-byte sniff + size cap), hashed for dedupe, and
+ * staged in the DB with status `pending`; the background worker then uploads
+ * them to Dropbox. Staging in the DB keeps the pipeline restart-safe and lets
+ * the screenshot be viewed immediately, before it reaches Dropbox.
+ *
+ * Returns 202 Accepted (the upload to Dropbox happens asynchronously).
  */
 router.post(
   "/screenshots",
   deviceAuth,
+  rawBody({
+    type: ["image/jpeg", "image/png", "image/webp"],
+    limit: MAX_SCREENSHOT_BYTES,
+  }),
   async (req: Request, res: Response): Promise<void> => {
     const device = (req as DeviceRequest).device;
-    const parsed = ScreenshotBody.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({ error: "Invalid screenshot payload" });
-      return;
-    }
-    const body = parsed.data;
 
-    // Only accept keys in the shape the server itself issues from
-    // /screenshots/request-url, so a device can't register arbitrary paths.
-    if (!/^\/objects\/uploads\/[0-9a-fA-F-]{36}$/.test(body.storageKey)) {
-      res.status(400).json({ error: "Invalid storage key" });
+    const bytes = req.body;
+    if (!Buffer.isBuffer(bytes) || bytes.length === 0) {
+      res
+        .status(400)
+        .json({ error: "Expected raw image bytes as the request body" });
       return;
     }
 
+    // Trust the bytes, not the header: sniff the real type from magic bytes so
+    // a device can't mislabel content.
+    const contentType = sniffImageType(bytes);
+    if (!contentType) {
+      res
+        .status(400)
+        .json({ error: "Unsupported image format (expected JPEG, PNG, or WebP)" });
+      return;
+    }
+
+    const meta = ScreenshotMeta.safeParse({
+      capturedAt: req.header("x-captured-at"),
+    });
+    if (!meta.success) {
+      res
+        .status(400)
+        .json({ error: "Missing or invalid x-captured-at header" });
+      return;
+    }
+
+    const contentHash = createHash("sha256").update(bytes).digest("hex");
+
+    // Dedupe on (deviceId, contentHash): a retried upload of the same capture
+    // is a no-op. onConflictDoNothing keeps this race-safe without a failing
+    // insert. The partial unique index requires a matching targetWhere.
     const [shot] = await db
       .insert(screenshotsTable)
       .values({
         deviceId: device.id,
         companyId: device.companyId,
         userId: device.assignedUserId,
-        storageKey: body.storageKey,
-        fileSizeBytes: body.fileSizeBytes,
-        capturedAt: body.capturedAt,
+        status: "pending",
+        pendingData: bytes,
+        contentType,
+        contentHash,
+        fileSizeBytes: bytes.length,
+        capturedAt: meta.data.capturedAt,
       })
-      .returning();
+      .onConflictDoNothing({
+        target: [screenshotsTable.deviceId, screenshotsTable.contentHash],
+        where: sql`content_hash IS NOT NULL`,
+      })
+      .returning({ id: screenshotsTable.id });
 
-    res.status(201).json({ id: shot.id });
+    if (!shot) {
+      // Duplicate capture — already enqueued. Report the existing row.
+      const [existing] = await db
+        .select({ id: screenshotsTable.id })
+        .from(screenshotsTable)
+        .where(
+          and(
+            eq(screenshotsTable.deviceId, device.id),
+            eq(screenshotsTable.contentHash, contentHash),
+          ),
+        );
+      res.status(202).json({ id: existing?.id, status: "pending", duplicate: true });
+      return;
+    }
+
+    req.log.info(
+      { screenshotId: shot.id, deviceId: device.id, bytes: bytes.length },
+      "screenshot enqueued for Dropbox upload",
+    );
+    res.status(202).json({ id: shot.id, status: "pending" });
   },
 );
 

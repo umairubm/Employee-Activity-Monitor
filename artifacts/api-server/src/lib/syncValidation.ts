@@ -45,12 +45,16 @@ export const ActivityBody = z.object({
 });
 export type ActivityBody = z.infer<typeof ActivityBody>;
 
-export const ScreenshotBody = z.object({
-  storageKey: z.string().min(1),
+/**
+ * Screenshot uploads now send the raw image bytes as the request body (see
+ * routes/sync.ts). The only metadata the agent supplies is the capture time,
+ * passed in the `x-captured-at` header; everything else (size, content type,
+ * hash) is derived server-side from the bytes.
+ */
+export const ScreenshotMeta = z.object({
   capturedAt: z.coerce.date(),
-  fileSizeBytes: z.number().int().nonnegative().default(0),
 });
-export type ScreenshotBody = z.infer<typeof ScreenshotBody>;
+export type ScreenshotMeta = z.infer<typeof ScreenshotMeta>;
 
 export const CommandAckBody = z.object({
   commandId: z.string().uuid(),

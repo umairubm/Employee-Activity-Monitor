@@ -12,10 +12,13 @@ There are two desktop agents that hit the same server sync API:
 
 **Rule:** both must use the identical secure contract — enrollment token +
 recorded consent on first run, per-device `x-device-id`/`x-device-secret` on every
-authenticated call, and the 3-step presigned object-storage screenshot upload
-(request-url → PUT bytes → POST metadata). Transparency is non-negotiable:
-consent gates enrollment, a visible notice precedes every screenshot, and a
-notice precedes any IT command.
+authenticated call, and the screenshot upload: POST the raw image bytes to the
+authenticated `/sync/screenshots` (Content-Type image/jpeg|png|webp, capture time
+in the `x-captured-at` header) and expect 202. The server stages the bytes and
+uploads them to Dropbox in the background — agents never talk to Dropbox directly,
+and there is no presigned-URL / request-url step anymore. Transparency is
+non-negotiable: consent gates enrollment, a visible notice precedes every
+screenshot, and a notice precedes any IT command.
 
 **Why:** a developer asked to "make the endpoint public" so their no-auth client
 would work. That would (a) create an open, unauthenticated data-ingest hole and

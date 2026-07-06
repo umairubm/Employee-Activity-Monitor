@@ -28,6 +28,19 @@ function trackDevice(id: string): string {
   return id;
 }
 
+/**
+ * A minimal buffer that begins with the JPEG magic bytes (0xFF 0xD8 0xFF), so
+ * the server's magic-byte sniff accepts it. The trailing bytes make each call
+ * unique enough for size assertions; pass a seed to vary the content hash.
+ */
+function jpegBytes(seed = 0): Buffer {
+  return Buffer.concat([
+    Buffer.from([0xff, 0xd8, 0xff, 0xe0]),
+    Buffer.from([seed & 0xff]),
+    Buffer.alloc(32, seed & 0xff),
+  ]);
+}
+
 afterAll(async () => {
   if (createdDeviceIds.length) {
     // Activity logs + screenshots cascade-delete with their device.
@@ -518,7 +531,7 @@ describe("server-side consent enforcement", () => {
     expect(rows.length).toBe(0);
   });
 
-  it("rejects screenshot metadata from an unconsented device (403)", async () => {
+  it("rejects a screenshot upload from an unconsented device (403)", async () => {
     const { device, secret } = await createDeviceWithSecret({ consent: false });
     trackDevice(device.id);
 
@@ -526,11 +539,9 @@ describe("server-side consent enforcement", () => {
       .post("/sync/screenshots")
       .set("x-device-id", device.id)
       .set("x-device-secret", secret)
-      .send({
-        storageKey: `/objects/uploads/${randomUUID()}`,
-        capturedAt: new Date().toISOString(),
-        fileSizeBytes: 1000,
-      });
+      .set("Content-Type", "image/jpeg")
+      .set("x-captured-at", new Date().toISOString())
+      .send(jpegBytes());
     expect(res.status).toBe(403);
   });
 
@@ -558,50 +569,37 @@ describe("server-side consent enforcement", () => {
   });
 });
 
-describe("screenshot upload uses the presigned-URL + storageKey path", () => {
-  it("returns a presigned upload URL and a normalized storage key", async () => {
+describe("screenshot upload stages bytes and enqueues them for Dropbox", () => {
+  it("accepts raw image bytes and enqueues them pending (202)", async () => {
     const { device, secret } = await createDeviceWithSecret();
     trackDevice(device.id);
 
-    const res = await request(app)
-      .post("/sync/screenshots/request-url")
-      .set("x-device-id", device.id)
-      .set("x-device-secret", secret)
-      .send({});
-    expect(res.status).toBe(200);
-    expect(typeof res.body.uploadURL).toBe("string");
-    expect(res.body.uploadURL).toMatch(/^https?:\/\//);
-    // The agent reports back this key; the API never receives image bytes.
-    expect(res.body.storageKey).toMatch(/^\/objects\/uploads\/[0-9a-fA-F-]{36}$/);
-  });
-
-  it("records only metadata for a well-formed storage key (201, no bytes)", async () => {
-    const { device, secret } = await createDeviceWithSecret();
-    trackDevice(device.id);
-
-    const storageKey = `/objects/uploads/${randomUUID()}`;
+    const bytes = jpegBytes();
     const res = await request(app)
       .post("/sync/screenshots")
       .set("x-device-id", device.id)
       .set("x-device-secret", secret)
-      .send({
-        storageKey,
-        capturedAt: new Date().toISOString(),
-        fileSizeBytes: 2048,
-      });
-    expect(res.status).toBe(201);
+      .set("Content-Type", "image/jpeg")
+      .set("x-captured-at", new Date().toISOString())
+      .send(bytes);
+    expect(res.status).toBe(202);
     expect(res.body.id).toBeTruthy();
+    expect(res.body.status).toBe("pending");
 
     const [shot] = await db
       .select()
       .from(screenshotsTable)
       .where(eq(screenshotsTable.id, res.body.id));
     expect(shot.deviceId).toBe(device.id);
-    expect(shot.storageKey).toBe(storageKey);
-    expect(shot.fileSizeBytes).toBe(2048);
+    expect(shot.status).toBe("pending");
+    expect(shot.contentType).toBe("image/jpeg");
+    expect(shot.fileSizeBytes).toBe(bytes.length);
+    // Bytes are staged in the DB so the screenshot is viewable before upload.
+    expect(shot.pendingData).toBeTruthy();
+    expect(shot.dropboxPath).toBeNull();
   });
 
-  it("rejects an arbitrary storage key not issued by request-url (400)", async () => {
+  it("rejects a body whose bytes are not a supported image (400)", async () => {
     const { device, secret } = await createDeviceWithSecret();
     trackDevice(device.id);
 
@@ -609,12 +607,52 @@ describe("screenshot upload uses the presigned-URL + storageKey path", () => {
       .post("/sync/screenshots")
       .set("x-device-id", device.id)
       .set("x-device-secret", secret)
-      .send({
-        storageKey: "/etc/passwd",
-        capturedAt: new Date().toISOString(),
-        fileSizeBytes: 10,
-      });
+      .set("Content-Type", "image/png")
+      .set("x-captured-at", new Date().toISOString())
+      .send(Buffer.from("not really a png"));
     expect(res.status).toBe(400);
+  });
+
+  it("rejects an upload with no x-captured-at header (400)", async () => {
+    const { device, secret } = await createDeviceWithSecret();
+    trackDevice(device.id);
+
+    const res = await request(app)
+      .post("/sync/screenshots")
+      .set("x-device-id", device.id)
+      .set("x-device-secret", secret)
+      .set("Content-Type", "image/jpeg")
+      .send(jpegBytes());
+    expect(res.status).toBe(400);
+  });
+
+  it("dedupes identical bytes from the same device (202, single row)", async () => {
+    const { device, secret } = await createDeviceWithSecret();
+    trackDevice(device.id);
+
+    const bytes = jpegBytes();
+    const capturedAt = new Date().toISOString();
+    const send = () =>
+      request(app)
+        .post("/sync/screenshots")
+        .set("x-device-id", device.id)
+        .set("x-device-secret", secret)
+        .set("Content-Type", "image/jpeg")
+        .set("x-captured-at", capturedAt)
+        .send(bytes);
+
+    const first = await send();
+    const second = await send();
+    expect(first.status).toBe(202);
+    expect(second.status).toBe(202);
+    expect(second.body.duplicate).toBe(true);
+    expect(second.body.id).toBe(first.body.id);
+
+    const rows = await db
+      .select()
+      .from(screenshotsTable)
+      .where(eq(screenshotsTable.deviceId, device.id));
+    expect(rows.length).toBe(1);
   });
 });
 
