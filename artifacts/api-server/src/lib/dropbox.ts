@@ -40,7 +40,82 @@ function isRateLimited(status: number): boolean {
   return status === 429;
 }
 
+/**
+ * Cache for tokens minted from a refresh token. Dropbox short-lived access
+ * tokens live ~4h; we refresh a few minutes early. Not used for the static
+ * `DROPBOX_ACCESS_TOKEN` or the connector path.
+ */
+let refreshedToken: { token: string; expiresAt: number } | null = null;
+
+/**
+ * Mint a fresh short-lived access token from a long-lived refresh token +
+ * app key/secret. This is the durable manual path (tokens auto-renew).
+ */
+async function mintTokenFromRefreshToken(
+  refreshToken: string,
+  appKey: string,
+  appSecret: string,
+): Promise<string> {
+  const now = Date.now();
+  if (refreshedToken && refreshedToken.expiresAt > now + 60_000) {
+    return refreshedToken.token;
+  }
+  const body = new URLSearchParams({
+    grant_type: "refresh_token",
+    refresh_token: refreshToken,
+  });
+  const basic = Buffer.from(`${appKey}:${appSecret}`).toString("base64");
+  const res = await fetch("https://api.dropboxapi.com/oauth2/token", {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${basic}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body,
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Dropbox token refresh failed (${res.status}): ${text}`);
+  }
+  const data = (await res.json()) as {
+    access_token?: string;
+    expires_in?: number;
+  };
+  if (!data.access_token) {
+    throw new Error("Dropbox token refresh returned no access_token");
+  }
+  refreshedToken = {
+    token: data.access_token,
+    expiresAt: now + (data.expires_in ?? 14400) * 1000,
+  };
+  return refreshedToken.token;
+}
+
+/**
+ * Resolve a Dropbox access token. Precedence:
+ *   1. DROPBOX_REFRESH_TOKEN (+ DROPBOX_APP_KEY / DROPBOX_APP_SECRET) — durable,
+ *      auto-renewing manual token with full scopes. Preferred.
+ *   2. DROPBOX_ACCESS_TOKEN — a static (short-lived) manual token; simplest for
+ *      quick testing, expires in ~4h.
+ *   3. The Replit Dropbox connector — note the managed connector currently only
+ *      grants `files.metadata.read`, which is NOT enough to upload screenshots.
+ *      A manual token (1 or 2) with `files.content.write`, `files.content.read`
+ *      and `sharing.write` scopes is required for the screenshot pipeline.
+ */
 async function getAccessToken(): Promise<string> {
+  const refreshToken = process.env.DROPBOX_REFRESH_TOKEN;
+  const appKey = process.env.DROPBOX_APP_KEY;
+  const appSecret = process.env.DROPBOX_APP_SECRET;
+  if (refreshToken && appKey && appSecret) {
+    return mintTokenFromRefreshToken(refreshToken, appKey, appSecret);
+  }
+
+  const staticToken = process.env.DROPBOX_ACCESS_TOKEN;
+  if (staticToken) {
+    return staticToken;
+  }
+
   const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
   const xReplitToken = process.env.REPL_IDENTITY
     ? "repl " + process.env.REPL_IDENTITY
