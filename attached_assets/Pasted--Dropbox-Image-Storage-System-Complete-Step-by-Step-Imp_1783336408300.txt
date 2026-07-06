@@ -1,0 +1,496 @@
+# Dropbox Image Storage System - Complete Step-by-Step Implementation Guide
+
+I want you to implement a complete Dropbox image storage system for my application.
+
+## Important Instructions
+
+* Do **not** change any existing functionality unless it is required for this feature.
+* Keep the implementation clean, modular, and production-ready.
+* Follow the implementation in the exact order described below.
+* Explain every step before implementing it.
+* If you have any suggestions for improvement, do **not** implement them automatically. Ask for approval first.
+
+---
+
+# System Overview
+
+The application receives screenshots/images from multiple desktop agents.
+
+Instead of storing these images permanently on the server, they should be uploaded to Dropbox.
+
+After a successful upload:
+
+1. Store the Dropbox public URL in the database.
+2. Delete the local image from the server.
+3. Keep only the Dropbox URL for future access.
+
+Each agent device should have its own folder inside Dropbox.
+
+Example:
+
+```
+Dropbox
+│
+└── AgentImages
+    │
+    ├── Dell-68
+    │      image1.jpg
+    │      image2.jpg
+    │
+    ├── HP-Office
+    │      image1.jpg
+    │
+    ├── Lenovo-12
+    │      image1.jpg
+    │
+    └── MacBook-Pro
+```
+
+The folder name must be created using the agent device label that already exists in the authentication token.
+
+Example:
+
+```
+Device Label:
+
+Dell-68
+
+Dropbox Folder:
+
+AgentImages/Dell-68/
+```
+
+If the folder does not exist, automatically create it.
+
+If it already exists, simply upload the image into that folder.
+
+---
+
+# Image Upload Workflow
+
+Implement the following workflow.
+
+## Step 1
+
+The desktop agent sends an image to the backend.
+
+The backend stores it temporarily.
+
+---
+
+## Step 2
+
+Read the device label from the authenticated token.
+
+Example:
+
+```
+Dell-68
+```
+
+---
+
+## Step 3
+
+Check whether the Dropbox folder exists.
+
+Example:
+
+```
+AgentImages/Dell-68
+```
+
+If it does not exist:
+
+* Create the folder.
+
+If it exists:
+
+* Continue.
+
+---
+
+## Step 4
+
+Upload the image to Dropbox.
+
+Generate a unique filename.
+
+Example:
+
+```
+2026-07-06_10-35-12.jpg
+
+or
+
+uuid.jpg
+```
+
+Avoid filename collisions.
+
+---
+
+## Step 5
+
+Generate a public Dropbox URL for the uploaded image.
+
+The application must be able to access the image later using this URL.
+
+If Dropbox returns a share link, convert it into a direct-access link if required.
+
+---
+
+## Step 6
+
+Save only the Dropbox image URL in the database.
+
+Example:
+
+```
+Screenshot
+--------------------------------------------
+id
+
+employee_id
+
+dropbox_url
+
+created_at
+```
+
+Do not save the local file path.
+
+---
+
+## Step 7
+
+Verify that:
+
+* upload completed successfully
+* URL is generated successfully
+* database updated successfully
+
+Only after all three succeed:
+
+Delete the local image from the server.
+
+If any step fails:
+
+* do NOT delete the local image
+* log the error
+* retry later if appropriate
+
+---
+
+# Random Upload Logic
+
+The desktop agent continuously captures screenshots.
+
+These screenshots must **not** be uploaded immediately.
+
+Instead:
+
+For every device independently,
+
+Upload screenshots randomly within a rolling 5-hour window.
+
+Requirements:
+
+* Every device has its own upload schedule.
+* Upload times must appear random.
+* Avoid all devices uploading simultaneously.
+* Preserve screenshot order where required.
+* Ensure no screenshots are skipped.
+* Handle server restarts gracefully.
+* Handle pending uploads after downtime.
+* Prevent duplicate uploads.
+* Prevent race conditions.
+
+Explain the scheduling algorithm before implementing it.
+
+---
+
+# Dropbox Integration
+
+Implement a reusable Dropbox service.
+
+The service should include methods similar to:
+
+* Initialize Dropbox client
+* Create folder if not exists
+* Upload file
+* Generate public URL
+* Convert shared URL to direct URL if needed
+* Delete file (optional)
+* Handle retries
+* Handle API rate limits
+* Handle expired access tokens
+* Handle Dropbox API exceptions
+
+The implementation should be modular and reusable.
+
+---
+
+# Database Changes
+
+If database changes are required:
+
+Explain:
+
+* migration
+* schema changes
+* indexes
+* rollback
+
+before implementing them.
+
+---
+
+# Error Handling
+
+Implement robust error handling.
+
+Cover:
+
+* Invalid token
+* Missing device label
+* Dropbox unavailable
+* Network timeout
+* Invalid image
+* Upload failure
+* Folder creation failure
+* Database failure
+* Duplicate upload
+* Expired Dropbox token
+* Rate limiting
+
+Every failure should produce meaningful logs.
+
+---
+
+# Logging
+
+Add structured logging for:
+
+* image received
+* upload started
+* folder created
+* upload completed
+* public URL generated
+* database updated
+* local file deleted
+* upload failed
+* retry started
+* retry completed
+
+---
+
+# Security
+
+Follow security best practices.
+
+Do not:
+
+* hardcode Dropbox credentials
+* expose secrets
+* expose private API keys
+* expose refresh tokens
+
+Store secrets using environment variables.
+
+Validate all uploaded files.
+
+Restrict file types.
+
+Restrict file size.
+
+Sanitize filenames.
+
+---
+
+# Performance
+
+Optimize for large-scale deployments.
+
+Consider:
+
+* asynchronous uploads
+* background workers
+* queue processing
+* retry mechanism
+* efficient API usage
+* minimal memory usage
+
+Explain the chosen approach.
+
+---
+
+# Dropbox Setup Guide
+
+Provide a complete beginner-friendly guide for configuring Dropbox.
+
+Do not skip any steps.
+
+Include detailed explanations for:
+
+## 1. Create a Dropbox Account
+
+Explain:
+
+* where to register
+* account requirements
+* recommended account type
+
+---
+
+## 2. Create a Dropbox App
+
+Explain:
+
+* where to create it
+* App Folder vs Full Dropbox access
+* which permission model to choose
+* why that choice is recommended
+
+---
+
+## 3. Configure Permissions
+
+Explain every required permission.
+
+For each permission explain:
+
+* what it does
+* why my application needs it
+
+---
+
+## 4. Generate Credentials
+
+Explain how to obtain:
+
+* App Key
+* App Secret
+
+---
+
+## 5. OAuth Configuration
+
+Explain:
+
+* OAuth flow
+* Access Token
+* Refresh Token
+* Token expiration
+* Offline access
+* Redirect URI configuration
+
+---
+
+## 6. Generate Long-Term Credentials
+
+Explain how to generate credentials that can be safely used in a backend application.
+
+---
+
+## 7. Configure Environment Variables
+
+Explain how to securely store:
+
+* App Key
+* App Secret
+* Access Token
+* Refresh Token
+
+Provide examples.
+
+---
+
+## 8. Install Dropbox SDK
+
+Explain installation.
+
+Explain dependencies.
+
+---
+
+## 9. Test Connection
+
+Show how to verify:
+
+* authentication
+* folder creation
+* upload
+* public URL generation
+
+---
+
+## 10. Common Problems
+
+Explain common Dropbox issues.
+
+Include:
+
+* Invalid token
+* Missing scopes
+* Permission denied
+* Expired token
+* Shared link issues
+* Upload errors
+* API rate limits
+
+Explain how to troubleshoot each one.
+
+---
+
+# Testing
+
+Create a testing checklist covering:
+
+* first upload
+* existing folder
+* new folder
+* duplicate filenames
+* invalid images
+* upload failure
+* database failure
+* public URL validation
+* local file deletion
+* random upload scheduling
+* concurrent uploads
+* multiple agents
+* large images
+
+---
+
+# Documentation
+
+At the end, provide:
+
+* architecture diagram
+* request flow
+* sequence diagram
+* folder structure
+* configuration guide
+* deployment checklist
+* troubleshooting guide
+* maintenance recommendations
+
+---
+
+# Expected Deliverables
+
+By the end of the implementation, provide:
+
+1. Complete Dropbox setup guide.
+2. Production-ready Dropbox integration.
+3. Folder creation based on device label.
+4. Automatic image upload.
+5. Public URL generation.
+6. Database integration.
+7. Automatic local file deletion after successful upload.
+8. Random 5-hour upload scheduling for each device.
+9. Comprehensive logging and error handling.
+10. Security best practices.
+11. Full testing plan.
+12. Complete documentation with explanations for every implementation step.
