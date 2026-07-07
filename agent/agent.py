@@ -127,8 +127,8 @@ class MonitoringAgent:
         self._next_screenshot_gap = self._screenshot_gap()
         # Visible notice BEFORE capture — transparency requirement.
         try:
-            img = screenshot_mod.capture_webp_bytes()
-            self.api.upload_screenshot(img, _now_iso(), content_type="image/webp")
+            img = screenshot_mod.capture_png_bytes()
+            self.api.upload_screenshot(img, _now_iso(), content_type="image/png")
         except Exception as exc:  # noqa: BLE001 — best-effort, never crash agent
             print(f"[agent] screenshot failed: {exc}", file=sys.stderr)
 
