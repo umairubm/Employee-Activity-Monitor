@@ -6,6 +6,7 @@ import {
   getListTokenGroupsQueryKey,
   useSetDeviceGroup,
   useRenameDeviceGroup,
+  useListTokenGroups,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
@@ -32,6 +33,10 @@ export default function Devices() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { data: devices, isLoading } = useListDevices();
+  // App-wide group taxonomy (union of distinct groups on devices + tokens),
+  // so the filter/rename/assign controls list every group that exists — not
+  // only groups that already have a device.
+  const { data: tokenGroups } = useListTokenGroups();
   const setGroup = useSetDeviceGroup();
   const renameGroup = useRenameDeviceGroup();
   const [search, setSearch] = useState("");
@@ -47,8 +52,9 @@ export default function Devices() {
   const groups = useMemo(() => {
     const set = new Set<string>();
     devices?.forEach((d) => set.add(d.deviceGroup));
+    tokenGroups?.forEach((g) => set.add(g));
     return Array.from(set).sort();
-  }, [devices]);
+  }, [devices, tokenGroups]);
 
   if (isLoading) {
     return (
