@@ -54,3 +54,9 @@ id = "1dpAjc3gRpDePHfSixxVx"
 uri = "file://API_ROUTES_FULL.md"
 type = "text"
 title = "Complete API Route Reference"
+
+[[outputs]]
+id = "ZH4fJDbC24wv-F2KX_EXF"
+uri = "file://exports/dropbox-setup-guide.pdf"
+type = "pdf"
+title = "Changing the Dropbox Account — Setup Guide"

@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Changing the Dropbox Account — Setup Guide</title>
+<style>
+  @page {
+    size: A4;
+    margin: 22mm 18mm 20mm 18mm;
+    @bottom-center {
+      content: "Workforce Analytics — Dropbox Setup Guide";
+      font-size: 8pt;
+      color: #9aa3b2;
+    }
+    @bottom-right {
+      content: "Page " counter(page) " of " counter(pages);
+      font-size: 8pt;
+      color: #9aa3b2;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    color: #1f2733;
+    font-size: 10.5pt;
+    line-height: 1.5;
+    margin: 0;
+  }
+  .cover {
+    background: linear-gradient(135deg, #0b1f3a 0%, #14508c 55%, #1f7ae0 100%);
+    color: #fff;
+    padding: 34px 30px;
+    border-radius: 14px;
+    margin-bottom: 26px;
+  }
+  .cover .eyebrow {
+    text-transform: uppercase;
+    letter-spacing: 2.5px;
+    font-size: 9pt;
+    color: #bcd8ff;
+    margin: 0 0 10px;
+  }
+  .cover h1 {
+    font-size: 26pt;
+    line-height: 1.15;
+    margin: 0 0 12px;
+    font-weight: 700;
+  }
+  .cover p {
+    margin: 0;
+    color: #e6f0ff;
+    font-size: 11pt;
+    max-width: 90%;
+  }
+  h2 {
+    font-size: 15pt;
+    color: #0b1f3a;
+    margin: 26px 0 8px;
+    padding-bottom: 6px;
+    border-bottom: 2px solid #e2e8f2;
+  }
+  h3 { font-size: 11.5pt; color: #14508c; margin: 16px 0 6px; }
+  p { margin: 6px 0; }
+  ol, ul { margin: 6px 0 6px 0; padding-left: 22px; }
+  li { margin: 4px 0; }
+  code {
+    font-family: "SFMono-Regular", "Consolas", "Menlo", monospace;
+    background: #eef2f8;
+    color: #b8004a;
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 9pt;
+  }
+  pre {
+    background: #0b1f3a;
+    color: #e6f0ff;
+    padding: 12px 14px;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-size: 8.6pt;
+    line-height: 1.45;
+  }
+  pre code { background: none; color: inherit; padding: 0; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0;
+    font-size: 9.6pt;
+  }
+  th, td {
+    border: 1px solid #d8dfea;
+    padding: 7px 9px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th { background: #14508c; color: #fff; font-weight: 600; }
+  tr:nth-child(even) td { background: #f5f8fc; }
+  .callout {
+    border-radius: 8px;
+    padding: 11px 14px;
+    margin: 12px 0;
+    font-size: 9.8pt;
+  }
+  .warn { background: #fff4e5; border-left: 4px solid #f39c12; }
+  .danger { background: #fdecea; border-left: 4px solid #e74c3c; }
+  .info { background: #eaf3ff; border-left: 4px solid #1f7ae0; }
+  .callout strong { color: #0b1f3a; }
+  .step-num {
+    display: inline-block;
+    background: #1f7ae0;
+    color: #fff;
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    text-align: center;
+    font-size: 9pt;
+    line-height: 20px;
+    margin-right: 6px;
+    font-weight: 700;
+  }
+  .avoid-break { page-break-inside: avoid; }
+  .footer-note {
+    margin-top: 26px;
+    padding-top: 10px;
+    border-top: 1px solid #e2e8f2;
+    font-size: 9pt;
+    color: #6b7688;
+  }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <p class="eyebrow">Workforce Analytics &amp; IT Management</p>
+  <h1>Changing the Dropbox Account</h1>
+  <p>A complete, step-by-step guide to pointing the screenshot pipeline at a different Dropbox account or app — what to collect from Dropbox, and how to hand it over securely.</p>
+</div>
+
+<h2>0 &nbsp;Background: what the system needs</h2>
+<p>The screenshot pipeline authenticates to Dropbox with <strong>three</strong> values (all read from the environment):</p>
+<table class="avoid-break">
+  <tr><th>Value</th><th>Sensitive?</th><th>What it's for</th></tr>
+  <tr><td><code>DROPBOX_APP_KEY</code></td><td>No — public client ID</td><td>Identifies your Dropbox app</td></tr>
+  <tr><td><code>DROPBOX_APP_SECRET</code></td><td><strong>Yes</strong></td><td>Proves the app is really yours</td></tr>
+  <tr><td><code>DROPBOX_REFRESH_TOKEN</code></td><td><strong>Yes</strong></td><td>Long-lived, auto-renewing key that mints short-lived access tokens forever</td></tr>
+</table>
+<div class="callout info">There is also an optional <code>DROPBOX_ACCESS_TOKEN</code> — <strong>ignore it</strong>. That is the 4-hour token from the console button; it expires and causes outages. The refresh token is what makes uploads work permanently with no manual re-auth.</div>
+<div class="callout warn"><strong>Before you switch:</strong> screenshots already uploaded to the <strong>old</strong> account stay there and will no longer be viewable in the app (the app looks them up in whatever account the new token points to). New screenshots go to the new account. Only switch if that is acceptable.</div>
+
+<h2>1 &nbsp;In Dropbox: create / open the app</h2>
+<ol>
+  <li>Go to <strong>https://www.dropbox.com/developers/apps</strong> and sign in with the Dropbox account you want screenshots stored in — <em>this is the account that matters</em>.</li>
+  <li>Click <strong>Create app</strong> (or open an existing app to reuse it).</li>
+  <li>Choose:
+    <ul>
+      <li><strong>Scoped access</strong> (the only modern option).</li>
+      <li><strong>Access type: Full Dropbox</strong> (recommended — lets the app write to <code>/ActiveTrackScreenshots/...</code>). If you pick <strong>App folder</strong>, screenshots land inside the app's private folder instead — also fine, but the path is relative to that folder.</li>
+    </ul>
+  </li>
+  <li>Name the app (e.g. <code>ActiveTrack-Screenshots</code>) and click <strong>Create app</strong>.</li>
+</ol>
+
+<h2>2 &nbsp;Set permissions (scopes) — do this BEFORE making a token</h2>
+<p>Open the <strong>Permissions</strong> tab, tick <strong>all</strong> of these, then click <strong>Submit</strong>:</p>
+<ul>
+  <li><code>account_info.read</code></li>
+  <li><code>files.metadata.read</code></li>
+  <li><code>files.content.read</code></li>
+  <li><code>files.content.write</code></li>
+  <li><code>sharing.read</code></li>
+  <li><code>sharing.write</code></li>
+</ul>
+<div class="callout danger"><strong>Critical:</strong> if you generate a token first and change scopes later, the old token will not have the new permissions. Always set scopes <strong>before</strong> generating the refresh token. If you change scopes afterward, regenerate the refresh token (repeat Step 4).</div>
+
+<h2>3 &nbsp;Get the App key and App secret</h2>
+<p>On the <strong>Settings</strong> tab:</p>
+<ul>
+  <li><strong>App key</strong> &rarr; this is <code>DROPBOX_APP_KEY</code>.</li>
+  <li><strong>App secret</strong> &rarr; click <strong>Show</strong>; this is <code>DROPBOX_APP_SECRET</code>.</li>
+</ul>
+
+<h2>4 &nbsp;Get the refresh token (the easy-to-get-wrong step)</h2>
+<div class="callout danger">The console's <strong>“Generate access token”</strong> button gives only a <strong>4-hour</strong> token — <strong>do not use it</strong>. The permanent refresh token comes from a one-time OAuth “offline” authorization.</div>
+<ol>
+  <li>Build this URL, replacing <code>YOUR_APP_KEY</code>:
+    <pre><code>https://www.dropbox.com/oauth2/authorize?client_id=YOUR_APP_KEY&amp;token_access_type=offline&amp;response_type=code</code></pre>
+  </li>
+  <li>Open it in your browser, choose the correct account, click <strong>Allow</strong>.</li>
+  <li>Dropbox shows a short <strong>authorization code</strong> (a random string — <em>not</em> an <code>sl.u...</code> value). Copy it. It expires within a few minutes, so use it promptly.</li>
+  <li>Exchange that code for a refresh token — two ways:</li>
+</ol>
+<h3>Option A — I do it for you (recommended)</h3>
+<p>Put the app key + secret into Secrets first (Step 5), then send me the code. I run the exchange and drop the refresh token into a temp file you copy into Secrets.</p>
+<h3>Option B — you do it yourself in the Replit Shell (most private)</h3>
+<pre><code>APP_KEY='paste_app_key'
+APP_SECRET='paste_app_secret'
+CODE='paste_authorization_code'
+curl -s https://api.dropboxapi.com/oauth2/token \
+  -d grant_type=authorization_code \
+  -d code="$CODE" \
+  -u "$APP_KEY:$APP_SECRET"</code></pre>
+<p>The JSON response includes <code>"refresh_token": "..."</code> — that is your <code>DROPBOX_REFRESH_TOKEN</code>.</p>
+
+<h2>5 &nbsp;What you give me, and how (securely)</h2>
+<p>Put these into the <strong>Secrets</strong> pane (Tools &rarr; Secrets / the lock icon) — <strong>never</strong> the <code>.replit</code> file, and never paste the secret or refresh token into chat:</p>
+<table class="avoid-break">
+  <tr><th>Secret key</th><th>Where it comes from</th></tr>
+  <tr><td><code>DROPBOX_APP_KEY</code></td><td>Step 3 (fine to paste in chat too — it's public)</td></tr>
+  <tr><td><code>DROPBOX_APP_SECRET</code></td><td>Step 3</td></tr>
+  <tr><td><code>DROPBOX_REFRESH_TOKEN</code></td><td>Step 4 — if I generated it, run <code>cat /tmp/.dbx_rt</code> in the Shell and paste the output into the Secret</td></tr>
+</table>
+<div class="callout info">The only things safe to send me in chat are the <strong>app key</strong> (public) and the <strong>one-time authorization code</strong> (short-lived, useless on its own).</div>
+
+<h2>6 &nbsp;What I do after your Secrets are saved</h2>
+<ol>
+  <li>Delete the old plaintext <code>DROPBOX_*</code> entries from <code>.replit</code> (all <code>[userenv.*]</code> sections) so no credentials sit in the repo.</li>
+  <li>Drop the unused <code>DROPBOX_ACCESS_TOKEN</code>.</li>
+  <li>Restart the API server so it picks up the new Secrets.</li>
+  <li>Verify end-to-end: confirm a screenshot uploads and lands under <code>/ActiveTrackScreenshots/{label}_{region}_{group}/...</code> in the new account.</li>
+</ol>
+
+<h2>Quick checklist (short version)</h2>
+<ol>
+  <li>Dropbox &rarr; create/open app &rarr; <strong>Full Dropbox</strong>, Scoped.</li>
+  <li><strong>Permissions</strong> tab &rarr; enable the 6 scopes &rarr; <strong>Submit</strong>.</li>
+  <li><strong>Settings</strong> &rarr; copy <strong>App key</strong> + <strong>App secret</strong>.</li>
+  <li>Authorize with the <code>token_access_type=offline</code> URL &rarr; copy the <strong>code</strong> &rarr; exchange &rarr; get <strong>refresh token</strong>.</li>
+  <li>Save <code>DROPBOX_APP_KEY</code>, <code>DROPBOX_APP_SECRET</code>, <code>DROPBOX_REFRESH_TOKEN</code> in <strong>Secrets</strong>.</li>
+  <li>Tell me &rarr; I clean <code>.replit</code>, restart, and verify.</li>
+</ol>
+
+<p class="footer-note">Security note: credentials belong only in the encrypted <strong>Secrets</strong> store, never in <code>.replit</code> (which is committed to git). If a secret ever lands in <code>.replit</code>, deleting it is not enough — it stays in git history, so it must be rotated at the source in the Dropbox App Console.</p>
+
+</body>
+</html>
