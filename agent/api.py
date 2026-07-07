@@ -94,39 +94,24 @@ class AgentAPI:
             raise APIError(f"Activity upload failed ({resp.status_code}): {resp.text}")
         return resp.json()
 
-    def request_screenshot_url(self) -> dict:
-        resp = requests.post(
-            self._url("/screenshots/request-url"),
-            headers=self._auth_headers(),
-            timeout=self.timeout,
-        )
-        if resp.status_code != 200:
-            raise APIError(f"Upload-URL request failed ({resp.status_code}): {resp.text}")
-        return resp.json()
-
-    def upload_screenshot_bytes(self, upload_url: str, data: bytes) -> None:
-        resp = requests.put(
-            upload_url,
-            data=data,
-            headers={"Content-Type": "image/png"},
-            timeout=self.timeout,
-        )
-        if resp.status_code not in (200, 201):
-            raise APIError(f"Screenshot PUT failed ({resp.status_code}): {resp.text}")
-
-    def report_screenshot(self, storage_key: str, captured_at: str, size: int) -> dict:
+    def upload_screenshot(
+        self,
+        data: bytes,
+        captured_at: str,
+        content_type: str = "image/webp",
+    ) -> dict:
+        """POST raw image bytes to our own authenticated API in a single request."""
+        headers = self._auth_headers()
+        headers["Content-Type"] = content_type
+        headers["x-captured-at"] = captured_at
         resp = requests.post(
             self._url("/screenshots"),
-            json={
-                "storageKey": storage_key,
-                "capturedAt": captured_at,
-                "fileSizeBytes": size,
-            },
-            headers=self._auth_headers(),
+            data=data,
+            headers=headers,
             timeout=self.timeout,
         )
-        if resp.status_code != 201:
-            raise APIError(f"Screenshot report failed ({resp.status_code}): {resp.text}")
+        if resp.status_code not in (200, 201, 202):
+            raise APIError(f"Screenshot upload failed ({resp.status_code}): {resp.text}")
         return resp.json()
 
     def ack_command(self, command_id: str, status: str) -> dict:
