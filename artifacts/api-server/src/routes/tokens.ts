@@ -245,16 +245,39 @@ router.patch(
         return;
       }
 
-      const [updated] = await db
-        .update(enrollmentTokensTable)
-        .set(updates)
-        .where(
-          and(
-            eq(enrollmentTokensTable.id, existing.id),
-            eq(enrollmentTokensTable.companyId, companyId),
-          ),
-        )
-        .returning();
+      // When the token's group changes, propagate it to every device that
+      // enrolled via this token. Screens read a device's own `deviceGroup`
+      // (a snapshot taken at enrollment), so without this the edit would only
+      // show on the Tokens screen and diverge everywhere else. Mirrors the
+      // enrollment fallback: a null token group maps devices to "Unassigned".
+      const groupChanged = data.deviceGroup !== undefined;
+      const newDeviceGroup = data.deviceGroup ?? "Unassigned";
+
+      const updated = await db.transaction(async (tx) => {
+        const [row] = await tx
+          .update(enrollmentTokensTable)
+          .set(updates)
+          .where(
+            and(
+              eq(enrollmentTokensTable.id, existing.id),
+              eq(enrollmentTokensTable.companyId, companyId),
+            ),
+          )
+          .returning();
+
+        if (groupChanged) {
+          await tx
+            .update(devicesTable)
+            .set({ deviceGroup: newDeviceGroup, updatedAt: new Date() })
+            .where(
+              and(
+                eq(devicesTable.enrolledViaTokenId, existing.id),
+                eq(devicesTable.companyId, companyId),
+              ),
+            );
+        }
+        return row;
+      });
 
       const byToken = await enrolledDevicesByToken([updated.id]);
       res.json({ ...updated, enrolledDevices: byToken.get(updated.id) ?? [] });

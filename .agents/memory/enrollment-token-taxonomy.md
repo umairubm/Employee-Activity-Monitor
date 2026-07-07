@@ -25,6 +25,19 @@ pattern (nullable string column + distinct-union list endpoint + combobox with
 create-new + optional undefined sentinel). Length bound is 1..100 in both Zod and
 OpenAPI.
 
+**Editing a token's group is authoritative — it propagates to enrolled devices.**
+Screens read a device's OWN `deviceGroup` snapshot (copied at enrollment), so a
+`PATCH /tokens/:id` that changes `deviceGroup` must, in the SAME transaction,
+`UPDATE devices SET deviceGroup=<new ?? "Unassigned"> WHERE enrolledViaTokenId=token.id
+AND companyId=<caller>`, or the edit only shows on the Tokens screen. This
+intentionally overwrites any per-device manual group override (devices.ts set-group
+endpoint) for devices of that token — the token preset wins. Screenshot Dropbox path
+uses the live device group, so it follows automatically. The dashboard EditTokenDialog
+invalidates the whole React Query cache on success so every device-backed screen refetches.
+
+**Why:** device group is a snapshot, not a live token reference; without propagation
+the token row and every device-backed screen diverge after an edit.
+
 **Devices show token metadata via join, not their own columns.** Devices have no
 employeeId/label/region of their own; the Devices list/detail endpoints LEFT JOIN
 the enrolling token (`devices.enrolledViaTokenId`) and expose `tokenEmployeeId`,

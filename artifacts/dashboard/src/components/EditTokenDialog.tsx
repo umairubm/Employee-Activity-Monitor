@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useUpdateToken, getListTokensQueryKey, getListTokenGroupsQueryKey, getListTokenRegionsQueryKey } from "@workspace/api-client-react";
+import { useUpdateToken } from "@workspace/api-client-react";
 import type { EnrollmentTokenItem } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -128,9 +128,12 @@ export default function EditTokenDialog({
       },
       {
         onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: getListTokensQueryKey() });
-          queryClient.invalidateQueries({ queryKey: getListTokenGroupsQueryKey() });
-          queryClient.invalidateQueries({ queryKey: getListTokenRegionsQueryKey() });
+          // A group edit propagates server-side to every device enrolled via
+          // this token, and each screen derives its group from its own device
+          // data query. Invalidate the whole cache so all screens (devices,
+          // activity, attendance, screenshots, reports, overview) refetch and
+          // reflect the new group — not just the Tokens screen.
+          queryClient.invalidateQueries();
           toast({ title: "Token updated" });
           onOpenChange(false);
         },

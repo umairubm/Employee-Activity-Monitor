@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { randomUUID } from "node:crypto";
-import { inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import {
   db,
   devicesTable,
@@ -195,6 +195,97 @@ describe("token create/revoke responses match the enriched contract", () => {
     expect(res.status).toBe(200);
     expect(res.body).toContain(ownRegion);
     expect(res.body).not.toContain(foreignRegion);
+  });
+
+  async function deviceGroupOf(id: string): Promise<string | undefined> {
+    const [row] = await db
+      .select({ g: devicesTable.deviceGroup })
+      .from(devicesTable)
+      .where(eq(devicesTable.id, id));
+    return row?.g;
+  }
+
+  it("propagates a token group edit to every device enrolled via it", async () => {
+    const token = await createEnrollmentToken({ deviceGroup: "Old Floor" });
+    createdTokenIds.push(token.id);
+    const a = await createDevice({
+      systemName: "PC-Prop-A",
+      enrolledViaTokenId: token.id,
+      deviceGroup: "Old Floor",
+    });
+    const b = await createDevice({
+      systemName: "PC-Prop-B",
+      enrolledViaTokenId: token.id,
+      deviceGroup: "Old Floor",
+    });
+    createdDeviceIds.push(a.id, b.id);
+
+    const res = await request(realAdminApp)
+      .patch(`/tokens/${token.id}`)
+      .send({ deviceGroup: "New Floor" });
+    expect(res.status).toBe(200);
+    expect(res.body.deviceGroup).toBe("New Floor");
+
+    expect(await deviceGroupOf(a.id)).toBe("New Floor");
+    expect(await deviceGroupOf(b.id)).toBe("New Floor");
+  });
+
+  it("does not touch devices enrolled via a different token", async () => {
+    const edited = await createEnrollmentToken({ deviceGroup: "Alpha" });
+    const other = await createEnrollmentToken({ deviceGroup: "Beta" });
+    createdTokenIds.push(edited.id, other.id);
+    const mine = await createDevice({
+      enrolledViaTokenId: edited.id,
+      deviceGroup: "Alpha",
+    });
+    const theirs = await createDevice({
+      enrolledViaTokenId: other.id,
+      deviceGroup: "Beta",
+    });
+    createdDeviceIds.push(mine.id, theirs.id);
+
+    const res = await request(realAdminApp)
+      .patch(`/tokens/${edited.id}`)
+      .send({ deviceGroup: "Alpha Prime" });
+    expect(res.status).toBe(200);
+
+    expect(await deviceGroupOf(mine.id)).toBe("Alpha Prime");
+    expect(await deviceGroupOf(theirs.id)).toBe("Beta");
+  });
+
+  it("maps a cleared token group to Unassigned on enrolled devices", async () => {
+    const token = await createEnrollmentToken({ deviceGroup: "Temp" });
+    createdTokenIds.push(token.id);
+    const d = await createDevice({
+      enrolledViaTokenId: token.id,
+      deviceGroup: "Temp",
+    });
+    createdDeviceIds.push(d.id);
+
+    const res = await request(realAdminApp)
+      .patch(`/tokens/${token.id}`)
+      .send({ deviceGroup: null });
+    expect(res.status).toBe(200);
+    expect(res.body.deviceGroup).toBeNull();
+
+    expect(await deviceGroupOf(d.id)).toBe("Unassigned");
+  });
+
+  it("leaves device groups untouched when the edit omits deviceGroup", async () => {
+    const token = await createEnrollmentToken({ deviceGroup: "Keep" });
+    createdTokenIds.push(token.id);
+    const d = await createDevice({
+      enrolledViaTokenId: token.id,
+      deviceGroup: "Keep",
+    });
+    createdDeviceIds.push(d.id);
+
+    const res = await request(realAdminApp)
+      .patch(`/tokens/${token.id}`)
+      .send({ label: "renamed only" });
+    expect(res.status).toBe(200);
+
+    expect(await deviceGroupOf(d.id)).toBe("Keep");
   });
 
   it("includes enrolledDevices on revoke", async () => {
