@@ -22,7 +22,7 @@ const CONTENT_BASE = "https://content.dropboxapi.com/2";
 const REQUEST_TIMEOUT_MS = 30_000;
 
 /** Root folder under which all tenants' screenshots live. */
-export const DROPBOX_ROOT = "/AgentImages";
+export const DROPBOX_ROOT = "/ActiveTrackScreenshots";
 
 class DropboxError extends Error {
   constructor(

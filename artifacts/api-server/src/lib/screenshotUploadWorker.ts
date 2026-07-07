@@ -1,6 +1,10 @@
-import { randomUUID } from "node:crypto";
 import { sql, eq, and } from "drizzle-orm";
-import { db, screenshotsTable, devicesTable } from "@workspace/db";
+import {
+  db,
+  screenshotsTable,
+  devicesTable,
+  enrollmentTokensTable,
+} from "@workspace/db";
 import { uploadFile, DROPBOX_ROOT } from "./dropbox";
 import { logger } from "./logger";
 
@@ -36,6 +40,7 @@ type ClaimedRow = {
   device_id: string;
   company_id: string | null;
   content_type: string;
+  captured_at: Date;
   pending_bytes: Buffer;
 };
 
@@ -67,6 +72,19 @@ function extForType(contentType: string): string {
 }
 
 /**
+ * Build the screenshot filename stem from its capture time, in the form
+ * `YYYY-MM-DD_HH-MM-SS-mmm` (UTC). Millisecond precision keeps names unique
+ * within a folder even when several devices share the same label/region/group.
+ */
+function formatCaptureName(capturedAt: Date | string): string {
+  const d = capturedAt instanceof Date ? capturedAt : new Date(capturedAt);
+  const p = (n: number, w = 2) => String(n).padStart(w, "0");
+  const date = `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}`;
+  const time = `${p(d.getUTCHours())}-${p(d.getUTCMinutes())}-${p(d.getUTCSeconds())}-${p(d.getUTCMilliseconds(), 3)}`;
+  return `${date}_${time}`;
+}
+
+/**
  * Atomically claim up to BATCH_SIZE due rows, leasing them so they aren't
  * re-picked while this worker uploads them. Returns the claimed rows (with
  * their staged bytes).
@@ -86,7 +104,7 @@ async function claimBatch(): Promise<ClaimResult> {
       LIMIT ${BATCH_SIZE}
       FOR UPDATE SKIP LOCKED
     )
-    RETURNING s.id, s.device_id, s.company_id, s.content_type, s.pending_bytes
+    RETURNING s.id, s.device_id, s.company_id, s.content_type, s.captured_at, s.pending_bytes
   `);
   return { rows: result.rows as ClaimedRow[], leaseUntil };
 }
@@ -160,14 +178,36 @@ async function processRow(row: ClaimedRow, leaseUntil: Date): Promise<void> {
   try {
     if (MAX_JITTER_MS > 0) await sleep(Math.random() * MAX_JITTER_MS);
 
-    const [device] = await db
-      .select({ systemName: devicesTable.systemName })
+    // Screenshots are foldered by the enrolled device's label/region/group so an
+    // admin can browse Dropbox by team. `label` and `region` come from the
+    // enrollment token the device joined with; `group` is the device's current
+    // group (admins can move a device, so the live value wins over the token's).
+    const [info] = await db
+      .select({
+        systemName: devicesTable.systemName,
+        deviceGroup: devicesTable.deviceGroup,
+        tokenLabel: enrollmentTokensTable.label,
+        tokenRegion: enrollmentTokensTable.region,
+      })
       .from(devicesTable)
+      .leftJoin(
+        enrollmentTokensTable,
+        eq(devicesTable.enrolledViaTokenId, enrollmentTokensTable.id),
+      )
       .where(eq(devicesTable.id, row.device_id));
-    const label = sanitizeLabel(device?.systemName ?? "device");
-    const company = row.company_id ?? "no-company";
+
+    const label = sanitizeLabel(info?.tokenLabel ?? info?.systemName ?? "device");
+    const region = sanitizeLabel(info?.tokenRegion ?? "no-region");
+    const group = sanitizeLabel(info?.deviceGroup ?? "Unassigned");
+    const folder = `${label}_${region}_${group}`;
     const ext = extForType(row.content_type);
-    const path = `${DROPBOX_ROOT}/${company}/${label}-${row.device_id}/${randomUUID()}.${ext}`;
+    // Append the screenshot's unique id to the date_timestamp name. Devices that
+    // share a label/region/group write into the same folder, so a plain
+    // date_timestamp name could collide across devices and — because uploadFile
+    // overwrites — silently replace an earlier screenshot. The id suffix makes
+    // every object path unique, so no screenshot is ever overwritten.
+    const uniqueSuffix = row.id.replace(/-/g, "").slice(0, 8);
+    const path = `${DROPBOX_ROOT}/${folder}/${formatCaptureName(row.captured_at)}_${uniqueSuffix}.${ext}`;
 
     const { path: storedPath } = await uploadFile(path, row.pending_bytes);
 

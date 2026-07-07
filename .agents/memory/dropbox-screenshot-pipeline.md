@@ -36,3 +36,21 @@ makes a stale write no-op. All Dropbox HTTP calls also have an AbortSignal.timeo
 worker path — go through `finalizeUploaded`/`finalizeFailed` (both return rowCount;
 0 = lease lost, treat as no-op). Keep the request timeout well under the lease. The
 regression test is `test/screenshotUploadWorker.test.ts`.
+
+## Dropbox object path layout (uniqueness is load-bearing)
+
+Path = `${DROPBOX_ROOT}/{label}_{region}_{group}/{YYYY-MM-DD_HH-MM-SS-mmm}_{id8}.{ext}`.
+label/region come from the enrolling `enrollment_tokens` row; group is the device's
+CURRENT `deviceGroup` (admins can move a device, so live value beats the token's).
+The folder is intentionally NOT per-company/per-device — many devices can share one
+`label_region_group` folder.
+
+**Why the filename MUST stay globally unique:** `uploadFile` uses Dropbox
+`mode:"overwrite"`. Rows persist `dropboxPath` forever, so if two uploads resolve to
+the same path the later one silently overwrites an already-served screenshot — a
+direct violation of "viewable at all times". A plain date_timestamp name collides
+across devices in a shared folder, so the screenshot row id is appended as a suffix.
+
+**How to apply:** if you ever change the path format, keep a per-screenshot unique
+component (the id suffix) OR switch `uploadFile` to `add`/`autorename` and persist
+the returned path. Never reduce the name to just time-based components.
