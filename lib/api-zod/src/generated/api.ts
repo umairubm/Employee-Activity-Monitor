@@ -2169,3 +2169,42 @@ export const SyncActivityBody = zod.object({
 export const SyncActivityResponse = zod.object({
   status: zod.string().optional(),
 });
+
+/**
+ * @summary Dropbox integration status, health and recent upload errors (Super User)
+ */
+export const GetDropboxSystemStatusResponse = zod.object({
+  auth: zod.object({
+    mode: zod.enum(["refresh_token", "access_token", "connector", "none"]),
+    refreshTokenConfigured: zod.boolean(),
+    appKeyConfigured: zod.boolean(),
+    appSecretConfigured: zod.boolean(),
+    accessTokenConfigured: zod.boolean(),
+    connectorAvailable: zod.boolean(),
+  }),
+  health: zod.object({
+    ok: zod.boolean(),
+    error: zod.string().optional(),
+    checkedAt: zod.coerce.date(),
+  }),
+  screenshots: zod.object({
+    total: zod.number(),
+    pending: zod.number(),
+    uploaded: zod.number(),
+    failed: zod.number(),
+  }),
+  recentErrors: zod.array(
+    zod.object({
+      id: zod.string().uuid(),
+      deviceId: zod.string().uuid(),
+      deviceName: zod.string().nullish(),
+      companyId: zod.string().uuid().nullish(),
+      status: zod.string(),
+      attempts: zod.number(),
+      lastError: zod.string().nullish(),
+      fileSizeBytes: zod.number(),
+      capturedAt: zod.coerce.date(),
+      createdAt: zod.coerce.date(),
+    }),
+  ),
+});

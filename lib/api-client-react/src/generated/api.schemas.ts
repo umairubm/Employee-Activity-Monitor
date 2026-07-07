@@ -5,6 +5,61 @@
  * API specification for Workforce Analytics & IT Management
  * OpenAPI spec version: 0.1.0
  */
+export type DropboxAuthStatusMode =
+  (typeof DropboxAuthStatusMode)[keyof typeof DropboxAuthStatusMode];
+
+export const DropboxAuthStatusMode = {
+  refresh_token: "refresh_token",
+  access_token: "access_token",
+  connector: "connector",
+  none: "none",
+} as const;
+
+export interface DropboxAuthStatus {
+  mode: DropboxAuthStatusMode;
+  refreshTokenConfigured: boolean;
+  appKeyConfigured: boolean;
+  appSecretConfigured: boolean;
+  accessTokenConfigured: boolean;
+  connectorAvailable: boolean;
+}
+
+export interface DropboxHealth {
+  ok: boolean;
+  error?: string;
+  checkedAt: string;
+}
+
+export interface ScreenshotUploadStats {
+  total: number;
+  pending: number;
+  uploaded: number;
+  failed: number;
+}
+
+export interface ScreenshotErrorItem {
+  id: string;
+  deviceId: string;
+  /** @nullable */
+  deviceName?: string | null;
+  /** @nullable */
+  companyId?: string | null;
+  status: string;
+  attempts: number;
+  /** @nullable */
+  lastError?: string | null;
+  fileSizeBytes: number;
+  capturedAt: string;
+  createdAt: string;
+}
+
+export interface DropboxSystemStatus {
+  auth: DropboxAuthStatus;
+  health: DropboxHealth;
+  screenshots: ScreenshotUploadStats;
+  recentErrors: ScreenshotErrorItem[];
+}
+
 export interface LoginRequest {
   username: string;
   password: string;

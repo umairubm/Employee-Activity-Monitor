@@ -18,6 +18,7 @@ import tokensRouter from "./tokens";
 import downloadsRouter from "./downloads";
 import syncRouter from "./sync";
 import companiesRouter from "./companies";
+import systemStatusRouter from "./systemStatus";
 import managersRouter from "./managers";
 import securitySettingsRouter from "./securitySettings";
 import { userAuth, requireRole } from "../middlewares/userAuth";
@@ -35,6 +36,7 @@ router.use("/sync", syncRouter); // device-authenticated internally
 // routes must NOT use requireCompany.
 const superUser = [userAuth, requireRole("super_user")];
 router.use("/companies", ...superUser, companiesRouter);
+router.use("/system", ...superUser, systemStatusRouter);
 
 // --- Company Admin surface (tenant-scoped, admin-only) ----------------------
 // Managing other users and the company's security policy is reserved for the

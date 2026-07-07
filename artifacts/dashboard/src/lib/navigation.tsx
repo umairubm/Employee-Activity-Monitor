@@ -18,6 +18,7 @@ import {
   UsersRound,
   Lock,
   SlidersHorizontal,
+  HardDrive,
 } from "lucide-react";
 
 import Overview from "@/pages/Overview";
@@ -36,6 +37,7 @@ import Settings_ from "@/pages/Settings";
 import Downloads from "@/pages/Downloads";
 import Companies from "@/pages/Companies";
 import CompanyLimits from "@/pages/CompanyLimits";
+import Storage from "@/pages/Storage";
 import Managers from "@/pages/Managers";
 import SecuritySettings from "@/pages/SecuritySettings";
 
@@ -59,6 +61,7 @@ export const APP_ROUTES: AppRoute[] = [
   { href: "/", label: "Overview", icon: LayoutDashboard, roles: TENANT_STAFF, component: Overview, nav: true },
   { href: "/companies", label: "Companies", icon: Building2, roles: ["super_user"], component: Companies, nav: true },
   { href: "/company-limits", label: "Company Limits", icon: SlidersHorizontal, roles: ["super_user"], component: CompanyLimits, nav: true },
+  { href: "/storage", label: "Storage", icon: HardDrive, roles: ["super_user"], component: Storage, nav: true },
   { href: "/devices", label: "Devices", icon: MonitorSmartphone, roles: TENANT_STAFF, component: Devices, nav: true },
   { href: "/devices/:id", label: "Device Detail", icon: MonitorSmartphone, roles: TENANT_STAFF, component: DeviceDetail, nav: false },
   { href: "/activity", label: "Activity Logs", icon: Activity, roles: TENANT_STAFF, component: ActivityLogs, nav: true },

@@ -48,6 +48,7 @@ import type {
   DeviceGroupInput,
   DeviceItem,
   DownloadList,
+  DropboxSystemStatus,
   EnrollmentTokenItem,
   FlagScreenshot200,
   GetActivityLogsParams,
@@ -6965,3 +6966,79 @@ export const useSyncActivity = <
 > => {
   return useMutation(getSyncActivityMutationOptions(options));
 };
+
+/**
+ * @summary Dropbox integration status, health and recent upload errors (Super User)
+ */
+export const getGetDropboxSystemStatusUrl = () => {
+  return `/api/system/dropbox`;
+};
+
+export const getDropboxSystemStatus = async (
+  options?: RequestInit,
+): Promise<DropboxSystemStatus> => {
+  return customFetch<DropboxSystemStatus>(getGetDropboxSystemStatusUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetDropboxSystemStatusQueryKey = () => {
+  return [`/api/system/dropbox`] as const;
+};
+
+export const getGetDropboxSystemStatusQueryOptions = <
+  TData = Awaited<ReturnType<typeof getDropboxSystemStatus>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getDropboxSystemStatus>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetDropboxSystemStatusQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getDropboxSystemStatus>>
+  > = ({ signal }) => getDropboxSystemStatus({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getDropboxSystemStatus>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetDropboxSystemStatusQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getDropboxSystemStatus>>
+>;
+export type GetDropboxSystemStatusQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Dropbox integration status, health and recent upload errors (Super User)
+ */
+
+export function useGetDropboxSystemStatus<
+  TData = Awaited<ReturnType<typeof getDropboxSystemStatus>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getDropboxSystemStatus>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetDropboxSystemStatusQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}

@@ -319,4 +319,93 @@ export async function deleteFile(path: string): Promise<void> {
   }
 }
 
+/** Which credential path Dropbox is currently configured to use. */
+export type DropboxAuthMode =
+  | "refresh_token"
+  | "access_token"
+  | "connector"
+  | "none";
+
+export interface DropboxCredentialStatus {
+  /** The auth path that would be used for the next call. */
+  mode: DropboxAuthMode;
+  /** Whether each credential is present. Never exposes the secret values. */
+  refreshTokenConfigured: boolean;
+  appKeyConfigured: boolean;
+  appSecretConfigured: boolean;
+  accessTokenConfigured: boolean;
+  connectorAvailable: boolean;
+}
+
+/**
+ * Report which Dropbox credentials are configured and which auth path is active,
+ * WITHOUT ever reading or returning the secret values themselves. Mirrors the
+ * precedence in `getAccessToken`.
+ */
+export function getDropboxCredentialStatus(): DropboxCredentialStatus {
+  const refreshTokenConfigured = !!process.env.DROPBOX_REFRESH_TOKEN;
+  const appKeyConfigured = !!process.env.DROPBOX_APP_KEY;
+  const appSecretConfigured = !!process.env.DROPBOX_APP_SECRET;
+  const accessTokenConfigured = !!process.env.DROPBOX_ACCESS_TOKEN;
+  const connectorAvailable =
+    !!process.env.REPLIT_CONNECTORS_HOSTNAME &&
+    (!!process.env.REPL_IDENTITY || !!process.env.WEB_REPL_RENEWAL);
+
+  let mode: DropboxAuthMode = "none";
+  if (refreshTokenConfigured && appKeyConfigured && appSecretConfigured) {
+    mode = "refresh_token";
+  } else if (accessTokenConfigured) {
+    mode = "access_token";
+  } else if (connectorAvailable) {
+    mode = "connector";
+  }
+
+  return {
+    mode,
+    refreshTokenConfigured,
+    appKeyConfigured,
+    appSecretConfigured,
+    accessTokenConfigured,
+    connectorAvailable,
+  };
+}
+
+export interface DropboxHealth {
+  ok: boolean;
+  error?: string;
+  checkedAt: string;
+}
+
+/**
+ * Verify the current Dropbox credentials actually work by making a cheap,
+ * scope-free authenticated call (`/2/check/user`, a server-side echo). Returns
+ * a structured result instead of throwing so a status page can render failures.
+ */
+export async function checkDropboxHealth(): Promise<DropboxHealth> {
+  const checkedAt = new Date().toISOString();
+  try {
+    const token = await getAccessToken();
+    const res = await fetch(`${RPC_BASE}/check/user`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ query: "ping" }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      return {
+        ok: false,
+        error: `Dropbox check failed (${res.status})${text ? `: ${text}` : ""}`,
+        checkedAt,
+      };
+    }
+    return { ok: true, checkedAt };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message, checkedAt };
+  }
+}
+
 export { DropboxError };

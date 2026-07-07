@@ -1580,6 +1580,18 @@ paths:
                   status:
                     type: string
 
+  /system/dropbox:
+    get:
+      operationId: getDropboxSystemStatus
+      tags: [system]
+      summary: Dropbox integration status, health and recent upload errors (Super User)
+      responses:
+        "200":
+          description: Dropbox status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DropboxSystemStatus"
 components:
   parameters:
     IdParam:
@@ -1590,6 +1602,98 @@ components:
         type: string
         format: uuid
   schemas:
+    DropboxSystemStatus:
+      type: object
+      properties:
+        auth:
+          $ref: "#/components/schemas/DropboxAuthStatus"
+        health:
+          $ref: "#/components/schemas/DropboxHealth"
+        screenshots:
+          $ref: "#/components/schemas/ScreenshotUploadStats"
+        recentErrors:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScreenshotErrorItem"
+      required: [auth, health, screenshots, recentErrors]
+    DropboxAuthStatus:
+      type: object
+      properties:
+        mode:
+          type: string
+          enum: [refresh_token, access_token, connector, none]
+        refreshTokenConfigured:
+          type: boolean
+        appKeyConfigured:
+          type: boolean
+        appSecretConfigured:
+          type: boolean
+        accessTokenConfigured:
+          type: boolean
+        connectorAvailable:
+          type: boolean
+      required:
+        [
+          mode,
+          refreshTokenConfigured,
+          appKeyConfigured,
+          appSecretConfigured,
+          accessTokenConfigured,
+          connectorAvailable,
+        ]
+    DropboxHealth:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        error:
+          type: string
+        checkedAt:
+          type: string
+          format: date-time
+      required: [ok, checkedAt]
+    ScreenshotUploadStats:
+      type: object
+      properties:
+        total:
+          type: integer
+        pending:
+          type: integer
+        uploaded:
+          type: integer
+        failed:
+          type: integer
+      required: [total, pending, uploaded, failed]
+    ScreenshotErrorItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        deviceId:
+          type: string
+          format: uuid
+        deviceName:
+          type: [string, "null"]
+        companyId:
+          type: [string, "null"]
+          format: uuid
+        status:
+          type: string
+        attempts:
+          type: integer
+        lastError:
+          type: [string, "null"]
+        fileSizeBytes:
+          type: integer
+        capturedAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        [id, deviceId, status, attempts, fileSizeBytes, capturedAt, createdAt]
     LoginRequest:
       type: object
       properties:
