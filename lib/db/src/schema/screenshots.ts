@@ -53,7 +53,7 @@ export const screenshotsTable = pgTable(
     // Path of the object in Dropbox once uploaded. Null while pending.
     dropboxPath: text("dropbox_path"),
     // Temporarily staged bytes; cleared (set NULL) once uploaded to Dropbox.
-    pendingData: bytea("pending_data"),
+    pendingData: bytea("pending_bytes"),
     // MIME type of the stored bytes, used when serving a pending screenshot.
     contentType: text("content_type").notNull().default("image/jpeg"),
     // SHA-256 (hex) of the bytes; dedupes retried uploads of the same capture.

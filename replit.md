@@ -99,6 +99,12 @@ notification before every screenshot.
   such a change, verify with `pg_indexes` and DROP/CREATE the index by hand (dev
   and prod). Upserts onto a partial unique index also need a matching
   `targetWhere` in `onConflictDoUpdate`.
+- `drizzle-kit` (and the Publish diff) render an in-place ALTER to a `customType`
+  column as `SET DATA TYPE "undefined"."bytea"` → fails with `schema "undefined"
+  does not exist`. CREATE/ADD COLUMN render the customType fine. To change such a
+  column's type across an existing DB, **rename the column** to force a DROP+ADD
+  (in the Publish UI do NOT confirm it as a rename). This is why the screenshot
+  staging column is `pending_bytes` (TS property stays `pendingData`).
 - After editing `lib/db` schema, run `pnpm run typecheck:libs` (or `typecheck`)
   so the api-server sees the rebuilt declarations, not stale ones.
 

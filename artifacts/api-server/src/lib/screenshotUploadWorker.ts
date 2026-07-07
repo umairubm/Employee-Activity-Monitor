@@ -36,7 +36,7 @@ type ClaimedRow = {
   device_id: string;
   company_id: string | null;
   content_type: string;
-  pending_data: Buffer;
+  pending_bytes: Buffer;
 };
 
 type ClaimResult = {
@@ -79,14 +79,14 @@ async function claimBatch(): Promise<ClaimResult> {
     WHERE s.id IN (
       SELECT id FROM ${screenshotsTable}
       WHERE status IN ('pending', 'failed')
-        AND pending_data IS NOT NULL
+        AND pending_bytes IS NOT NULL
         AND attempts < ${MAX_ATTEMPTS}
         AND (next_attempt_at IS NULL OR next_attempt_at <= now())
       ORDER BY captured_at ASC
       LIMIT ${BATCH_SIZE}
       FOR UPDATE SKIP LOCKED
     )
-    RETURNING s.id, s.device_id, s.company_id, s.content_type, s.pending_data
+    RETURNING s.id, s.device_id, s.company_id, s.content_type, s.pending_bytes
   `);
   return { rows: result.rows as ClaimedRow[], leaseUntil };
 }
@@ -169,7 +169,7 @@ async function processRow(row: ClaimedRow, leaseUntil: Date): Promise<void> {
     const ext = extForType(row.content_type);
     const path = `${DROPBOX_ROOT}/${company}/${label}-${row.device_id}/${randomUUID()}.${ext}`;
 
-    const { path: storedPath } = await uploadFile(path, row.pending_data);
+    const { path: storedPath } = await uploadFile(path, row.pending_bytes);
 
     const updated = await finalizeUploaded(row.id, leaseUntil, storedPath);
     if (updated === 0) {
