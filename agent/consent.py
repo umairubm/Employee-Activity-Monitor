@@ -50,19 +50,12 @@ def _asset(name: str) -> Optional[str]:
 
 
 def show_consent_dialog(
-    default_server: str = "", default_token: str = ""
+    default_server: str = "", default_token: str = "", default_name: str = ""
 ) -> Optional[ConsentResult]:
-    # Server URL and token are pre-configured by IT — not shown to the user.
     root = tk.Tk()
-    display_name = "System Setup"
-    root.title(f"{display_name} — Setup & Consent")
+    root.title("Workforce Analytics — Setup & Consent")
     root.configure(bg=WHITE)
     root.resizable(False, False)
-
-    # Hide the consent dialog from the Windows taskbar to maintain a background-service feel.
-    # The 'toolwindow' attribute removes the taskbar button while keeping the window functional.
-    if sys.platform.startswith("win"):
-        root.attributes("-toolwindow", True)
 
     # Window icon (best-effort).
     icon = _asset("icon.png")
@@ -72,7 +65,7 @@ def show_consent_dialog(
         except Exception:
             pass
 
-    width, height = 640, 580
+    width, height = 640, 760
     root.update_idletasks()
     sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
     root.geometry(f"{width}x{height}+{(sw - width) // 2}+{max(0, (sh - height) // 2)}")
@@ -109,7 +102,7 @@ def show_consent_dialog(
     htext = tk.Frame(hwrap, bg=BLUE)
     htext.pack(side="left")
     tk.Label(
-        htext, text=display_name, font=f_h1, fg=WHITE, bg=BLUE
+        htext, text="Workforce Analytics", font=f_h1, fg=WHITE, bg=BLUE
     ).pack(anchor="w")
     tk.Label(
         htext,
@@ -170,10 +163,9 @@ def show_consent_dialog(
             entry.insert(0, default)
         return entry
 
-    # Allow the user/IT to specify the server URL if the default is incorrect.
-    server_entry = field("API Server URL", default_server or "https://activitymonitor.replit.app")
-    token_entry = field("Enrollment token (from your IT admin)", default_token)
-    name_entry = field("Your full name", "")
+    server_entry = field("Server URL", default_server or "https://activitymonitor.replit.app")
+    token_entry = field("Enrollment token (from your IT administrator)", default_token)
+    name_entry = field("Your full name", default_name)
 
     # ---- Acknowledgement ---------------------------------------------------
     ack_var = tk.BooleanVar(value=False)
@@ -204,14 +196,14 @@ def show_consent_dialog(
         root.destroy()
 
     def on_accept():
-        server = server_entry.get().strip()
+        server = server_entry.get().strip().rstrip("/")
         token = token_entry.get().strip()
         name = name_entry.get().strip()
         if not server:
-            error_var.set("Please enter the API Server URL.")
+            error_var.set("Please enter the server URL.")
             return
         if not token:
-            error_var.set("Please enter the enrollment token from your IT admin.")
+            error_var.set("Please enter the enrollment token from your administrator.")
             return
         if not name:
             error_var.set("Please enter your full name to record your consent.")
@@ -219,7 +211,7 @@ def show_consent_dialog(
         if not ack_var.get():
             error_var.set("Please tick the consent checkbox to continue.")
             return
-        result["value"] = {"server_url": server.rstrip("/"), "token": token, "name": name}
+        result["value"] = {"server_url": server, "token": token, "name": name}
         root.destroy()
 
     decline = tk.Button(

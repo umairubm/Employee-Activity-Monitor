@@ -7,17 +7,20 @@ user direct control (pause / resume / view what's collected / quit).
 
 from __future__ import annotations
 
-import sys
 from typing import Callable
 
 
 def _make_image(active: bool):
     from PIL import Image, ImageDraw
-    import math
 
     size = 64
-    # Create a fully transparent icon
-    return Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    # Green eye when active, grey when paused — instantly readable status.
+    color = (34, 197, 94, 255) if active else (148, 163, 184, 255)
+    draw.ellipse((6, 18, 58, 46), outline=color, width=4)
+    draw.ellipse((26, 26, 38, 38), fill=color)
+    return img
 
 
 class AgentTray:
@@ -39,11 +42,10 @@ class AgentTray:
         self._on_quit = on_quit
         self._is_active = is_active
         self._status_text = status_text
-        display_name = "System Process"
         self.icon = pystray.Icon(
-            "sys_proc",
-            icon=_make_image(False),
-            title=display_name,
+            "workforce_agent",
+            icon=_make_image(True),
+            title="Workforce Analytics — monitoring active",
         )
         self.icon.menu = self._build_menu()
 
@@ -65,9 +67,12 @@ class AgentTray:
 
     def refresh(self) -> None:
         active = self._is_active()
-        display_name = "System Process"
         self.icon.icon = _make_image(active)
-        self.icon.title = display_name
+        self.icon.title = (
+            "Workforce Analytics — monitoring active"
+            if active
+            else "Workforce Analytics — monitoring PAUSED"
+        )
         self.icon.update_menu()
 
     def notify(self, message: str, title: str = "Workforce Analytics") -> None:

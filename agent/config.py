@@ -16,6 +16,13 @@ from typing import Optional
 
 APP_DIR_NAME = "WorkforceAgent"
 CONFIG_FILE = "config.json"
+# One-time hand-off file written by the installer (token + name + consent).
+# The agent consumes it on first launch to enroll without a second dialog.
+SEED_FILE = "enroll_seed.json"
+# Single-instance lock file. Two agents running on one PC would each log the
+# same foreground activity, producing overlapping intervals that double-count
+# worked time in every report. The lock keeps exactly one agent per machine.
+LOCK_FILE = "agent.lock"
 
 
 def config_dir() -> Path:
@@ -33,6 +40,75 @@ def config_dir() -> Path:
 
 def config_path() -> Path:
     return config_dir() / CONFIG_FILE
+
+
+def seed_path() -> Path:
+    return config_dir() / SEED_FILE
+
+
+def load_enroll_seed() -> Optional[dict]:
+    """Read the one-time installer seed (token + name + consent), if present."""
+    path = seed_path()
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def clear_enroll_seed() -> None:
+    """Delete the installer seed so the token is not left lying around."""
+    try:
+        seed_path().unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def lock_path() -> Path:
+    return config_dir() / LOCK_FILE
+
+
+def acquire_single_instance_lock():
+    """Acquire an exclusive, machine-wide lock so only one agent runs per PC.
+
+    Returns an opaque handle to keep open for the agent's lifetime (the lock is
+    released when the handle is closed or the process exits), or ``None`` if
+    another instance already holds it.
+
+    This is the runtime guard against the overlapping-activity double-counting
+    bug: a second agent on the same machine would log the same foreground app
+    concurrently, inflating worked time in every report.
+    """
+    path = lock_path()
+    if os.name == "nt":
+        # Windows: an exclusive (no-share) open succeeds for only one process.
+        import msvcrt  # noqa: PLC0415
+
+        try:
+            handle = open(path, "a+")
+        except OSError:
+            return None
+        try:
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        except OSError:
+            handle.close()
+            return None
+        return handle
+    # POSIX (macOS/Linux): advisory flock, auto-released on process exit.
+    import fcntl  # noqa: PLC0415
+
+    try:
+        handle = open(path, "a+")
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        try:
+            handle.close()  # type: ignore[possibly-undefined]
+        except (OSError, NameError, UnboundLocalError):
+            pass
+        return None
+    return handle
 
 
 @dataclass

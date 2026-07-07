@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import os
 import random
-import shutil
 import subprocess
 import sys
 import threading
@@ -30,8 +29,8 @@ if __package__ in (None, ""):
     from agent import identity as identity_mod
     from agent import monitor as monitor_mod
     from agent import screenshot as screenshot_mod
-    from agent import tray as tray_mod
     from agent import system_info as system_info_mod
+    from agent import tray as tray_mod
 else:
     from . import api as api_mod
     from . import config as config_mod
@@ -39,11 +38,12 @@ else:
     from . import identity as identity_mod
     from . import monitor as monitor_mod
     from . import screenshot as screenshot_mod
-    from . import tray as tray_mod
     from . import system_info as system_info_mod
+    from . import tray as tray_mod
 
-AGENT_VERSION = "1.1.0"
+AGENT_VERSION = "1.2.0"
 POLL_SECONDS = 15
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -126,6 +126,9 @@ class MonitoringAgent:
         self._last_screenshot = time.time()
         self._next_screenshot_gap = self._screenshot_gap()
         # Visible notice BEFORE capture — transparency requirement.
+        if self.tray:
+            self.tray.notify("Taking a screenshot now…", "Workforce Analytics")
+        time.sleep(1.0)
         try:
             img = screenshot_mod.capture_webp_bytes()
             self.api.upload_screenshot(img, _now_iso(), content_type="image/webp")
@@ -140,7 +143,14 @@ class MonitoringAgent:
         reason = command.get("reason") or "Authorized IT action"
         try:
             self.api.ack_command(cid, "acknowledged")
-            if ctype in ("lock_screen", "logout_user", "uninstall"):
+            if ctype in ("lock_screen", "logout_user"):
+                if self.tray:
+                    label = "lock your screen" if ctype == "lock_screen" else "sign you out"
+                    self.tray.notify(
+                        f"IT is about to {label}. Reason: {reason}",
+                        "Workforce Analytics",
+                    )
+                time.sleep(3.0)
                 self._execute_os_command(ctype)
             self.api.ack_command(cid, "completed")
         except Exception as exc:  # noqa: BLE001
@@ -151,11 +161,7 @@ class MonitoringAgent:
                 pass
 
     def _execute_os_command(self, ctype: str) -> None:
-        if ctype == "uninstall":
-            # Wipe local identity and exit
-            uninstall_agent()
-            self.quit()
-        elif ctype == "lock_screen":
+        if ctype == "lock_screen":
             if sys.platform.startswith("win"):
                 import ctypes
 
@@ -217,19 +223,7 @@ class MonitoringAgent:
             self._pending_logs.clear()
         if batch:
             try:
-                try:
-                    raw_sysinfo = system_info_mod.sysinfo.system_info
-                    if isinstance(raw_sysinfo, dict):
-                        # The spec dictates that empty strings must be dropped before sending
-                        system_hardware_details = {
-                            k: v for k, v in raw_sysinfo.items() if v != ""
-                        }
-                    else:
-                        system_hardware_details = raw_sysinfo
-                except Exception:
-                    system_hardware_details = None
-
-                self.api.send_activity(batch, system_info=system_hardware_details)
+                self.api.send_activity(batch, system_info_mod.get_cached())
             except Exception as exc:  # noqa: BLE001
                 with self._lock:  # requeue on failure
                     self._pending_logs[0:0] = batch
@@ -278,125 +272,121 @@ class MonitoringAgent:
     def run(self) -> None:
         worker = threading.Thread(target=self._worker, daemon=True)
         worker.start()
-        try:
-            while not self._stop.is_set():
-                self._stop.wait(1)
-        except (KeyboardInterrupt, SystemExit):
-            pass
+        self.tray = tray_mod.AgentTray(
+            on_toggle_pause=self.toggle_pause,
+            on_show_info=self.show_info,
+            on_open_config=self.open_config,
+            on_quit=self.quit,
+            is_active=self.is_active,
+            status_text=self.status_text,
+        )
+        self.tray.notify(
+            "Monitoring is active. This icon stays visible the whole time.",
+            "Workforce Analytics",
+        )
+        self.tray.run()  # blocks on the main thread until Quit
         self._stop.set()
         worker.join(timeout=10)
 
 
-def _load_enroll_seed() -> dict | None:
-    """Read and consume the one-time enroll_seed.json written by the installer.
-
-    The Inno Setup installer collects the user's name and enrollment token
-    during installation and writes them to %APPDATA%/WorkforceAgent/enroll_seed.json.
-    This function reads the seed, deletes it (so it's only used once), and
-    returns the parsed dict.  Returns None if the file doesn't exist or is
-    malformed.
-    """
-    import json
-    seed_path = config_mod.config_dir() / "enroll_seed.json"
-    if not seed_path.exists():
-        return None
-    try:
-        data = json.loads(seed_path.read_text(encoding="utf-8"))
-        # Validate required fields
-        if not data.get("server_url") or not data.get("token") or not data.get("name"):
-            # print("[agent] enroll_seed.json is missing required fields.", file=sys.stderr) # Suppress console output
-            return None
-        # Consume the seed so it can't be replayed
-        seed_path.unlink(missing_ok=True)
-        # print("[agent] loaded enrollment seed from installer.") # Suppress console output
-        return data
-    except (json.JSONDecodeError, OSError) as exc:
-        # print(f"[agent] failed to read enroll_seed.json: {exc}", file=sys.stderr) # Suppress console output
-        return None
-
-
-def ensure_enrolled() -> config_mod.AgentConfig | None:
-    """Load config; run the consent + enrollment flow if not yet enrolled."""
-    cfg = config_mod.AgentConfig.load()
-    if cfg.is_enrolled:
-        return cfg
-
-    # Priority 1: Check for installer-written seed file (written by Inno Setup).
-    seed = _load_enroll_seed()
-    if seed:
-        server_url = seed["server_url"].rstrip("/")
-        token = seed["token"]
-        consent_name = seed["name"]
-        # print(f"[agent] enrolling via installer seed (user: {consent_name})...") # Suppress console output
-    else:
-        # Priority 2: Environment variables
-        default_server = os.environ.get("AGENT_SERVER_URL", cfg.server_url)
-        default_token = os.environ.get("AGENT_ENROLL_TOKEN", "")
-
-        if not default_server or not default_token:
-            return None  # Exit silently if no enrollment data provided
-        server_url = default_server.rstrip("/")
-        token = default_token
-        consent_name = os.environ.get("AGENT_USER_NAME", "System Enrolled")
-
-    if not token:
-        # print("[agent] no enrollment token provided; cannot enroll.", file=sys.stderr) # Suppress console output
-        return None
-
-    try:
-        api = api_mod.AgentAPI(server_url)
-        data = api.enroll(
-            token=token,
-            hardware_hash=identity_mod.hardware_hash(),
-            system_name=identity_mod.system_name(),
-            os_type=identity_mod.os_type(),
-            consent_name=consent_name,
-            agent_version=AGENT_VERSION,
-        )
-    except Exception as exc:
-        # print(f"[agent] enrollment failed: {exc}", file=sys.stderr) # Suppress console output
-        return None
-
+def _perform_enrollment(
+    cfg: config_mod.AgentConfig, server_url: str, token: str, name: str
+) -> config_mod.AgentConfig:
+    """Exchange a token for device credentials and persist them."""
+    api = api_mod.AgentAPI(server_url)
+    data = api.enroll(
+        token=token,
+        hardware_hash=identity_mod.hardware_hash(),
+        system_name=identity_mod.system_name(),
+        os_type=identity_mod.os_type(),
+        consent_name=name,
+        agent_version=AGENT_VERSION,
+    )
     cfg.server_url = server_url
     cfg.device_id = data["deviceId"]
     cfg.device_secret = data["deviceSecret"]
-    cfg.consent_name = consent_name
+    cfg.consent_name = name
     cfg.enrolled_at = _now_iso()
     cfg.apply_server_config(data.get("config", {}))
     cfg.save()
-    # print(f"[agent] enrolled successfully as device {cfg.device_id}.") # Suppress console output
-    # Trigger immediate sync after enrollment to verify connectivity
-    try:
-        api = api_mod.AgentAPI(cfg.server_url, cfg.device_id, cfg.device_secret)
-        api.heartbeat(AGENT_VERSION)
-    except Exception:
-        pass
     return cfg
 
 
-def uninstall_agent() -> None:
-    """Remove local configuration and credentials."""
-    path = config_mod.config_dir()
-    print(f"[agent] Uninstalling: Removing data directory at {path}")
+def ensure_enrolled() -> config_mod.AgentConfig | None:
+    """Load config; enroll the device if it isn't already.
+
+    Preferred path: the installer collected the token, the user's name, and an
+    explicit consent acknowledgement, and dropped a one-time seed file. We enroll
+    silently from it — no second dialog. If there is no seed (macOS drag-install,
+    running from source) or silent enrollment fails, we fall back to the visible
+    first-run consent dialog so consent is still always explicit and recorded.
+    """
+    cfg = config_mod.AgentConfig.load()
+    if cfg.is_enrolled:
+        config_mod.clear_enroll_seed()  # hygiene: drop any stale token file
+        return cfg
+
+    prefill_server = os.environ.get("AGENT_SERVER_URL", cfg.server_url)
+    prefill_token = os.environ.get("AGENT_ENROLL_TOKEN", "")
+    prefill_name = ""
+
+    seed = config_mod.load_enroll_seed()
+    if seed is not None:
+        consent_ok = seed.get("consent_acknowledged") is True
+        server_url = str(seed.get("server_url", "")).strip() or prefill_server
+        token = str(seed.get("token", "")).strip()
+        name = str(seed.get("name", "")).strip()
+        # Consume the seed immediately so the plaintext token never lingers on
+        # disk, even if enrollment fails below — the values stay in memory.
+        config_mod.clear_enroll_seed()
+        if consent_ok and token and name:
+            try:
+                cfg = _perform_enrollment(cfg, server_url, token, name)
+                print("[agent] enrolled successfully from installer details.")
+                return cfg
+            except Exception as exc:  # noqa: BLE001 — fall back to the dialog
+                print(
+                    f"[agent] silent enrollment failed ({exc}); showing consent dialog.",
+                    file=sys.stderr,
+                )
+                prefill_server, prefill_token, prefill_name = server_url, token, name
+
+    consent = consent_mod.show_consent_dialog(
+        prefill_server, prefill_token, prefill_name
+    )
+    if consent is None:
+        print("[agent] consent declined; exiting without monitoring.")
+        return None
+
     try:
-        if path.exists():
-            shutil.rmtree(path)
-        print("[agent] Uninstallation successful. Local identity wiped.")
-    except Exception as exc:
-        print(f"[agent] Uninstallation failed: {exc}", file=sys.stderr)
+        cfg = _perform_enrollment(
+            cfg, consent["server_url"], consent["token"], consent["name"]
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(f"[agent] enrollment failed: {exc}", file=sys.stderr)
+        return None
+    config_mod.clear_enroll_seed()
+    print("[agent] enrolled successfully.")
+    return cfg
 
 
 def main() -> int:
-    if "--uninstall" in sys.argv:
-        uninstall_agent()
+    # Enforce a single agent per machine. A second instance would log the same
+    # foreground activity concurrently, producing overlapping intervals that
+    # double-count worked time across every report.
+    lock = config_mod.acquire_single_instance_lock()
+    if lock is None:
+        print(
+            "[agent] another Workforce Agent is already running on this "
+            "computer; exiting.",
+            file=sys.stderr,
+        )
         return 0
-
     cfg = ensure_enrolled()
     if cfg is None:
         return 0
     MonitoringAgent(cfg).run()
     return 0
-
 
 
 if __name__ == "__main__":

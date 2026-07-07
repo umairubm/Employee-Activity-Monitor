@@ -79,11 +79,14 @@ class AgentAPI:
             raise APIError(f"Heartbeat failed ({resp.status_code}): {resp.text}")
         return resp.json()
 
-    def send_activity(self, logs: list[dict], system_info: Optional[dict] = None) -> dict:
-        payload = {"logs": logs}
+    def send_activity(
+        self, logs: list[dict], system_info: Optional[dict] = None
+    ) -> dict:
+        payload: dict[str, Any] = {"logs": logs}
+        # Optional flat hardware/system inventory snapshot. Omitted entirely when
+        # empty so the server's optional `systemInfo` validation is satisfied.
         if system_info:
             payload["systemInfo"] = system_info
-
         resp = requests.post(
             self._url("/activity"),
             json=payload,
@@ -100,7 +103,13 @@ class AgentAPI:
         captured_at: str,
         content_type: str = "image/webp",
     ) -> dict:
-        """POST raw image bytes to our own authenticated API in a single request."""
+        """POST raw image bytes to our own authenticated API.
+
+        The server stages the bytes (so the image is viewable immediately) and
+        later uploads them to Dropbox in the background. Image bytes never go to
+        a third-party presigned URL — they go straight to our API. Returns the
+        parsed 202 body (``{"id", "status", "duplicate"?}``).
+        """
         headers = self._auth_headers()
         headers["Content-Type"] = content_type
         headers["x-captured-at"] = captured_at
@@ -111,7 +120,9 @@ class AgentAPI:
             timeout=self.timeout,
         )
         if resp.status_code not in (200, 201, 202):
-            raise APIError(f"Screenshot upload failed ({resp.status_code}): {resp.text}")
+            raise APIError(
+                f"Screenshot upload failed ({resp.status_code}): {resp.text}"
+            )
         return resp.json()
 
     def ack_command(self, command_id: str, status: str) -> dict:

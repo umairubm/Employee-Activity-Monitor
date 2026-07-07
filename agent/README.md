@@ -29,13 +29,21 @@ While running and active, the agent:
    ```bash
    pnpm --filter @workspace/scripts run mint-token -- --label "Reception PC" --max-uses 1 --expires-days 7
    ```
-2. On first run, the agent shows a **consent dialog** disclosing exactly what is
-   collected. The user enters the server URL, the enrollment token, and their
-   name, then clicks **"I Acknowledge & Consent"**.
+2. The user provides their name and the enrollment token, and gives explicit
+   consent. The server URL is baked into the installer, so the user never enters
+   it. This happens in one of two places:
+   - **Windows installer (preferred):** the setup wizard collects the name +
+     token and shows the full disclosure with a mandatory consent checkbox (the
+     server URL is hard-coded into the installer). It writes a one-time
+     `enroll_seed.json` into the config dir; the agent enrolls silently from it
+     on first launch (then deletes the seed). No second dialog.
+   - **First-run consent dialog (fallback):** used for macOS drag-install, runs
+     from source, or if silent enrollment fails. Same disclosure + consent, shown
+     by the agent itself (`consent.py`).
 3. The agent calls `POST /api/sync/enroll`. The server returns a one-time device
    secret, which the agent stores locally. Monitoring then begins.
 
-If the user declines, the agent exits and monitors nothing.
+If the user declines (no consent), nothing is enrolled and nothing is monitored.
 
 ## Configuration
 
@@ -67,21 +75,46 @@ python agent.py        # or: python -m agent.agent from the repo root
   detection (`sudo apt install xdotool xprintidle`). The agent degrades
   gracefully if they are missing (reports `unknown` / `0` idle).
 
-## Packaging to a standalone `.exe`
+## Packaging the installers (Windows `.exe` + macOS `.dmg` + Linux `.tar.gz`)
 
-Build a single transparent executable with PyInstaller:
+The professional installers are built from the assets in `packaging/`:
+
+| Path                              | Purpose                                              |
+| --------------------------------- | ---------------------------------------------------- |
+| `packaging/make_icons.py`         | Generates `icons/icon.png` + `icon.ico` from the brand mark |
+| `packaging/WorkforceAgent.spec`   | PyInstaller spec (windowed, cross-platform)          |
+| `packaging/launcher.py`           | Frozen entry point (`from agent.agent import main`)  |
+| `packaging/windows/WorkforceAgent.iss` | Inno Setup script → `WorkforceAgent-Setup-windows.exe` |
+| `packaging/macos/build_dmg.sh`    | Builds the `.app` and packages it → `WorkforceAgent-macos.dmg` |
+| (CI tarball step)                 | Packs the Linux binary → `WorkforceAgent-linux.tar.gz` |
+
+These produce **windowed** binaries with no console window. Transparency is still
+fully enforced at runtime — the consent dialog, the always-visible tray icon, and
+the pre-screenshot notice are unchanged. Do not add covert/hidden-process flags.
+
+### Build via GitHub Actions (recommended)
+
+Each platform's binary cannot be cross-compiled, so they are built on native
+runners by `.github/workflows/build-agent-installers.yml`.
+
+1. Push a tag like `agent-v0.1.0` (or run the workflow manually from the Actions
+   tab and supply the tag).
+2. The `windows-latest`, `macos-latest`, and `ubuntu-latest` jobs build the
+   installers and attach them to a GitHub Release for that tag.
+3. The dashboard's **Download Agent** page reads the latest release and serves
+   the installers to signed-in admins.
+
+### Build locally (single platform only)
 
 ```bash
-python -m pip install pyinstaller
-pyinstaller --onefile --name WorkforceAgent agent.py
+python -m pip install -r requirements.txt pyinstaller
+python packaging/make_icons.py
+cd packaging
+pyinstaller --noconfirm WorkforceAgent.spec      # -> dist/WorkforceAgent(.exe/.app)
+# Windows: ISCC.exe windows\WorkforceAgent.iss    (requires Inno Setup 6)
+# macOS:   bash macos/build_dmg.sh
+# Linux:   tar -czf dist/WorkforceAgent-linux.tar.gz -C dist WorkforceAgent
 ```
-
-> Do **not** pass `--noconsole`/`--windowed` if you want the diagnostic console
-> visible. The tray icon and consent dialog appear regardless; transparency is a
-> core requirement of this agent, so avoid any packaging flags intended to hide
-> the process.
-
-The resulting binary appears in `dist/WorkforceAgent`.
 
 ## Uninstalling
 
