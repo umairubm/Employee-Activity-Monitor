@@ -33,11 +33,11 @@ dashboard surfaces the data and drives configuration.
 │ (Python/Node)  │   enroll · heartbeat · activity ·     │  Express 5 /api  │
 │ tray + consent │   screenshots · command ack           │                  │
 └──────┬─────────┘                                        │  Drizzle ORM     │
-       │ presigned PUT (image bytes)                      │        │         │
+       │ raw image bytes (POST /sync/screenshots)         │        │         │
        ▼                                                  │        ▼         │
-┌────────────────┐                                        │  PostgreSQL      │
-│ Object storage │ ◀──────────────────────────────────── │                  │
-│ (Replit/GCS)   │   request-url / read for admin view    └────────┬─────────┘
+┌────────────────┐   background worker uploads staged     │  PostgreSQL      │
+│ Dropbox        │ ◀──────────────────────────────────── │  (staged bytes)  │
+│ (private)      │   bytes, then serves a temp link       └────────┬─────────┘
 └────────────────┘                                                 │ session cookie
                                                           ┌────────▼─────────┐
                                                           │  Web dashboard   │
@@ -81,8 +81,9 @@ See the `pnpm-workspace` skill for workspace/TypeScript conventions.
 - **Validation:** Zod (`zod/v4`), `drizzle-zod`. Sync payloads use hand-written
   Zod (`artifacts/api-server/src/lib/syncValidation.ts`) because the agent is an
   external client; the Admin API is contract-first via OpenAPI codegen.
-- **Object storage:** Replit App Storage via `@google-cloud/storage`, accessed
-  through **presigned URLs** so image bytes never transit the API.
+- **Screenshot storage:** Dropbox (raw HTTP API, token via the Replit Dropbox
+  connector). Agents POST raw bytes to the API; bytes are staged in the DB and a
+  background worker uploads them to Dropbox. No object storage, no public URLs.
 - **Frontend:** React + Vite, wouter routing, React Query.
 - **Desktop agent:** Python 3.11 (pystray, mss, Pillow, psutil, requests); a Node
   tracker client also exists. Both speak the same secure sync contract.
@@ -143,16 +144,19 @@ endedAt, durationSeconds, idleSeconds). The server classifies each `processName`
 unknown apps **auto-create an `undefined` `app_categories` row** for an admin to
 classify later (`lib/productivity.ts`).
 
-### 5.4 Screenshots (presigned, 3-step)
-1. `POST /api/sync/screenshots/request-url` → `{ uploadURL, storageKey }`
-   (`/objects/uploads/<uuid>`).
-2. Agent **PUTs raw bytes** directly to `uploadURL` (the URL is the short-lived
-   credential; no device headers).
-3. `POST /api/sync/screenshots` records `{ storageKey, capturedAt,
-   fileSizeBytes }`. The server validates the storageKey shape it issued.
+### 5.4 Screenshots (single raw-bytes upload)
+The agent POSTs the raw image bytes to the authenticated API in one request:
+`POST /api/sync/screenshots` with `Content-Type: image/jpeg|png|webp`, an
+`x-captured-at` ISO-8601 header, and the image bytes as the body (max 8 MB).
+There is no `request-url` step and no object storage. The server sniffs the
+real image type from the magic bytes, dedupes on sha256, and **stages the bytes
+in the DB** (`status=pending`) so the image is viewable immediately. A
+background worker (`lib/screenshotUploadWorker.ts`, SKIP LOCKED lease queue)
+then uploads them to Dropbox and clears the staged bytes. Returns `202`.
 
-Admins view images via `GET /api/screenshots/:id/image`, an auth-gated stream;
-bytes never become base64 in JSON. Object ACLs live in `lib/objectAcl.ts`.
+Admins view images via `GET /api/screenshots/:id/image`, an auth-gated stream:
+the server streams the staged bytes while pending, and 302-redirects to a
+short-lived Dropbox temporary link once uploaded. There are no public URLs.
 
 ### 5.5 IT commands
 `POST /api/devices/:id/commands` enqueues `lock_screen` / `logout_user` (with an

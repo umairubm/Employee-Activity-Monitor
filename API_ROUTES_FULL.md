@@ -32,9 +32,7 @@ See `agent/API_ROUTES.md` for full request/response schemas.
 | POST | `/api/sync/enroll` | public (token) | 201 |
 | POST | `/api/sync/heartbeat` | device | 200 |
 | POST | `/api/sync/activity` | device | 201 |
-| POST | `/api/sync/screenshots/request-url` | device | 200 |
-| PUT | `<presigned uploadURL>` | signature | 200 |
-| POST | `/api/sync/screenshots` | device | 201 |
+| POST | `/api/sync/screenshots` (raw image bytes) | device | 202 |
 | POST | `/api/sync/commands/ack` | device | 200 |
 
 ---
@@ -129,7 +127,7 @@ sensitive. Rows marked **(admin/mgr)** additionally require the write role
 | GET | `/api/screenshots/count` | Screenshot count |
 | PATCH | `/api/screenshots/:id` | Update screenshot metadata |
 | DELETE | `/api/screenshots/:id` | Delete a screenshot |
-| GET | `/api/screenshots/:id/image` | Fetch the image (presigned) |
+| GET | `/api/screenshots/:id/image` | Fetch the image (streams staged bytes, or 302 → Dropbox temp link) |
 
 ### `/api/attendance`
 | Method | Path | Notes |

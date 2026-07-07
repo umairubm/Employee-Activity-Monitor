@@ -16,8 +16,10 @@
  *                    agent prints clearly that monitoring is active.
  *
  * It does NOT require any public/unauthenticated endpoint. Screenshots are
- * uploaded directly to object storage via short-lived presigned URLs; image
- * bytes never pass through (or get base64-stuffed into) the API.
+ * uploaded as raw image bytes to our own authenticated API in a single request
+ * (POST /sync/screenshots); the server stages them in the DB and a background
+ * worker uploads them to Dropbox. Bytes never go to a third-party presigned URL
+ * or get base64-stuffed into JSON.
  *
  * Run:
  *   node tracker-client.mjs
@@ -251,7 +253,7 @@ offlineQueue.load();
 let syncTimer = null;
 let screenshotTimer = null;
 
-// ── Low-level HTTP (works for both API JSON and presigned object-storage PUT) ──
+// ── Low-level HTTP (JSON requests and raw image-byte POSTs to our API) ────────
 function httpRequest(method, urlString, { headers = {}, body = null } = {}) {
   return new Promise((resolve, reject) => {
     const url = new URL(urlString);

@@ -19,7 +19,7 @@ Base URL **without** `/api` or `/api/sync`.
 
 ## Authentication
 
-- `/enroll` and the presigned `PUT` upload are **unauthenticated**.
+- `/enroll` is the only **unauthenticated** route.
 - Every other route requires two headers:
   - `x-device-id: <deviceId>`
   - `x-device-secret: <deviceSecret>`
@@ -129,46 +129,31 @@ Errors: `400` — invalid payload.
 
 ---
 
-## 4. Screenshot Upload (3 steps)
+## 4. Screenshot Upload (single request)
 
-Image bytes never pass through the API server — they go straight to object
-storage via a presigned URL.
+The agent POSTs the **raw image bytes** to the authenticated API in one request.
+Bytes never go to a third-party presigned URL — they go straight to our API,
+which stages them in the DB (viewable immediately) and uploads them to Dropbox
+in a background worker. There is no `request-url` step and no object storage.
 
-### Step A — request an upload URL
-`POST /api/sync/screenshots/request-url` — device auth. No body.
-
-Success `200`:
-```json
-{
-  "uploadURL": "https://storage.googleapis.com/....<signed>",
-  "storageKey": "/objects/uploads/<uuid>"
-}
-```
-
-### Step B — upload the bytes
-`PUT <uploadURL>` — no server auth (the signature authorizes it).
-- Header: `Content-Type: image/png`
-- Body: raw PNG bytes.
-
-### Step C — confirm the upload
 `POST /api/sync/screenshots` — device auth.
-```json
-{
-  "storageKey": "/objects/uploads/<uuid>",
-  "capturedAt": "2026-07-03T10:21:49.000Z",
-  "fileSizeBytes": 1048576
-}
-```
-Field rules:
-- `storageKey` — must match `/objects/uploads/<36-char-uuid>` (the exact value
-  returned in Step A). Arbitrary paths are rejected.
-- `capturedAt` — date. `fileSizeBytes` — int ≥ 0 (defaults to 0).
+- Header: `Content-Type: image/jpeg` (or `image/png` / `image/webp`)
+- Header: `x-captured-at: <ISO-8601>` (capture time)
+- Body: raw image bytes (max 8 MB)
 
-Success `201`:
+The server sniffs the real image type from the magic bytes (the `Content-Type`
+header is not trusted), computes a sha256 for dedupe, and stages the row.
+
+Success `202`:
 ```json
-{ "id": "<screenshot-uuid>" }
+{ "id": "<screenshot-uuid>", "status": "pending" }
 ```
-Errors: `400` — invalid payload or invalid storage key.
+Duplicate capture (same device + identical bytes) also returns `202`:
+```json
+{ "id": "<screenshot-uuid>", "status": "pending", "duplicate": true }
+```
+Errors: `400` — empty body, unsupported image format, or missing/invalid
+`x-captured-at` header.
 
 ---
 
@@ -246,9 +231,7 @@ exactly these five fields.
 | POST | `/api/sync/enroll` | none | 201 |
 | POST | `/api/sync/heartbeat` | device | 200 |
 | POST | `/api/sync/activity` | device | 201 |
-| POST | `/api/sync/screenshots/request-url` | device | 200 |
-| PUT | `<presigned uploadURL>` | signature | 200 |
-| POST | `/api/sync/screenshots` | device | 201 |
+| POST | `/api/sync/screenshots` (raw image bytes) | device | 202 |
 | POST | `/api/sync/commands/ack` | device | 200 |
 | PATCH | `/api/devices/config` | user (admin/manager) | 200 |
 | PATCH | `/api/devices/:id/config` | user (admin/manager) | 200 |

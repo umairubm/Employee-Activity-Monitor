@@ -143,40 +143,27 @@ The agent should execute any returned commands and acknowledge them via
 The server classifies each `processName` as productive / unproductive / neutral;
 unknown apps are auto-created as `undefined` for an admin to classify.
 
-### Screenshots — 3-step secure upload
+### Screenshots — single raw-bytes upload
 
-Image bytes go **directly to object storage**, never through the API as base64.
+The agent POSTs the raw image bytes to the authenticated API in **one** request.
+Bytes never go to a third-party presigned URL or object storage — they go
+straight to our API, which stages them in the DB (viewable immediately) and a
+background worker uploads them to Dropbox. There is no `request-url` step.
 
-**Step 1 — POST `/api/sync/screenshots/request-url`** (empty body)
-
-```json
-{ "uploadURL": "https://storage.googleapis.com/...(presigned, ~15 min)",
-  "storageKey": "/objects/uploads/<uuid>" }
-```
-
-**Step 2 — `PUT <uploadURL>`** — raw image bytes (no device auth headers; the URL
-itself is the short-lived credential)
+**POST `/api/sync/screenshots`** — device auth
 
 ```
-PUT <uploadURL>
-Content-Type: image/jpeg        (or image/png)
-<binary image data>
+POST /api/sync/screenshots
+Content-Type: image/jpeg        (or image/png / image/webp)
+x-captured-at: <ISO-8601>       (capture time)
+<binary image data, max 8 MB>
 ```
 
-**Step 3 — POST `/api/sync/screenshots`** — record the metadata
+**Response `202`**: `{ "id": "<uuid>", "status": "pending" }`
+(a duplicate of an identical capture also returns `202` with `"duplicate": true`).
 
-```json
-{
-  "storageKey": "/objects/uploads/<uuid>",
-  "capturedAt": "ISO-8601",
-  "fileSizeBytes": 12345
-}
-```
-
-**Response `201`**: `{ "id": "uuid" }`
-
-**Errors:** `400` if `storageKey` is not in the exact `/objects/uploads/<uuid>`
-shape the server issued in step 1.
+**Errors:** `400` empty body, unsupported image format, or a missing/invalid
+`x-captured-at` header.
 
 ### POST `/api/sync/commands/ack` — report command progress
 
@@ -296,5 +283,5 @@ role.
    `deviceId` + `deviceSecret`.
 2. **Every cycle:** `POST /api/sync/heartbeat` (apply config, run any commands),
    then `POST /api/sync/activity` with the latest log(s).
-3. **Periodically:** request-url → `PUT` bytes → `POST /api/sync/screenshots`.
+3. **Periodically:** `POST /api/sync/screenshots` with the raw image bytes.
 4. **On a command:** execute it, then `POST /api/sync/commands/ack`.
