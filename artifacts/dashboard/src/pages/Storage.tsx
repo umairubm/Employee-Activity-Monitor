@@ -10,7 +10,6 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -35,23 +34,6 @@ const AUTH_MODE_LABEL: Record<string, string> = {
   connector: "Replit Dropbox connector",
   none: "Not configured",
 };
-
-function CredBadge({ ok, label }: { ok: boolean; label: string }) {
-  return (
-    <div className="flex items-center justify-between rounded-md border px-3 py-2">
-      <span className="text-sm">{label}</span>
-      {ok ? (
-        <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-400">
-          Configured
-        </Badge>
-      ) : (
-        <Badge variant="outline" className="text-muted-foreground">
-          Missing
-        </Badge>
-      )}
-    </div>
-  );
-}
 
 function StatCard({
   label,
@@ -113,8 +95,8 @@ export default function Storage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Storage</h1>
           <p className="text-muted-foreground mt-1">
-            Dropbox connection status and screenshot upload health. Credential
-            values are never shown here — only whether each is configured.
+            Dropbox connection health and screenshot upload status. The
+            connection renews itself automatically — no credentials to manage.
           </p>
         </div>
         <Button
@@ -177,25 +159,6 @@ export default function Storage() {
             <p className="text-xs text-muted-foreground">
               Last checked {fmtDate(health.checkedAt)}
             </p>
-          )}
-
-          {auth && (
-            <div className="grid gap-2 sm:grid-cols-2">
-              <CredBadge
-                ok={auth.refreshTokenConfigured}
-                label="Refresh token"
-              />
-              <CredBadge ok={auth.appKeyConfigured} label="App key" />
-              <CredBadge ok={auth.appSecretConfigured} label="App secret" />
-              <CredBadge
-                ok={auth.accessTokenConfigured}
-                label="Static access token"
-              />
-              <CredBadge
-                ok={auth.connectorAvailable}
-                label="Replit connector"
-              />
-            </div>
           )}
         </CardContent>
       </Card>
