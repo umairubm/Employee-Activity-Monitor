@@ -24,19 +24,33 @@ token instead of the code — reject it and ask for the code.
 refresh-token path is the only hands-off fix and removes the need for any manual
 "credential" UI.
 
-## Sandbox vs bash secret handling (the non-obvious quirk)
+## NEVER store long-lived Dropbox creds via setEnvVars (they leak to git)
 
-**How to apply:** the `code_execution` sandbox has NO `process.env` (accessing it
-throws), but bash DOES have injected secrets. So to generate a secret
-programmatically without ever exposing it:
+`setEnvVars` writes to `.replit`'s `[userenv.*]` sections in **plain text**, and
+`.replit` is git-tracked (and pushed to the GitHub mirror). Storing
+`DROPBOX_APP_SECRET` / `DROPBOX_REFRESH_TOKEN` (or any long-lived credential) via
+`setEnvVars` therefore commits the secret to the repo + its history. This actually
+happened once — all four Dropbox creds ended up in `.replit [userenv.*]`.
+
+**Why:** on Replit, "env vars" (setEnvVars) and "Secrets" are different stores.
+Only the encrypted **Secrets** store stays out of `.replit`/git. `setEnvVars`
+cannot write Secrets, and the agent CANNOT set Secrets directly (only
+`requestEnvVar` asks the user, per the environment-secrets skill).
+
+**How to apply — secure runtime-generated secret handoff (no leak, no agent
+exposure):**
 1. Run the OAuth exchange in **bash** (`node -e '…process.env.DROPBOX_APP_SECRET…'`),
-   printing only status/scope, and write the resulting token to a temp file
-   (e.g. `/tmp/.dbx_rt`) — never echo it.
-2. In **code_execution**, `await import('fs')`, read the temp file, call
-   `setEnvVars({ values: { DROPBOX_REFRESH_TOKEN }, environment: "shared" })`,
-   then delete the temp file. Never `console.log` the token.
+   print only status/scope, write the token to a temp file (`/tmp/.dbx_rt`, mode
+   0600) — never echo it.
+2. Have the **user** open the Shell tab, `cat /tmp/.dbx_rt`, and paste it into the
+   **Secrets pane** as `DROPBOX_REFRESH_TOKEN`. The value goes shell→encrypted
+   Secret; neither git nor the agent context ever sees it.
+3. Then `deleteEnvVars` the old plaintext `[userenv.*]` copies so `.replit` holds
+   no secrets, and restart the `artifacts/api-server: API Server` workflow (no
+   watch) so the process reads the Secret.
 
-`setEnvVars` (shared) is fine for a runtime-generated secret because it's read
-from a file and never enters agent context. Use `shared` so prod inherits it on
-publish. Restart the `artifacts/api-server: API Server` workflow afterward (no
-watch) so the process picks up the new env var.
+If a secret was ever in `.replit`, deleting it is NOT enough — it's in git history.
+The only real neutralizer is **rotating it at the source** (Dropbox App Console →
+Regenerate App secret). A rotated app secret makes both the leaked secret and the
+leaked refresh token unusable, because every refresh call needs the current secret
+(which is no longer in git). App key is a public client_id — not sensitive.
