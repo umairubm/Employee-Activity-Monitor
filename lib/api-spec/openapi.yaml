@@ -1192,6 +1192,20 @@ paths:
       operationId: listCategories
       tags: [categories]
       summary: List app classification rules
+      parameters:
+        - name: deviceId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Only categories matching apps observed on this device
+        - name: deviceGroup
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Only categories matching apps observed on devices in this group
       responses:
         "200":
           description: Categories

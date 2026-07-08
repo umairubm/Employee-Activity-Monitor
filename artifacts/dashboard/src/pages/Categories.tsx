@@ -1,23 +1,61 @@
-import React, { useState } from "react";
-import { useListCategories, getListCategoriesQueryKey, useUpdateCategory } from "@workspace/api-client-react";
+import React, { useMemo, useState } from "react";
+import { useListCategories, getListCategoriesQueryKey, useUpdateCategory, useListDevices } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { Tags, Search, Loader2 } from "lucide-react";
+import { Tags, Search, Loader2, MonitorSmartphone, FolderOpen } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+
+const ALL_GROUPS = "__all__";
+const ALL_DEVICES = "__all__";
 
 export default function Categories() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const { data: categories, isLoading } = useListCategories();
+
+  const [groupFilter, setGroupFilter] = useState<string>(ALL_GROUPS);
+  const [deviceFilter, setDeviceFilter] = useState<string>(ALL_DEVICES);
+
+  const { data: devices } = useListDevices();
+
+  const groups = useMemo(() => {
+    const set = new Set<string>();
+    devices?.forEach((d) => set.add(d.deviceGroup));
+    return Array.from(set).sort();
+  }, [devices]);
+
+  // Devices offered in the device dropdown honour the group selection.
+  const selectableDevices = useMemo(() => {
+    const list = devices ?? [];
+    const scoped = groupFilter === ALL_GROUPS ? list : list.filter((d) => d.deviceGroup === groupFilter);
+    return [...scoped].sort((a, b) => a.systemName.localeCompare(b.systemName));
+  }, [devices, groupFilter]);
+
+  // A concrete device is the most specific filter; otherwise fall back to the group.
+  const listParams = useMemo(() => {
+    if (deviceFilter !== ALL_DEVICES) return { deviceId: deviceFilter };
+    if (groupFilter !== ALL_GROUPS) return { deviceGroup: groupFilter };
+    return undefined;
+  }, [deviceFilter, groupFilter]);
+
+  const { data: categories, isLoading } = useListCategories(listParams);
   const updateCategory = useUpdateCategory();
-  
+
   const [search, setSearch] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
+
+  const handleGroupChange = (value: string) => {
+    setGroupFilter(value);
+    // Reset the device selection when it no longer belongs to the chosen group.
+    if (value !== ALL_GROUPS) {
+      const stillValid = devices?.some((d) => d.id === deviceFilter && d.deviceGroup === value);
+      if (!stillValid) setDeviceFilter(ALL_DEVICES);
+    }
+  };
 
   const filteredCategories = categories?.filter(c => 
     c.pattern.toLowerCase().includes(search.toLowerCase()) || 
@@ -65,15 +103,41 @@ export default function Categories() {
           <h1 className="text-3xl font-bold tracking-tight">App Categories</h1>
           <p className="text-muted-foreground mt-1">Classify process names for productivity analytics.</p>
         </div>
-        <div className="relative w-full sm:w-72">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input 
-            type="search" 
-            placeholder="Search processes..." 
-            className="pl-9"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+        <div className="flex flex-wrap items-center gap-2">
+          <Select value={groupFilter} onValueChange={handleGroupChange}>
+            <SelectTrigger className="w-[170px]" aria-label="Filter by group">
+              <FolderOpen className="h-4 w-4 mr-1.5 text-muted-foreground shrink-0" />
+              <SelectValue placeholder="All groups" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_GROUPS}>All groups</SelectItem>
+              {groups.map((g) => (
+                <SelectItem key={g} value={g}>{g}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={deviceFilter} onValueChange={setDeviceFilter}>
+            <SelectTrigger className="w-[200px]" aria-label="Filter by device">
+              <MonitorSmartphone className="h-4 w-4 mr-1.5 text-muted-foreground shrink-0" />
+              <SelectValue placeholder="All devices" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_DEVICES}>All devices</SelectItem>
+              {selectableDevices.map((d) => (
+                <SelectItem key={d.id} value={d.id}>{d.systemName}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <div className="relative w-full sm:w-72">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input 
+              type="search" 
+              placeholder="Search processes..." 
+              className="pl-9"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
         </div>
       </div>
 

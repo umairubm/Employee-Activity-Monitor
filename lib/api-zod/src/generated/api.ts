@@ -1569,6 +1569,20 @@ export const DeleteLeaveBalanceParams = zod.object({
 /**
  * @summary List app classification rules
  */
+export const ListCategoriesQueryParams = zod.object({
+  deviceId: zod.coerce
+    .string()
+    .uuid()
+    .optional()
+    .describe("Only categories matching apps observed on this device"),
+  deviceGroup: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Only categories matching apps observed on devices in this group",
+    ),
+});
+
 export const ListCategoriesResponseItem = zod.object({
   id: zod.string().uuid(),
   pattern: zod.string(),

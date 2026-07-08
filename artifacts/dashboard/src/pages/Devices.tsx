@@ -27,7 +27,7 @@ import { Label } from "@/components/ui/label";
 import { MonitorSmartphone, Search, CheckCircle2, XCircle, Clock, ShieldCheck, FolderPen, FolderSync, AlertTriangle } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
-import { useGroupFilter, ALL_GROUPS as ALL } from "@/hooks/use-group-filter";
+import { ALL_GROUPS as ALL } from "@/hooks/use-group-filter";
 
 export default function Devices() {
   const queryClient = useQueryClient();
@@ -40,7 +40,9 @@ export default function Devices() {
   const setGroup = useSetDeviceGroup();
   const renameGroup = useRenameDeviceGroup();
   const [search, setSearch] = useState("");
-  const [groupFilter, setGroupFilter] = useGroupFilter();
+  // The Devices page always starts on "All groups" (local state, not the
+  // shared persisted filter) so the full fleet is visible by default.
+  const [groupFilter, setGroupFilter] = useState<string>(ALL);
 
   const [editId, setEditId] = useState<string | null>(null);
   const [editGroup, setEditGroup] = useState("");

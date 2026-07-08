@@ -94,6 +94,7 @@ export * from "./leaveBalanceItemLeaveType";
 export * from "./leaveRequestItem";
 export * from "./leaveRequestItemLeaveType";
 export * from "./leaveRequestItemStatus";
+export * from "./listCategoriesParams";
 export * from "./listLeaveBalancesParams";
 export * from "./listLeaveRequestsParams";
 export * from "./listLeaveRequestsStatus";

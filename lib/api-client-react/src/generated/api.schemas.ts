@@ -1517,6 +1517,17 @@ export type ListLeaveBalancesParams = {
   year?: number;
 };
 
+export type ListCategoriesParams = {
+  /**
+   * Only categories matching apps observed on this device
+   */
+  deviceId?: string;
+  /**
+   * Only categories matching apps observed on devices in this group
+   */
+  deviceGroup?: string;
+};
+
 export type SyncActivity200 = {
   status?: string;
 };
