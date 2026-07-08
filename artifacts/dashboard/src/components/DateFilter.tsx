@@ -43,24 +43,28 @@ export function DateRangeFilter() {
           );
         })}
       </div>
-      <Input
-        type="date"
-        aria-label="From date"
-        className="h-9 w-[9.5rem]"
-        value={range.from}
-        max={range.to}
-        onChange={(e) => setRange({ from: e.target.value || range.to })}
-      />
-      <span className="pb-2 text-muted-foreground">–</span>
-      <Input
-        type="date"
-        aria-label="To date"
-        className="h-9 w-[9.5rem]"
-        value={range.to}
-        min={range.from}
-        max={today}
-        onChange={(e) => setRange({ to: e.target.value || range.from })}
-      />
+      {/* Keep the from–to pair (and its dash) as one unit so wrapping never
+          orphans the dash or a lone input onto its own line. */}
+      <div className="flex items-center gap-2">
+        <Input
+          type="date"
+          aria-label="From date"
+          className="h-9 w-[9.5rem]"
+          value={range.from}
+          max={range.to}
+          onChange={(e) => setRange({ from: e.target.value || range.to })}
+        />
+        <span className="text-muted-foreground">–</span>
+        <Input
+          type="date"
+          aria-label="To date"
+          className="h-9 w-[9.5rem]"
+          value={range.to}
+          min={range.from}
+          max={today}
+          onChange={(e) => setRange({ to: e.target.value || range.from })}
+        />
+      </div>
     </div>
   );
 }

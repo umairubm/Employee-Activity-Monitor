@@ -15,6 +15,10 @@ export type EnrollBody = z.infer<typeof EnrollBody>;
 
 export const HeartbeatBody = z.object({
   agentVersion: z.string().optional(),
+  // Device wall-clock offset (minutes) relative to the UTC instants the agent
+  // reports, e.g. 330 for IST. Lets the dashboard render times as the device
+  // user saw them. Bounded to ±  24h to reject garbage.
+  tzOffsetMinutes: z.number().int().min(-1440).max(1440).optional(),
 });
 export type HeartbeatBody = z.infer<typeof HeartbeatBody>;
 

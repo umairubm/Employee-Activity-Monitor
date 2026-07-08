@@ -47,6 +47,11 @@ export const devicesTable = pgTable("devices", {
   syncIntervalSeconds: integer("sync_interval_seconds").notNull().default(300),
   monitoringEnabled: boolean("monitoring_enabled").notNull().default(true),
   deviceGroup: text("device_group").notNull().default("Unassigned"),
+  // Device wall-clock offset from the timestamps we store (minutes), reported
+  // by the agent on each heartbeat. Used by the dashboard to display activity
+  // and screenshot times as the device user saw them on their own clock,
+  // regardless of the viewer's browser timezone. Null until first reported.
+  tzOffsetMinutes: integer("tz_offset_minutes"),
   // Latest hardware/system inventory snapshot reported by the agent. Used to
   // detect hardware-identity changes (see device_alerts). Nullable until the
   // agent first reports it.
@@ -97,6 +102,7 @@ export const publicDeviceColumns = {
   syncIntervalSeconds: devicesTable.syncIntervalSeconds,
   monitoringEnabled: devicesTable.monitoringEnabled,
   deviceGroup: devicesTable.deviceGroup,
+  tzOffsetMinutes: devicesTable.tzOffsetMinutes,
   systemInfo: devicesTable.systemInfo,
   createdAt: devicesTable.createdAt,
   updatedAt: devicesTable.updatedAt,

@@ -1,6 +1,6 @@
 import { useCallback, useEffect } from "react";
-import { format } from "date-fns";
 import { ChevronLeft, ChevronRight, Flag, Trash2 } from "lucide-react";
+import { formatDeviceTime } from "@/lib/device-time";
 import type { ScreenshotListItem } from "@workspace/api-client-react";
 import {
   Dialog,
@@ -22,6 +22,7 @@ export function ScreenshotLightbox({
   onOpenChange,
   onDelete,
   deleting = false,
+  tzOffsetFor,
 }: {
   screenshots: ScreenshotListItem[];
   index: number;
@@ -30,9 +31,12 @@ export function ScreenshotLightbox({
   onOpenChange: (open: boolean) => void;
   onDelete?: (screenshot: ScreenshotListItem) => void;
   deleting?: boolean;
+  /** Device wall-clock offset (minutes) for a device, to show times as the device user saw them. */
+  tzOffsetFor?: (deviceId: string) => number | null | undefined;
 }) {
   const count = screenshots.length;
   const current = screenshots[index];
+  const tzOffset = current ? tzOffsetFor?.(current.deviceId) : null;
 
   const goPrev = useCallback(() => {
     if (count === 0) return;
@@ -77,7 +81,7 @@ export function ScreenshotLightbox({
       <DialogContent className="max-w-5xl border-none bg-black/95 p-1 shadow-2xl">
         <DialogHeader className="sr-only">
           <DialogTitle>
-            Screenshot from {format(new Date(current.capturedAt), "PPpp")}
+            Screenshot from {formatDeviceTime(current.capturedAt, tzOffset, "PPpp")}
           </DialogTitle>
         </DialogHeader>
         <div className="relative">
@@ -128,7 +132,7 @@ export function ScreenshotLightbox({
           )}
 
           <div className="absolute bottom-4 left-4 rounded-md border border-white/10 bg-black/70 px-3 py-1.5 text-sm text-white backdrop-blur-md">
-            {format(new Date(current.capturedAt), "PPpp")}
+            {formatDeviceTime(current.capturedAt, tzOffset, "PPpp")}
           </div>
 
           {count > 1 && (

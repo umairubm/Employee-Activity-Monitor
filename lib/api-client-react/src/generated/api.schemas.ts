@@ -290,6 +290,11 @@ export interface DeviceItem {
   monitoringEnabled: boolean;
   deviceGroup: string;
   /**
+   * Device wall-clock offset in minutes from the stored UTC instants, reported by the agent on heartbeat. Used to display activity and screenshot times in the device's local time. Null until reported.
+   * @nullable
+   */
+  tzOffsetMinutes?: number | null;
+  /**
    * Label of the enrollment token this device was enrolled with.
    * @nullable
    */

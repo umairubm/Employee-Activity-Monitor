@@ -18,8 +18,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { format } from "date-fns";
 import { Image as ImageIcon, Info, Flag, Trash2 } from "lucide-react";
+import { formatDeviceTime, deviceTzMap } from "@/lib/device-time";
 import { ScreenshotLightbox } from "@/components/ScreenshotLightbox";
 import { useToast } from "@/hooks/use-toast";
 import { useGroupFilter, ALL_GROUPS as ALL } from "@/hooks/use-group-filter";
@@ -41,6 +41,9 @@ export default function Screenshots() {
     devices?.forEach((d) => set.add(d.deviceGroup));
     return Array.from(set).sort();
   }, [devices]);
+  // Show capture times in each device's own wall-clock time (as reported by
+  // its agent), not the viewer's browser timezone.
+  const tzByDevice = useMemo(() => deviceTzMap(devices), [devices]);
   const params = {
     limit: 200,
     from,
@@ -183,7 +186,7 @@ export default function Screenshots() {
               <button
                 type="button"
                 onClick={() => setViewerIndex(i)}
-                aria-label={`View screenshot from ${format(new Date(screenshot.capturedAt), "PPpp")}`}
+                aria-label={`View screenshot from ${formatDeviceTime(screenshot.capturedAt, tzByDevice.get(screenshot.deviceId), "PPpp")}`}
                 className="block w-full cursor-pointer aspect-video bg-secondary relative overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <img
@@ -201,8 +204,8 @@ export default function Screenshots() {
               </button>
               <div className="p-3 bg-card border-t border-border flex items-center justify-between gap-2">
                 <div>
-                  <p className="text-sm font-medium">{format(new Date(screenshot.capturedAt), "MMM d, yyyy")}</p>
-                  <p className="text-xs text-muted-foreground mt-1">{format(new Date(screenshot.capturedAt), "h:mm:ss a")}</p>
+                  <p className="text-sm font-medium">{formatDeviceTime(screenshot.capturedAt, tzByDevice.get(screenshot.deviceId), "MMM d, yyyy")}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{formatDeviceTime(screenshot.capturedAt, tzByDevice.get(screenshot.deviceId), "h:mm:ss a")}</p>
                 </div>
                 <Button
                   size="icon"
@@ -230,6 +233,7 @@ export default function Screenshots() {
         }}
         onDelete={handleDelete}
         deleting={del.isPending}
+        tzOffsetFor={(deviceId) => tzByDevice.get(deviceId)}
       />
     </div>
   );

@@ -73,6 +73,12 @@ export const ListDevicesResponseItem = zod.object({
   syncIntervalSeconds: zod.number(),
   monitoringEnabled: zod.boolean(),
   deviceGroup: zod.string(),
+  tzOffsetMinutes: zod
+    .number()
+    .nullish()
+    .describe(
+      "Device wall-clock offset in minutes from the stored UTC instants, reported by the agent on heartbeat. Used to display activity and screenshot times in the device's local time. Null until reported.",
+    ),
   tokenLabel: zod
     .string()
     .nullish()
@@ -130,6 +136,12 @@ export const GetDeviceResponse = zod.object({
   syncIntervalSeconds: zod.number(),
   monitoringEnabled: zod.boolean(),
   deviceGroup: zod.string(),
+  tzOffsetMinutes: zod
+    .number()
+    .nullish()
+    .describe(
+      "Device wall-clock offset in minutes from the stored UTC instants, reported by the agent on heartbeat. Used to display activity and screenshot times in the device's local time. Null until reported.",
+    ),
   tokenLabel: zod
     .string()
     .nullish()
@@ -272,6 +284,12 @@ export const SetDeviceGroupResponse = zod.object({
   syncIntervalSeconds: zod.number(),
   monitoringEnabled: zod.boolean(),
   deviceGroup: zod.string(),
+  tzOffsetMinutes: zod
+    .number()
+    .nullish()
+    .describe(
+      "Device wall-clock offset in minutes from the stored UTC instants, reported by the agent on heartbeat. Used to display activity and screenshot times in the device's local time. Null until reported.",
+    ),
   tokenLabel: zod
     .string()
     .nullish()
@@ -395,6 +413,12 @@ export const UpdateDeviceConfigResponse = zod.object({
   syncIntervalSeconds: zod.number(),
   monitoringEnabled: zod.boolean(),
   deviceGroup: zod.string(),
+  tzOffsetMinutes: zod
+    .number()
+    .nullish()
+    .describe(
+      "Device wall-clock offset in minutes from the stored UTC instants, reported by the agent on heartbeat. Used to display activity and screenshot times in the device's local time. Null until reported.",
+    ),
   tokenLabel: zod
     .string()
     .nullish()

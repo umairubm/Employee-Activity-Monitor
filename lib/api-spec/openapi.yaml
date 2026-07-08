@@ -2005,6 +2005,12 @@ components:
           type: boolean
         deviceGroup:
           type: string
+        tzOffsetMinutes:
+          type: [integer, "null"]
+          description: >-
+            Device wall-clock offset in minutes from the stored UTC instants,
+            reported by the agent on heartbeat. Used to display activity and
+            screenshot times in the device's local time. Null until reported.
         tokenLabel:
           type: [string, "null"]
           description: Label of the enrollment token this device was enrolled with.

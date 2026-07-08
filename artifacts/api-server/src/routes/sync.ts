@@ -369,6 +369,7 @@ router.post(
       .set({
         lastSeenAt: new Date(),
         agentVersion: parsed.data.agentVersion ?? device.agentVersion,
+        tzOffsetMinutes: parsed.data.tzOffsetMinutes ?? device.tzOffsetMinutes,
         updatedAt: new Date(),
       })
       .where(eq(devicesTable.id, device.id))

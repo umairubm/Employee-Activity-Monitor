@@ -6,6 +6,7 @@ with the device id + secret issued once at enrollment.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Optional
 
 import requests
@@ -69,9 +70,17 @@ class AgentAPI:
         return data
 
     def heartbeat(self, agent_version: str) -> dict:
+        # Report the device's wall-clock offset (minutes from UTC) so the
+        # dashboard can display activity/screenshot times as the device user
+        # saw them on their own clock.
+        offset = datetime.now().astimezone().utcoffset()
+        tz_offset_minutes = round(offset.total_seconds() / 60) if offset else 0
         resp = requests.post(
             self._url("/heartbeat"),
-            json={"agentVersion": agent_version},
+            json={
+                "agentVersion": agent_version,
+                "tzOffsetMinutes": tz_offset_minutes,
+            },
             headers=self._auth_headers(),
             timeout=self.timeout,
         )

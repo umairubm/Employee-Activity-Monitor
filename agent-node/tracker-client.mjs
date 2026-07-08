@@ -904,7 +904,17 @@ async function captureAndUploadScreenshot() {
 async function syncTelemetry() {
   // 1. Heartbeat — liveness + config + lock state + pending commands.
   try {
-    const res = await apiPost("/heartbeat", { agentVersion: AGENT_VERSION });
+    // Wall-clock offset (minutes) between what the device user sees on their
+    // clock and the (server-corrected) UTC instants we report. Includes any
+    // local clock error on top of the timezone offset, so the dashboard can
+    // reproduce the exact wall time the user saw.
+    const tzOffsetMinutes =
+      -new Date().getTimezoneOffset() -
+      Math.round(clientState.serverClockOffset / 60000);
+    const res = await apiPost("/heartbeat", {
+      agentVersion: AGENT_VERSION,
+      tzOffsetMinutes,
+    });
     if (res?.serverTime) {
       clientState.serverClockOffset = new Date(res.serverTime).getTime() - Date.now();
     }

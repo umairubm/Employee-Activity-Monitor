@@ -55,6 +55,7 @@ import { useGroupFilter, ALL_GROUPS as ALL } from "@/hooks/use-group-filter";
 import { useDateRange, rangeBoundsIso, todayStr } from "@/hooks/use-date-filter";
 import { DateRangeFilter } from "@/components/DateFilter";
 import { ScreenshotLightbox } from "@/components/ScreenshotLightbox";
+import { deviceWallDate, formatDeviceTime } from "@/lib/device-time";
 
 /* ----------------------------- types & helpers ---------------------------- */
 
@@ -183,10 +184,16 @@ function mergedCoveredSeconds(intervals: Array<[number, number]>): number {
   return Math.round(total / 1000);
 }
 
-/** Aggregate one device's day of logs. */
+/**
+ * Aggregate one device's day of logs. When the device has reported its
+ * wall-clock offset (`tzOffsetMinutes`), all day bucketing, slot placement and
+ * the start/end display dates use the *device's* wall time instead of the
+ * viewer's browser timezone (durations are unaffected by the constant shift).
+ */
 function aggregateLogs(
   logs: ActivityLogRecord[],
   classOf: (log: ActivityLogRecord) => Classification,
+  tzOffsetMinutes?: number | null,
 ): DeviceAgg {
   const agg = emptyAgg();
   // Naive sums; corrected for overlapping duplicate-agent logs after the loop.
@@ -198,8 +205,14 @@ function aggregateLogs(
   // keys span by device+day). day -> [minStartMs, maxEndMs].
   const dayBounds = new Map<string, [number, number]>();
   for (const log of logs) {
-    const started = new Date(log.startedAt);
-    const ended = new Date(log.endedAt);
+    const started =
+      tzOffsetMinutes == null
+        ? new Date(log.startedAt)
+        : deviceWallDate(log.startedAt, tzOffsetMinutes);
+    const ended =
+      tzOffsetMinutes == null
+        ? new Date(log.endedAt)
+        : deviceWallDate(log.endedAt, tzOffsetMinutes);
     const cls = classOf(log);
     const duration = log.durationSeconds ?? 0;
     const idle = log.idleSeconds ?? 0;
@@ -322,10 +335,12 @@ function SessionScreenshots({
   deviceId,
   from,
   to,
+  tzOffsetMinutes,
 }: {
   deviceId: string;
   from: string;
   to: string;
+  tzOffsetMinutes?: number | null;
 }) {
   const params = { deviceId, from, to, limit: 100 };
   const { data: screenshots, isLoading } = useListScreenshots(params, {
@@ -360,7 +375,7 @@ function SessionScreenshots({
             key={shot.id}
             type="button"
             onClick={() => setViewerIndex(i)}
-            aria-label={`View screenshot from ${format(new Date(shot.capturedAt), "PPpp")}`}
+            aria-label={`View screenshot from ${formatDeviceTime(shot.capturedAt, tzOffsetMinutes, "PPpp")}`}
             className={`group cursor-pointer overflow-hidden rounded-lg border bg-card text-left shadow-sm transition-all hover:shadow-md focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
               shot.flagged
                 ? "border-amber-500 ring-1 ring-amber-500/40"
@@ -381,13 +396,14 @@ function SessionScreenshots({
               )}
             </div>
             <div className="border-t px-3 py-2 text-xs text-muted-foreground">
-              {format(new Date(shot.capturedAt), "h:mm:ss a")}
+              {formatDeviceTime(shot.capturedAt, tzOffsetMinutes, "h:mm:ss a")}
             </div>
           </button>
         ))}
       </div>
       <ScreenshotLightbox
         screenshots={screenshots}
+        tzOffsetFor={() => tzOffsetMinutes}
         index={viewerIndex ?? 0}
         onIndexChange={setViewerIndex}
         open={viewerIndex !== null}
@@ -526,11 +542,11 @@ function DeviceActivityPanel({
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5 text-sm">
                             <span className="font-medium">
-                              {format(new Date(log.startedAt), "h:mm a")}
+                              {formatDeviceTime(log.startedAt, device.tzOffsetMinutes, "h:mm a")}
                             </span>
                             <span className="text-muted-foreground">—</span>
                             <span className="font-medium">
-                              {format(new Date(log.endedAt), "h:mm a")}
+                              {formatDeviceTime(log.endedAt, device.tzOffsetMinutes, "h:mm a")}
                             </span>
                           </div>
                           <div className="mt-0.5 truncate text-xs text-muted-foreground">
@@ -568,8 +584,8 @@ function DeviceActivityPanel({
                         <DialogTitle className="flex flex-wrap items-center gap-2 text-base">
                           <Camera className="h-4 w-4" />
                           Screenshots ·{" "}
-                          {format(new Date(log.startedAt), "h:mm a")} –{" "}
-                          {format(new Date(log.endedAt), "h:mm a")}
+                          {formatDeviceTime(log.startedAt, device.tzOffsetMinutes, "h:mm a")} –{" "}
+                          {formatDeviceTime(log.endedAt, device.tzOffsetMinutes, "h:mm a")}
                           <span className="text-sm font-normal text-muted-foreground">
                             {log.processName}
                           </span>
@@ -580,6 +596,7 @@ function DeviceActivityPanel({
                           deviceId={log.deviceId}
                           from={new Date(log.startedAt).toISOString()}
                           to={new Date(log.endedAt).toISOString()}
+                          tzOffsetMinutes={device.tzOffsetMinutes}
                         />
                       </ScrollArea>
                     </DialogContent>
@@ -641,13 +658,19 @@ export default function ActivityLogs() {
     return map;
   }, [logs]);
 
+  const tzByDevice = useMemo(() => {
+    const map = new Map<string, number | null>();
+    devices?.forEach((d) => map.set(d.id, d.tzOffsetMinutes ?? null));
+    return map;
+  }, [devices]);
+
   const aggByDevice = useMemo(() => {
     const map = new Map<string, DeviceAgg>();
     logsByDevice.forEach((deviceLogs, deviceId) => {
-      map.set(deviceId, aggregateLogs(deviceLogs, classOf));
+      map.set(deviceId, aggregateLogs(deviceLogs, classOf, tzByDevice.get(deviceId)));
     });
     return map;
-  }, [logsByDevice, classOf]);
+  }, [logsByDevice, classOf, tzByDevice]);
 
   const groups = useMemo(() => {
     const set = new Set<string>();

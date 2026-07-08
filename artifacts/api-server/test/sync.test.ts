@@ -499,6 +499,49 @@ describe("device authentication on /sync (deviceAuth)", () => {
     expect(res.status).toBe(200);
     expect(res.body.config).toMatchObject({ monitoringEnabled: true });
   });
+
+  it("persists the reported wall-clock offset and keeps it when omitted", async () => {
+    const { device, secret } = await createDeviceWithSecret();
+    trackDevice(device.id);
+
+    const res = await request(app)
+      .post("/sync/heartbeat")
+      .set("x-device-id", device.id)
+      .set("x-device-secret", secret)
+      .send({ tzOffsetMinutes: 720 });
+    expect(res.status).toBe(200);
+
+    let [row] = await db
+      .select()
+      .from(devicesTable)
+      .where(eq(devicesTable.id, device.id));
+    expect(row.tzOffsetMinutes).toBe(720);
+
+    // A later heartbeat without the field must not clear the stored offset.
+    const res2 = await request(app)
+      .post("/sync/heartbeat")
+      .set("x-device-id", device.id)
+      .set("x-device-secret", secret)
+      .send({});
+    expect(res2.status).toBe(200);
+    [row] = await db
+      .select()
+      .from(devicesTable)
+      .where(eq(devicesTable.id, device.id));
+    expect(row.tzOffsetMinutes).toBe(720);
+  });
+
+  it("rejects an out-of-range wall-clock offset (400)", async () => {
+    const { device, secret } = await createDeviceWithSecret();
+    trackDevice(device.id);
+
+    const res = await request(app)
+      .post("/sync/heartbeat")
+      .set("x-device-id", device.id)
+      .set("x-device-secret", secret)
+      .send({ tzOffsetMinutes: 5000 });
+    expect(res.status).toBe(400);
+  });
 });
 
 describe("server-side consent enforcement", () => {
