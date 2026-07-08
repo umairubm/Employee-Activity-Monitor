@@ -124,7 +124,9 @@ export default function Categories() {
             <SelectContent>
               <SelectItem value={ALL_DEVICES}>All devices</SelectItem>
               {selectableDevices.map((d) => (
-                <SelectItem key={d.id} value={d.id}>{d.systemName}</SelectItem>
+                <SelectItem key={d.id} value={d.id}>
+                  {d.tokenLabel ? `${d.systemName} (${d.tokenLabel})` : d.systemName}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
