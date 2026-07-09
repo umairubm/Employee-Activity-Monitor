@@ -278,11 +278,38 @@ async function tick(): Promise<void> {
 
 let timer: NodeJS.Timeout | null = null;
 
+/**
+ * Revive rows that exhausted their retries (attempts >= MAX_ATTEMPTS) but still
+ * hold their staged bytes. Run once at startup: a long credential outage (e.g.
+ * expired/rotated Dropbox token) burns through all attempts, and without this
+ * the backlog would stay dead forever even after the credentials are fixed.
+ * Restarting the server (which happens on every deploy/config change) gives
+ * every stuck row a fresh set of attempts.
+ */
+async function requeueExhaustedRows(): Promise<void> {
+  try {
+    const result = await db.execute(sql`
+      UPDATE ${screenshotsTable}
+      SET attempts = 0, next_attempt_at = now()
+      WHERE status = 'failed'
+        AND attempts >= ${MAX_ATTEMPTS}
+        AND pending_bytes IS NOT NULL
+    `);
+    const count = result.rowCount ?? 0;
+    if (count > 0) {
+      logger.info({ count }, "requeued screenshots that had exhausted upload attempts");
+    }
+  } catch (err) {
+    logger.error({ err }, "failed to requeue exhausted screenshot uploads");
+  }
+}
+
 /** Start the background upload worker. Safe to call once at server startup. */
 export function startScreenshotUploadWorker(): void {
   if (timer) return;
   stopped = false;
   logger.info("screenshot upload worker started");
+  void requeueExhaustedRows();
   timer = setInterval(() => void tick(), POLL_INTERVAL_MS);
   // Don't keep the event loop alive solely for the poller.
   timer.unref?.();
