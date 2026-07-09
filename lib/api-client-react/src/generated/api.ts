@@ -48,8 +48,11 @@ import type {
   DeviceGroupInput,
   DeviceItem,
   DownloadList,
+  DropboxCredentialsResult,
+  DropboxCredentialsUpdate,
   DropboxSystemStatus,
   EnrollmentTokenItem,
+  ErrorResponse,
   FlagScreenshot200,
   GetActivityLogsParams,
   GetActivityRangeParams,
@@ -7062,3 +7065,93 @@ export function useGetDropboxSystemStatus<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary Save Dropbox credentials (validated live, stored encrypted in the DB; Super User)
+ */
+export const getUpdateDropboxCredentialsUrl = () => {
+  return `/api/system/dropbox/credentials`;
+};
+
+export const updateDropboxCredentials = async (
+  dropboxCredentialsUpdate: DropboxCredentialsUpdate,
+  options?: RequestInit,
+): Promise<DropboxCredentialsResult> => {
+  return customFetch<DropboxCredentialsResult>(
+    getUpdateDropboxCredentialsUrl(),
+    {
+      ...options,
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(dropboxCredentialsUpdate),
+    },
+  );
+};
+
+export const getUpdateDropboxCredentialsMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateDropboxCredentials>>,
+    TError,
+    { data: BodyType<DropboxCredentialsUpdate> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateDropboxCredentials>>,
+  TError,
+  { data: BodyType<DropboxCredentialsUpdate> },
+  TContext
+> => {
+  const mutationKey = ["updateDropboxCredentials"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateDropboxCredentials>>,
+    { data: BodyType<DropboxCredentialsUpdate> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return updateDropboxCredentials(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateDropboxCredentialsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateDropboxCredentials>>
+>;
+export type UpdateDropboxCredentialsMutationBody =
+  BodyType<DropboxCredentialsUpdate>;
+export type UpdateDropboxCredentialsMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Save Dropbox credentials (validated live, stored encrypted in the DB; Super User)
+ */
+export const useUpdateDropboxCredentials = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateDropboxCredentials>>,
+    TError,
+    { data: BodyType<DropboxCredentialsUpdate> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateDropboxCredentials>>,
+  TError,
+  { data: BodyType<DropboxCredentialsUpdate> },
+  TContext
+> => {
+  return useMutation(getUpdateDropboxCredentialsMutationOptions(options));
+};

@@ -10,6 +10,7 @@ export type DropboxAuthStatusMode =
   (typeof DropboxAuthStatusMode)[keyof typeof DropboxAuthStatusMode];
 
 export const DropboxAuthStatusMode = {
+  database: "database",
   refresh_token: "refresh_token",
   access_token: "access_token",
   connector: "connector",

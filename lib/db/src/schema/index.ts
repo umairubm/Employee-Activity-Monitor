@@ -15,3 +15,4 @@ export * from "./tasks";
 export * from "./shifts";
 export * from "./leaveRequests";
 export * from "./leaveBalances";
+export * from "./storageSettings";

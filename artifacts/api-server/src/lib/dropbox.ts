@@ -1,3 +1,6 @@
+import { eq } from "drizzle-orm";
+import { db, storageSettingsTable } from "@workspace/db";
+import { decryptSetting } from "./settingsCrypto";
 import { logger } from "./logger";
 
 /**
@@ -46,6 +49,63 @@ function isRateLimited(status: number): boolean {
  * `DROPBOX_ACCESS_TOKEN` or the connector path.
  */
 let refreshedToken: { token: string; expiresAt: number } | null = null;
+
+type DbDropboxCredentials = {
+  appKey: string;
+  appSecret: string;
+  refreshToken: string;
+};
+
+const DB_CREDS_TTL_MS = 60_000;
+
+/**
+ * Cache for the DB-stored credentials (operator-entered via the dashboard
+ * Storage page). Short TTL so the worker doesn't hit the DB on every upload,
+ * but explicitly invalidated on save (`invalidateDropboxCredentialCache`).
+ */
+let dbCreds: { value: DbDropboxCredentials | null; fetchedAt: number } | null =
+  null;
+
+/** Clear cached credentials/tokens (call after updating stored credentials). */
+export function invalidateDropboxCredentialCache(): void {
+  dbCreds = null;
+  refreshedToken = null;
+}
+
+/**
+ * DB-stored Dropbox credentials (encrypted at rest, see settingsCrypto).
+ * Returns null when absent/incomplete/undecryptable — callers then fall back
+ * to env-based credentials.
+ */
+async function getDbCredentials(): Promise<DbDropboxCredentials | null> {
+  const now = Date.now();
+  if (dbCreds && now - dbCreds.fetchedAt < DB_CREDS_TTL_MS) {
+    return dbCreds.value;
+  }
+  let value: DbDropboxCredentials | null = null;
+  try {
+    const [row] = await db
+      .select()
+      .from(storageSettingsTable)
+      .where(eq(storageSettingsTable.id, "global"));
+    if (row?.dropboxAppKey && row.dropboxAppSecretEnc && row.dropboxRefreshTokenEnc) {
+      value = {
+        appKey: row.dropboxAppKey,
+        appSecret: decryptSetting(row.dropboxAppSecretEnc),
+        refreshToken: decryptSetting(row.dropboxRefreshTokenEnc),
+      };
+    }
+  } catch (err) {
+    logger.error({ err }, "failed to load stored Dropbox credentials; falling back to env");
+  }
+  dbCreds = { value, fetchedAt: now };
+  return value;
+}
+
+/** True when a complete set of credentials is stored in the DB. */
+export async function hasDbCredentials(): Promise<boolean> {
+  return (await getDbCredentials()) != null;
+}
 
 /**
  * Mint a fresh short-lived access token from a long-lived refresh token +
@@ -104,6 +164,15 @@ async function mintTokenFromRefreshToken(
  *      and `sharing.write` scopes is required for the screenshot pipeline.
  */
 async function getAccessToken(): Promise<string> {
+  const stored = await getDbCredentials();
+  if (stored) {
+    return mintTokenFromRefreshToken(
+      stored.refreshToken,
+      stored.appKey,
+      stored.appSecret,
+    );
+  }
+
   const refreshToken = process.env.DROPBOX_REFRESH_TOKEN;
   const appKey = process.env.DROPBOX_APP_KEY;
   const appSecret = process.env.DROPBOX_APP_SECRET;
@@ -321,6 +390,7 @@ export async function deleteFile(path: string): Promise<void> {
 
 /** Which credential path Dropbox is currently configured to use. */
 export type DropboxAuthMode =
+  | "database"
   | "refresh_token"
   | "access_token"
   | "connector"
@@ -330,6 +400,7 @@ export interface DropboxCredentialStatus {
   /** The auth path that would be used for the next call. */
   mode: DropboxAuthMode;
   /** Whether each credential is present. Never exposes the secret values. */
+  databaseConfigured: boolean;
   refreshTokenConfigured: boolean;
   appKeyConfigured: boolean;
   appSecretConfigured: boolean;
@@ -342,7 +413,8 @@ export interface DropboxCredentialStatus {
  * WITHOUT ever reading or returning the secret values themselves. Mirrors the
  * precedence in `getAccessToken`.
  */
-export function getDropboxCredentialStatus(): DropboxCredentialStatus {
+export async function getDropboxCredentialStatus(): Promise<DropboxCredentialStatus> {
+  const databaseConfigured = await hasDbCredentials();
   const refreshTokenConfigured = !!process.env.DROPBOX_REFRESH_TOKEN;
   const appKeyConfigured = !!process.env.DROPBOX_APP_KEY;
   const appSecretConfigured = !!process.env.DROPBOX_APP_SECRET;
@@ -352,7 +424,9 @@ export function getDropboxCredentialStatus(): DropboxCredentialStatus {
     (!!process.env.REPL_IDENTITY || !!process.env.WEB_REPL_RENEWAL);
 
   let mode: DropboxAuthMode = "none";
-  if (refreshTokenConfigured && appKeyConfigured && appSecretConfigured) {
+  if (databaseConfigured) {
+    mode = "database";
+  } else if (refreshTokenConfigured && appKeyConfigured && appSecretConfigured) {
     mode = "refresh_token";
   } else if (accessTokenConfigured) {
     mode = "access_token";
@@ -362,12 +436,63 @@ export function getDropboxCredentialStatus(): DropboxCredentialStatus {
 
   return {
     mode,
+    databaseConfigured,
     refreshTokenConfigured,
     appKeyConfigured,
     appSecretConfigured,
     accessTokenConfigured,
     connectorAvailable,
   };
+}
+
+/**
+ * Verify a candidate credential set against Dropbox WITHOUT saving anything:
+ * mints a short-lived access token, then makes a cheap authenticated echo
+ * call. Returns null on success, or a human-readable error string.
+ */
+export async function verifyDropboxCredentials(
+  appKey: string,
+  appSecret: string,
+  refreshToken: string,
+): Promise<string | null> {
+  try {
+    const body = new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+    });
+    const basic = Buffer.from(`${appKey}:${appSecret}`).toString("base64");
+    const res = await fetch("https://api.dropboxapi.com/oauth2/token", {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${basic}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      if (res.status === 400 || res.status === 401) {
+        return `Dropbox rejected the credentials (${res.status})${text ? `: ${text.slice(0, 300)}` : ""}`;
+      }
+      return `Dropbox token check failed (${res.status})`;
+    }
+    const data = (await res.json()) as { access_token?: string };
+    if (!data.access_token) return "Dropbox returned no access token";
+    const echo = await fetch(`${RPC_BASE}/check/user`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${data.access_token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ query: "ping" }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    if (!echo.ok) return `Dropbox authenticated check failed (${echo.status})`;
+    return null;
+  } catch (err) {
+    return `Could not reach Dropbox: ${(err as Error).message}`;
+  }
 }
 
 export interface DropboxHealth {

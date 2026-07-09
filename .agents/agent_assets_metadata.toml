@@ -60,3 +60,9 @@ id = "ZH4fJDbC24wv-F2KX_EXF"
 uri = "file://exports/dropbox-setup-guide.pdf"
 type = "pdf"
 title = "Changing the Dropbox Account — Setup Guide"
+
+[[outputs]]
+id = "amwnrIM2-wbYDSuEt4SPA"
+uri = "file://.local/dropbox_credentials_for_you.txt"
+type = "text"
+title = "Dropbox credentials to paste into the live Storage page"

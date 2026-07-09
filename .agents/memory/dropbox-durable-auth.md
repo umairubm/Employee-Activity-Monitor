@@ -54,3 +54,14 @@ The only real neutralizer is **rotating it at the source** (Dropbox App Console 
 Regenerate App secret). A rotated app secret makes both the leaked secret and the
 leaked refresh token unusable, because every refresh call needs the current secret
 (which is no longer in git). App key is a public client_id — not sensitive.
+
+## DB-stored credentials (the operator can't manage Replit Secrets)
+
+When the user cannot save Secrets, credentials live in the single-row
+`storage_settings` table, encrypted AES-256-GCM keyed sha256(SESSION_SECRET)
+(`settingsCrypto.ts`), entered via the dashboard Storage page and verified live
+against Dropbox before saving. DB creds take precedence over `DROPBOX_*` env
+vars. **Never stash working credentials in a tracked file** — a plaintext
+`dropbox_refresh_token` file at repo root was once committed (found in review);
+only gitignored `.local/` paths are safe for temporary stashes, and rotation is
+the only fix once committed.

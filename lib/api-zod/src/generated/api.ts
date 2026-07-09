@@ -2213,7 +2213,14 @@ export const SyncActivityResponse = zod.object({
  */
 export const GetDropboxSystemStatusResponse = zod.object({
   auth: zod.object({
-    mode: zod.enum(["refresh_token", "access_token", "connector", "none"]),
+    mode: zod.enum([
+      "database",
+      "refresh_token",
+      "access_token",
+      "connector",
+      "none",
+    ]),
+    databaseConfigured: zod.boolean(),
     refreshTokenConfigured: zod.boolean(),
     appKeyConfigured: zod.boolean(),
     appSecretConfigured: zod.boolean(),
@@ -2245,4 +2252,27 @@ export const GetDropboxSystemStatusResponse = zod.object({
       createdAt: zod.coerce.date(),
     }),
   ),
+});
+
+/**
+ * @summary Save Dropbox credentials (validated live, stored encrypted in the DB; Super User)
+ */
+export const updateDropboxCredentialsBodyAppKeyMax = 200;
+
+export const updateDropboxCredentialsBodyAppSecretMax = 200;
+
+export const updateDropboxCredentialsBodyRefreshTokenMax = 500;
+
+export const UpdateDropboxCredentialsBody = zod.object({
+  appKey: zod.string().min(1).max(updateDropboxCredentialsBodyAppKeyMax),
+  appSecret: zod.string().min(1).max(updateDropboxCredentialsBodyAppSecretMax),
+  refreshToken: zod
+    .string()
+    .min(1)
+    .max(updateDropboxCredentialsBodyRefreshTokenMax),
+});
+
+export const UpdateDropboxCredentialsResponse = zod.object({
+  ok: zod.boolean(),
+  requeuedScreenshots: zod.number(),
 });

@@ -280,13 +280,13 @@ let timer: NodeJS.Timeout | null = null;
 
 /**
  * Revive rows that exhausted their retries (attempts >= MAX_ATTEMPTS) but still
- * hold their staged bytes. Run once at startup: a long credential outage (e.g.
- * expired/rotated Dropbox token) burns through all attempts, and without this
- * the backlog would stay dead forever even after the credentials are fixed.
- * Restarting the server (which happens on every deploy/config change) gives
- * every stuck row a fresh set of attempts.
+ * hold their staged bytes. Run once at startup and after the operator saves new
+ * storage credentials: a long credential outage (e.g. expired/rotated Dropbox
+ * token) burns through all attempts, and without this the backlog would stay
+ * dead forever even after the credentials are fixed. Returns the number of
+ * rows revived.
  */
-async function requeueExhaustedRows(): Promise<void> {
+export async function requeueExhaustedRows(): Promise<number> {
   try {
     const result = await db.execute(sql`
       UPDATE ${screenshotsTable}
@@ -299,8 +299,10 @@ async function requeueExhaustedRows(): Promise<void> {
     if (count > 0) {
       logger.info({ count }, "requeued screenshots that had exhausted upload attempts");
     }
+    return count;
   } catch (err) {
     logger.error({ err }, "failed to requeue exhausted screenshot uploads");
+    return 0;
   }
 }
 

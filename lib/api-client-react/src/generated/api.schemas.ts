@@ -9,6 +9,7 @@ export type DropboxAuthStatusMode =
   (typeof DropboxAuthStatusMode)[keyof typeof DropboxAuthStatusMode];
 
 export const DropboxAuthStatusMode = {
+  database: "database",
   refresh_token: "refresh_token",
   access_token: "access_token",
   connector: "connector",
@@ -17,6 +18,7 @@ export const DropboxAuthStatusMode = {
 
 export interface DropboxAuthStatus {
   mode: DropboxAuthStatusMode;
+  databaseConfigured: boolean;
   refreshTokenConfigured: boolean;
   appKeyConfigured: boolean;
   appSecretConfigured: boolean;
@@ -58,6 +60,33 @@ export interface DropboxSystemStatus {
   health: DropboxHealth;
   screenshots: ScreenshotUploadStats;
   recentErrors: ScreenshotErrorItem[];
+}
+
+export interface DropboxCredentialsUpdate {
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  appKey: string;
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  appSecret: string;
+  /**
+   * @minLength 1
+   * @maxLength 500
+   */
+  refreshToken: string;
+}
+
+export interface DropboxCredentialsResult {
+  ok: boolean;
+  requeuedScreenshots: number;
+}
+
+export interface ErrorResponse {
+  error: string;
 }
 
 export interface LoginRequest {

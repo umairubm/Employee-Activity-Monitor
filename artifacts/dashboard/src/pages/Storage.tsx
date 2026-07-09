@@ -1,8 +1,11 @@
+import { useState } from "react";
 import {
   useGetDropboxSystemStatus,
   getGetDropboxSystemStatusQueryKey,
+  useUpdateDropboxCredentials,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
 import {
   Card,
   CardContent,
@@ -11,6 +14,8 @@ import {
   CardDescription,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -26,9 +31,12 @@ import {
   RefreshCw,
   CloudUpload,
   AlertTriangle,
+  KeyRound,
+  Loader2,
 } from "lucide-react";
 
 const AUTH_MODE_LABEL: Record<string, string> = {
+  database: "Saved credentials (entered on this page)",
   refresh_token: "Refresh token (durable, auto-renewing)",
   access_token: "Static access token (short-lived)",
   connector: "Replit Dropbox connector",
@@ -77,12 +85,51 @@ function fmtDate(iso: string): string {
 
 export default function Storage() {
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const { data, isLoading, isFetching } = useGetDropboxSystemStatus();
+
+  const [appKey, setAppKey] = useState("");
+  const [appSecret, setAppSecret] = useState("");
+  const [refreshToken, setRefreshToken] = useState("");
 
   const refresh = () =>
     queryClient.invalidateQueries({
       queryKey: getGetDropboxSystemStatusQueryKey(),
     });
+
+  const saveCredentials = useUpdateDropboxCredentials({
+    mutation: {
+      onSuccess: (res) => {
+        toast({
+          title: "Dropbox connected",
+          description:
+            res.requeuedScreenshots > 0
+              ? `Credentials verified and saved. ${res.requeuedScreenshots.toLocaleString()} stuck screenshots were queued for upload again.`
+              : "Credentials verified and saved.",
+        });
+        setAppKey("");
+        setAppSecret("");
+        setRefreshToken("");
+        refresh();
+      },
+      onError: (err) => {
+        const msg =
+          (err as { response?: { data?: { error?: string } } })?.response?.data
+            ?.error ?? "Could not save the credentials. Please try again.";
+        toast({
+          title: "Dropbox rejected the credentials",
+          description: msg,
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
+  const canSave =
+    appKey.trim().length > 0 &&
+    appSecret.trim().length > 0 &&
+    refreshToken.trim().length > 0 &&
+    !saveCredentials.isPending;
 
   const auth = data?.auth;
   const health = data?.health;
@@ -95,8 +142,8 @@ export default function Storage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Storage</h1>
           <p className="text-muted-foreground mt-1">
-            Dropbox connection health and screenshot upload status. The
-            connection renews itself automatically — no credentials to manage.
+            Dropbox connection health and screenshot upload status. You can
+            update the Dropbox credentials below at any time.
           </p>
         </div>
         <Button
@@ -160,6 +207,80 @@ export default function Storage() {
               Last checked {fmtDate(health.checkedAt)}
             </p>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Credentials form */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <KeyRound className="h-5 w-5" />
+            Dropbox credentials
+          </CardTitle>
+          <CardDescription>
+            Paste the App key, App secret and Refresh token from your Dropbox
+            app. They are checked against Dropbox before being saved, and
+            stored encrypted. Saved values are never shown again here.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form
+            className="space-y-4 max-w-xl"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!canSave) return;
+              saveCredentials.mutate({
+                data: {
+                  appKey: appKey.trim(),
+                  appSecret: appSecret.trim(),
+                  refreshToken: refreshToken.trim(),
+                },
+              });
+            }}
+          >
+            <div className="space-y-2">
+              <Label htmlFor="dropbox-app-key">App key</Label>
+              <Input
+                id="dropbox-app-key"
+                autoComplete="off"
+                value={appKey}
+                onChange={(e) => setAppKey(e.target.value)}
+                placeholder="e.g. dv8xxxxxxxxxxxx"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="dropbox-app-secret">App secret</Label>
+              <Input
+                id="dropbox-app-secret"
+                type="password"
+                autoComplete="off"
+                value={appSecret}
+                onChange={(e) => setAppSecret(e.target.value)}
+                placeholder="App secret"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="dropbox-refresh-token">Refresh token</Label>
+              <Input
+                id="dropbox-refresh-token"
+                type="password"
+                autoComplete="off"
+                value={refreshToken}
+                onChange={(e) => setRefreshToken(e.target.value)}
+                placeholder="Refresh token"
+              />
+            </div>
+            <Button type="submit" disabled={!canSave}>
+              {saveCredentials.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Checking with Dropbox…
+                </>
+              ) : (
+                "Verify & save"
+              )}
+            </Button>
+          </form>
         </CardContent>
       </Card>
 

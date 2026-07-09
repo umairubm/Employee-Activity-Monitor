@@ -9,6 +9,7 @@ import type { DropboxAuthStatusMode } from "./dropboxAuthStatusMode";
 
 export interface DropboxAuthStatus {
   mode: DropboxAuthStatusMode;
+  databaseConfigured: boolean;
   refreshTokenConfigured: boolean;
   appKeyConfigured: boolean;
   appSecretConfigured: boolean;

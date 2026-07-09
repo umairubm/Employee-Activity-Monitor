@@ -1606,6 +1606,31 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DropboxSystemStatus"
+
+  /system/dropbox/credentials:
+    put:
+      operationId: updateDropboxCredentials
+      tags: [system]
+      summary: Save Dropbox credentials (validated live, stored encrypted in the DB; Super User)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DropboxCredentialsUpdate"
+      responses:
+        "200":
+          description: Credentials verified and saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DropboxCredentialsResult"
+        "400":
+          description: Credentials rejected by Dropbox
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
   parameters:
     IdParam:
@@ -1635,7 +1660,9 @@ components:
       properties:
         mode:
           type: string
-          enum: [refresh_token, access_token, connector, none]
+          enum: [database, refresh_token, access_token, connector, none]
+        databaseConfigured:
+          type: boolean
         refreshTokenConfigured:
           type: boolean
         appKeyConfigured:
@@ -1649,12 +1676,43 @@ components:
       required:
         [
           mode,
+          databaseConfigured,
           refreshTokenConfigured,
           appKeyConfigured,
           appSecretConfigured,
           accessTokenConfigured,
           connectorAvailable,
         ]
+    DropboxCredentialsUpdate:
+      type: object
+      properties:
+        appKey:
+          type: string
+          minLength: 1
+          maxLength: 200
+        appSecret:
+          type: string
+          minLength: 1
+          maxLength: 200
+        refreshToken:
+          type: string
+          minLength: 1
+          maxLength: 500
+      required: [appKey, appSecret, refreshToken]
+    DropboxCredentialsResult:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        requeuedScreenshots:
+          type: integer
+      required: [ok, requeuedScreenshots]
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
     DropboxHealth:
       type: object
       properties:
