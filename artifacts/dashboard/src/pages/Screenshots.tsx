@@ -23,6 +23,7 @@ import { formatDeviceTime, deviceTzMap } from "@/lib/device-time";
 import { ScreenshotLightbox } from "@/components/ScreenshotLightbox";
 import { useToast } from "@/hooks/use-toast";
 import { useGroupFilter, ALL_GROUPS as ALL } from "@/hooks/use-group-filter";
+import { useOrgTimezone } from "@/hooks/use-org-timezone";
 import { useDateRange, rangeBoundsIso, todayStr } from "@/hooks/use-date-filter";
 import { DateRangeFilter } from "@/components/DateFilter";
 
@@ -42,7 +43,9 @@ export default function Screenshots() {
     return Array.from(set).sort();
   }, [devices]);
   // Show capture times in each device's own wall-clock time (as reported by
-  // its agent), not the viewer's browser timezone.
+  // its agent), not the viewer's browser timezone. Devices that haven't
+  // reported an offset (older agents) fall back to the org timezone.
+  const orgZone = useOrgTimezone();
   const tzByDevice = useMemo(() => deviceTzMap(devices), [devices]);
   const params = {
     limit: 200,
@@ -186,7 +189,7 @@ export default function Screenshots() {
               <button
                 type="button"
                 onClick={() => setViewerIndex(i)}
-                aria-label={`View screenshot from ${formatDeviceTime(screenshot.capturedAt, tzByDevice.get(screenshot.deviceId), "PPpp")}`}
+                aria-label={`View screenshot from ${formatDeviceTime(screenshot.capturedAt, tzByDevice.get(screenshot.deviceId), "PPpp", orgZone)}`}
                 className="block w-full cursor-pointer aspect-video bg-secondary relative overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <img
@@ -204,8 +207,8 @@ export default function Screenshots() {
               </button>
               <div className="p-3 bg-card border-t border-border flex items-center justify-between gap-2">
                 <div>
-                  <p className="text-sm font-medium">{formatDeviceTime(screenshot.capturedAt, tzByDevice.get(screenshot.deviceId), "MMM d, yyyy")}</p>
-                  <p className="text-xs text-muted-foreground mt-1">{formatDeviceTime(screenshot.capturedAt, tzByDevice.get(screenshot.deviceId), "h:mm:ss a")}</p>
+                  <p className="text-sm font-medium">{formatDeviceTime(screenshot.capturedAt, tzByDevice.get(screenshot.deviceId), "MMM d, yyyy", orgZone)}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{formatDeviceTime(screenshot.capturedAt, tzByDevice.get(screenshot.deviceId), "h:mm:ss a", orgZone)}</p>
                 </div>
                 <Button
                   size="icon"
@@ -234,6 +237,7 @@ export default function Screenshots() {
         onDelete={handleDelete}
         deleting={del.isPending}
         tzOffsetFor={(deviceId) => tzByDevice.get(deviceId)}
+        fallbackZone={orgZone}
       />
     </div>
   );

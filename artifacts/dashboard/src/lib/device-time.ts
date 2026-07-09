@@ -28,14 +28,35 @@ export function deviceWallDate(value: string | Date, offsetMinutes: number): Dat
   return new Date(shifted.getTime() + shifted.getTimezoneOffset() * 60_000);
 }
 
-/** Format an instant in the device's wall-clock time (browser-local if the device hasn't reported an offset). */
+/**
+ * Effective wall-clock offset for an instant: the device-reported offset when
+ * present, else the org timezone's offset *at that instant* (DST-correct),
+ * else null (browser-local rendering).
+ */
+export function resolveDeviceOffset(
+  at: Date,
+  offsetMinutes: number | null | undefined,
+  fallbackZone?: string | null,
+): number | null {
+  if (offsetMinutes != null) return offsetMinutes;
+  if (fallbackZone) return zoneOffsetMinutes(fallbackZone, at);
+  return null;
+}
+
+/**
+ * Format an instant in the device's wall-clock time. Fallback chain:
+ * device-reported offset → org timezone (`fallbackZone`, resolved per instant
+ * so DST transitions render correctly) → browser-local.
+ */
 export function formatDeviceTime(
   value: string | Date,
   offsetMinutes: number | null | undefined,
   fmt: string,
+  fallbackZone?: string | null,
 ): string {
   const d = typeof value === "string" ? new Date(value) : value;
-  return format(offsetMinutes == null ? d : deviceWallDate(d, offsetMinutes), fmt);
+  const off = resolveDeviceOffset(d, offsetMinutes, fallbackZone);
+  return format(off == null ? d : deviceWallDate(d, off), fmt);
 }
 
 /** deviceId -> reported wall-clock offset (minutes), for pages showing mixed devices. */
@@ -45,4 +66,39 @@ export function deviceTzMap(
   const map = new Map<string, number | null>();
   devices?.forEach((d) => map.set(d.id, d.tzOffsetMinutes ?? null));
   return map;
+}
+
+/**
+ * Current UTC offset (minutes east) of an IANA timezone. Used as the org-wide
+ * fallback when a device hasn't reported its own offset yet (older agents):
+ * rendering in the browser's timezone breaks when the viewer's OS timezone is
+ * misconfigured (a common setup is a wrong region with the clock adjusted by
+ * hand — the wall clock looks right but JS renders instants hours off).
+ * Returns null for an unknown/invalid zone.
+ */
+export function zoneOffsetMinutes(timeZone: string, at: Date = new Date()): number | null {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      hour12: false,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }).formatToParts(at);
+    const get = (type: string) => Number(parts.find((p) => p.type === type)?.value);
+    const asUtc = Date.UTC(
+      get("year"),
+      get("month") - 1,
+      get("day"),
+      get("hour") % 24,
+      get("minute"),
+      get("second"),
+    );
+    return Math.round((asUtc - at.getTime()) / 60_000);
+  } catch {
+    return null;
+  }
 }

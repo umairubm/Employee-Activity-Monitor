@@ -19,8 +19,15 @@ on the monitored PC, and admins often view devices in other timezones.
 - Display formatting only. Fetch bounds for `/activity/range` and shared date
   filters remain browser-local; attendance/reports still use the ONE global org
   timezone (see attendance-utc-buckets.md) — this divergence is intentional.
-- `tzOffsetMinutes` is nullable; null → fall back to browser-local rendering.
-  Never assume it is set (old agents, pre-first-heartbeat devices).
+- `tzOffsetMinutes` is nullable; null → fall back to the ORG timezone (IANA
+  string from attendance settings, treated as unset when "UTC" — the untouched
+  default), then to browser-local rendering. The org fallback exists because a
+  viewer's OS timezone can be misconfigured (wrong region, clock adjusted by
+  hand) making browser-local rendering hours off. Pass the ZONE STRING down
+  and resolve the offset PER INSTANT so DST transitions render correctly —
+  never compute one "current" offset from the zone and reuse it for
+  historical timestamps.
+  Never assume `tzOffsetMinutes` is set (old agents, pre-first-heartbeat devices).
 - Heartbeat keeps the stored value when the field is omitted — don't null it out.
 - The Node agent adds its measured server-clock-error correction on top of the
   tz offset so wall times stay right even with a skewed device clock.

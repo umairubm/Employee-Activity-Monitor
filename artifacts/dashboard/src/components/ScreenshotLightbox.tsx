@@ -23,6 +23,7 @@ export function ScreenshotLightbox({
   onDelete,
   deleting = false,
   tzOffsetFor,
+  fallbackZone,
 }: {
   screenshots: ScreenshotListItem[];
   index: number;
@@ -33,6 +34,8 @@ export function ScreenshotLightbox({
   deleting?: boolean;
   /** Device wall-clock offset (minutes) for a device, to show times as the device user saw them. */
   tzOffsetFor?: (deviceId: string) => number | null | undefined;
+  /** Org IANA timezone used when the device has no reported offset. */
+  fallbackZone?: string | null;
 }) {
   const count = screenshots.length;
   const current = screenshots[index];
@@ -81,7 +84,7 @@ export function ScreenshotLightbox({
       <DialogContent className="max-w-5xl border-none bg-black/95 p-1 shadow-2xl">
         <DialogHeader className="sr-only">
           <DialogTitle>
-            Screenshot from {formatDeviceTime(current.capturedAt, tzOffset, "PPpp")}
+            Screenshot from {formatDeviceTime(current.capturedAt, tzOffset, "PPpp", fallbackZone)}
           </DialogTitle>
         </DialogHeader>
         <div className="relative">
@@ -132,7 +135,7 @@ export function ScreenshotLightbox({
           )}
 
           <div className="absolute bottom-4 left-4 rounded-md border border-white/10 bg-black/70 px-3 py-1.5 text-sm text-white backdrop-blur-md">
-            {formatDeviceTime(current.capturedAt, tzOffset, "PPpp")}
+            {formatDeviceTime(current.capturedAt, tzOffset, "PPpp", fallbackZone)}
           </div>
 
           {count > 1 && (

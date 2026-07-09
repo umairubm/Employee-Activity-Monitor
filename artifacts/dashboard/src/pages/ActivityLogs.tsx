@@ -52,10 +52,11 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { useGroupFilter, ALL_GROUPS as ALL } from "@/hooks/use-group-filter";
+import { useOrgTimezone } from "@/hooks/use-org-timezone";
 import { useDateRange, rangeBoundsIso, todayStr } from "@/hooks/use-date-filter";
 import { DateRangeFilter } from "@/components/DateFilter";
 import { ScreenshotLightbox } from "@/components/ScreenshotLightbox";
-import { deviceWallDate, formatDeviceTime } from "@/lib/device-time";
+import { deviceWallDate, formatDeviceTime, resolveDeviceOffset } from "@/lib/device-time";
 
 /* ----------------------------- types & helpers ---------------------------- */
 
@@ -194,6 +195,7 @@ function aggregateLogs(
   logs: ActivityLogRecord[],
   classOf: (log: ActivityLogRecord) => Classification,
   tzOffsetMinutes?: number | null,
+  fallbackZone?: string | null,
 ): DeviceAgg {
   const agg = emptyAgg();
   // Naive sums; corrected for overlapping duplicate-agent logs after the loop.
@@ -205,14 +207,13 @@ function aggregateLogs(
   // keys span by device+day). day -> [minStartMs, maxEndMs].
   const dayBounds = new Map<string, [number, number]>();
   for (const log of logs) {
-    const started =
-      tzOffsetMinutes == null
-        ? new Date(log.startedAt)
-        : deviceWallDate(log.startedAt, tzOffsetMinutes);
-    const ended =
-      tzOffsetMinutes == null
-        ? new Date(log.endedAt)
-        : deviceWallDate(log.endedAt, tzOffsetMinutes);
+    // Resolve the offset per instant (org-tz fallback is DST-sensitive).
+    const startedRaw = new Date(log.startedAt);
+    const startOff = resolveDeviceOffset(startedRaw, tzOffsetMinutes, fallbackZone);
+    const started = startOff == null ? startedRaw : deviceWallDate(startedRaw, startOff);
+    const endedRaw = new Date(log.endedAt);
+    const endOff = resolveDeviceOffset(endedRaw, tzOffsetMinutes, fallbackZone);
+    const ended = endOff == null ? endedRaw : deviceWallDate(endedRaw, endOff);
     const cls = classOf(log);
     const duration = log.durationSeconds ?? 0;
     const idle = log.idleSeconds ?? 0;
@@ -336,11 +337,13 @@ function SessionScreenshots({
   from,
   to,
   tzOffsetMinutes,
+  fallbackZone,
 }: {
   deviceId: string;
   from: string;
   to: string;
   tzOffsetMinutes?: number | null;
+  fallbackZone?: string | null;
 }) {
   const params = { deviceId, from, to, limit: 100 };
   const { data: screenshots, isLoading } = useListScreenshots(params, {
@@ -375,7 +378,7 @@ function SessionScreenshots({
             key={shot.id}
             type="button"
             onClick={() => setViewerIndex(i)}
-            aria-label={`View screenshot from ${formatDeviceTime(shot.capturedAt, tzOffsetMinutes, "PPpp")}`}
+            aria-label={`View screenshot from ${formatDeviceTime(shot.capturedAt, tzOffsetMinutes, "PPpp", fallbackZone)}`}
             className={`group cursor-pointer overflow-hidden rounded-lg border bg-card text-left shadow-sm transition-all hover:shadow-md focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
               shot.flagged
                 ? "border-amber-500 ring-1 ring-amber-500/40"
@@ -396,7 +399,7 @@ function SessionScreenshots({
               )}
             </div>
             <div className="border-t px-3 py-2 text-xs text-muted-foreground">
-              {formatDeviceTime(shot.capturedAt, tzOffsetMinutes, "h:mm:ss a")}
+              {formatDeviceTime(shot.capturedAt, tzOffsetMinutes, "h:mm:ss a", fallbackZone)}
             </div>
           </button>
         ))}
@@ -404,6 +407,7 @@ function SessionScreenshots({
       <ScreenshotLightbox
         screenshots={screenshots}
         tzOffsetFor={() => tzOffsetMinutes}
+        fallbackZone={fallbackZone}
         index={viewerIndex ?? 0}
         onIndexChange={setViewerIndex}
         open={viewerIndex !== null}
@@ -426,6 +430,8 @@ function DeviceActivityPanel({
   logs: ActivityLogRecord[];
   classOf: (log: ActivityLogRecord) => Classification;
 }) {
+  const orgZone = useOrgTimezone();
+  const tzOffset = device.tzOffsetMinutes ?? null;
   const { appBreakdown, sessions } = useMemo(() => {
     const totals = new Map<string, { seconds: number; cls: Classification }>();
     for (const log of logs) {
@@ -542,11 +548,11 @@ function DeviceActivityPanel({
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5 text-sm">
                             <span className="font-medium">
-                              {formatDeviceTime(log.startedAt, device.tzOffsetMinutes, "h:mm a")}
+                              {formatDeviceTime(log.startedAt, tzOffset, "h:mm a", orgZone)}
                             </span>
                             <span className="text-muted-foreground">—</span>
                             <span className="font-medium">
-                              {formatDeviceTime(log.endedAt, device.tzOffsetMinutes, "h:mm a")}
+                              {formatDeviceTime(log.endedAt, tzOffset, "h:mm a", orgZone)}
                             </span>
                           </div>
                           <div className="mt-0.5 truncate text-xs text-muted-foreground">
@@ -584,8 +590,8 @@ function DeviceActivityPanel({
                         <DialogTitle className="flex flex-wrap items-center gap-2 text-base">
                           <Camera className="h-4 w-4" />
                           Screenshots ·{" "}
-                          {formatDeviceTime(log.startedAt, device.tzOffsetMinutes, "h:mm a")} –{" "}
-                          {formatDeviceTime(log.endedAt, device.tzOffsetMinutes, "h:mm a")}
+                          {formatDeviceTime(log.startedAt, tzOffset, "h:mm a", orgZone)} –{" "}
+                          {formatDeviceTime(log.endedAt, tzOffset, "h:mm a", orgZone)}
                           <span className="text-sm font-normal text-muted-foreground">
                             {log.processName}
                           </span>
@@ -596,7 +602,8 @@ function DeviceActivityPanel({
                           deviceId={log.deviceId}
                           from={new Date(log.startedAt).toISOString()}
                           to={new Date(log.endedAt).toISOString()}
-                          tzOffsetMinutes={device.tzOffsetMinutes}
+                          tzOffsetMinutes={tzOffset}
+                          fallbackZone={orgZone}
                         />
                       </ScrollArea>
                     </DialogContent>
@@ -625,6 +632,7 @@ export default function ActivityLogs() {
   const isSingleDay = dateRange.from === dateRange.to;
 
   const { data: devices, isLoading: devicesLoading } = useListDevices();
+  const orgZone = useOrgTimezone();
   const { data: categories } = useListCategories();
   const rangeParams = {
     from,
@@ -667,10 +675,13 @@ export default function ActivityLogs() {
   const aggByDevice = useMemo(() => {
     const map = new Map<string, DeviceAgg>();
     logsByDevice.forEach((deviceLogs, deviceId) => {
-      map.set(deviceId, aggregateLogs(deviceLogs, classOf, tzByDevice.get(deviceId)));
+      map.set(
+        deviceId,
+        aggregateLogs(deviceLogs, classOf, tzByDevice.get(deviceId), orgZone),
+      );
     });
     return map;
-  }, [logsByDevice, classOf, tzByDevice]);
+  }, [logsByDevice, classOf, tzByDevice, orgZone]);
 
   const groups = useMemo(() => {
     const set = new Set<string>();
