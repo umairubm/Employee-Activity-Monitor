@@ -96,6 +96,3 @@ channel = "stable-25_05"
 [userenv.production]
 
 [userenv.shared]
-DROPBOX_APP_KEY = "dv8ll1l839asslc"
-DROPBOX_APP_SECRET = "hvwuedxs4oxcent"
-DROPBOX_REFRESH_TOKEN = "BJBYkTJ_5LUAAAAAAAAAAat7bCtKB90cOgAsefQtpCYnm-h9hVVryPQaax3ZogHN"
