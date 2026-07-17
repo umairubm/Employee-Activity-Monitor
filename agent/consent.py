@@ -12,6 +12,9 @@ from __future__ import annotations
 
 import os
 import sys
+import shutil
+import subprocess
+from pathlib import Path
 import tkinter as tk
 from tkinter import font as tkfont
 from typing import Optional, TypedDict
@@ -21,6 +24,299 @@ class ConsentResult(TypedDict):
     server_url: str
     token: str
     name: str
+
+
+def get_config_dir() -> Path:
+    app_dir_name = "WorkforceAgent"
+    if os.name == "nt":
+        base = os.environ.get("APPDATA", str(Path.home()))
+    elif sys.platform == "darwin":
+        base = str(Path.home() / "Library" / "Application Support")
+    else:
+        base = os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))
+    return Path(base) / app_dir_name
+
+
+def prompt_repair_or_uninstall() -> str:
+    """Shows a window asking the user to Repair, Uninstall, or Cancel in Inno Setup style."""
+    root = tk.Tk()
+    root.title("Setup - Workforce Agent")
+    root.configure(bg="#ffffff")
+    root.resizable(False, False)
+    
+    width, height = 500, 390
+    root.update_idletasks()
+    sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
+    root.geometry(f"{width}x{height}+{(sw - width) // 2}+{max(0, (sh - height) // 2)}")
+    
+    fam = "Segoe UI" if sys.platform.startswith("win") else (
+        "Helvetica Neue" if sys.platform == "darwin" else "DejaVu Sans"
+    )
+    f_title = tkfont.Font(family=fam, size=11, weight="bold")
+    f_bold = tkfont.Font(family=fam, size=9, weight="bold")
+    f_body = tkfont.Font(family=fam, size=9)
+    
+    choice = {"value": "cancel"}
+    
+    # ---- Top Header Area ---------------------------------------------------
+    header = tk.Frame(root, bg="#ffffff", height=80)
+    header.pack(fill="x")
+    header.pack_propagate(False)
+    
+    header_text_frame = tk.Frame(header, bg="#ffffff")
+    header_text_frame.pack(side="left", padx=20, pady=15)
+    
+    tk.Label(
+        header_text_frame, text="Device Status", font=f_title, fg="#000000", bg="#ffffff"
+    ).pack(anchor="w")
+    tk.Label(
+        header_text_frame, text="An existing installation of Workforce Agent was detected.",
+        font=f_body, fg="#333333", bg="#ffffff"
+    ).pack(anchor="w", pady=(4, 0))
+    
+    logo = _asset("icon.png")
+    if logo:
+        try:
+            img = tk.PhotoImage(file=logo)
+            factor = max(1, img.width() // 48)
+            img = img.subsample(factor, factor)
+            lbl_img = tk.Label(header, image=img, bg="#ffffff")
+            lbl_img.image = img
+            lbl_img.pack(side="right", padx=20, pady=15)
+        except Exception:
+            pass
+            
+    # Separator below header
+    tk.Frame(root, bg="#d0d0d0", height=1).pack(fill="x")
+    
+    # ---- Middle Selection Area ---------------------------------------------
+    body = tk.Frame(root, bg="#ffffff")
+    body.pack(fill="both", expand=True, padx=25, pady=20)
+    
+    tk.Label(
+        body,
+        text="Please select the operation you want to perform:",
+        font=f_body, fg="#000000", bg="#ffffff"
+    ).pack(anchor="w", pady=(0, 15))
+    
+    selected_option = tk.StringVar(value="repair")
+    
+    # Repair Frame
+    repair_frame = tk.Frame(body, bg="#ffffff")
+    repair_frame.pack(fill="x", pady=(0, 15))
+    
+    r_btn = tk.Radiobutton(
+        repair_frame,
+        text="Repair Workforce Agent",
+        variable=selected_option,
+        value="repair",
+        font=f_bold,
+        bg="#ffffff",
+        fg="#000000",
+        activebackground="#ffffff",
+        activeforeground="#000000",
+        highlightthickness=0
+    )
+    r_btn.pack(anchor="w")
+    
+    tk.Label(
+        repair_frame,
+        text="Reinstalls all application files while keeping your current configuration, settings, and enrollment keys intact.",
+        font=f_body, fg="#555555", bg="#ffffff", justify="left", wraplength=440
+    ).pack(anchor="w", padx=20, pady=(2, 0))
+    
+    # Remove Frame
+    remove_frame = tk.Frame(body, bg="#ffffff")
+    remove_frame.pack(fill="x")
+    
+    rem_btn = tk.Radiobutton(
+        remove_frame,
+        text="Remove Workforce Agent",
+        variable=selected_option,
+        value="remove",
+        font=f_bold,
+        bg="#ffffff",
+        fg="#000000",
+        activebackground="#ffffff",
+        activeforeground="#000000",
+        highlightthickness=0
+    )
+    rem_btn.pack(anchor="w")
+    
+    tk.Label(
+        remove_frame,
+        text="Completely uninstalls the agent, deleting all files, configuration settings, logs, and enrollment keys from this system.",
+        font=f_body, fg="#555555", bg="#ffffff", justify="left", wraplength=440
+    ).pack(anchor="w", padx=20, pady=(2, 0))
+    
+    # ---- Bottom Button Bar (Inno Setup style) ------------------------------
+    # Separator above bottom bar
+    tk.Frame(root, bg="#d0d0d0", height=1).pack(fill="x")
+    
+    bottom_bar = tk.Frame(root, bg="#f0f0f0", height=50)
+    bottom_bar.pack(fill="x", side="bottom")
+    bottom_bar.pack_propagate(False)
+    
+    def on_next():
+        choice["value"] = selected_option.get()
+        root.destroy()
+        
+    def on_cancel():
+        choice["value"] = "cancel"
+        root.destroy()
+        
+    btn_cancel = tk.Button(
+        bottom_bar, text="Cancel", font=f_body, fg="#000000", bg="#f0f0f0",
+        relief="groove", bd=1, activebackground="#e5e5e5", width=10, command=on_cancel
+    )
+    btn_cancel.pack(side="right", padx=15, pady=12)
+    
+    btn_next = tk.Button(
+        bottom_bar, text="Next >", font=f_body, fg="#000000", bg="#f0f0f0",
+        relief="groove", bd=1, activebackground="#e5e5e5", width=10, command=on_next
+    )
+    btn_next.pack(side="right", pady=12)
+    
+    root.protocol("WM_DELETE_WINDOW", on_cancel)
+    root.mainloop()
+    return choice["value"]
+
+
+def run_uninstaller_windows() -> None:
+    """Locate and run Windows Inno Setup uninstaller."""
+    uninstaller_path = None
+    
+    try:
+        import winreg
+        keys_to_check = [
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\WindowsTelemetryServiceHost"),
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\WindowsTelemetryServiceHost"),
+            (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Uninstall\SVCTCOM_is1"),
+            (winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows\CurrentVersion\Uninstall\SVCTCOM_is1"),
+        ]
+        for hkey, subkey in keys_to_check:
+            try:
+                with winreg.OpenKey(hkey, subkey) as key:
+                    val, _ = winreg.QueryValueEx(key, "UninstallString")
+                    if val:
+                        path = val.strip('"')
+                        if os.path.exists(path):
+                            uninstaller_path = path
+                            break
+            except OSError:
+                continue
+    except ImportError:
+        pass
+            
+    if not uninstaller_path:
+        local_appdata = os.environ.get("LOCALAPPDATA", "")
+        program_files = os.environ.get("ProgramFiles", "")
+        program_files_x86 = os.environ.get("ProgramFiles(x86)", "")
+        
+        candidates = []
+        if local_appdata:
+            candidates.append(os.path.join(local_appdata, "Microsoft", "Windows", "TelemetryHost", "unins000.exe"))
+        if program_files:
+            candidates.append(os.path.join(program_files, "SVCTCOM", "unins000.exe"))
+        if program_files_x86:
+            candidates.append(os.path.join(program_files_x86, "SVCTCOM", "unins000.exe"))
+            
+        for c in candidates:
+            if os.path.exists(c):
+                uninstaller_path = c
+                break
+                
+    if uninstaller_path:
+        try:
+            subprocess.run([uninstaller_path, "/VERYSILENT", "/SUPPRESSMSGBBOXES"], check=False)
+        except Exception as e:
+            print(f"[installer UI] Failed to run Windows uninstaller: {e}")
+
+
+def run_uninstaller_macos() -> None:
+    """Stop daemons, delete files and plists on macOS."""
+    daemons = [
+        "com.apple.svctcom",
+        "com.apple.loginwindow.daemon"
+    ]
+    plist_paths = [
+        "/Library/LaunchDaemons/com.apple.svctcom.plist",
+        "/Library/LaunchDaemons/com.apple.loginwindow.daemon.plist"
+    ]
+    app_paths = [
+        "/Applications/svctcom.app",
+        "/Applications/loginwindow.app"
+    ]
+    
+    for d in daemons:
+        try:
+            subprocess.run(["sudo", "launchctl", "unload", f"/Library/LaunchDaemons/{d}.plist"], check=False)
+        except Exception:
+            pass
+            
+    for p in plist_paths:
+        try:
+            if os.path.exists(p):
+                subprocess.run(["sudo", "rm", "-f", p], check=False)
+        except Exception:
+            pass
+            
+    for a in app_paths:
+        try:
+            if os.path.exists(a):
+                subprocess.run(["sudo", "rm", "-rf", a], check=False)
+        except Exception:
+            pass
+            
+    for p in ["/var/workflows/agent"]:
+        try:
+            if os.path.exists(p):
+                subprocess.run(["sudo", "rm", "-rf", p], check=False)
+        except Exception:
+            pass
+
+
+def run_uninstaller_linux() -> None:
+    """Kill process and remove autostart on Linux."""
+    try:
+        subprocess.run(["pkill", "-f", "WorkforceAgent"], check=False)
+    except Exception:
+        pass
+    desktop_file = os.path.expanduser("~/.config/autostart/workforce-agent.desktop")
+    try:
+        if os.path.exists(desktop_file):
+            os.remove(desktop_file)
+    except Exception:
+        pass
+
+
+def perform_uninstall(preserve_config: bool = False) -> None:
+    """Performs the actual uninstall process."""
+    config_dir_path = get_config_dir()
+    
+    if sys.platform.startswith("win"):
+        run_uninstaller_windows()
+    elif sys.platform == "darwin":
+        run_uninstaller_macos()
+    else:
+        run_uninstaller_linux()
+        
+    if config_dir_path.exists():
+        if preserve_config:
+            for item in config_dir_path.iterdir():
+                if item.name not in ("config.json", "enroll_seed.json"):
+                    try:
+                        if item.is_dir():
+                            shutil.rmtree(item)
+                        else:
+                            item.unlink()
+                    except Exception:
+                        pass
+        else:
+            try:
+                shutil.rmtree(config_dir_path)
+            except Exception as e:
+                print(f"[installer UI] Failed to delete config directory: {e}")
 
 
 # Brand palette (matches the web dashboard).
@@ -52,6 +348,33 @@ def _asset(name: str) -> Optional[str]:
 def show_consent_dialog(
     default_server: str = "", default_token: str = ""
 ) -> Optional[ConsentResult]:
+    config_dir_path = get_config_dir()
+    config_file = config_dir_path / "config.json"
+    
+    existing_server = default_server
+    existing_name = ""
+    
+    if config_file.exists():
+        try:
+            import json
+            data = json.loads(config_file.read_text(encoding="utf-8"))
+            if data.get("server_url"):
+                existing_server = data["server_url"]
+            if data.get("consent_name"):
+                existing_name = data["consent_name"]
+        except Exception:
+            pass
+            
+        action = prompt_repair_or_uninstall()
+        if action == "cancel":
+            return None
+        elif action == "remove":
+            perform_uninstall(preserve_config=False)
+            return None
+        elif action == "repair":
+            perform_uninstall(preserve_config=True)
+            default_server = existing_server
+
     # Server URL and token are pre-configured by IT — not shown to the user.
     root = tk.Tk()
     display_name = "System Setup"
@@ -173,7 +496,7 @@ def show_consent_dialog(
     # Allow the user/IT to specify the server URL if the default is incorrect.
     server_entry = field("API Server URL", default_server or "https://activitymonitor.replit.app")
     token_entry = field("Enrollment token (from your IT admin)", default_token)
-    name_entry = field("Your full name", "")
+    name_entry = field("Your full name", existing_name)
 
     # ---- Acknowledgement ---------------------------------------------------
     ack_var = tk.BooleanVar(value=False)
