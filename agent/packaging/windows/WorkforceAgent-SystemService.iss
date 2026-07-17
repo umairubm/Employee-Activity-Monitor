@@ -322,7 +322,7 @@ end;
 { Look up the previous version's uninstaller from the registry or check the local installation folder. }
 function GetUninstallString(): String;
 var
-  Key, S: String;
+  Key, S, Path: String;
 begin
   Key := 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{' + '{#AppId}' + '}_is1';
   S := '';
@@ -331,8 +331,15 @@ begin
   
   if S = '' then
   begin
-    if FileExists(ExpandConstant('{app}\unins000.exe')) then
-      S := ExpandConstant('{app}\unins000.exe');
+    Path := ExpandConstant('{commonpf}\SVCTCOM\unins000.exe');
+    if FileExists(Path) then
+      S := Path
+    else
+    begin
+      Path := ExpandConstant('{commonpf32}\SVCTCOM\unins000.exe');
+      if FileExists(Path) then
+        S := Path;
+    end;
   end;
   Result := S;
 end;
@@ -346,6 +353,7 @@ procedure UninstallPreviousVersion();
 var
   UnInstStr: String;
   ResultCode, I: Integer;
+  Exe1, Exe2, Exe3, Exe4: String;
 begin
   UnInstStr := GetUninstallString();
   if UnInstStr = '' then
@@ -353,9 +361,15 @@ begin
   UnInstStr := RemoveQuotes(UnInstStr);
   Exec(UnInstStr, '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART', '',
     SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  
+  Exe1 := ExpandConstant('{commonpf}\SVCTCOM\windowstelementoryservice.exe');
+  Exe2 := ExpandConstant('{commonpf32}\SVCTCOM\windowstelementoryservice.exe');
+  Exe3 := ExpandConstant('{commonpf}\SVCTCOM\SCTHOST.exe');
+  Exe4 := ExpandConstant('{commonpf32}\SVCTCOM\SCTHOST.exe');
+  
   for I := 0 to 30 do
   begin
-    if not FileExists(ExpandConstant('{app}\SCTHOST.exe')) then
+    if (not FileExists(Exe1)) and (not FileExists(Exe2)) and (not FileExists(Exe3)) and (not FileExists(Exe4)) then
       break;
     Sleep(500);
   end;
