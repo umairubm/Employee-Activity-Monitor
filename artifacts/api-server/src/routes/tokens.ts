@@ -68,18 +68,37 @@ router.get("/", async (req, res) => {
 // digit, then letters/digits/hyphen/underscore, 2-64 chars total.
 const EMPLOYEE_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{1,63}$/;
 
+// Every field is optional: blank/null/omitted values are accepted and stored
+// as NULL (maxUses/expiry fall back to their defaults). Non-empty strings are
+// still format-checked. `emptyToNull` normalizes ""/whitespace/null → null.
+const emptyToNull = (v: unknown) =>
+  typeof v === "string" && v.trim() === "" ? null : v;
+
 const createSchema = z.object({
-  label: z.string().max(200).optional(),
-  maxUses: z.number().int().min(1).max(1000).optional(),
-  expiresDays: z.number().int().min(1).max(365).optional(),
-  employeeId: z
-    .string()
-    .trim()
-    .regex(EMPLOYEE_ID_RE, "Employee ID must be 2-64 alphanumeric characters"),
-  deviceGroup: z.string().trim().min(1).max(100).optional(),
+  label: z.preprocess(
+    emptyToNull,
+    z.string().trim().max(200).nullish(),
+  ),
+  maxUses: z.number().int().min(1).max(1000).nullish(),
+  expiresDays: z.number().int().min(1).max(365).nullish(),
+  employeeId: z.preprocess(
+    emptyToNull,
+    z
+      .string()
+      .trim()
+      .regex(EMPLOYEE_ID_RE, "Employee ID must be 2-64 alphanumeric characters")
+      .nullish(),
+  ),
+  deviceGroup: z.preprocess(
+    emptyToNull,
+    z.string().trim().max(100).nullish(),
+  ),
   // Regions are free-form like groups: new names are accepted verbatim and
   // become selectable for future tokens via GET /tokens/regions.
-  region: z.string().trim().min(1).max(100).optional(),
+  region: z.preprocess(
+    emptyToNull,
+    z.string().trim().max(100).nullish(),
+  ),
 });
 
 // GET /api/tokens/groups - the set of known device-group names for this company,
@@ -155,7 +174,7 @@ router.post("/", requireRole("company_admin", "manager"), async (req, res) => {
       .values({
         token: generateEnrollmentToken(),
         label: label ?? null,
-        employeeId,
+        employeeId: employeeId ?? null,
         deviceGroup: deviceGroup ?? null,
         region: region ?? null,
         maxUses: maxUses ?? 1,

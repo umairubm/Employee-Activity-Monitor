@@ -3305,17 +3305,15 @@ components:
         expiresDays:
           type: integer
         employeeId:
-          type: string
-          description: Employee identifier the device is for (alphanumeric).
+          type: [string, "null"]
+          description: Employee identifier the device is for (alphanumeric). Optional.
         deviceGroup:
-          type: string
+          type: [string, "null"]
           description: Group the enrolled device joins. New names are accepted verbatim.
         region:
-          type: string
-          minLength: 1
+          type: [string, "null"]
           maxLength: 100
           description: Region the enrolled device belongs to. New names are accepted verbatim.
-      required: [employeeId]
     UpdateTokenRequest:
       type: object
       description: >-

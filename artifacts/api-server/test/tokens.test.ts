@@ -117,12 +117,23 @@ describe("token create/revoke responses match the enriched contract", () => {
     expect(res.body.enrolledDevices).toEqual([]);
   });
 
-  it("requires a valid Employee ID", async () => {
+  it("accepts a missing Employee ID but rejects a malformed one", async () => {
+    // Every field is optional now: omitted / blank employeeId is stored as null.
     const missing = await request(realAdminApp)
       .post("/tokens")
       .send({ label: "no-emp", maxUses: 1 });
-    expect(missing.status).toBe(400);
+    expect(missing.status).toBe(201);
+    createdTokenIds.push(missing.body.id);
+    expect(missing.body.employeeId).toBeNull();
 
+    // An empty body works too, falling back to defaults (maxUses 1, no expiry).
+    const empty = await request(realAdminApp).post("/tokens").send({});
+    expect(empty.status).toBe(201);
+    createdTokenIds.push(empty.body.id);
+    expect(empty.body.maxUses).toBe(1);
+    expect(empty.body.expiresAt).toBeNull();
+
+    // A non-empty but malformed employeeId is still rejected.
     const bad = await request(realAdminApp)
       .post("/tokens")
       .send({ maxUses: 1, employeeId: "has space!" });

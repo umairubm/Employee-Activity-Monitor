@@ -84,7 +84,9 @@ export default function Tokens() {
 
   const creatingNewGroup = groupChoice === CREATE_NEW_GROUP;
   const creatingNewRegion = regionChoice === CREATE_NEW_REGION;
-  const employeeIdValid = EMPLOYEE_ID_RE.test(employeeId.trim());
+  // Employee ID is optional: blank is fine, but a non-empty value must still
+  // match the expected format.
+  const employeeIdValid = employeeId.trim() === "" || EMPLOYEE_ID_RE.test(employeeId.trim());
   // The group actually submitted: the typed new name, or the picked existing one.
   const resolvedGroup = creatingNewGroup ? newGroupName.trim() : groupChoice.trim();
   const groupValid = !creatingNewGroup || resolvedGroup.length > 0;
@@ -124,7 +126,7 @@ export default function Tokens() {
     createToken.mutate({
       data: {
         label: newLabel || undefined,
-        employeeId: employeeId.trim(),
+        employeeId: employeeId.trim() || undefined,
         deviceGroup: resolvedGroup || undefined,
         region: resolvedRegion || undefined,
         maxUses: maxUses ? parseInt(maxUses) : undefined,
@@ -254,7 +256,7 @@ export default function Tokens() {
                 </DialogHeader>
                 <div className="grid gap-4 py-4">
                   <div className="grid gap-2">
-                    <Label htmlFor="employeeId">Employee ID <span className="text-destructive">*</span></Label>
+                    <Label htmlFor="employeeId">Employee ID</Label>
                     <Input
                       id="employeeId"
                       placeholder="e.g. EMP-01423"

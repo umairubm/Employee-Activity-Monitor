@@ -10,14 +10,20 @@ export interface CreateTokenRequest {
   label?: string;
   maxUses?: number;
   expiresDays?: number;
-  /** Employee identifier the device is for (alphanumeric). */
-  employeeId: string;
-  /** Group the enrolled device joins. New names are accepted verbatim. */
-  deviceGroup?: string;
+  /**
+   * Employee identifier the device is for (alphanumeric). Optional.
+   * @nullable
+   */
+  employeeId?: string | null;
+  /**
+   * Group the enrolled device joins. New names are accepted verbatim.
+   * @nullable
+   */
+  deviceGroup?: string | null;
   /**
    * Region the enrolled device belongs to. New names are accepted verbatim.
-   * @minLength 1
    * @maxLength 100
+   * @nullable
    */
-  region?: string;
+  region?: string | null;
 }

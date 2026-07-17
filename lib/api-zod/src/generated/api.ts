@@ -1665,18 +1665,20 @@ export const CreateTokenBody = zod.object({
   expiresDays: zod.number().optional(),
   employeeId: zod
     .string()
-    .describe("Employee identifier the device is for (alphanumeric)."),
+    .nullish()
+    .describe(
+      "Employee identifier the device is for (alphanumeric). Optional.",
+    ),
   deviceGroup: zod
     .string()
-    .optional()
+    .nullish()
     .describe(
       "Group the enrolled device joins. New names are accepted verbatim.",
     ),
   region: zod
     .string()
-    .min(1)
     .max(createTokenBodyRegionMax)
-    .optional()
+    .nullish()
     .describe(
       "Region the enrolled device belongs to. New names are accepted verbatim.",
     ),
