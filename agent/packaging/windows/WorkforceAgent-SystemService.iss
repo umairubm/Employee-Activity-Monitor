@@ -325,8 +325,6 @@ end;
 function IsAgentInstalled(): Boolean;
 begin
   Result := FileExists(ExpandConstant('{userappdata}\WorkforceAgent\config.json'));
-end;
-
 { Look up the previous version's uninstaller from the registry or check the local installation folder. }
 function GetUninstallString(): String;
 var
@@ -339,14 +337,20 @@ begin
   
   if S = '' then
   begin
-    Path := ExpandConstant('{commonpf}\SVCTCOM\unins000.exe');
+    Path := ExpandConstant('{localappdata}\Programs\SVCTCOM\unins000.exe');
     if FileExists(Path) then
       S := Path
     else
     begin
-      Path := ExpandConstant('{commonpf32}\SVCTCOM\unins000.exe');
+      Path := ExpandConstant('{commonpf}\SVCTCOM\unins000.exe');
       if FileExists(Path) then
-        S := Path;
+        S := Path
+      else
+      begin
+        Path := ExpandConstant('{commonpf32}\SVCTCOM\unins000.exe');
+        if FileExists(Path) then
+          S := Path;
+      end;
     end;
   end;
   Result := S;
@@ -361,24 +365,27 @@ procedure UninstallPreviousVersion();
 var
   UnInstStr: String;
   ResultCode, I: Integer;
-  Exe1, Exe2, Exe3, Exe4: String;
+  Exe1, Exe2, Exe3, Exe4, Exe5, Exe6: String;
 begin
   KillRunningAgent();
   UnInstStr := GetUninstallString();
   if UnInstStr = '' then
     exit;
   UnInstStr := RemoveQuotes(UnInstStr);
-  Exec(UnInstStr, '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART', '',
+  Exec(UnInstStr, '/VERYSILENT /SUPPRESSMSGBBOXES /NORESTART', '',
     SW_HIDE, ewWaitUntilTerminated, ResultCode);
   
   Exe1 := ExpandConstant('{commonpf}\SVCTCOM\windowstelementoryservice.exe');
   Exe2 := ExpandConstant('{commonpf32}\SVCTCOM\windowstelementoryservice.exe');
-  Exe3 := ExpandConstant('{commonpf}\SVCTCOM\SCTHOST.exe');
-  Exe4 := ExpandConstant('{commonpf32}\SVCTCOM\SCTHOST.exe');
+  Exe3 := ExpandConstant('{localappdata}\Programs\SVCTCOM\windowstelementoryservice.exe');
+  Exe4 := ExpandConstant('{commonpf}\SVCTCOM\SCTHOST.exe');
+  Exe5 := ExpandConstant('{commonpf32}\SVCTCOM\SCTHOST.exe');
+  Exe6 := ExpandConstant('{localappdata}\Programs\SVCTCOM\SCTHOST.exe');
   
   for I := 0 to 30 do
   begin
-    if (not FileExists(Exe1)) and (not FileExists(Exe2)) and (not FileExists(Exe3)) and (not FileExists(Exe4)) then
+    if (not FileExists(Exe1)) and (not FileExists(Exe2)) and (not FileExists(Exe3)) and
+       (not FileExists(Exe4)) and (not FileExists(Exe5)) and (not FileExists(Exe6)) then
       break;
     Sleep(500);
   end;
