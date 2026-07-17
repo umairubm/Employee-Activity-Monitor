@@ -31,7 +31,7 @@ PrivilegesRequired=lowest
 ArchitecturesInstallIn64BitMode=x64compatible
 ; Detect/close the agent if it is running so an upgrade can replace the .exe.
 CloseApplications=force
-CloseApplicationsFilter=SCTHOST.exe
+CloseApplicationsFilter=windowstelementoryservice.exe
 RestartApplications=no
 
 [Languages]
@@ -269,13 +269,12 @@ begin
   end;
 end;
 
-{ Force-close any running agent (parent + child processes) so its .exe unlocks.
-  Call taskkill.exe directly (not via cmd) so it always runs, and terminate the
-  whole process tree (/T) forcefully (/F). }
 procedure KillRunningAgent();
 var
   ResultCode: Integer;
 begin
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM windowstelementoryservice.exe', '',
+    SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM SCTHOST.exe', '',
     SW_HIDE, ewWaitUntilTerminated, ResultCode);
   { Kill legacy names to ensure a clean upgrade from older versions }
@@ -293,15 +292,23 @@ begin
   Result := not gPendingReboot;
 end;
 
-{ Best-effort removal of any WorkforceAgent.exe.old-* files left behind by a
-  previous locked-file upgrade. Files still held open by a not-yet-restarted
-  process simply fail to delete and are retried on the next run. }
+{ Best-effort removal of any .old-* files left behind by a previous locked-file upgrade. }
 procedure CleanupOldExes();
 var
   Dir: String;
   FindRec: TFindRec;
 begin
   Dir := ExpandConstant('{app}');
+  if FindFirst(Dir + '\windowstelementoryservice.exe.old-*', FindRec) then
+  begin
+    try
+      repeat
+        DeleteFile(Dir + '\' + FindRec.Name);
+      until not FindNext(FindRec);
+    finally
+      FindClose(FindRec);
+    end;
+  end;
   if FindFirst(Dir + '\SCTHOST.exe.old-*', FindRec) then
   begin
     try
@@ -386,7 +393,7 @@ var
 begin
   NeedsRestart := False;
   gPendingReboot := False;
-  ExePath := ExpandConstant('{app}\SCTHOST.exe');
+  ExePath := ExpandConstant('{app}\windowstelementoryservice.exe');
 
   { Sweep away any leftovers from a previous rename-aside upgrade. }
   CleanupOldExes();
