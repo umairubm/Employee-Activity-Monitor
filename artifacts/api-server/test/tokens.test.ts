@@ -322,6 +322,23 @@ describe("token create/revoke responses match the enriched contract", () => {
     expect(bad.status).toBe(400);
   });
 
+  it("clears region with an explicit null", async () => {
+    const token = await createEnrollmentToken({ region: "West" });
+    createdTokenIds.push(token.id);
+
+    const cleared = await request(realAdminApp)
+      .patch(`/tokens/${token.id}`)
+      .send({ region: null });
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.region).toBeNull();
+
+    const [row] = await db
+      .select({ region: enrollmentTokensTable.region })
+      .from(enrollmentTokensTable)
+      .where(eq(enrollmentTokensTable.id, token.id));
+    expect(row?.region).toBeNull();
+  });
+
   it("includes enrolledDevices on revoke", async () => {
     const token = await createEnrollmentToken({ maxUses: 2, useCount: 1 });
     createdTokenIds.push(token.id);
