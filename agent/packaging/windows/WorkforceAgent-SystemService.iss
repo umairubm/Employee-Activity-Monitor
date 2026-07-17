@@ -82,6 +82,7 @@ var
 function GetUninstallString(): String; forward;
 procedure UninstallPreviousVersion(); forward;
 function IsAgentInstalled(): Boolean; forward;
+procedure KillRunningAgent(); forward;
 
 procedure InitializeWizard();
 var
@@ -362,6 +363,7 @@ var
   ResultCode, I: Integer;
   Exe1, Exe2, Exe3, Exe4: String;
 begin
+  KillRunningAgent();
   UnInstStr := GetUninstallString();
   if UnInstStr = '' then
     exit;
