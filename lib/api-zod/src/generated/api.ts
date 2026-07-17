@@ -1705,12 +1705,6 @@ export const UpdateTokenParams = zod.object({
 
 export const updateTokenBodyLabelMax = 200;
 
-export const updateTokenBodyEmployeeIdMin = 2;
-export const updateTokenBodyEmployeeIdMax = 64;
-
-export const updateTokenBodyEmployeeIdRegExp = new RegExp(
-  "^[A-Za-z0-9][A-Za-z0-9_-]{1,63}$",
-);
 export const updateTokenBodyDeviceGroupMax = 100;
 
 export const updateTokenBodyRegionMax = 100;
@@ -1722,12 +1716,9 @@ export const UpdateTokenBody = zod
     label: zod.string().max(updateTokenBodyLabelMax).nullish(),
     employeeId: zod
       .string()
-      .min(updateTokenBodyEmployeeIdMin)
-      .max(updateTokenBodyEmployeeIdMax)
-      .regex(updateTokenBodyEmployeeIdRegExp)
-      .optional()
+      .nullish()
       .describe(
-        "Employee identifier the device is for (2-64 alphanumeric chars, starts alphanumeric).",
+        "Employee identifier the device is for (2-64 alphanumeric chars, starts alphanumeric), or null to clear.",
       ),
     deviceGroup: zod
       .string()

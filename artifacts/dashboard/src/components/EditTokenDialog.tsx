@@ -76,7 +76,9 @@ export default function EditTokenDialog({
 
   const creatingNewGroup = groupChoice === CREATE_NEW_GROUP;
   const creatingNewRegion = regionChoice === CREATE_NEW_REGION;
-  const employeeIdValid = EMPLOYEE_ID_RE.test(employeeId.trim());
+  // Employee ID is optional: blank clears it, but a non-empty value must still
+  // match the expected format.
+  const employeeIdValid = employeeId.trim() === "" || EMPLOYEE_ID_RE.test(employeeId.trim());
 
   const resolvedGroup = creatingNewGroup ? newGroupName.trim() : groupChoice.trim();
   const groupValid = !creatingNewGroup || resolvedGroup.length > 0;
@@ -119,7 +121,7 @@ export default function EditTokenDialog({
         id: token.id,
         data: {
           label: label.trim() ? label.trim() : null,
-          employeeId: employeeId.trim(),
+          employeeId: employeeId.trim() ? employeeId.trim() : null,
           deviceGroup: resolvedGroup ? resolvedGroup : null,
           region: resolvedRegion ? resolvedRegion : null,
           maxUses: maxUsesNum,
@@ -159,7 +161,7 @@ export default function EditTokenDialog({
         </DialogHeader>
         <div className="grid gap-4 py-4">
           <div className="grid gap-2">
-            <Label htmlFor="edit-employeeId">Employee ID <span className="text-destructive">*</span></Label>
+            <Label htmlFor="edit-employeeId">Employee ID</Label>
             <Input
               id="edit-employeeId"
               placeholder="e.g. EMP-01423"

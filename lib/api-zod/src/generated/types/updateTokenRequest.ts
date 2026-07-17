@@ -16,12 +16,10 @@ export interface UpdateTokenRequest {
    */
   label?: string | null;
   /**
-   * Employee identifier the device is for (2-64 alphanumeric chars, starts alphanumeric).
-   * @minLength 2
-   * @maxLength 64
-   * @pattern ^[A-Za-z0-9][A-Za-z0-9_-]{1,63}$
+   * Employee identifier the device is for (2-64 alphanumeric chars, starts alphanumeric), or null to clear.
+   * @nullable
    */
-  employeeId?: string;
+  employeeId?: string | null;
   /**
    * Group the enrolled device joins. New names are accepted verbatim.
    * @maxLength 100

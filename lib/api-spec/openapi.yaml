@@ -3325,11 +3325,8 @@ components:
           type: [string, "null"]
           maxLength: 200
         employeeId:
-          type: string
-          pattern: "^[A-Za-z0-9][A-Za-z0-9_-]{1,63}$"
-          minLength: 2
-          maxLength: 64
-          description: Employee identifier the device is for (2-64 alphanumeric chars, starts alphanumeric).
+          type: [string, "null"]
+          description: Employee identifier the device is for (2-64 alphanumeric chars, starts alphanumeric), or null to clear.
         deviceGroup:
           type: [string, "null"]
           maxLength: 100

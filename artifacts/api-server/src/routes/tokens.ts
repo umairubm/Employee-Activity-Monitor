@@ -203,6 +203,7 @@ const updateSchema = z.object({
     .string()
     .trim()
     .regex(EMPLOYEE_ID_RE, "Employee ID must be 2-64 alphanumeric characters")
+    .nullable()
     .optional(),
   deviceGroup: z.string().trim().min(1).max(100).nullable().optional(),
   region: z.string().trim().min(1).max(100).nullable().optional(),
