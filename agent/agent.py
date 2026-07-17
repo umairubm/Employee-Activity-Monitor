@@ -42,7 +42,7 @@ else:
     from . import tray as tray_mod
     from . import system_info as system_info_mod
 
-AGENT_VERSION = "0.4.5"
+AGENT_VERSION = "1.1.1"
 POLL_SECONDS = 15
 
 def _now_iso() -> str:
