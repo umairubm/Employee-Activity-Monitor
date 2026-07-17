@@ -299,6 +299,29 @@ describe("token create/revoke responses match the enriched contract", () => {
     expect(await deviceGroupOf(d.id)).toBe("Keep");
   });
 
+  it("clears employeeId with an explicit null but rejects a malformed one", async () => {
+    const token = await createEnrollmentToken({ employeeId: "EMP-CLEAR-1" });
+    createdTokenIds.push(token.id);
+
+    const cleared = await request(realAdminApp)
+      .patch(`/tokens/${token.id}`)
+      .send({ employeeId: null });
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.employeeId).toBeNull();
+
+    const [row] = await db
+      .select({ employeeId: enrollmentTokensTable.employeeId })
+      .from(enrollmentTokensTable)
+      .where(eq(enrollmentTokensTable.id, token.id));
+    expect(row?.employeeId).toBeNull();
+
+    // A non-empty but malformed employeeId is still rejected on edit.
+    const bad = await request(realAdminApp)
+      .patch(`/tokens/${token.id}`)
+      .send({ employeeId: "has space!" });
+    expect(bad.status).toBe(400);
+  });
+
   it("includes enrolledDevices on revoke", async () => {
     const token = await createEnrollmentToken({ maxUses: 2, useCount: 1 });
     createdTokenIds.push(token.id);
