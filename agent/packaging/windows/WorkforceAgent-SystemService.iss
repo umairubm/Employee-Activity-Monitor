@@ -71,14 +71,63 @@ var
   EnrollPage: TInputQueryWizardPage;
   ConsentPage: TWizardPage;
   ConsentCheck: TNewCheckBox;
+  MaintenancePage: TWizardPage;
+  RepairRadio, RemoveRadio: TRadioButton;
+  RepairDesc, RemoveDesc: TNewStaticText;
+  gIsAlreadyInstalled: Boolean;
   { Set when the old .exe could not be killed and had to be renamed aside, so
     the stale process keeps running until the machine restarts. }
   gPendingReboot: Boolean;
+
+function GetUninstallString(): String; forward;
+procedure UninstallPreviousVersion(); forward;
 
 procedure InitializeWizard();
 var
   Disclosure: TNewStaticText;
 begin
+  gIsAlreadyInstalled := (GetUninstallString() <> '');
+
+  { Maintenance Page (only shown if already installed) }
+  MaintenancePage := CreateCustomPage(wpWelcome,
+    'Maintenance Options',
+    'Repair or remove the existing installation');
+  
+  RepairRadio := TRadioButton.Create(WizardForm);
+  RepairRadio.Parent := MaintenancePage.Surface;
+  RepairRadio.Left := ScaleX(8);
+  RepairRadio.Top := ScaleY(10);
+  RepairRadio.Width := MaintenancePage.SurfaceWidth - ScaleX(16);
+  RepairRadio.Caption := 'Repair Workforce Agent';
+  RepairRadio.Font.Style := [fsBold];
+  RepairRadio.Checked := True;
+  
+  RepairDesc := TNewStaticText.Create(WizardForm);
+  RepairDesc.Parent := MaintenancePage.Surface;
+  RepairDesc.Left := ScaleX(28);
+  RepairDesc.Top := RepairRadio.Top + ScaleY(20);
+  RepairDesc.Width := MaintenancePage.SurfaceWidth - ScaleX(36);
+  RepairDesc.Height := ScaleY(40);
+  RepairDesc.WordWrap := True;
+  RepairDesc.Caption := 'Reinstalls all application files while keeping your current configuration, settings, and enrollment keys intact.';
+  
+  RemoveRadio := TRadioButton.Create(WizardForm);
+  RemoveRadio.Parent := MaintenancePage.Surface;
+  RemoveRadio.Left := ScaleX(8);
+  RemoveRadio.Top := RepairDesc.Top + RepairDesc.Height + ScaleY(10);
+  RemoveRadio.Width := MaintenancePage.SurfaceWidth - ScaleX(16);
+  RemoveRadio.Caption := 'Remove Workforce Agent';
+  RemoveRadio.Font.Style := [fsBold];
+  
+  RemoveDesc := TNewStaticText.Create(WizardForm);
+  RemoveDesc.Parent := MaintenancePage.Surface;
+  RemoveDesc.Left := ScaleX(28);
+  RemoveDesc.Top := RemoveRadio.Top + ScaleY(20);
+  RemoveDesc.Width := MaintenancePage.SurfaceWidth - ScaleX(36);
+  RemoveDesc.Height := ScaleY(40);
+  RemoveDesc.WordWrap := True;
+  RemoveDesc.Caption := 'Completely uninstalls the agent, deleting all files, configuration settings, logs, and enrollment keys from this system.';
+
   { Page 1 — name, token, server URL. }
   EnrollPage := CreateInputQueryPage(wpWelcome,
     'Device Enrollment',
@@ -123,7 +172,22 @@ end;
 function NextButtonClick(CurPageID: Integer): Boolean;
 begin
   Result := True;
-  if CurPageID = EnrollPage.ID then
+  if CurPageID = MaintenancePage.ID then
+  begin
+    if RemoveRadio.Checked then
+    begin
+      UninstallPreviousVersion();
+      DelTree(ExpandConstant('{userappdata}\WorkforceAgent'), True, True, True);
+      MsgBox('Workforce Agent has been completely uninstalled.', mbInformation, MB_OK);
+      WizardForm.Close;
+      Result := False;
+    end
+    else if RepairRadio.Checked then
+    begin
+      UninstallPreviousVersion();
+    end;
+  end
+  else if CurPageID = EnrollPage.ID then
   begin
     if Trim(EnrollPage.Values[0]) = '' then
     begin
@@ -144,6 +208,20 @@ begin
       MsgBox('You must tick the consent checkbox to continue.', mbError, MB_OK);
       Result := False;
     end;
+  end;
+end;
+
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := False;
+  if PageID = MaintenancePage.ID then
+  begin
+    Result := not gIsAlreadyInstalled;
+  end
+  else if (PageID = EnrollPage.ID) or (PageID = ConsentPage.ID) then
+  begin
+    if gIsAlreadyInstalled then
+      Result := True;
   end;
 end;
 
@@ -184,7 +262,10 @@ end;
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then
-    WriteEnrollSeed();
+  begin
+    if not gIsAlreadyInstalled then
+      WriteEnrollSeed();
+  end;
 end;
 
 { Force-close any running agent (parent + child processes) so its .exe unlocks.
