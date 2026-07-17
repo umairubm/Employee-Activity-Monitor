@@ -81,12 +81,13 @@ var
 
 function GetUninstallString(): String; forward;
 procedure UninstallPreviousVersion(); forward;
+function IsAgentInstalled(): Boolean; forward;
 
 procedure InitializeWizard();
 var
   Disclosure: TNewStaticText;
 begin
-  gIsAlreadyInstalled := (GetUninstallString() <> '');
+  gIsAlreadyInstalled := IsAgentInstalled();
 
   { Maintenance Page (only shown if already installed) }
   MaintenancePage := CreateCustomPage(wpWelcome,
@@ -313,8 +314,12 @@ begin
   end;
 end;
 
-{ Look up the previous version's uninstaller from the registry (per-user first,
-  then machine-wide). Returns '' when no prior install is registered. }
+function IsAgentInstalled(): Boolean;
+begin
+  Result := FileExists(ExpandConstant('{userappdata}\WorkforceAgent\config.json'));
+end;
+
+{ Look up the previous version's uninstaller from the registry or check the local installation folder. }
 function GetUninstallString(): String;
 var
   Key, S: String;
@@ -323,6 +328,12 @@ begin
   S := '';
   if not RegQueryStringValue(HKCU, Key, 'UninstallString', S) then
     RegQueryStringValue(HKLM, Key, 'UninstallString', S);
+  
+  if S = '' then
+  begin
+    if FileExists(ExpandConstant('{app}\unins000.exe')) then
+      S := ExpandConstant('{app}\unins000.exe');
+  end;
   Result := S;
 end;
 
