@@ -84,6 +84,9 @@ import type {
   OkResult,
   ProjectItem,
   RenameDeviceGroup200,
+  ResetCodeResult,
+  ResetPassword200,
+  ResetPasswordRequest,
   ReviewLeaveRequest,
   ScreenshotFlagInput,
   ScreenshotListItem,
@@ -275,6 +278,92 @@ export const useLogin = <
   TContext
 > => {
   return useMutation(getLoginMutationOptions(options));
+};
+
+/**
+ * @summary Redeem a one-time admin-issued reset code for a new password
+ */
+export const getResetPasswordUrl = () => {
+  return `/api/auth/reset-password`;
+};
+
+export const resetPassword = async (
+  resetPasswordRequest: ResetPasswordRequest,
+  options?: RequestInit,
+): Promise<ResetPassword200> => {
+  return customFetch<ResetPassword200>(getResetPasswordUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(resetPasswordRequest),
+  });
+};
+
+export const getResetPasswordMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof resetPassword>>,
+    TError,
+    { data: BodyType<ResetPasswordRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof resetPassword>>,
+  TError,
+  { data: BodyType<ResetPasswordRequest> },
+  TContext
+> => {
+  const mutationKey = ["resetPassword"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof resetPassword>>,
+    { data: BodyType<ResetPasswordRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return resetPassword(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ResetPasswordMutationResult = NonNullable<
+  Awaited<ReturnType<typeof resetPassword>>
+>;
+export type ResetPasswordMutationBody = BodyType<ResetPasswordRequest>;
+export type ResetPasswordMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Redeem a one-time admin-issued reset code for a new password
+ */
+export const useResetPassword = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof resetPassword>>,
+    TError,
+    { data: BodyType<ResetPasswordRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof resetPassword>>,
+  TError,
+  { data: BodyType<ResetPasswordRequest> },
+  TContext
+> => {
+  return useMutation(getResetPasswordMutationOptions(options));
 };
 
 /**
@@ -6157,6 +6246,94 @@ export const useAddCompanyAdmin = <
 };
 
 /**
+ * @summary Generate a one-time password-reset code for a Company Admin
+ */
+export const getGenerateAdminResetCodeUrl = (id: string, adminId: string) => {
+  return `/api/companies/${id}/admins/${adminId}/reset-code`;
+};
+
+export const generateAdminResetCode = async (
+  id: string,
+  adminId: string,
+  options?: RequestInit,
+): Promise<ResetCodeResult> => {
+  return customFetch<ResetCodeResult>(
+    getGenerateAdminResetCodeUrl(id, adminId),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getGenerateAdminResetCodeMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof generateAdminResetCode>>,
+    TError,
+    { id: string; adminId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof generateAdminResetCode>>,
+  TError,
+  { id: string; adminId: string },
+  TContext
+> => {
+  const mutationKey = ["generateAdminResetCode"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof generateAdminResetCode>>,
+    { id: string; adminId: string }
+  > = (props) => {
+    const { id, adminId } = props ?? {};
+
+    return generateAdminResetCode(id, adminId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type GenerateAdminResetCodeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof generateAdminResetCode>>
+>;
+
+export type GenerateAdminResetCodeMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Generate a one-time password-reset code for a Company Admin
+ */
+export const useGenerateAdminResetCode = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof generateAdminResetCode>>,
+    TError,
+    { id: string; adminId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof generateAdminResetCode>>,
+  TError,
+  { id: string; adminId: string },
+  TContext
+> => {
+  return useMutation(getGenerateAdminResetCodeMutationOptions(options));
+};
+
+/**
  * @summary Set per-tenant quotas (max managers, max devices)
  */
 export const getUpdateCompanyLimitsUrl = (id: string) => {
@@ -6742,6 +6919,90 @@ export const useDeleteManager = <
   TContext
 > => {
   return useMutation(getDeleteManagerMutationOptions(options));
+};
+
+/**
+ * @summary Generate a one-time password-reset code for a manager or team member
+ */
+export const getGenerateManagerResetCodeUrl = (id: string) => {
+  return `/api/managers/${id}/reset-code`;
+};
+
+export const generateManagerResetCode = async (
+  id: string,
+  options?: RequestInit,
+): Promise<ResetCodeResult> => {
+  return customFetch<ResetCodeResult>(getGenerateManagerResetCodeUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getGenerateManagerResetCodeMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof generateManagerResetCode>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof generateManagerResetCode>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["generateManagerResetCode"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof generateManagerResetCode>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return generateManagerResetCode(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type GenerateManagerResetCodeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof generateManagerResetCode>>
+>;
+
+export type GenerateManagerResetCodeMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Generate a one-time password-reset code for a manager or team member
+ */
+export const useGenerateManagerResetCode = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof generateManagerResetCode>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof generateManagerResetCode>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getGenerateManagerResetCodeMutationOptions(options));
 };
 
 /**

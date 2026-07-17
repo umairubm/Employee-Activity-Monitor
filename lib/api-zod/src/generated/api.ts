@@ -46,6 +46,21 @@ export const LoginResponse = zod.object({
 });
 
 /**
+ * @summary Redeem a one-time admin-issued reset code for a new password
+ */
+export const resetPasswordBodyNewPasswordMin = 8;
+
+export const ResetPasswordBody = zod.object({
+  username: zod.string(),
+  code: zod.string(),
+  newPassword: zod.string().min(resetPasswordBodyNewPasswordMin),
+});
+
+export const ResetPasswordResponse = zod.object({
+  ok: zod.boolean(),
+});
+
+/**
  * @summary Revoke the current session
  */
 export const LogoutResponse = zod.object({
@@ -2034,6 +2049,19 @@ export const AddCompanyAdminBody = zod.object({
 });
 
 /**
+ * @summary Generate a one-time password-reset code for a Company Admin
+ */
+export const GenerateAdminResetCodeParams = zod.object({
+  id: zod.coerce.string().uuid(),
+  adminId: zod.coerce.string().uuid(),
+});
+
+export const GenerateAdminResetCodeResponse = zod.object({
+  code: zod.string(),
+  expiresAt: zod.coerce.date(),
+});
+
+/**
  * @summary Set per-tenant quotas (max managers, max devices)
  */
 export const UpdateCompanyLimitsParams = zod.object({
@@ -2243,6 +2271,18 @@ export const DeleteManagerParams = zod.object({
 
 export const DeleteManagerResponse = zod.object({
   ok: zod.boolean(),
+});
+
+/**
+ * @summary Generate a one-time password-reset code for a manager or team member
+ */
+export const GenerateManagerResetCodeParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
+
+export const GenerateManagerResetCodeResponse = zod.object({
+  code: zod.string(),
+  expiresAt: zod.coerce.date(),
 });
 
 /**

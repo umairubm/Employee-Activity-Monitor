@@ -1,8 +1,14 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod/v4";
 import { db, usersTable, companiesTable, type User } from "@workspace/db";
-import { eq } from "drizzle-orm";
-import { verifyPassword } from "../lib/passwords";
+import { eq, and, gt } from "drizzle-orm";
+import {
+  verifyPassword,
+  hashPassword,
+  validatePasswordPolicy,
+  PasswordPolicyError,
+} from "../lib/passwords";
+import { hashSecret, safeEqualHex } from "../lib/secrets";
 import {
   createSession,
   setSessionCookie,
@@ -99,6 +105,84 @@ router.post("/login", loginRateLimit, async (req, res) => {
   );
   setSessionCookie(res, token, expiresAt);
   res.json(publicUser(user, companyName));
+});
+
+const resetPasswordSchema = z.object({
+  username: z.string().min(1),
+  code: z.string().min(1).max(50),
+  newPassword: z.string().min(8).max(200),
+});
+
+// POST /api/auth/reset-password - redeem an admin-issued one-time reset code
+// for a new password. Public endpoint; shares the login rate limiter so codes
+// cannot be brute-forced. Responses never reveal whether the username exists.
+router.post("/reset-password", loginRateLimit, async (req, res) => {
+  const parsed = resetPasswordSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "username, code and newPassword are required" });
+    return;
+  }
+  const { username, code, newPassword } = parsed.data;
+
+  const [user] = await db
+    .select()
+    .from(usersTable)
+    .where(eq(usersTable.username, username));
+
+  const codeValid =
+    user?.resetCodeHash != null &&
+    user.resetCodeExpiresAt != null &&
+    user.resetCodeExpiresAt.getTime() > Date.now() &&
+    safeEqualHex(hashSecret(code.trim().toUpperCase()), user.resetCodeHash);
+
+  if (!user || !codeValid) {
+    recordLoginFailure(req, username);
+    res.status(400).json({ error: "Invalid or expired reset code" });
+    return;
+  }
+
+  // Enforce the tenant's password policy (Super Users have no tenant; default
+  // policy of min length 8 is already guaranteed by the schema above).
+  try {
+    if (user.companyId) {
+      await validatePasswordPolicy(user.companyId, newPassword);
+    }
+  } catch (error) {
+    if (error instanceof PasswordPolicyError) {
+      res.status(400).json({ error: error.message });
+      return;
+    }
+    throw error;
+  }
+
+  // Atomic single-use redemption: the WHERE clause re-checks that the same
+  // valid code is still present, so two concurrent requests can never both
+  // redeem it — only the first UPDATE matches a row.
+  const redeemed = await db
+    .update(usersTable)
+    .set({
+      passwordHash: hashPassword(newPassword),
+      resetCodeHash: null,
+      resetCodeExpiresAt: null,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(usersTable.id, user.id),
+        eq(usersTable.resetCodeHash, user.resetCodeHash!),
+        gt(usersTable.resetCodeExpiresAt, new Date()),
+      ),
+    )
+    .returning({ id: usersTable.id });
+
+  if (redeemed.length === 0) {
+    recordLoginFailure(req, username);
+    res.status(400).json({ error: "Invalid or expired reset code" });
+    return;
+  }
+
+  clearLoginFailures(req, username);
+  res.json({ ok: true });
 });
 
 // POST /api/auth/logout - revoke current session

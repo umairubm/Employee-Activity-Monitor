@@ -66,6 +66,28 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AuthUser"
+  /auth/reset-password:
+    post:
+      operationId: resetPassword
+      tags: [auth]
+      summary: Redeem a one-time admin-issued reset code for a new password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResetPasswordRequest"
+      responses:
+        "200":
+          description: Password updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                required: [ok]
   /auth/logout:
     post:
       operationId: logout
@@ -1429,6 +1451,26 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CompanyUser"
+  /companies/{id}/admins/{adminId}/reset-code:
+    post:
+      operationId: generateAdminResetCode
+      tags: [companies]
+      summary: Generate a one-time password-reset code for a Company Admin
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - name: adminId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Reset code (shown once)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResetCodeResult"
   /companies/{id}/limits:
     put:
       operationId: updateCompanyLimits
@@ -1542,6 +1584,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/OkResult"
+  /managers/{id}/reset-code:
+    post:
+      operationId: generateManagerResetCode
+      tags: [managers]
+      summary: Generate a one-time password-reset code for a manager or team member
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Reset code (shown once)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResetCodeResult"
 
   /security-settings:
     get:
@@ -1793,6 +1849,26 @@ components:
         password:
           type: string
       required: [username, password]
+    ResetPasswordRequest:
+      type: object
+      properties:
+        username:
+          type: string
+        code:
+          type: string
+        newPassword:
+          type: string
+          minLength: 8
+      required: [username, code, newPassword]
+    ResetCodeResult:
+      type: object
+      properties:
+        code:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+      required: [code, expiresAt]
     AuthUser:
       type: object
       properties:

@@ -7,13 +7,15 @@ import {
   usersTable,
   devicesTable,
 } from "@workspace/db";
-import { asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import {
   hashPassword,
   validatePasswordPolicy,
   PasswordPolicyError,
 } from "../lib/passwords";
 import { type AuthedRequest } from "../middlewares/userAuth";
+import { generateResetCode, hashSecret } from "../lib/secrets";
+import { RESET_CODE_TTL_MS } from "../lib/resetCodes";
 
 const router: IRouter = Router();
 
@@ -198,6 +200,38 @@ router.post("/:id/admins", async (req, res) => {
       res.status(400).json({ error: error.message });
       return;
     }
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// POST /api/companies/:id/admins/:adminId/reset-code - Super User generates a
+// one-time password-reset code for a Company Admin. Plaintext returned once;
+// only the hash is stored. Redeemed on the login page.
+router.post("/:id/admins/:adminId/reset-code", async (req, res) => {
+  try {
+    const code = generateResetCode();
+    const expiresAt = new Date(Date.now() + RESET_CODE_TTL_MS);
+    const [updated] = await db
+      .update(usersTable)
+      .set({
+        resetCodeHash: hashSecret(code),
+        resetCodeExpiresAt: expiresAt,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(usersTable.id, String(req.params.adminId)),
+          eq(usersTable.companyId, String(req.params.id)),
+          eq(usersTable.role, "company_admin"),
+        ),
+      )
+      .returning({ id: usersTable.id });
+    if (!updated) {
+      res.status(404).json({ error: "Admin not found" });
+      return;
+    }
+    res.json({ code, expiresAt: expiresAt.toISOString() });
+  } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }
 });

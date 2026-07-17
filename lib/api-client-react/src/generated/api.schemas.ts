@@ -94,6 +94,18 @@ export interface LoginRequest {
   password: string;
 }
 
+export interface ResetPasswordRequest {
+  username: string;
+  code: string;
+  /** @minLength 8 */
+  newPassword: string;
+}
+
+export interface ResetCodeResult {
+  code: string;
+  expiresAt: string;
+}
+
 export type AuthUserRole = (typeof AuthUserRole)[keyof typeof AuthUserRole];
 
 export const AuthUserRole = {
@@ -1370,6 +1382,10 @@ export interface DownloadList {
 
 export type HealthCheck200 = {
   status?: string;
+};
+
+export type ResetPassword200 = {
+  ok: boolean;
 };
 
 export type Logout200 = {

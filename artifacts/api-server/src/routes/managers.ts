@@ -9,6 +9,8 @@ import {
 } from "../lib/passwords";
 import { getCompanyId } from "../middlewares/tenant";
 import { PAGE_KEYS } from "../middlewares/pageAccess";
+import { generateResetCode, hashSecret } from "../lib/secrets";
+import { RESET_CODE_TTL_MS } from "../lib/resetCodes";
 
 const router: IRouter = Router();
 
@@ -255,6 +257,40 @@ router.patch("/:id", async (req, res) => {
       res.status(400).json({ error: error.message });
       return;
     }
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// POST /api/managers/:id/reset-code - generate a one-time password-reset code
+// for a manager/team member in this tenant. The plaintext code is returned
+// exactly once; only its hash is stored. The admin hands the code to the user
+// out-of-band (no email service), and the user redeems it on the login page.
+router.post("/:id/reset-code", async (req, res) => {
+  try {
+    const companyId = getCompanyId(req);
+    const code = generateResetCode();
+    const expiresAt = new Date(Date.now() + RESET_CODE_TTL_MS);
+    const [updated] = await db
+      .update(usersTable)
+      .set({
+        resetCodeHash: hashSecret(code),
+        resetCodeExpiresAt: expiresAt,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(usersTable.id, String(req.params.id)),
+          eq(usersTable.companyId, companyId),
+          inArray(usersTable.role, [...MANAGEABLE_ROLES]),
+        ),
+      )
+      .returning({ id: usersTable.id, username: usersTable.username });
+    if (!updated) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+    res.json({ code, expiresAt: expiresAt.toISOString() });
+  } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }
 });

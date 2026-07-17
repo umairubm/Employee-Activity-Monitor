@@ -5,6 +5,7 @@ import {
   useCreateManager,
   useUpdateManager,
   useDeleteManager,
+  useGenerateManagerResetCode,
   type CompanyUser,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -15,7 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { UsersRound, Plus, Pencil, Trash2 } from "lucide-react";
+import { UsersRound, Plus, Pencil, Trash2, KeyRound } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -95,6 +96,24 @@ export default function Managers() {
   const createUser = useCreateManager();
   const updateUser = useUpdateManager();
   const deleteUser = useDeleteManager();
+  const generateResetCode = useGenerateManagerResetCode();
+  const [resetCodeInfo, setResetCodeInfo] = useState<{
+    username: string;
+    code: string;
+    expiresAt: string;
+  } | null>(null);
+
+  const handleResetCode = (u: CompanyUser) => {
+    generateResetCode.mutate(
+      { id: u.id },
+      {
+        onSuccess: (r) =>
+          setResetCodeInfo({ username: u.username, code: r.code, expiresAt: r.expiresAt }),
+        onError: () =>
+          toast({ title: "Could not generate reset code", variant: "destructive" }),
+      },
+    );
+  };
 
   const [createOpen, setCreateOpen] = useState(false);
   const [username, setUsername] = useState("");
@@ -281,6 +300,15 @@ export default function Managers() {
                           <Button variant="ghost" size="icon" onClick={() => openEdit(u)} title="Edit">
                             <Pencil className="h-4 w-4" />
                           </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleResetCode(u)}
+                            disabled={generateResetCode.isPending}
+                            title="Generate password reset code"
+                          >
+                            <KeyRound className="h-4 w-4" />
+                          </Button>
                           <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive" onClick={() => handleDelete(u.id)} title="Remove">
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -294,6 +322,30 @@ export default function Managers() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={!!resetCodeInfo} onOpenChange={(o) => { if (!o) setResetCodeInfo(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Password reset code for {resetCodeInfo?.username}</DialogTitle>
+            <DialogDescription>
+              Share this one-time code with the user. They can use it on the login
+              page (&ldquo;Forgot password?&rdquo;) to set a new password. It expires in
+              30 minutes and is shown only once.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <div className="rounded-lg border border-border bg-muted/50 p-4 text-center font-mono text-2xl tracking-widest select-all">
+              {resetCodeInfo?.code}
+            </div>
+            <p className="text-xs text-muted-foreground mt-2 text-center">
+              Expires {resetCodeInfo ? format(new Date(resetCodeInfo.expiresAt), "MMM d, yyyy h:mm a") : ""}
+            </p>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setResetCodeInfo(null)}>Done</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!editing} onOpenChange={(o) => { if (!o) setEditing(null); }}>
         <DialogContent>

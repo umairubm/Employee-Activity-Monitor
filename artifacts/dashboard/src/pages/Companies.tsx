@@ -8,6 +8,7 @@ import {
   useGetCompany,
   getGetCompanyQueryKey,
   useAddCompanyAdmin,
+  useGenerateAdminResetCode,
   useUpdateCompany,
   type Company,
 } from "@workspace/api-client-react";
@@ -20,7 +21,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { Building2, Plus, Ban, Play, Users, SlidersHorizontal, Search, ArrowUp, ArrowDown, ChevronsUpDown, Pencil } from "lucide-react";
+import { Building2, Plus, Ban, Play, Users, SlidersHorizontal, Search, ArrowUp, ArrowDown, ChevronsUpDown, Pencil, KeyRound } from "lucide-react";
 import { format } from "date-fns";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
@@ -589,6 +590,25 @@ function CompanyDetailDialog({ id, onClose }: { id: string | null; onClose: () =
     query: { enabled: !!id, queryKey: getGetCompanyQueryKey(id ?? "") },
   });
   const addAdmin = useAddCompanyAdmin();
+  const generateResetCode = useGenerateAdminResetCode();
+  const [resetCodeInfo, setResetCodeInfo] = useState<{
+    username: string;
+    code: string;
+    expiresAt: string;
+  } | null>(null);
+
+  const handleResetCode = (adminId: string, username: string) => {
+    if (!id) return;
+    generateResetCode.mutate(
+      { id, adminId },
+      {
+        onSuccess: (r) =>
+          setResetCodeInfo({ username, code: r.code, expiresAt: r.expiresAt }),
+        onError: () =>
+          toast({ title: "Could not generate reset code", variant: "destructive" }),
+      },
+    );
+  };
 
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
@@ -630,7 +650,18 @@ function CompanyDetailDialog({ id, onClose }: { id: string | null; onClose: () =
                       <div className="font-medium">{a.username}</div>
                       <div className="text-muted-foreground text-xs">{a.email}</div>
                     </div>
-                    <Badge variant="secondary" className="capitalize">{a.role.replace("_", " ")}</Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="secondary" className="capitalize">{a.role.replace("_", " ")}</Badge>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleResetCode(a.id, a.username)}
+                        disabled={generateResetCode.isPending}
+                        title="Generate password reset code"
+                      >
+                        <KeyRound className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                 ))
               ) : (
@@ -653,6 +684,27 @@ function CompanyDetailDialog({ id, onClose }: { id: string | null; onClose: () =
           <Button variant="outline" onClick={onClose}>Close</Button>
         </DialogFooter>
       </DialogContent>
+
+      <Dialog open={!!resetCodeInfo} onOpenChange={(o) => { if (!o) setResetCodeInfo(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Password reset code for {resetCodeInfo?.username}</DialogTitle>
+            <DialogDescription>
+              Share this one-time code with the admin. They can use it on the login
+              page (&ldquo;Forgot password?&rdquo;) to set a new password. It expires in
+              30 minutes and is shown only once.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <div className="rounded-lg border border-border bg-muted/50 p-4 text-center font-mono text-2xl tracking-widest select-all">
+              {resetCodeInfo?.code}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setResetCodeInfo(null)}>Done</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 }
