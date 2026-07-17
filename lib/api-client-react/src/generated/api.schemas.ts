@@ -136,6 +136,14 @@ export interface AuthUser {
   createdAt: string;
 }
 
+export interface SetAdminPasswordRequest {
+  /**
+   * @minLength 8
+   * @maxLength 200
+   */
+  newPassword: string;
+}
+
 export interface OkResult {
   ok: boolean;
 }

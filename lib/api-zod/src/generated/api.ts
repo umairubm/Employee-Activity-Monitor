@@ -2062,6 +2062,28 @@ export const GenerateAdminResetCodeResponse = zod.object({
 });
 
 /**
+ * @summary Set a new password for a Company Admin (Super User surface)
+ */
+export const SetAdminPasswordParams = zod.object({
+  id: zod.coerce.string().uuid(),
+  adminId: zod.coerce.string().uuid(),
+});
+
+export const setAdminPasswordBodyNewPasswordMin = 8;
+export const setAdminPasswordBodyNewPasswordMax = 200;
+
+export const SetAdminPasswordBody = zod.object({
+  newPassword: zod
+    .string()
+    .min(setAdminPasswordBodyNewPasswordMin)
+    .max(setAdminPasswordBodyNewPasswordMax),
+});
+
+export const SetAdminPasswordResponse = zod.object({
+  ok: zod.boolean(),
+});
+
+/**
  * @summary Set per-tenant quotas (max managers, max devices)
  */
 export const UpdateCompanyLimitsParams = zod.object({

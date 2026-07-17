@@ -236,6 +236,52 @@ router.post("/:id/admins/:adminId/reset-code", async (req, res) => {
   }
 });
 
+const setAdminPasswordSchema = z.object({
+  newPassword: z.string().min(8).max(200),
+});
+
+// PUT /api/companies/:id/admins/:adminId/password - Super User directly sets a
+// new password for a Company Admin (tenant password policy enforced).
+router.put("/:id/admins/:adminId/password", async (req, res) => {
+  const parsed = setAdminPasswordSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "newPassword (min 8 chars) is required" });
+    return;
+  }
+  try {
+    const companyId = String(req.params.id);
+    await validatePasswordPolicy(companyId, parsed.data.newPassword);
+    const [updated] = await db
+      .update(usersTable)
+      .set({
+        passwordHash: hashPassword(parsed.data.newPassword),
+        // A direct password set supersedes any outstanding reset code.
+        resetCodeHash: null,
+        resetCodeExpiresAt: null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(usersTable.id, String(req.params.adminId)),
+          eq(usersTable.companyId, companyId),
+          eq(usersTable.role, "company_admin"),
+        ),
+      )
+      .returning({ id: usersTable.id });
+    if (!updated) {
+      res.status(404).json({ error: "Admin not found" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (error) {
+    if (error instanceof PasswordPolicyError) {
+      res.status(400).json({ error: error.message });
+      return;
+    }
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
 const updateCompanySchema = z
   .object({
     name: z.string().min(1).max(200).optional(),

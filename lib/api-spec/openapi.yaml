@@ -1471,6 +1471,32 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ResetCodeResult"
+  /companies/{id}/admins/{adminId}/password:
+    put:
+      operationId: setAdminPassword
+      tags: [companies]
+      summary: Set a new password for a Company Admin (Super User surface)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - name: adminId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetAdminPasswordRequest"
+      responses:
+        "200":
+          description: Password updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResult"
   /companies/{id}/limits:
     put:
       operationId: updateCompanyLimits
@@ -1905,6 +1931,14 @@ components:
       additionalProperties:
         type: string
         enum: [view, edit]
+    SetAdminPasswordRequest:
+      type: object
+      properties:
+        newPassword:
+          type: string
+          minLength: 8
+          maxLength: 200
+      required: [newPassword]
     OkResult:
       type: object
       properties:

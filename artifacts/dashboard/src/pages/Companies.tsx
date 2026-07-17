@@ -10,6 +10,7 @@ import {
   useAddCompanyAdmin,
   useGenerateAdminResetCode,
   useUpdateCompany,
+  useSetAdminPassword,
   type Company,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -491,10 +492,19 @@ function EditCompanyDialog({ company, onClose }: { company: Company | null; onCl
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const updateCompany = useUpdateCompany();
+  const setAdminPassword = useSetAdminPassword();
 
   const [name, setName] = useState("");
   const [neverExpires, setNeverExpires] = useState(true);
   const [expiryDate, setExpiryDate] = useState("");
+  const [adminId, setAdminId] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+
+  // The company's admins, for the optional password change.
+  const { data: detail } = useGetCompany(company?.id ?? "", {
+    query: { enabled: !!company, queryKey: getGetCompanyQueryKey(company?.id ?? "") },
+  });
+  const admins = (detail?.admins ?? []).filter((a) => a.role === "company_admin");
 
   // Load the selected company's values whenever the dialog opens.
   React.useEffect(() => {
@@ -502,28 +512,62 @@ function EditCompanyDialog({ company, onClose }: { company: Company | null; onCl
     setName(company.name);
     setNeverExpires(company.expiresAt == null);
     setExpiryDate(toDateInputValue(company.expiresAt));
+    setAdminId("");
+    setNewPassword("");
   }, [company]);
 
-  const handleSave = () => {
+  // Default the admin picker to the first (or only) admin once loaded.
+  React.useEffect(() => {
+    if (admins.length > 0 && !adminId) setAdminId(admins[0].id);
+  }, [admins, adminId]);
+
+  const handleSave = async () => {
     if (!company) return;
     // Expire at the END of the chosen day, local time, so "expires Jul 31"
     // still allows sign-in on Jul 31.
     const expiresAt = neverExpires
       ? null
       : new Date(`${expiryDate}T23:59:59`).toISOString();
+
+    // If a new password was entered, set it first so a policy rejection
+    // doesn't leave the dialog half-applied silently.
+    if (newPassword.trim()) {
+      try {
+        await setAdminPassword.mutateAsync({
+          id: company.id,
+          adminId,
+          data: { newPassword: newPassword.trim() },
+        });
+      } catch (err) {
+        const serverMsg = (err as { data?: { error?: string } })?.data?.error;
+        toast({
+          title: "Could not change admin password",
+          description: serverMsg ?? "Password must be at least 8 characters.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
     updateCompany.mutate(
       { id: company.id, data: { name: name.trim(), expiresAt } },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListCompaniesQueryKey() });
-          toast({ title: "Company updated" });
+          toast({
+            title: newPassword.trim()
+              ? "Company updated & admin password changed"
+              : "Company updated",
+          });
           onClose();
         },
         onError: (err) => {
           const serverMsg = (err as { data?: { error?: string } })?.data?.error;
           toast({
             title: "Could not update company",
-            description: serverMsg ?? "The name may already be in use.",
+            description: newPassword.trim()
+              ? `The admin password WAS changed, but the company details were not saved: ${serverMsg ?? "the name may already be in use."}`
+              : (serverMsg ?? "The name may already be in use."),
             variant: "destructive",
           });
         },
@@ -531,7 +575,10 @@ function EditCompanyDialog({ company, onClose }: { company: Company | null; onCl
     );
   };
 
-  const invalid = !name.trim() || (!neverExpires && !expiryDate);
+  const passwordInvalid =
+    newPassword.trim().length > 0 && (newPassword.trim().length < 8 || !adminId);
+  const invalid = !name.trim() || (!neverExpires && !expiryDate) || passwordInvalid;
+  const saving = updateCompany.isPending || setAdminPassword.isPending;
 
   return (
     <Dialog open={!!company} onOpenChange={(o) => { if (!o) onClose(); }}>
@@ -571,11 +618,45 @@ function EditCompanyDialog({ company, onClose }: { company: Company | null; onCl
               After this date, everyone in the company is locked out until you extend or clear the expiry.
             </p>
           </div>
+          <div className="grid gap-2 border-t border-border pt-4">
+            <Label>Change admin password (optional)</Label>
+            {admins.length === 0 ? (
+              <p className="text-xs text-muted-foreground">This company has no admins yet.</p>
+            ) : (
+              <>
+                {admins.length > 1 && (
+                  <select
+                    value={adminId}
+                    onChange={(e) => setAdminId(e.target.value)}
+                    className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                    aria-label="Admin to change password for"
+                  >
+                    {admins.map((a) => (
+                      <option key={a.id} value={a.id}>{a.username} ({a.email})</option>
+                    ))}
+                  </select>
+                )}
+                {admins.length === 1 && (
+                  <p className="text-xs text-muted-foreground">Admin: {admins[0].username}</p>
+                )}
+                <Input
+                  type="password"
+                  placeholder="New password (min 8 characters)"
+                  autoComplete="new-password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Leave blank to keep the current password.
+                </p>
+              </>
+            )}
+          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSave} disabled={invalid || updateCompany.isPending}>
-            {updateCompany.isPending ? "Saving..." : "Save"}
+          <Button onClick={handleSave} disabled={invalid || saving}>
+            {saving ? "Saving..." : "Save"}
           </Button>
         </DialogFooter>
       </DialogContent>

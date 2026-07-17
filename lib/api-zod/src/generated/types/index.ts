@@ -122,6 +122,7 @@ export * from "./screenshotItem";
 export * from "./screenshotListItem";
 export * from "./screenshotUploadStats";
 export * from "./securitySettings";
+export * from "./setAdminPasswordRequest";
 export * from "./shiftItem";
 export * from "./shiftItemShiftType";
 export * from "./summaryResponse";

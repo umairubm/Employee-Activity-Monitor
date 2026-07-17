@@ -91,6 +91,7 @@ import type {
   ScreenshotFlagInput,
   ScreenshotListItem,
   SecuritySettings,
+  SetAdminPasswordRequest,
   ShiftItem,
   SummaryResponse,
   SyncActivity200,
@@ -6331,6 +6332,94 @@ export const useGenerateAdminResetCode = <
   TContext
 > => {
   return useMutation(getGenerateAdminResetCodeMutationOptions(options));
+};
+
+/**
+ * @summary Set a new password for a Company Admin (Super User surface)
+ */
+export const getSetAdminPasswordUrl = (id: string, adminId: string) => {
+  return `/api/companies/${id}/admins/${adminId}/password`;
+};
+
+export const setAdminPassword = async (
+  id: string,
+  adminId: string,
+  setAdminPasswordRequest: SetAdminPasswordRequest,
+  options?: RequestInit,
+): Promise<OkResult> => {
+  return customFetch<OkResult>(getSetAdminPasswordUrl(id, adminId), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(setAdminPasswordRequest),
+  });
+};
+
+export const getSetAdminPasswordMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setAdminPassword>>,
+    TError,
+    { id: string; adminId: string; data: BodyType<SetAdminPasswordRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof setAdminPassword>>,
+  TError,
+  { id: string; adminId: string; data: BodyType<SetAdminPasswordRequest> },
+  TContext
+> => {
+  const mutationKey = ["setAdminPassword"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof setAdminPassword>>,
+    { id: string; adminId: string; data: BodyType<SetAdminPasswordRequest> }
+  > = (props) => {
+    const { id, adminId, data } = props ?? {};
+
+    return setAdminPassword(id, adminId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SetAdminPasswordMutationResult = NonNullable<
+  Awaited<ReturnType<typeof setAdminPassword>>
+>;
+export type SetAdminPasswordMutationBody = BodyType<SetAdminPasswordRequest>;
+export type SetAdminPasswordMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Set a new password for a Company Admin (Super User surface)
+ */
+export const useSetAdminPassword = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setAdminPassword>>,
+    TError,
+    { id: string; adminId: string; data: BodyType<SetAdminPasswordRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof setAdminPassword>>,
+  TError,
+  { id: string; adminId: string; data: BodyType<SetAdminPasswordRequest> },
+  TContext
+> => {
+  return useMutation(getSetAdminPasswordMutationOptions(options));
 };
 
 /**
