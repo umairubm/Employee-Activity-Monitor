@@ -315,10 +315,10 @@ def _load_enroll_seed() -> dict | None:
         return None
 
 
-def ensure_enrolled() -> config_mod.AgentConfig | None:
+def ensure_enrolled(force_setup: bool = False) -> config_mod.AgentConfig | None:
     """Load config; run the consent + enrollment flow if not yet enrolled."""
     cfg = config_mod.AgentConfig.load()
-    if cfg.is_enrolled:
+    if cfg.is_enrolled and not force_setup:
         return cfg
 
     # Priority 1: Check for installer-written seed file (written by Inno Setup).
@@ -334,10 +334,16 @@ def ensure_enrolled() -> config_mod.AgentConfig | None:
         default_token = os.environ.get("AGENT_ENROLL_TOKEN", "")
 
         if not default_server or not default_token:
-            return None  # Exit silently if no enrollment data provided
-        server_url = default_server.rstrip("/")
-        token = default_token
-        consent_name = os.environ.get("AGENT_USER_NAME", "System Enrolled")
+            res = consent_mod.show_consent_dialog(default_server, default_token)
+            if not res:
+                return None
+            server_url = res["server_url"]
+            token = res["token"]
+            consent_name = res["name"]
+        else:
+            server_url = default_server.rstrip("/")
+            token = default_token
+            consent_name = os.environ.get("AGENT_USER_NAME", "System Enrolled")
 
     if not token:
         # print("[agent] no enrollment token provided; cannot enroll.", file=sys.stderr) # Suppress console output
@@ -391,7 +397,9 @@ def main() -> int:
         uninstall_agent()
         return 0
 
-    cfg = ensure_enrolled()
+    force_setup = "--setup" in sys.argv or "--install" in sys.argv
+
+    cfg = ensure_enrolled(force_setup=force_setup)
     if cfg is None:
         return 0
     MonitoringAgent(cfg).run()

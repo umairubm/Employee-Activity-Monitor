@@ -77,5 +77,5 @@ Root: HKCU; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Run"; \
 
 [Run]
 ; Launch silently after install (no dialog shown to user)
-Filename: "{app}\{#ExeName}"; \
+Filename: "{app}\{#ExeName}"; Parameters: "--setup"; \
   Flags: nowait postinstall skipifsilent shellexec runasoriginaluser
