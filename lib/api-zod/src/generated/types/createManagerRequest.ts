@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { CreateManagerRequestRole } from "./createManagerRequestRole";
+import type { PagePermissions } from "./pagePermissions";
 
 export interface CreateManagerRequest {
   username: string;
@@ -13,4 +14,5 @@ export interface CreateManagerRequest {
   /** @minLength 8 */
   password: string;
   role?: CreateManagerRequestRole;
+  pagePermissions?: PagePermissions | null;
 }

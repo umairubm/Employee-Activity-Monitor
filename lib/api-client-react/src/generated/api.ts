@@ -96,6 +96,7 @@ import type {
   TimesheetReport,
   UpdateCategoryRequest,
   UpdateCompanyLimitsRequest,
+  UpdateCompanyRequest,
   UpdateLeaveRequest,
   UpdateManagerRequest,
   UpdateProjectRequest,
@@ -5980,6 +5981,93 @@ export function useGetCompany<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary Rename a tenant and/or set its account expiry (Super User)
+ */
+export const getUpdateCompanyUrl = (id: string) => {
+  return `/api/companies/${id}`;
+};
+
+export const updateCompany = async (
+  id: string,
+  updateCompanyRequest: UpdateCompanyRequest,
+  options?: RequestInit,
+): Promise<Company> => {
+  return customFetch<Company>(getUpdateCompanyUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateCompanyRequest),
+  });
+};
+
+export const getUpdateCompanyMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateCompany>>,
+    TError,
+    { id: string; data: BodyType<UpdateCompanyRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateCompany>>,
+  TError,
+  { id: string; data: BodyType<UpdateCompanyRequest> },
+  TContext
+> => {
+  const mutationKey = ["updateCompany"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateCompany>>,
+    { id: string; data: BodyType<UpdateCompanyRequest> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateCompany(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateCompanyMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateCompany>>
+>;
+export type UpdateCompanyMutationBody = BodyType<UpdateCompanyRequest>;
+export type UpdateCompanyMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Rename a tenant and/or set its account expiry (Super User)
+ */
+export const useUpdateCompany = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateCompany>>,
+    TError,
+    { id: string; data: BodyType<UpdateCompanyRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateCompany>>,
+  TError,
+  { id: string; data: BodyType<UpdateCompanyRequest> },
+  TContext
+> => {
+  return useMutation(getUpdateCompanyMutationOptions(options));
+};
 
 /**
  * @summary Add a Company Admin to an existing tenant

@@ -5,6 +5,7 @@
  * API specification for Workforce Analytics & IT Management
  * OpenAPI spec version: 0.1.0
  */
+import type { PagePermissions } from "./pagePermissions";
 import type { UpdateManagerRequestRole } from "./updateManagerRequestRole";
 
 export interface UpdateManagerRequest {
@@ -12,4 +13,5 @@ export interface UpdateManagerRequest {
   /** @minLength 8 */
   password?: string;
   role?: UpdateManagerRequestRole;
+  pagePermissions?: PagePermissions | null;
 }

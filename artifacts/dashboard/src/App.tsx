@@ -59,7 +59,7 @@ function ProtectedRoute({ route, params }: { route: AppRoute; params: Record<str
     return <Redirect to="/login" />;
   }
 
-  if (!canAccess(route, user.role)) {
+  if (!canAccess(route, user)) {
     // Send the user to their own landing page if they have one; otherwise the
     // account simply has no console access.
     const home = defaultRouteForRole(user.role);

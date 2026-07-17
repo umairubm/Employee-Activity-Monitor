@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { AuthUserRole } from "./authUserRole";
+import type { PagePermissions } from "./pagePermissions";
 
 export interface AuthUser {
   id: string;
@@ -16,5 +17,7 @@ export interface AuthUser {
   companyId?: string | null;
   /** @nullable */
   companyName?: string | null;
+  /** Per-page console permissions. null means full role-based access. */
+  pagePermissions?: PagePermissions | null;
   createdAt: Date;
 }

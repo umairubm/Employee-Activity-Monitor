@@ -89,6 +89,7 @@ export async function resolveSession(req: Request): Promise<{
   user: User;
   sessionId: string;
   companyStatus: CompanyStatus | null;
+  companyExpiresAt: Date | null;
 } | null> {
   const token = readCookie(req, SESSION_COOKIE);
   if (!token) return null;
@@ -98,6 +99,7 @@ export async function resolveSession(req: Request): Promise<{
       session: sessionsTable,
       user: usersTable,
       companyStatus: companiesTable.status,
+      companyExpiresAt: companiesTable.expiresAt,
     })
     .from(sessionsTable)
     .innerJoin(usersTable, eq(sessionsTable.userId, usersTable.id))
@@ -115,6 +117,7 @@ export async function resolveSession(req: Request): Promise<{
     user: row.user,
     sessionId: row.session.id,
     companyStatus: row.companyStatus,
+    companyExpiresAt: row.companyExpiresAt,
   };
 }
 

@@ -23,6 +23,7 @@ import managersRouter from "./managers";
 import securitySettingsRouter from "./securitySettings";
 import { userAuth, requireRole } from "../middlewares/userAuth";
 import { requireCompany } from "../middlewares/tenant";
+import { requirePageAccess, requireAnyPageAccess } from "../middlewares/pageAccess";
 
 const router: IRouter = Router();
 
@@ -55,20 +56,27 @@ const tenant = [
   requireCompany,
 ];
 
-router.use("/users", ...tenant, usersRouter);
-router.use("/devices", ...tenant, devicesRouter);
-router.use("/categories", ...tenant, categoriesRouter);
-router.use("/activity", ...tenant, activityRouter);
-router.use("/reports", ...tenant, reportsRouter);
-router.use("/screenshots", ...tenant, screenshotsRouter);
-router.use("/attendance", ...tenant, attendanceRouter);
-router.use("/timesheets", ...tenant, timesheetsRouter);
-router.use("/projects", ...tenant, projectsRouter);
-router.use("/tasks", ...tenant, tasksRouter);
-router.use("/shifts", ...tenant, shiftsRouter);
-router.use("/leave-requests", ...tenant, leaveRequestsRouter);
-router.use("/leave-balances", ...tenant, leaveBalancesRouter);
-router.use("/tokens", ...tenant, tokensRouter);
-router.use("/downloads", ...tenant, downloadsRouter);
+// Per-page permissions (users.pagePermissions) further restrict managers whose
+// Company Admin granted only view or no access to specific pages;
+// company_admins and users with NULL permissions are unrestricted.
+// /users backs the assignee pickers on Projects and Leave, so any of those
+// permissions grants access; /reports backs the Overview page.
+router.use("/users", ...tenant, requireAnyPageAccess(["projects", "leave"]), usersRouter);
+// The Agent Settings page edits device config via /devices endpoints, so
+// either the "devices" or "settings" permission grants this API group.
+router.use("/devices", ...tenant, requireAnyPageAccess(["devices", "settings"]), devicesRouter);
+router.use("/categories", ...tenant, requirePageAccess("categories"), categoriesRouter);
+router.use("/activity", ...tenant, requirePageAccess("activity"), activityRouter);
+router.use("/reports", ...tenant, requirePageAccess("overview"), reportsRouter);
+router.use("/screenshots", ...tenant, requirePageAccess("screenshots"), screenshotsRouter);
+router.use("/attendance", ...tenant, requirePageAccess("attendance"), attendanceRouter);
+router.use("/timesheets", ...tenant, requirePageAccess("timesheets"), timesheetsRouter);
+router.use("/projects", ...tenant, requirePageAccess("projects"), projectsRouter);
+router.use("/tasks", ...tenant, requirePageAccess("projects"), tasksRouter);
+router.use("/shifts", ...tenant, requirePageAccess("shifts"), shiftsRouter);
+router.use("/leave-requests", ...tenant, requirePageAccess("leave"), leaveRequestsRouter);
+router.use("/leave-balances", ...tenant, requirePageAccess("leave"), leaveBalancesRouter);
+router.use("/tokens", ...tenant, requirePageAccess("tokens"), tokensRouter);
+router.use("/downloads", ...tenant, requirePageAccess("downloads"), downloadsRouter);
 
 export default router;

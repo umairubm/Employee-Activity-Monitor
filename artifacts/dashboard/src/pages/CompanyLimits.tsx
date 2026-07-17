@@ -46,6 +46,8 @@ export default function CompanyLimits() {
   const [selectedId, setSelectedId] = useState<string>("");
   const [maxManagers, setMaxManagers] = useState<string>("");
   const [maxDevices, setMaxDevices] = useState<string>("");
+  const [unlimitedManagers, setUnlimitedManagers] = useState(true);
+  const [unlimitedDevices, setUnlimitedDevices] = useState(true);
   const [confirmUnderUsage, setConfirmUnderUsage] = useState(false);
 
   // Honor a company pre-selected via ?company=<id> (e.g. from the Companies list),
@@ -64,6 +66,8 @@ export default function CompanyLimits() {
     if (!selected) return;
     setMaxManagers(selected.maxManagers == null ? "" : String(selected.maxManagers));
     setMaxDevices(selected.maxDevices == null ? "" : String(selected.maxDevices));
+    setUnlimitedManagers(selected.maxManagers == null);
+    setUnlimitedDevices(selected.maxDevices == null);
     setConfirmUnderUsage(false);
   }, [selected]);
 
@@ -81,8 +85,8 @@ export default function CompanyLimits() {
       {
         id: selectedId,
         data: {
-          maxManagers: parseLimit(maxManagers),
-          maxDevices: parseLimit(maxDevices),
+          maxManagers: unlimitedManagers ? null : parseLimit(maxManagers),
+          maxDevices: unlimitedDevices ? null : parseLimit(maxDevices),
         },
       },
       {
@@ -96,11 +100,12 @@ export default function CompanyLimits() {
   };
 
   const invalid =
-    (maxManagers.trim() !== "" && Number(maxManagers) < 0) ||
-    (maxDevices.trim() !== "" && Number(maxDevices) < 0);
+    (!unlimitedManagers &&
+      (maxManagers.trim() === "" || Number(maxManagers) < 0)) ||
+    (!unlimitedDevices && (maxDevices.trim() === "" || Number(maxDevices) < 0));
 
-  const parsedManagers = parseLimit(maxManagers);
-  const parsedDevices = parseLimit(maxDevices);
+  const parsedManagers = unlimitedManagers ? null : parseLimit(maxManagers);
+  const parsedDevices = unlimitedDevices ? null : parseLimit(maxDevices);
 
   const managerCount = selected?.managerCount;
   const deviceCount = selected?.deviceCount;
@@ -156,17 +161,29 @@ export default function CompanyLimits() {
                       {usageLabel(selected?.managerCount, selected?.maxManagers, "manager")}
                     </span>
                   </div>
-                  <Input
-                    id="maxManagers"
-                    type="number"
-                    min={0}
-                    placeholder="Unlimited"
-                    value={maxManagers}
-                    onChange={(e) => {
-                      setMaxManagers(e.target.value);
-                      setConfirmUnderUsage(false);
-                    }}
-                  />
+                  <label className="flex items-center gap-2 text-sm">
+                    <Checkbox
+                      checked={unlimitedManagers}
+                      onCheckedChange={(v) => {
+                        setUnlimitedManagers(v === true);
+                        setConfirmUnderUsage(false);
+                      }}
+                    />
+                    Unlimited
+                  </label>
+                  {!unlimitedManagers && (
+                    <Input
+                      id="maxManagers"
+                      type="number"
+                      min={0}
+                      placeholder="e.g. 5"
+                      value={maxManagers}
+                      onChange={(e) => {
+                        setMaxManagers(e.target.value);
+                        setConfirmUnderUsage(false);
+                      }}
+                    />
+                  )}
                 </div>
                 <div className="grid gap-2">
                   <div className="flex items-center justify-between">
@@ -175,23 +192,35 @@ export default function CompanyLimits() {
                       {usageLabel(selected?.deviceCount, selected?.maxDevices, "device")}
                     </span>
                   </div>
-                  <Input
-                    id="maxDevices"
-                    type="number"
-                    min={0}
-                    placeholder="Unlimited"
-                    value={maxDevices}
-                    onChange={(e) => {
-                      setMaxDevices(e.target.value);
-                      setConfirmUnderUsage(false);
-                    }}
-                  />
+                  <label className="flex items-center gap-2 text-sm">
+                    <Checkbox
+                      checked={unlimitedDevices}
+                      onCheckedChange={(v) => {
+                        setUnlimitedDevices(v === true);
+                        setConfirmUnderUsage(false);
+                      }}
+                    />
+                    Unlimited
+                  </label>
+                  {!unlimitedDevices && (
+                    <Input
+                      id="maxDevices"
+                      type="number"
+                      min={0}
+                      placeholder="e.g. 25"
+                      value={maxDevices}
+                      onChange={(e) => {
+                        setMaxDevices(e.target.value);
+                        setConfirmUnderUsage(false);
+                      }}
+                    />
+                  )}
                 </div>
               </div>
 
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <InfinityIcon className="h-4 w-4" />
-                A blank field means no limit for that resource.
+                Check “Unlimited” to remove the limit for that resource.
               </div>
 
               {underUsage && (

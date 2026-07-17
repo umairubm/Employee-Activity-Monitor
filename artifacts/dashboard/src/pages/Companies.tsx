@@ -8,6 +8,8 @@ import {
   useGetCompany,
   getGetCompanyQueryKey,
   useAddCompanyAdmin,
+  useUpdateCompany,
+  type Company,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
@@ -18,7 +20,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { Building2, Plus, Ban, Play, Users, SlidersHorizontal, Search, ArrowUp, ArrowDown, ChevronsUpDown } from "lucide-react";
+import { Building2, Plus, Ban, Play, Users, SlidersHorizontal, Search, ArrowUp, ArrowDown, ChevronsUpDown, Pencil } from "lucide-react";
 import { format } from "date-fns";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
@@ -151,6 +153,7 @@ export default function Companies() {
   const [adminEmail, setAdminEmail] = useState("");
   const [adminPassword, setAdminPassword] = useState("");
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [editingCompany, setEditingCompany] = useState<Company | null>(null);
   const [usageFilter, setUsageFilter] = useState<UsageFilter>("all");
   const [query, setQuery] = useState("");
   const [sortColumn, setSortColumn] = useState<SortColumn | null>(null);
@@ -372,6 +375,7 @@ export default function Companies() {
                   <TableHead>Status</TableHead>
                   <SortableHead column="managers" label="Managers" sortColumn={sortColumn} sortDirection={sortDirection} onSort={toggleSort} />
                   <SortableHead column="devices" label="Devices" sortColumn={sortColumn} sortDirection={sortDirection} onSort={toggleSort} />
+                  <TableHead>Expires</TableHead>
                   <SortableHead column="created" label="Created" sortColumn={sortColumn} sortDirection={sortDirection} onSort={toggleSort} />
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -379,7 +383,7 @@ export default function Companies() {
               <TableBody>
                 {filteredCompanies?.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="h-32 text-center text-muted-foreground">
+                    <TableCell colSpan={7} className="h-32 text-center text-muted-foreground">
                       <div className="flex flex-col items-center justify-center">
                         <Building2 className="h-8 w-8 mb-2 opacity-20" />
                         {companies?.length === 0
@@ -422,9 +426,21 @@ export default function Companies() {
                         <TableCell>
                           <UsageCell used={c.deviceCount} max={c.maxDevices} noun="devices" />
                         </TableCell>
+                        <TableCell className="text-sm">
+                          {c.expiresAt == null ? (
+                            <span className="text-muted-foreground">Never</span>
+                          ) : new Date(c.expiresAt).getTime() <= Date.now() ? (
+                            <Badge variant="destructive">Expired {format(new Date(c.expiresAt), "MMM d, yyyy")}</Badge>
+                          ) : (
+                            <span>{format(new Date(c.expiresAt), "MMM d, yyyy")}</span>
+                          )}
+                        </TableCell>
                         <TableCell className="text-sm text-muted-foreground">{format(new Date(c.createdAt), "MMM d, yyyy")}</TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">
+                            <Button variant="ghost" size="sm" className="gap-1" onClick={() => setEditingCompany(c)}>
+                              <Pencil className="h-4 w-4" /> Edit
+                            </Button>
                             <Button variant="ghost" size="sm" className="gap-1" onClick={() => setDetailId(c.id)}>
                               <Users className="h-4 w-4" /> Admins
                             </Button>
@@ -458,7 +474,111 @@ export default function Companies() {
       </Card>
 
       <CompanyDetailDialog id={detailId} onClose={() => setDetailId(null)} />
+      <EditCompanyDialog company={editingCompany} onClose={() => setEditingCompany(null)} />
     </div>
+  );
+}
+
+/** Convert a Date (or ISO string) to the yyyy-MM-dd value an <input type="date"> expects. */
+function toDateInputValue(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "" : format(d, "yyyy-MM-dd");
+}
+
+function EditCompanyDialog({ company, onClose }: { company: Company | null; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const updateCompany = useUpdateCompany();
+
+  const [name, setName] = useState("");
+  const [neverExpires, setNeverExpires] = useState(true);
+  const [expiryDate, setExpiryDate] = useState("");
+
+  // Load the selected company's values whenever the dialog opens.
+  React.useEffect(() => {
+    if (!company) return;
+    setName(company.name);
+    setNeverExpires(company.expiresAt == null);
+    setExpiryDate(toDateInputValue(company.expiresAt));
+  }, [company]);
+
+  const handleSave = () => {
+    if (!company) return;
+    // Expire at the END of the chosen day, local time, so "expires Jul 31"
+    // still allows sign-in on Jul 31.
+    const expiresAt = neverExpires
+      ? null
+      : new Date(`${expiryDate}T23:59:59`).toISOString();
+    updateCompany.mutate(
+      { id: company.id, data: { name: name.trim(), expiresAt } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getListCompaniesQueryKey() });
+          toast({ title: "Company updated" });
+          onClose();
+        },
+        onError: (err) => {
+          const serverMsg = (err as { data?: { error?: string } })?.data?.error;
+          toast({
+            title: "Could not update company",
+            description: serverMsg ?? "The name may already be in use.",
+            variant: "destructive",
+          });
+        },
+      },
+    );
+  };
+
+  const invalid = !name.trim() || (!neverExpires && !expiryDate);
+
+  return (
+    <Dialog open={!!company} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Edit {company?.name}</DialogTitle>
+          <DialogDescription>Rename this company or set when its account expires.</DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4 py-4">
+          <div className="grid gap-2">
+            <Label htmlFor="ecn">Company name</Label>
+            <Input id="ecn" value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div className="grid gap-2">
+            <Label>Account expiry</Label>
+            <div className="flex items-center gap-2">
+              <input
+                id="never-expires"
+                type="checkbox"
+                className="h-4 w-4"
+                checked={neverExpires}
+                onChange={(e) => setNeverExpires(e.target.checked)}
+              />
+              <Label htmlFor="never-expires" className="cursor-pointer font-normal">
+                Never expires (unlimited)
+              </Label>
+            </div>
+            {!neverExpires && (
+              <Input
+                type="date"
+                value={expiryDate}
+                onChange={(e) => setExpiryDate(e.target.value)}
+                aria-label="Expiry date"
+              />
+            )}
+            <p className="text-xs text-muted-foreground">
+              After this date, everyone in the company is locked out until you extend or clear the expiry.
+            </p>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSave} disabled={invalid || updateCompany.isPending}>
+            {updateCompany.isPending ? "Saving..." : "Save"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

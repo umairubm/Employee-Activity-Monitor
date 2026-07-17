@@ -50,6 +50,7 @@ router.get("/", async (_req, res) => {
         status: companiesTable.status,
         maxManagers: companiesTable.maxManagers,
         maxDevices: companiesTable.maxDevices,
+        expiresAt: companiesTable.expiresAt,
         createdById: companiesTable.createdById,
         createdAt: companiesTable.createdAt,
         updatedAt: companiesTable.updatedAt,
@@ -195,6 +196,52 @@ router.post("/:id/admins", async (req, res) => {
     }
     if (error instanceof PasswordPolicyError) {
       res.status(400).json({ error: error.message });
+      return;
+    }
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+const updateCompanySchema = z
+  .object({
+    name: z.string().min(1).max(200).optional(),
+    // ISO date-time string, or null to clear (= never expires).
+    expiresAt: z.iso.datetime({ offset: true }).nullable().optional(),
+  })
+  .refine((d) => "name" in d || "expiresAt" in d, {
+    message: "At least one of name or expiresAt is required",
+  });
+
+// PATCH /api/companies/:id - rename a tenant and/or set its account expiry
+// (Super User surface). expiresAt: null = never expires.
+router.patch("/:id", async (req, res) => {
+  const parsed = updateCompanySchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid company update payload" });
+    return;
+  }
+  try {
+    const id = String(req.params.id);
+    const patch: { name?: string; expiresAt?: Date | null } = {};
+    if (parsed.data.name !== undefined) patch.name = parsed.data.name;
+    if ("expiresAt" in parsed.data) {
+      patch.expiresAt = parsed.data.expiresAt
+        ? new Date(parsed.data.expiresAt)
+        : null;
+    }
+    const [updated] = await db
+      .update(companiesTable)
+      .set(patch)
+      .where(eq(companiesTable.id, id))
+      .returning();
+    if (!updated) {
+      res.status(404).json({ error: "Company not found" });
+      return;
+    }
+    res.json(updated);
+  } catch (error) {
+    if (uniqueViolation(error)) {
+      res.status(409).json({ error: "Company name already in use" });
       return;
     }
     res.status(500).json({ error: (error as Error).message });

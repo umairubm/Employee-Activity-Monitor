@@ -103,6 +103,13 @@ export const AuthUserRole = {
   team_member: "team_member",
 } as const;
 
+/**
+ * Map of dashboard page id to access level. Pages absent from the map are inaccessible for restricted users.
+ */
+export interface PagePermissions {
+  [key: string]: "view" | "edit";
+}
+
 export interface AuthUser {
   id: string;
   username: string;
@@ -112,6 +119,8 @@ export interface AuthUser {
   companyId?: string | null;
   /** @nullable */
   companyName?: string | null;
+  /** Per-page console permissions. null means full role-based access. */
+  pagePermissions?: PagePermissions | null;
   createdAt: string;
 }
 
@@ -134,6 +143,11 @@ export interface Company {
   maxManagers?: number | null;
   /** @nullable */
   maxDevices?: number | null;
+  /**
+   * Account expiry; null means the account never expires.
+   * @nullable
+   */
+  expiresAt?: string | null;
   /** Current number of users with role=manager in the company (matches how the maxManagers quota is enforced; present on the list endpoint only). */
   managerCount?: number;
   /** Current number of enrolled devices in the company (present on the list endpoint only). */
@@ -159,7 +173,18 @@ export interface CompanyUser {
   username: string;
   email: string;
   role: CompanyUserRole;
+  pagePermissions?: PagePermissions | null;
   createdAt?: string;
+}
+
+export interface UpdateCompanyRequest {
+  /** @minLength 1 */
+  name?: string;
+  /**
+   * Set the account expiry; null means never expires.
+   * @nullable
+   */
+  expiresAt?: string | null;
 }
 
 export interface SecuritySettings {
@@ -225,6 +250,7 @@ export interface CreateManagerRequest {
   /** @minLength 8 */
   password: string;
   role?: CreateManagerRequestRole;
+  pagePermissions?: PagePermissions | null;
 }
 
 export type UpdateManagerRequestRole =
@@ -240,6 +266,7 @@ export interface UpdateManagerRequest {
   /** @minLength 8 */
   password?: string;
   role?: UpdateManagerRequestRole;
+  pagePermissions?: PagePermissions | null;
 }
 
 export interface UpdateSecuritySettingsRequest {

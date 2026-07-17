@@ -1,4 +1,11 @@
-import { pgTable, uuid, text, timestamp, pgEnum } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  uuid,
+  text,
+  timestamp,
+  pgEnum,
+  jsonb,
+} from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
@@ -24,6 +31,14 @@ export const usersTable = pgTable("users", {
     onDelete: "cascade",
   }),
   managedById: uuid("managed_by_id"),
+  // Per-page console permissions assigned by the Company Admin when creating
+  // managers / team members. Keys are dashboard page ids (e.g. "devices"),
+  // values are "view" | "edit". NULL means "no restriction" (full role-based
+  // access, which is also the case for company_admin and super_user).
+  pagePermissions: jsonb("page_permissions").$type<Record<
+    string,
+    "view" | "edit"
+  > | null>(),
   selfDashboardEnabled: text("self_dashboard_enabled").notNull().default("true"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()

@@ -6,11 +6,13 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { CompanyUserRole } from "./companyUserRole";
+import type { PagePermissions } from "./pagePermissions";
 
 export interface CompanyUser {
   id: string;
   username: string;
   email: string;
   role: CompanyUserRole;
+  pagePermissions?: PagePermissions | null;
   createdAt?: Date;
 }

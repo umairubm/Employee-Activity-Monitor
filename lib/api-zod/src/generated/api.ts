@@ -29,6 +29,19 @@ export const LoginResponse = zod.object({
   role: zod.enum(["super_user", "company_admin", "manager", "team_member"]),
   companyId: zod.string().uuid().nullish(),
   companyName: zod.string().nullish(),
+  pagePermissions: zod
+    .union([
+      zod
+        .record(zod.string(), zod.enum(["view", "edit"]))
+        .describe(
+          "Map of dashboard page id to access level. Pages absent from the map are inaccessible for restricted users.",
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Per-page console permissions. null means full role-based access.",
+    ),
   createdAt: zod.coerce.date(),
 });
 
@@ -49,6 +62,19 @@ export const GetCurrentUserResponse = zod.object({
   role: zod.enum(["super_user", "company_admin", "manager", "team_member"]),
   companyId: zod.string().uuid().nullish(),
   companyName: zod.string().nullish(),
+  pagePermissions: zod
+    .union([
+      zod
+        .record(zod.string(), zod.enum(["view", "edit"]))
+        .describe(
+          "Map of dashboard page id to access level. Pages absent from the map are inaccessible for restricted users.",
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Per-page console permissions. null means full role-based access.",
+    ),
   createdAt: zod.coerce.date(),
 });
 
@@ -1805,6 +1831,19 @@ export const ListUsersResponseItem = zod.object({
   role: zod.enum(["super_user", "company_admin", "manager", "team_member"]),
   companyId: zod.string().uuid().nullish(),
   companyName: zod.string().nullish(),
+  pagePermissions: zod
+    .union([
+      zod
+        .record(zod.string(), zod.enum(["view", "edit"]))
+        .describe(
+          "Map of dashboard page id to access level. Pages absent from the map are inaccessible for restricted users.",
+        ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Per-page console permissions. null means full role-based access.",
+    ),
   createdAt: zod.coerce.date(),
 });
 export const ListUsersResponse = zod.array(ListUsersResponseItem);
@@ -1818,6 +1857,10 @@ export const ListCompaniesResponseItem = zod.object({
   status: zod.enum(["active", "suspended"]),
   maxManagers: zod.number().nullish(),
   maxDevices: zod.number().nullish(),
+  expiresAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Account expiry; null means the account never expires."),
   managerCount: zod
     .number()
     .optional()
@@ -1866,6 +1909,10 @@ export const GetCompanyResponse = zod
     status: zod.enum(["active", "suspended"]),
     maxManagers: zod.number().nullish(),
     maxDevices: zod.number().nullish(),
+    expiresAt: zod.coerce
+      .date()
+      .nullish()
+      .describe("Account expiry; null means the account never expires."),
     managerCount: zod
       .number()
       .optional()
@@ -1913,11 +1960,63 @@ export const GetCompanyResponse = zod
             "manager",
             "team_member",
           ]),
+          pagePermissions: zod
+            .union([
+              zod
+                .record(zod.string(), zod.enum(["view", "edit"]))
+                .describe(
+                  "Map of dashboard page id to access level. Pages absent from the map are inaccessible for restricted users.",
+                ),
+              zod.null(),
+            ])
+            .optional(),
           createdAt: zod.coerce.date().optional(),
         }),
       ),
     }),
   );
+
+/**
+ * @summary Rename a tenant and/or set its account expiry (Super User)
+ */
+export const UpdateCompanyParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
+
+export const UpdateCompanyBody = zod.object({
+  name: zod.string().min(1).optional(),
+  expiresAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Set the account expiry; null means never expires."),
+});
+
+export const UpdateCompanyResponse = zod.object({
+  id: zod.string().uuid(),
+  name: zod.string(),
+  status: zod.enum(["active", "suspended"]),
+  maxManagers: zod.number().nullish(),
+  maxDevices: zod.number().nullish(),
+  expiresAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Account expiry; null means the account never expires."),
+  managerCount: zod
+    .number()
+    .optional()
+    .describe(
+      "Current number of users with role=manager in the company (matches how the maxManagers quota is enforced; present on the list endpoint only).",
+    ),
+  deviceCount: zod
+    .number()
+    .optional()
+    .describe(
+      "Current number of enrolled devices in the company (present on the list endpoint only).",
+    ),
+  createdById: zod.string().uuid().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
 
 /**
  * @summary Add a Company Admin to an existing tenant
@@ -1959,6 +2058,10 @@ export const UpdateCompanyLimitsResponse = zod.object({
   status: zod.enum(["active", "suspended"]),
   maxManagers: zod.number().nullish(),
   maxDevices: zod.number().nullish(),
+  expiresAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Account expiry; null means the account never expires."),
   managerCount: zod
     .number()
     .optional()
@@ -1989,6 +2092,10 @@ export const SuspendCompanyResponse = zod.object({
   status: zod.enum(["active", "suspended"]),
   maxManagers: zod.number().nullish(),
   maxDevices: zod.number().nullish(),
+  expiresAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Account expiry; null means the account never expires."),
   managerCount: zod
     .number()
     .optional()
@@ -2019,6 +2126,10 @@ export const ReactivateCompanyResponse = zod.object({
   status: zod.enum(["active", "suspended"]),
   maxManagers: zod.number().nullish(),
   maxDevices: zod.number().nullish(),
+  expiresAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("Account expiry; null means the account never expires."),
   managerCount: zod
     .number()
     .optional()
@@ -2044,6 +2155,16 @@ export const ListManagersResponseItem = zod.object({
   username: zod.string(),
   email: zod.string(),
   role: zod.enum(["super_user", "company_admin", "manager", "team_member"]),
+  pagePermissions: zod
+    .union([
+      zod
+        .record(zod.string(), zod.enum(["view", "edit"]))
+        .describe(
+          "Map of dashboard page id to access level. Pages absent from the map are inaccessible for restricted users.",
+        ),
+      zod.null(),
+    ])
+    .optional(),
   createdAt: zod.coerce.date().optional(),
 });
 export const ListManagersResponse = zod.array(ListManagersResponseItem);
@@ -2058,6 +2179,16 @@ export const CreateManagerBody = zod.object({
   email: zod.string().email(),
   password: zod.string().min(createManagerBodyPasswordMin),
   role: zod.enum(["manager", "team_member"]).optional(),
+  pagePermissions: zod
+    .union([
+      zod
+        .record(zod.string(), zod.enum(["view", "edit"]))
+        .describe(
+          "Map of dashboard page id to access level. Pages absent from the map are inaccessible for restricted users.",
+        ),
+      zod.null(),
+    ])
+    .optional(),
 });
 
 /**
@@ -2073,6 +2204,16 @@ export const UpdateManagerBody = zod.object({
   email: zod.string().email().optional(),
   password: zod.string().min(updateManagerBodyPasswordMin).optional(),
   role: zod.enum(["manager", "team_member"]).optional(),
+  pagePermissions: zod
+    .union([
+      zod
+        .record(zod.string(), zod.enum(["view", "edit"]))
+        .describe(
+          "Map of dashboard page id to access level. Pages absent from the map are inaccessible for restricted users.",
+        ),
+      zod.null(),
+    ])
+    .optional(),
 });
 
 export const UpdateManagerResponse = zod.object({
@@ -2080,6 +2221,16 @@ export const UpdateManagerResponse = zod.object({
   username: zod.string(),
   email: zod.string(),
   role: zod.enum(["super_user", "company_admin", "manager", "team_member"]),
+  pagePermissions: zod
+    .union([
+      zod
+        .record(zod.string(), zod.enum(["view", "edit"]))
+        .describe(
+          "Map of dashboard page id to access level. Pages absent from the map are inaccessible for restricted users.",
+        ),
+      zod.null(),
+    ])
+    .optional(),
   createdAt: zod.coerce.date().optional(),
 });
 

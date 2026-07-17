@@ -30,6 +30,9 @@ export const companiesTable = pgTable("companies", {
   // Enforcement lives in the manager-create and device-enroll paths.
   maxManagers: integer("max_managers"),
   maxDevices: integer("max_devices"),
+  // Account expiry set by the Super User. NULL means "never expires".
+  // Enforced at login and on every authenticated request (like `suspended`).
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
   // Super User who created the company (audit only; no FK to avoid a schema
   // import cycle with users).
   createdById: uuid("created_by_id"),

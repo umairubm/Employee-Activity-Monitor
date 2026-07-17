@@ -31,6 +31,7 @@ function publicUser(u: User, companyName: string | null = null) {
     role: u.role,
     companyId: u.companyId,
     companyName,
+    pagePermissions: u.pagePermissions ?? null,
     createdAt: u.createdAt,
   };
 }
@@ -71,11 +72,20 @@ router.post("/login", loginRateLimit, async (req, res) => {
   let companyName: string | null = null;
   if (user.companyId) {
     const [company] = await db
-      .select({ status: companiesTable.status, name: companiesTable.name })
+      .select({
+        status: companiesTable.status,
+        name: companiesTable.name,
+        expiresAt: companiesTable.expiresAt,
+      })
       .from(companiesTable)
       .where(eq(companiesTable.id, user.companyId));
     if (company?.status === "suspended") {
       res.status(403).json({ error: "Company account is suspended" });
+      return;
+    }
+    // NULL expiry = never expires.
+    if (company?.expiresAt && company.expiresAt.getTime() <= Date.now()) {
+      res.status(403).json({ error: "Company account has expired" });
       return;
     }
     companyName = company?.name ?? null;

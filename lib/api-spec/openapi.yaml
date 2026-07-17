@@ -1390,6 +1390,25 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CompanyDetail"
+    patch:
+      operationId: updateCompany
+      tags: [companies]
+      summary: Rename a tenant and/or set its account expiry (Super User)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCompanyRequest"
+      responses:
+        "200":
+          description: Company updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Company"
   /companies/{id}/admins:
     post:
       operationId: addCompanyAdmin
@@ -1792,10 +1811,24 @@ components:
           format: uuid
         companyName:
           type: [string, "null"]
+        pagePermissions:
+          oneOf:
+            - $ref: "#/components/schemas/PagePermissions"
+            - type: "null"
+          description: >-
+            Per-page console permissions. null means full role-based access.
         createdAt:
           type: string
           format: date-time
       required: [id, username, email, role, createdAt]
+    PagePermissions:
+      type: object
+      description: >-
+        Map of dashboard page id to access level. Pages absent from the map
+        are inaccessible for restricted users.
+      additionalProperties:
+        type: string
+        enum: [view, edit]
     OkResult:
       type: object
       properties:
@@ -1817,6 +1850,10 @@ components:
           type: [integer, "null"]
         maxDevices:
           type: [integer, "null"]
+        expiresAt:
+          type: [string, "null"]
+          format: date-time
+          description: Account expiry; null means the account never expires.
         managerCount:
           type: integer
           description: >-
@@ -1851,10 +1888,24 @@ components:
         role:
           type: string
           enum: [super_user, company_admin, manager, team_member]
+        pagePermissions:
+          oneOf:
+            - $ref: "#/components/schemas/PagePermissions"
+            - type: "null"
         createdAt:
           type: string
           format: date-time
       required: [id, username, email, role]
+    UpdateCompanyRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+        expiresAt:
+          type: [string, "null"]
+          format: date-time
+          description: Set the account expiry; null means never expires.
     SecuritySettings:
       type: object
       properties:
@@ -1963,6 +2014,10 @@ components:
         role:
           type: string
           enum: [manager, team_member]
+        pagePermissions:
+          oneOf:
+            - $ref: "#/components/schemas/PagePermissions"
+            - type: "null"
       required: [username, email, password]
     UpdateManagerRequest:
       type: object
@@ -1976,6 +2031,10 @@ components:
         role:
           type: string
           enum: [manager, team_member]
+        pagePermissions:
+          oneOf:
+            - $ref: "#/components/schemas/PagePermissions"
+            - type: "null"
     UpdateSecuritySettingsRequest:
       type: object
       properties:

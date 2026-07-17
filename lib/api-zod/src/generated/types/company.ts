@@ -15,6 +15,11 @@ export interface Company {
   maxManagers?: number | null;
   /** @nullable */
   maxDevices?: number | null;
+  /**
+   * Account expiry; null means the account never expires.
+   * @nullable
+   */
+  expiresAt?: Date | null;
   /** Current number of users with role=manager in the company (matches how the maxManagers quota is enforced; present on the list endpoint only). */
   managerCount?: number;
   /** Current number of enrolled devices in the company (present on the list endpoint only). */

@@ -8,6 +8,7 @@ import {
   PasswordPolicyError,
 } from "../lib/passwords";
 import { getCompanyId } from "../middlewares/tenant";
+import { PAGE_KEYS } from "../middlewares/pageAccess";
 
 const router: IRouter = Router();
 
@@ -68,17 +69,25 @@ async function assertWithinManagerLimit(
   }
 }
 
+// Per-page console rights the Company Admin grants this user. Keys are the
+// dashboard page ids; values are "view" | "edit". null = no restriction.
+const pagePermissionsSchema = z
+  .partialRecord(z.enum(PAGE_KEYS), z.enum(["view", "edit"]))
+  .nullable();
+
 const createSchema = z.object({
   username: z.string().min(1).max(100),
   email: z.email(),
   password: z.string().min(8).max(200),
   role: z.enum(MANAGEABLE_ROLES).default("manager"),
+  pagePermissions: pagePermissionsSchema.optional(),
 });
 
 const updateSchema = z.object({
   email: z.email().optional(),
   password: z.string().min(8).max(200).optional(),
   role: z.enum(MANAGEABLE_ROLES).optional(),
+  pagePermissions: pagePermissionsSchema.optional(),
 });
 
 // GET /api/managers - list this tenant's managers + team members.
@@ -91,6 +100,7 @@ router.get("/", async (req, res) => {
         username: usersTable.username,
         email: usersTable.email,
         role: usersTable.role,
+        pagePermissions: usersTable.pagePermissions,
         createdAt: usersTable.createdAt,
       })
       .from(usersTable)
@@ -133,12 +143,14 @@ router.post("/", async (req, res) => {
           passwordHash: hashPassword(parsed.data.password),
           role: parsed.data.role,
           companyId,
+          pagePermissions: parsed.data.pagePermissions ?? null,
         })
         .returning({
           id: usersTable.id,
           username: usersTable.username,
           email: usersTable.email,
           role: usersTable.role,
+          pagePermissions: usersTable.pagePermissions,
           createdAt: usersTable.createdAt,
         });
       return created;
@@ -173,6 +185,9 @@ router.patch("/:id", async (req, res) => {
     const updates: Record<string, unknown> = { updatedAt: new Date() };
     if (parsed.data.email) updates.email = parsed.data.email;
     if (parsed.data.role) updates.role = parsed.data.role;
+    if ("pagePermissions" in parsed.data) {
+      updates.pagePermissions = parsed.data.pagePermissions ?? null;
+    }
     if (parsed.data.password) {
       await validatePasswordPolicy(companyId, parsed.data.password);
       updates.passwordHash = hashPassword(parsed.data.password);
@@ -217,6 +232,7 @@ router.patch("/:id", async (req, res) => {
           username: usersTable.username,
           email: usersTable.email,
           role: usersTable.role,
+          pagePermissions: usersTable.pagePermissions,
           createdAt: usersTable.createdAt,
         });
       return row;

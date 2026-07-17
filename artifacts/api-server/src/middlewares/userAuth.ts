@@ -24,6 +24,14 @@ export async function userAuth(
     res.status(403).json({ error: "Company account is suspended" });
     return;
   }
+  // An expired tenant loses all access too. NULL expiry = never expires.
+  if (
+    result.companyExpiresAt !== null &&
+    result.companyExpiresAt.getTime() <= Date.now()
+  ) {
+    res.status(403).json({ error: "Company account has expired" });
+    return;
+  }
   (req as AuthedRequest).user = result.user;
   (req as AuthedRequest).sessionId = result.sessionId;
   next();

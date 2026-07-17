@@ -18,8 +18,75 @@ import { Badge } from "@/components/ui/badge";
 import { UsersRound, Plus, Pencil, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
+import {
+  PAGE_PERMISSION_KEYS,
+  type PagePermissions,
+  type PagePermissionLevel,
+} from "@/lib/navigation";
 
 type Role = "manager" | "team_member";
+
+/**
+ * Per-page access editor. `perms === null` means "full access" (no
+ * restriction); otherwise each page is No access / View / View & edit.
+ */
+function PagePermissionsEditor({
+  perms,
+  onChange,
+}: {
+  perms: PagePermissions | null;
+  onChange: (next: PagePermissions | null) => void;
+}) {
+  const restricted = perms !== null;
+  const setLevel = (key: string, level: PagePermissionLevel | "none") => {
+    const next: PagePermissions = { ...(perms ?? {}) };
+    if (level === "none") {
+      delete next[key as keyof PagePermissions];
+    } else {
+      next[key as keyof PagePermissions] = level;
+    }
+    onChange(next);
+  };
+  return (
+    <div className="grid gap-2">
+      <div className="flex items-center gap-2">
+        <input
+          id="restrict-pages"
+          type="checkbox"
+          className="h-4 w-4"
+          checked={restricted}
+          onChange={(e) => onChange(e.target.checked ? {} : null)}
+        />
+        <Label htmlFor="restrict-pages" className="cursor-pointer">
+          Restrict page access
+        </Label>
+      </div>
+      {restricted ? (
+        <div className="max-h-56 overflow-y-auto rounded-lg border border-border divide-y divide-border">
+          {PAGE_PERMISSION_KEYS.map(({ key, label }) => (
+            <div key={key} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+              <span>{label}</span>
+              <select
+                aria-label={`Access for ${label}`}
+                value={perms?.[key] ?? "none"}
+                onChange={(e) => setLevel(key, e.target.value as PagePermissionLevel | "none")}
+                className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+              >
+                <option value="none">No access</option>
+                <option value="view">View only</option>
+                <option value="edit">View &amp; edit</option>
+              </select>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          Full access: this user can see and edit every page their role allows.
+        </p>
+      )}
+    </div>
+  );
+}
 
 export default function Managers() {
   const queryClient = useQueryClient();
@@ -34,11 +101,13 @@ export default function Managers() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<Role>("manager");
+  const [perms, setPerms] = useState<PagePermissions | null>(null);
 
   const [editing, setEditing] = useState<CompanyUser | null>(null);
   const [editEmail, setEditEmail] = useState("");
   const [editPassword, setEditPassword] = useState("");
   const [editRole, setEditRole] = useState<Role>("manager");
+  const [editPerms, setEditPerms] = useState<PagePermissions | null>(null);
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: getListManagersQueryKey() });
 
@@ -47,11 +116,12 @@ export default function Managers() {
     setEmail("");
     setPassword("");
     setRole("manager");
+    setPerms(null);
   };
 
   const handleCreate = () => {
     createUser.mutate(
-      { data: { username, email, password, role } },
+      { data: { username, email, password, role, pagePermissions: perms } },
       {
         onSuccess: () => {
           invalidate();
@@ -77,6 +147,7 @@ export default function Managers() {
     setEditEmail(u.email);
     setEditPassword("");
     setEditRole(u.role === "team_member" ? "team_member" : "manager");
+    setEditPerms((u.pagePermissions as PagePermissions | null | undefined) ?? null);
   };
 
   const handleUpdate = () => {
@@ -88,6 +159,7 @@ export default function Managers() {
           email: editEmail !== editing.email ? editEmail : undefined,
           password: editPassword || undefined,
           role: editRole,
+          pagePermissions: editPerms,
         },
       },
       {
@@ -154,6 +226,7 @@ export default function Managers() {
                   <option value="team_member">Team member</option>
                 </select>
               </div>
+              <PagePermissionsEditor perms={perms} onChange={setPerms} />
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
@@ -244,6 +317,7 @@ export default function Managers() {
                 <option value="team_member">Team member</option>
               </select>
             </div>
+            <PagePermissionsEditor perms={editPerms} onChange={setEditPerms} />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditing(null)}>Cancel</Button>

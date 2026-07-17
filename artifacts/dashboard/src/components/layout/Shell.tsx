@@ -1,10 +1,10 @@
 import React from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/lib/auth-context";
-import { LogOut, ShieldCheck } from "lucide-react";
+import { LogOut, ShieldCheck, Eye } from "lucide-react";
 import { useLogout, getGetCurrentUserQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { APP_ROUTES, canAccess } from "@/lib/navigation";
+import { APP_ROUTES, canAccess, pageAccessLevel } from "@/lib/navigation";
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
@@ -13,8 +13,18 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const logout = useLogout();
 
   const navItems = APP_ROUTES.filter(
-    (route) => route.nav && canAccess(route, user?.role),
+    (route) => route.nav && canAccess(route, user),
   );
+
+  // Show a subtle view-only notice when the current page is view-restricted
+  // for this user (per-page permissions granted by their Company Admin).
+  const activeRoute = APP_ROUTES.find(
+    (route) =>
+      location === route.href ||
+      (route.href !== "/" && location.startsWith(route.href.replace(/\/:.*$/, "/"))),
+  );
+  const viewOnly =
+    !!activeRoute && pageAccessLevel(activeRoute, user) === "view";
 
   const handleLogout = () => {
     logout.mutate(undefined, {
@@ -100,6 +110,12 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
         <div className="flex-1 p-4 md:p-8">
+          {viewOnly && (
+            <div className="mb-4 flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700">
+              <Eye size={16} />
+              You have view-only access to this page. Changes are disabled.
+            </div>
+          )}
           {children}
         </div>
       </main>
