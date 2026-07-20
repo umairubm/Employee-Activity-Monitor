@@ -92,6 +92,26 @@ const updateSchema = z.object({
   pagePermissions: pagePermissionsSchema.optional(),
 });
 
+/**
+ * Turn a Zod validation failure into a human-readable message naming the
+ * offending field(s), so the dashboard can show WHAT was wrong (e.g. a
+ * too-short password) instead of a generic "invalid payload".
+ */
+function describeUserPayloadError(error: z.ZodError): string {
+  const friendly: Record<string, string> = {
+    username: "Username is required (max 100 characters)",
+    email: "Enter a valid email address",
+    password: "Password must be 8-200 characters",
+    role: "Role must be manager or team_member",
+    pagePermissions: "Page permissions are invalid",
+  };
+  const fields = [
+    ...new Set(error.issues.map((i) => String(i.path[0] ?? "payload"))),
+  ];
+  const msgs = fields.map((f) => friendly[f] ?? `Invalid ${f}`);
+  return msgs.join("; ");
+}
+
 // GET /api/managers - list this tenant's managers + team members.
 router.get("/", async (req, res) => {
   try {
@@ -123,7 +143,7 @@ router.get("/", async (req, res) => {
 router.post("/", async (req, res) => {
   const parsed = createSchema.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: "Invalid user payload" });
+    res.status(400).json({ error: describeUserPayloadError(parsed.error) });
     return;
   }
   try {
@@ -179,7 +199,7 @@ router.post("/", async (req, res) => {
 router.patch("/:id", async (req, res) => {
   const parsed = updateSchema.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: "Invalid update payload" });
+    res.status(400).json({ error: describeUserPayloadError(parsed.error) });
     return;
   }
   try {

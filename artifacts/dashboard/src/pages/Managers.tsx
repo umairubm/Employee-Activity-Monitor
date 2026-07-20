@@ -139,6 +139,14 @@ export default function Managers() {
   };
 
   const handleCreate = () => {
+    if (password.length < 8) {
+      toast({
+        title: "Password too short",
+        description: "The password must be at least 8 characters.",
+        variant: "destructive",
+      });
+      return;
+    }
     createUser.mutate(
       { data: { username, email, password, role, pagePermissions: perms } },
       {
@@ -171,6 +179,14 @@ export default function Managers() {
 
   const handleUpdate = () => {
     if (!editing) return;
+    if (editPassword && editPassword.length < 8) {
+      toast({
+        title: "Password too short",
+        description: "The new password must be at least 8 characters.",
+        variant: "destructive",
+      });
+      return;
+    }
     updateUser.mutate(
       {
         id: editing.id,
