@@ -37,7 +37,7 @@ def config_path() -> Path:
 
 @dataclass
 class AgentConfig:
-    server_url: str = ""
+    server_url: str = "https://activitymonitor.replit.app"
     device_id: Optional[str] = None
     device_secret: Optional[str] = None
     consent_name: Optional[str] = None

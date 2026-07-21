@@ -494,8 +494,6 @@ def show_consent_dialog(
             entry.insert(0, default)
         return entry
 
-    # Allow the user/IT to specify the server URL if the default is incorrect.
-    server_entry = field("API Server URL", default_server or "https://activitymonitor.replit.app")
     token_entry = field("Enrollment token (from your IT admin)", default_token)
     name_entry = field("Your full name", existing_name)
 
@@ -505,10 +503,11 @@ def show_consent_dialog(
 
     ack_row = tk.Frame(body, bg=WHITE)
     ack_row.pack(fill="x", pady=(8, 2))
-    tk.Checkbutton(
+    chk = tk.Checkbutton(
         ack_row, variable=ack_var, bg=WHITE, activebackground=WHITE,
-        highlightthickness=0, bd=0,
-    ).pack(side="left", anchor="n")
+        highlightthickness=0, bd=0, cursor="hand2"
+    )
+    chk.pack(side="left", anchor="n")
     tk.Label(
         ack_row,
         text="I have read the above and consent to this monitoring on this device.",
@@ -528,12 +527,9 @@ def show_consent_dialog(
         root.destroy()
 
     def on_accept():
-        server = server_entry.get().strip()
+        server = (default_server or existing_server or "https://activitymonitor.replit.app").rstrip("/")
         token = token_entry.get().strip()
         name = name_entry.get().strip()
-        if not server:
-            error_var.set("Please enter the API Server URL.")
-            return
         if not token:
             error_var.set("Please enter the enrollment token from your IT admin.")
             return
@@ -543,7 +539,7 @@ def show_consent_dialog(
         if not ack_var.get():
             error_var.set("Please tick the consent checkbox to continue.")
             return
-        result["value"] = {"server_url": server.rstrip("/"), "token": token, "name": name}
+        result["value"] = {"server_url": server, "token": token, "name": name}
         root.destroy()
 
     decline = tk.Button(
@@ -553,12 +549,29 @@ def show_consent_dialog(
     )
     decline.pack(side="left")
 
+    # On macOS, native tk.Button overrides background/foreground colors unless using custom state handling
     accept = tk.Button(
         btns, text="I Consent — Enroll This Device", font=f_btn, fg=WHITE,
         bg=BLUE, activebackground=BLUE_DARK, activeforeground=WHITE,
-        relief="flat", bd=0, cursor="hand2", command=on_accept, padx=22, pady=10,
+        highlightbackground=BLUE, relief="flat", bd=0, cursor="hand2",
+        command=on_accept, padx=22, pady=10,
     )
     accept.pack(side="right")
+
+    def validate_and_update_state(*_args):
+        token = token_entry.get().strip()
+        name = name_entry.get().strip()
+        is_valid = bool(token and name and ack_var.get())
+        if is_valid:
+            accept.config(state="normal", bg=BLUE, fg=WHITE, cursor="hand2")
+        else:
+            accept.config(state="disabled", bg="#93c5fd", fg="#f8fafc", cursor="arrow")
+
+    # Trace field edits and checkbox toggles to dynamically unlock the button
+    token_entry.bind("<KeyRelease>", validate_and_update_state)
+    name_entry.bind("<KeyRelease>", validate_and_update_state)
+    ack_var.trace_add("write", validate_and_update_state)
+    validate_and_update_state()
 
     root.protocol("WM_DELETE_WINDOW", on_decline)
     root.bind("<Return>", lambda _e: on_accept())
