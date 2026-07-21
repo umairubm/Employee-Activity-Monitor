@@ -8,7 +8,6 @@ screenshot was taken. We capture the primary monitor only.
 from __future__ import annotations
 
 import io
-from typing import Optional
 
 from PIL import Image
 
