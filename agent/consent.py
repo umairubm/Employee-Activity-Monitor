@@ -395,10 +395,11 @@ def show_consent_dialog(
         except Exception:
             pass
 
-    width, height = 640, 580
+    width, height = 640, 680
     root.update_idletasks()
     sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
     root.geometry(f"{width}x{height}+{(sw - width) // 2}+{max(0, (sh - height) // 2)}")
+    root.resizable(True, True)
 
     fam = "Segoe UI" if sys.platform.startswith("win") else (
         "Helvetica Neue" if sys.platform == "darwin" else "DejaVu Sans"
@@ -448,9 +449,9 @@ def show_consent_dialog(
     def card(parent, title, color):
         outer = tk.Frame(parent, bg=color, bd=0, highlightthickness=1,
                          highlightbackground=LINE)
-        outer.pack(fill="x", pady=(0, 12))
+        outer.pack(fill="x", pady=(0, 8))
         inner = tk.Frame(outer, bg=color)
-        inner.pack(fill="x", padx=14, pady=12)
+        inner.pack(fill="x", padx=12, pady=8)
         tk.Label(inner, text=title, font=f_h2, fg=INK, bg=color).pack(anchor="w")
         return inner
 
@@ -477,18 +478,18 @@ def show_consent_dialog(
 
     # ---- Enrollment form ---------------------------------------------------
     form = tk.Frame(body, bg=WHITE)
-    form.pack(fill="x", pady=(2, 6))
+    form.pack(fill="x", pady=(2, 4))
 
     def field(label, default, show=None):
         tk.Label(form, text=label, font=f_small, fg=INK, bg=WHITE).pack(
-            anchor="w", pady=(8, 2)
+            anchor="w", pady=(4, 1)
         )
         entry = tk.Entry(
             form, font=f_body, show=show, relief="solid", bd=1,
             highlightthickness=1, highlightbackground=LINE,
             highlightcolor=BLUE, bg=WHITE, fg=INK,
         )
-        entry.pack(fill="x", ipady=6)
+        entry.pack(fill="x", ipady=4)
         if default:
             entry.insert(0, default)
         return entry
@@ -503,7 +504,7 @@ def show_consent_dialog(
     error_var = tk.StringVar(value="")
 
     ack_row = tk.Frame(body, bg=WHITE)
-    ack_row.pack(fill="x", pady=(10, 2))
+    ack_row.pack(fill="x", pady=(8, 2))
     tk.Checkbutton(
         ack_row, variable=ack_var, bg=WHITE, activebackground=WHITE,
         highlightthickness=0, bd=0,
@@ -520,7 +521,7 @@ def show_consent_dialog(
 
     # ---- Buttons -----------------------------------------------------------
     btns = tk.Frame(root, bg=WHITE)
-    btns.pack(fill="x", padx=24, pady=(0, 20))
+    btns.pack(fill="x", padx=24, pady=(10, 16))
 
     def on_decline():
         result["value"] = None
