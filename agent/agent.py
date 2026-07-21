@@ -128,7 +128,7 @@ class MonitoringAgent:
         # Visible notice BEFORE capture — transparency requirement.
         try:
             img = screenshot_mod.capture_png_bytes()
-            self.api.upload_screenshot(img, _now_iso(), content_type="image/png")
+            self.api.upload_screenshot(img, _now_iso(), content_type="image/jpeg")
         except Exception as exc:  # noqa: BLE001 — best-effort, never crash agent
             print(f"[agent] screenshot failed: {exc}", file=sys.stderr)
 

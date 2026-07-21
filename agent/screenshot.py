@@ -8,19 +8,42 @@ screenshot was taken. We capture the primary monitor only.
 from __future__ import annotations
 
 import io
+from typing import Optional
+
+from PIL import Image
+
+
+DEFAULT_JPEG_QUALITY = 70
+DEFAULT_MAX_DIMENSION = 1280
+
+
+def compress_image_to_jpeg_bytes(
+    img: Image.Image,
+    quality: int = DEFAULT_JPEG_QUALITY,
+    max_dimension: int = DEFAULT_MAX_DIMENSION,
+) -> bytes:
+    """Resize and compress an image to a small JPEG payload."""
+    if img.mode != "RGB":
+        img = img.convert("RGB")
+
+    width, height = img.size
+    scale = min(1.0, max_dimension / max(width, height))
+    if scale < 1.0:
+        new_size = (max(1, int(width * scale)), max(1, int(height * scale)))
+        img = img.resize(new_size, Image.Resampling.LANCZOS)
+
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=quality, optimize=True)
+    return buf.getvalue()
 
 
 def capture_png_bytes() -> bytes:
-    """Grab the primary monitor and return PNG-encoded bytes."""
+    """Grab the primary monitor and return JPEG-encoded bytes."""
     import mss
-    from PIL import Image
 
     with mss.mss() as sct:
-        # monitors[1] is the primary physical monitor in mss.
         monitor = sct.monitors[1] if len(sct.monitors) > 1 else sct.monitors[0]
         raw = sct.grab(monitor)
         img = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
 
-    buf = io.BytesIO()
-    img.save(buf, format="PNG", optimize=True)
-    return buf.getvalue()
+    return compress_image_to_jpeg_bytes(img)
