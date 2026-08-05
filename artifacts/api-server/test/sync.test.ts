@@ -610,6 +610,48 @@ describe("server-side consent enforcement", () => {
     expect(res.status).toBe(201);
     expect(res.body.accepted).toBe(1);
   });
+
+  it("syncs devices.systemName with the reported Host Name (trimmed) and ignores blanks", async () => {
+    const { device, secret } = await createDeviceWithSecret({ consent: true });
+    trackDevice(device.id);
+
+    const log = {
+      processName: "code",
+      startedAt: new Date().toISOString(),
+      endedAt: new Date().toISOString(),
+      durationSeconds: 60,
+    };
+
+    // A snapshot with a new hostname updates the device's display name.
+    let res = await request(app)
+      .post("/sync/activity")
+      .set("x-device-id", device.id)
+      .set("x-device-secret", secret)
+      .send({ logs: [log], systemInfo: { "Host Name": "  Dell-67  " } });
+    expect(res.status).toBe(201);
+    let [row] = await db.select().from(devicesTable).where(eq(devicesTable.id, device.id));
+    expect(row.systemName).toBe("Dell-67");
+
+    // A blank/whitespace hostname never overwrites the current name.
+    res = await request(app)
+      .post("/sync/activity")
+      .set("x-device-id", device.id)
+      .set("x-device-secret", secret)
+      .send({ logs: [log], systemInfo: { "Host Name": "   " } });
+    expect(res.status).toBe(201);
+    [row] = await db.select().from(devicesTable).where(eq(devicesTable.id, device.id));
+    expect(row.systemName).toBe("Dell-67");
+
+    // Activity without a snapshot leaves the name untouched.
+    res = await request(app)
+      .post("/sync/activity")
+      .set("x-device-id", device.id)
+      .set("x-device-secret", secret)
+      .send({ logs: [log] });
+    expect(res.status).toBe(201);
+    [row] = await db.select().from(devicesTable).where(eq(devicesTable.id, device.id));
+    expect(row.systemName).toBe("Dell-67");
+  });
 });
 
 describe("screenshot upload stages bytes and enqueues them for Dropbox", () => {

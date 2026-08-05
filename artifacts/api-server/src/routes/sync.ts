@@ -463,10 +463,19 @@ router.post(
           })),
         );
       }
-      await db
-        .update(devicesTable)
-        .set({ systemInfo: mergeSnapshot(prev, incoming), updatedAt: new Date() })
-        .where(eq(devicesTable.id, device.id));
+      // Keep the device's display name in sync with the latest reported
+      // hostname so the Devices list matches the System Information view.
+      const reportedHostName =
+        typeof incoming["Host Name"] === "string" ? incoming["Host Name"].trim() : "";
+      const update: {
+        systemInfo: Snapshot;
+        updatedAt: Date;
+        systemName?: string;
+      } = { systemInfo: mergeSnapshot(prev, incoming), updatedAt: new Date() };
+      if (reportedHostName && reportedHostName !== device.systemName) {
+        update.systemName = reportedHostName;
+      }
+      await db.update(devicesTable).set(update).where(eq(devicesTable.id, device.id));
     }
 
     res.status(201).json({ accepted: values.length });
