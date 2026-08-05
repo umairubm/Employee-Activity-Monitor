@@ -147,6 +147,15 @@ function formatHms(seconds: number): string {
   return `${m}m ${sec}s`;
 }
 
+/**
+ * Display name for the "User" column: the device's assigned Label (from its
+ * enrollment token — same as the Devices table's Label column), falling back
+ * to the system hostname when no label is configured.
+ */
+function userNameOf(device: { tokenLabel?: string | null; systemName: string }): string {
+  return device.tokenLabel?.trim() || device.systemName;
+}
+
 function initialsOf(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return "?";
@@ -469,12 +478,12 @@ function DeviceActivityPanel({
         <div className="flex items-center gap-3">
           <Avatar className="h-10 w-10">
             <AvatarFallback className="bg-primary/10 text-primary font-semibold">
-              {initialsOf(device.systemName)}
+              {initialsOf(userNameOf(device))}
             </AvatarFallback>
           </Avatar>
           <div>
             <SheetTitle className="text-lg leading-tight">
-              {device.systemName}
+              {userNameOf(device)}
             </SheetTitle>
             <div className="mt-0.5 flex items-center gap-1.5 text-sm">
               <span
@@ -691,9 +700,11 @@ export default function ActivityLogs() {
 
   const filteredDevices = useMemo(() => {
     return devices?.filter((d) => {
+      const q = search.toLowerCase();
       const matchesSearch =
-        d.systemName.toLowerCase().includes(search.toLowerCase()) ||
-        d.hardwareHash.toLowerCase().includes(search.toLowerCase());
+        (d.tokenLabel ?? "").toLowerCase().includes(q) ||
+        d.systemName.toLowerCase().includes(q) ||
+        d.hardwareHash.toLowerCase().includes(q);
       const matchesGroup = groupFilter === ALL || d.deviceGroup === groupFilter;
       return matchesSearch && matchesGroup;
     });
@@ -797,7 +808,7 @@ export default function ActivityLogs() {
                         key={device.id}
                         role="button"
                         tabIndex={0}
-                        aria-label={`View activity for ${device.systemName}`}
+                        aria-label={`View activity for ${userNameOf(device)}`}
                         className="cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                         onClick={() => setSelectedId(device.id)}
                         onKeyDown={(e) => {
@@ -821,12 +832,12 @@ export default function ActivityLogs() {
                           <div className="flex items-center gap-3">
                             <Avatar className="h-9 w-9">
                               <AvatarFallback className="bg-primary/10 text-xs font-semibold text-primary">
-                                {initialsOf(device.systemName)}
+                                {initialsOf(userNameOf(device))}
                               </AvatarFallback>
                             </Avatar>
                             <div className="min-w-0">
                               <div className="flex items-center gap-1.5 font-medium">
-                                {device.systemName}
+                                {userNameOf(device)}
                                 {device.isLocked && (
                                   <Badge
                                     variant="destructive"
