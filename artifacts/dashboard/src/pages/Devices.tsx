@@ -32,7 +32,11 @@ import { ALL_GROUPS as ALL } from "@/hooks/use-group-filter";
 export default function Devices() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const { data: devices, isLoading } = useListDevices();
+  // Poll so device names/status stay in sync with the latest agent reports
+  // (e.g. a hostname change) without requiring a manual page reload.
+  const { data: devices, isLoading } = useListDevices({
+    query: { queryKey: getListDevicesQueryKey(), refetchInterval: 30_000 },
+  });
   // App-wide group taxonomy (union of distinct groups on devices + tokens),
   // so the filter/rename/assign controls list every group that exists — not
   // only groups that already have a device.
