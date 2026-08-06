@@ -114,24 +114,70 @@ export function DateRangeFilter() {
               : `${formatDisplay(range.from)} – ${formatDisplay(range.to)}`}
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-auto p-0" align="end">
-          <Calendar
-            mode="range"
-            numberOfMonths={2}
-            selected={draft}
-            onSelect={setDraft}
-            defaultMonth={fromDateStr(range.from)}
-            disabled={{ after: today }}
-          />
-          <div className="flex items-center justify-end gap-2 border-t p-3">
+        <PopoverContent
+          className="w-[calc(100vw-1rem)] max-w-[42rem] overflow-hidden rounded-xl border-slate-200 bg-white p-0 shadow-xl dark:border-slate-800 dark:bg-slate-950"
+          align="end"
+          sideOffset={8}
+        >
+          <div className="border-b border-slate-200 px-6 py-4 dark:border-slate-800">
+            <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+              Select date range
+            </div>
+            <div className="mt-1 text-xs text-slate-500">
+              Choose a start date and an end date
+            </div>
+          </div>
+          <div className="overflow-x-auto px-5 py-5 sm:px-6">
+            <Calendar
+              mode="range"
+              numberOfMonths={2}
+              selected={draft}
+              onSelect={setDraft}
+              defaultMonth={fromDateStr(range.from)}
+              disabled={{ after: today }}
+              className="mx-auto w-full min-w-[36rem] bg-transparent p-0"
+              classNames={{
+                months: "flex flex-col gap-8 sm:flex-row sm:gap-10",
+                month: "w-full space-y-4 sm:w-[17rem]",
+                month_caption:
+                  "flex h-9 items-center justify-center px-10",
+                caption_label:
+                  "text-sm font-semibold tracking-tight text-slate-900 dark:text-slate-100",
+                nav: "absolute inset-x-0 top-0 z-10 flex items-center justify-between px-1",
+                button_previous:
+                  "h-8 w-8 rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800",
+                button_next:
+                  "h-8 w-8 rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800",
+                weekdays: "flex w-full",
+                weekday:
+                  "flex-1 select-none py-1 text-center text-[0.68rem] font-semibold uppercase tracking-wide text-slate-400",
+                week: "mt-2 flex w-full",
+                day: "relative flex-1 p-0 text-center",
+                range_start: "rounded-l-md bg-transparent",
+                range_middle:
+                  "rounded-none bg-teal-50 dark:bg-teal-950/35",
+                range_end: "rounded-r-md bg-transparent",
+                today: "rounded-md bg-slate-100 dark:bg-slate-800",
+                outside: "text-slate-300 dark:text-slate-700",
+                disabled: "text-slate-300 opacity-50 dark:text-slate-700",
+              }}
+            />
+          </div>
+          <div className="flex items-center justify-end gap-2 border-t border-slate-200 bg-slate-50/70 px-6 py-3.5 dark:border-slate-800 dark:bg-slate-900/50">
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
               onClick={() => setOpen(false)}
+              className="text-slate-600 hover:bg-slate-200/70 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100"
             >
               Cancel
             </Button>
-            <Button size="sm" onClick={apply} disabled={!draft?.from}>
+            <Button
+              size="sm"
+              onClick={apply}
+              disabled={!draft?.from}
+              className="bg-[#0D9488] text-white hover:bg-[#0f766e]"
+            >
               Apply
             </Button>
           </div>
