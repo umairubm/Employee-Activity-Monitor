@@ -10,7 +10,10 @@ classes, and the consuming picker should explicitly style those states. When
 the calendar is placed in a fluid panel, override the wrapper's default `w-fit`
 with a full-width root/month/table so all seven columns align. For compact
 popovers, remove forced body heights but keep the calendar region `flex-1
-min-h-0 overflow-y-auto` and the action bar `shrink-0`.
+min-h-0 overflow-y-auto` and the action bar `shrink-0`. A reference that shows
+stacked months, month labels embedded in the first row, or nonstandard range
+bands needs a dedicated renderer; the generic DayPicker wrapper cannot match
+those geometry requirements reliably.
 
 **Why:** Inherited muted styles and base selected-state classes can make active
 dates unreadable or override a consuming page's intended range color.
