@@ -185,13 +185,13 @@ export function DateRangeFilter() {
           </Button>
         </PopoverTrigger>
         <PopoverContent
-          className="flex max-h-[calc(100vh-1rem)] w-[calc(100vw-1rem)] max-w-[60rem] flex-col overflow-hidden rounded-xl border-slate-200 bg-white p-0 shadow-xl dark:border-slate-800 dark:bg-slate-950"
+          className="flex max-h-[calc(100vh-1rem)] w-[calc(100vw-1rem)] max-w-[580px] flex-col overflow-hidden rounded-xl border-slate-200 bg-white p-0 shadow-xl dark:border-slate-800 dark:bg-slate-950"
           align="end"
           sideOffset={8}
         >
-          <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 dark:border-slate-800">
+          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-800">
             <div>
-              <div className="text-lg font-medium tracking-tight text-slate-900 dark:text-slate-100">
+              <div className="text-base font-medium tracking-tight text-slate-900 dark:text-slate-100">
                 Date range
               </div>
               <div className="mt-0.5 text-xs text-slate-500">
@@ -207,8 +207,8 @@ export function DateRangeFilter() {
               <X className="h-5 w-5" />
             </button>
           </div>
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden sm:flex-row">
-            <aside className="w-full shrink-0 border-b border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950 sm:w-64 sm:border-b-0 sm:border-r">
+          <div className="flex min-h-0 flex-col overflow-hidden sm:flex-row">
+            <aside className="w-full shrink-0 border-b border-slate-200 bg-white p-2 dark:border-slate-800 dark:bg-slate-950 sm:w-40 sm:border-b-0 sm:border-r">
               <button
                 type="button"
                 onClick={() => {
@@ -218,7 +218,7 @@ export function DateRangeFilter() {
                     to: fromDateStr(range.to),
                   });
                 }}
-                className={`mb-2 w-full rounded-r-md px-4 py-2 text-left text-sm font-medium transition-colors ${
+                className={`mb-1 w-full rounded-r-md px-3 py-1.5 text-left text-xs font-medium transition-colors ${
                   panelTab === "Custom"
                     ? "bg-[#e8f0fe] text-slate-900 dark:bg-blue-950/60 dark:text-blue-100"
                     : "text-slate-700 hover:bg-blue-50 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-blue-950/40"
@@ -236,7 +236,7 @@ export function DateRangeFilter() {
                       setRange(preset.build());
                       setOpen(false);
                     }}
-                    className={`w-full rounded-r-md px-4 py-2 text-left text-sm transition-colors ${
+                    className={`w-full rounded-r-md px-3 py-1.5 text-left text-xs transition-colors ${
                       panelTab === preset.label
                         ? "bg-[#e8f0fe] font-medium text-slate-900 dark:bg-blue-950/60 dark:text-blue-100"
                         : "text-slate-700 hover:bg-blue-50 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-blue-950/40"
@@ -248,7 +248,7 @@ export function DateRangeFilter() {
               </div>
             </aside>
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-              <div className="flex flex-col gap-4 border-b border-slate-200 px-8 py-6 dark:border-slate-800 sm:flex-row sm:items-center">
+              <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-4 dark:border-slate-800 sm:flex-row sm:items-center">
                 <div className="relative min-w-0 flex-1">
                   <label className="absolute -top-2 left-3 z-10 bg-white px-1 text-xs font-medium text-slate-600 dark:bg-slate-950 dark:text-slate-300">
                     Start date*
@@ -261,7 +261,7 @@ export function DateRangeFilter() {
                         ? formatDisplay(toDateStr(draft.from))
                         : "Select date"
                     }
-                    className="h-12 border-slate-400 bg-white px-3 text-sm font-medium text-slate-900 shadow-none focus-visible:border-blue-600 focus-visible:ring-1 focus-visible:ring-blue-600 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                    className="h-10 border-slate-400 bg-white px-3 text-sm font-medium text-slate-900 shadow-none focus-visible:border-blue-600 focus-visible:ring-1 focus-visible:ring-blue-600 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
                   />
                 </div>
                 <div className="hidden text-sm text-slate-500 sm:block">–</div>
@@ -277,11 +277,11 @@ export function DateRangeFilter() {
                         ? formatDisplay(toDateStr(draft.to))
                         : "Select date"
                     }
-                    className="h-12 border-slate-400 bg-white px-3 text-sm font-medium text-slate-900 shadow-none focus-visible:border-blue-600 focus-visible:ring-1 focus-visible:ring-blue-600 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                    className="h-10 border-slate-400 bg-white px-3 text-sm font-medium text-slate-900 shadow-none focus-visible:border-blue-600 focus-visible:ring-1 focus-visible:ring-blue-600 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
                   />
                 </div>
               </div>
-              <div className="min-h-0 flex-1 overflow-y-auto overflow-x-auto px-8 py-6">
+              <div className="min-h-0 flex-1 overflow-y-auto overflow-x-auto px-4 py-4">
                 <Calendar
                   mode="range"
                   numberOfMonths={1}
@@ -292,7 +292,7 @@ export function DateRangeFilter() {
                   captionLayout="dropdown"
                   fromYear={1970}
                   toYear={today.getFullYear()}
-                  className="relative mx-auto w-full min-w-[24rem] max-w-[34rem] bg-transparent p-0 pt-12 text-slate-900 dark:text-slate-100"
+                  className="relative mx-auto w-full max-w-none bg-transparent p-0 pt-11 text-slate-900 dark:text-slate-100"
                   formatters={{
                     formatWeekdayName: (date) =>
                       date.toLocaleDateString(undefined, { weekday: "narrow" }),
@@ -300,20 +300,20 @@ export function DateRangeFilter() {
                   classNames={{
                     root: "!w-full",
                     months: "flex w-full",
-                    month: "w-full space-y-4",
+                    month: "w-full space-y-2",
                     month_caption:
-                      "flex h-10 items-center justify-start px-0",
+                      "flex h-9 items-center justify-center gap-2 px-0",
                     caption_label:
                       "flex h-10 items-center gap-1 rounded-md px-2 text-lg font-semibold uppercase tracking-tight text-slate-900 hover:bg-blue-50 dark:text-slate-100 dark:hover:bg-blue-950/50 [&>svg]:h-4 [&>svg]:w-4",
-                    nav: "absolute inset-x-0 top-0 z-10 flex items-center justify-end gap-2 px-0",
+                    nav: "absolute inset-x-0 top-0 z-10 flex items-center justify-center gap-2 px-0",
                     button_previous:
                       "h-9 w-9 rounded-md border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-blue-50 hover:text-blue-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-blue-950",
                     button_next:
                       "h-9 w-9 rounded-md border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-blue-50 hover:text-blue-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-blue-950",
                     weekdays: "flex w-full",
                     weekday:
-                      "flex-1 select-none py-2 text-center text-sm font-semibold uppercase text-slate-700 dark:text-slate-300",
-                    week: "mt-2 flex w-full",
+                      "flex-1 select-none py-1 text-center text-xs font-semibold uppercase text-slate-700 dark:text-slate-300",
+                    week: "mt-1 flex w-full",
                     day: "relative flex-1 p-0 text-center",
                     table: "w-full",
                     range_start: "rounded-l-full bg-blue-100 dark:bg-blue-950/60",
