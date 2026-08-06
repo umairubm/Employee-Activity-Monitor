@@ -3,6 +3,7 @@ import { CalendarIcon, X } from "lucide-react";
 import type { DateRange as DayPickerRange } from "react-day-picker";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
+import { Input } from "@/components/ui/input";
 import {
   Popover,
   PopoverContent,
@@ -26,7 +27,10 @@ const PRESETS: { label: string; build: () => DateRange }[] = [
 ];
 
 const PANEL_PRESETS: { label: string; build: () => DateRange }[] = [
-  { label: "Today so far", build: () => ({ from: todayStr(), to: todayStr() }) },
+  {
+    label: "Today so far",
+    build: () => ({ from: todayStr(), to: todayStr() }),
+  },
   {
     label: "Yesterday",
     build: () => ({ from: daysAgoStr(1), to: daysAgoStr(1) }),
@@ -61,6 +65,10 @@ const PANEL_PRESETS: { label: string; build: () => DateRange }[] = [
         to: toDateStr(lastOfLastMonth),
       };
     },
+  },
+  {
+    label: "All time",
+    build: () => ({ from: "1970-01-01", to: todayStr() }),
   },
 ];
 
@@ -99,6 +107,7 @@ export function DateRangeFilter() {
   const [open, setOpen] = useState(false);
   // Draft selection inside the popover; committed only on Apply.
   const [draft, setDraft] = useState<DayPickerRange | undefined>(undefined);
+  const [panelTab, setPanelTab] = useState("Custom");
 
   const today = fromDateStr(todayStr());
 
@@ -106,6 +115,11 @@ export function DateRangeFilter() {
     if (next) {
       // Seed the draft from the applied range each time the popover opens.
       setDraft({ from: fromDateStr(range.from), to: fromDateStr(range.to) });
+      const matchingPreset = PANEL_PRESETS.find((preset) => {
+        const target = preset.build();
+        return target.from === range.from && target.to === range.to;
+      });
+      setPanelTab(matchingPreset?.label ?? "Custom");
     }
     setOpen(next);
   };
@@ -116,6 +130,23 @@ export function DateRangeFilter() {
     const to = toDateStr(draft.to ?? draft.from);
     setRange({ from, to });
     setOpen(false);
+  };
+
+  const handleCalendarSelect = (next: DayPickerRange | undefined) => {
+    setDraft(next);
+    if (!next?.from) {
+      setPanelTab("Custom");
+      return;
+    }
+    const nextRange = {
+      from: toDateStr(next.from),
+      to: toDateStr(next.to ?? next.from),
+    };
+    const matchingPreset = PANEL_PRESETS.find((preset) => {
+      const target = preset.build();
+      return target.from === nextRange.from && target.to === nextRange.to;
+    });
+    setPanelTab(matchingPreset?.label ?? "Custom");
   };
 
   return (
@@ -154,7 +185,7 @@ export function DateRangeFilter() {
           </Button>
         </PopoverTrigger>
         <PopoverContent
-          className="w-[calc(100vw-1rem)] max-w-[52rem] overflow-hidden rounded-xl border-slate-200 bg-white p-0 shadow-xl dark:border-slate-800 dark:bg-slate-950"
+          className="w-[calc(100vw-1rem)] max-w-[60rem] overflow-hidden rounded-xl border-slate-200 bg-white p-0 shadow-xl dark:border-slate-800 dark:bg-slate-950"
           align="end"
           sideOffset={8}
         >
@@ -176,14 +207,22 @@ export function DateRangeFilter() {
               <X className="h-5 w-5" />
             </button>
           </div>
-          <div className="flex min-h-[31rem] flex-col sm:flex-row">
-            <aside className="w-full shrink-0 border-b border-slate-200 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-900/40 sm:w-48 sm:border-b-0 sm:border-r">
+          <div className="flex min-h-[38rem] flex-col sm:flex-row">
+            <aside className="w-full shrink-0 border-b border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950 sm:w-64 sm:border-b-0 sm:border-r">
               <button
                 type="button"
-                onClick={() =>
-                  setDraft({ from: fromDateStr(range.from), to: fromDateStr(range.to) })
-                }
-                className="mb-2 w-full rounded-md bg-teal-100 px-3 py-2.5 text-left text-sm font-medium text-teal-900 dark:bg-teal-950/70 dark:text-teal-100"
+                onClick={() => {
+                  setPanelTab("Custom");
+                  setDraft({
+                    from: fromDateStr(range.from),
+                    to: fromDateStr(range.to),
+                  });
+                }}
+                className={`mb-2 w-full rounded-r-md px-4 py-2 text-left text-sm font-medium transition-colors ${
+                  panelTab === "Custom"
+                    ? "bg-[#e8f0fe] text-slate-900 dark:bg-blue-950/60 dark:text-blue-100"
+                    : "text-slate-700 hover:bg-blue-50 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-blue-950/40"
+                }`}
               >
                 Custom
               </button>
@@ -193,10 +232,15 @@ export function DateRangeFilter() {
                     key={preset.label}
                     type="button"
                     onClick={() => {
+                      setPanelTab(preset.label);
                       setRange(preset.build());
                       setOpen(false);
                     }}
-                    className="w-full rounded-md px-3 py-2.5 text-left text-sm text-slate-700 transition-colors hover:bg-teal-50 hover:text-teal-900 dark:text-slate-300 dark:hover:bg-teal-950/60 dark:hover:text-teal-100"
+                    className={`w-full rounded-r-md px-4 py-2 text-left text-sm transition-colors ${
+                      panelTab === preset.label
+                        ? "bg-[#e8f0fe] font-medium text-slate-900 dark:bg-blue-950/60 dark:text-blue-100"
+                        : "text-slate-700 hover:bg-blue-50 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-blue-950/40"
+                    }`}
                   >
                     {preset.label}
                   </button>
@@ -204,61 +248,83 @@ export function DateRangeFilter() {
               </div>
             </aside>
             <div className="flex min-w-0 flex-1 flex-col">
-              <div className="flex flex-col gap-3 border-b border-slate-200 px-6 py-5 dark:border-slate-800 sm:flex-row">
-                <div className="min-w-0 flex-1">
-                  <div className="mb-1 text-xs font-medium text-slate-500">
-                    Start date
-                  </div>
-                  <div className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
-                    {draft?.from ? formatDisplay(toDateStr(draft.from)) : "Select date"}
-                  </div>
+              <div className="flex flex-col gap-4 border-b border-slate-200 px-8 py-6 dark:border-slate-800 sm:flex-row sm:items-center">
+                <div className="relative min-w-0 flex-1">
+                  <label className="absolute -top-2 left-3 z-10 bg-white px-1 text-xs font-medium text-slate-600 dark:bg-slate-950 dark:text-slate-300">
+                    Start date*
+                  </label>
+                  <Input
+                    readOnly
+                    aria-label="Start date"
+                    value={
+                      draft?.from
+                        ? formatDisplay(toDateStr(draft.from))
+                        : "Select date"
+                    }
+                    className="h-12 border-slate-400 bg-white px-3 text-sm font-medium text-slate-900 shadow-none focus-visible:border-blue-600 focus-visible:ring-1 focus-visible:ring-blue-600 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                  />
                 </div>
-                <div className="hidden items-end pb-2 text-slate-400 sm:flex">–</div>
-                <div className="min-w-0 flex-1">
-                  <div className="mb-1 text-xs font-medium text-slate-500">
-                    End date
-                  </div>
-                  <div className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
-                    {draft?.to ? formatDisplay(toDateStr(draft.to)) : "Select date"}
-                  </div>
+                <div className="hidden text-sm text-slate-500 sm:block">–</div>
+                <div className="relative min-w-0 flex-1">
+                  <label className="absolute -top-2 left-3 z-10 bg-white px-1 text-xs font-medium text-slate-600 dark:bg-slate-950 dark:text-slate-300">
+                    End date*
+                  </label>
+                  <Input
+                    readOnly
+                    aria-label="End date"
+                    value={
+                      draft?.to
+                        ? formatDisplay(toDateStr(draft.to))
+                        : "Select date"
+                    }
+                    className="h-12 border-slate-400 bg-white px-3 text-sm font-medium text-slate-900 shadow-none focus-visible:border-blue-600 focus-visible:ring-1 focus-visible:ring-blue-600 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                  />
                 </div>
               </div>
-              <div className="overflow-x-auto px-6 py-5">
+              <div className="overflow-x-auto px-8 py-6">
                 <Calendar
                   mode="range"
                   numberOfMonths={1}
                   selected={draft}
-                  onSelect={setDraft}
+                  onSelect={handleCalendarSelect}
                   defaultMonth={fromDateStr(range.from)}
                   disabled={{ after: today }}
-                  className="relative mx-auto w-full min-w-[20rem] max-w-[25rem] bg-transparent p-0 pt-10 text-slate-900 dark:text-slate-100"
+                  captionLayout="dropdown"
+                  fromYear={1970}
+                  toYear={today.getFullYear()}
+                  className="relative mx-auto w-full min-w-[24rem] max-w-[34rem] bg-transparent p-0 pt-12 text-slate-900 dark:text-slate-100"
+                  formatters={{
+                    formatWeekdayName: (date) =>
+                      date.toLocaleDateString(undefined, { weekday: "narrow" }),
+                  }}
                   classNames={{
                     months: "flex",
                     month: "w-full space-y-4",
-                    month_caption: "flex h-9 items-center justify-start px-0",
+                    month_caption:
+                      "flex h-10 items-center justify-start px-0",
                     caption_label:
-                      "text-lg font-semibold uppercase tracking-tight text-slate-900 dark:text-slate-100",
-                    nav: "absolute inset-x-0 top-0 z-10 flex items-center justify-end gap-2",
+                      "flex h-10 items-center gap-1 rounded-md px-2 text-lg font-semibold uppercase tracking-tight text-slate-900 hover:bg-blue-50 dark:text-slate-100 dark:hover:bg-blue-950/50 [&>svg]:h-4 [&>svg]:w-4",
+                    nav: "absolute inset-x-0 top-0 z-10 flex items-center justify-end gap-2 px-0",
                     button_previous:
-                      "h-9 w-9 rounded-md border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-teal-50 hover:text-teal-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-teal-950",
+                      "h-9 w-9 rounded-md border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-blue-50 hover:text-blue-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-blue-950",
                     button_next:
-                      "h-9 w-9 rounded-md border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-teal-50 hover:text-teal-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-teal-950",
+                      "h-9 w-9 rounded-md border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-blue-50 hover:text-blue-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-blue-950",
                     weekdays: "flex w-full",
                     weekday:
-                      "flex-1 select-none py-1 text-center text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300",
+                      "flex-1 select-none py-2 text-center text-sm font-semibold uppercase text-slate-700 dark:text-slate-300",
                     week: "mt-2 flex w-full",
                     day: "relative flex-1 p-0 text-center",
-                    range_start: "rounded-l-md bg-transparent",
+                    range_start: "rounded-l-full bg-blue-50 dark:bg-blue-950/60",
                     range_middle:
-                      "rounded-none bg-teal-100 text-teal-900 dark:bg-teal-950/60 dark:text-teal-100",
-                    range_end: "rounded-r-md bg-transparent",
-                    today: "rounded-md bg-slate-100 dark:bg-slate-800",
+                      "rounded-none bg-blue-50 text-slate-900 dark:bg-blue-950/60 dark:text-blue-100",
+                    range_end: "rounded-r-full bg-blue-50 dark:bg-blue-950/60",
+                    today: "rounded-full bg-transparent",
                     outside: "text-slate-400 dark:text-slate-600",
                     disabled: "text-slate-400 opacity-60 dark:text-slate-600",
                   }}
                 />
               </div>
-              <div className="mt-auto flex items-center justify-end gap-2 border-t border-slate-200 bg-slate-50/70 px-6 py-4 dark:border-slate-800 dark:bg-slate-900/50">
+              <div className="mt-auto flex items-center justify-end gap-1 border-t border-slate-200 bg-white px-8 py-4 dark:border-slate-800 dark:bg-slate-950">
                 <Button
                   variant="ghost"
                   size="sm"
@@ -271,7 +337,8 @@ export function DateRangeFilter() {
                   size="sm"
                   onClick={apply}
                   disabled={!draft?.from}
-                  className="bg-teal-600 text-white hover:bg-teal-700"
+                  variant="ghost"
+                  className="font-semibold text-blue-600 hover:bg-blue-50 hover:text-blue-700 dark:text-blue-400 dark:hover:bg-blue-950/50"
                 >
                   Apply
                 </Button>

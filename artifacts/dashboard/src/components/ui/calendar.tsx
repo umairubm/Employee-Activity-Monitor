@@ -202,8 +202,20 @@ function CalendarDayButton({
       data-range-middle={modifiers.range_middle}
       data-outside={modifiers.outside}
       data-disabled={modifiers.disabled}
+      data-selected={modifiers.selected}
       className={cn(
-        "text-slate-900 hover:bg-teal-50 hover:text-teal-900 dark:text-slate-100 dark:hover:bg-teal-950 dark:hover:text-teal-100 data-[outside=true]:text-slate-400 data-[outside=true]:hover:text-slate-500 data-[disabled=true]:text-slate-400 data-[disabled=true]:opacity-60 data-[selected-single=true]:bg-teal-600 data-[selected-single=true]:text-white data-[selected-single=true]:hover:bg-teal-700 data-[range-middle=true]:bg-teal-100 data-[range-middle=true]:text-teal-900 data-[range-middle=true]:hover:bg-teal-200 data-[range-middle=true]:hover:text-teal-900 dark:data-[range-middle=true]:bg-teal-950/60 dark:data-[range-middle=true]:text-teal-100 dark:data-[range-middle=true]:hover:bg-teal-900/70 data-[range-start=true]:bg-teal-600 data-[range-start=true]:text-white data-[range-start=true]:hover:bg-teal-700 data-[range-end=true]:bg-teal-600 data-[range-end=true]:text-white data-[range-end=true]:hover:bg-teal-700 group-data-[focused=true]/day:border-ring group-data-[focused=true]/day:ring-ring/50 flex aspect-square h-auto w-full min-w-[--cell-size] flex-col gap-1 font-normal leading-none data-[range-end=true]:rounded-full data-[range-middle=true]:rounded-none data-[range-start=true]:rounded-full group-data-[focused=true]/day:relative group-data-[focused=true]/day:z-10 group-data-[focused=true]/day:ring-[3px] [&>span]:text-xs [&>span]:opacity-70",
+        cn(
+          "text-slate-900 hover:bg-blue-50 hover:text-slate-900 dark:text-slate-100 dark:hover:bg-blue-950 dark:hover:text-blue-100 data-[outside=true]:text-slate-400 data-[outside=true]:hover:text-slate-500 data-[disabled=true]:text-slate-400 data-[disabled=true]:opacity-60 group-data-[focused=true]/day:border-ring group-data-[focused=true]/day:ring-ring/50 flex aspect-square h-auto w-full min-w-[--cell-size] flex-col gap-1 font-normal leading-none group-data-[focused=true]/day:relative group-data-[focused=true]/day:z-10 group-data-[focused=true]/day:ring-[3px] [&>span]:text-xs [&>span]:opacity-70",
+          modifiers.today &&
+            !modifiers.selected &&
+            "border border-slate-300 bg-white text-slate-900 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100",
+          modifiers.selected &&
+            "bg-blue-600 text-white hover:bg-blue-700 hover:text-white",
+          modifiers.range_middle &&
+            "rounded-none bg-blue-50 text-slate-900 hover:bg-blue-100 hover:text-slate-900 dark:bg-blue-950/60 dark:text-blue-100 dark:hover:bg-blue-900/70",
+          (modifiers.range_start || modifiers.range_end) &&
+            "rounded-full bg-blue-600 text-white hover:bg-blue-700 hover:text-white",
+        ),
         defaultClassNames.day,
         className
       )}
