@@ -153,38 +153,38 @@ function DatePickerCalendar({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex h-[104px] shrink-0 items-center justify-between">
+      <div className="flex h-11 shrink-0 items-center justify-between">
         <button
           type="button"
           aria-label={`Viewing ${monthLabel(month)}`}
           onClick={() =>
             onMonthChange(new Date(month.getFullYear(), month.getMonth() + 1, 1))
           }
-          className="flex items-center gap-2 text-[24px] font-normal tracking-tight text-slate-700"
+          className="flex items-center gap-1.5 text-sm font-normal tracking-tight text-slate-700 dark:text-slate-200"
         >
           {monthLabel(month)}
-          <ChevronDown className="h-6 w-6 text-slate-700" />
+          <ChevronDown className="h-4 w-4 text-slate-700 dark:text-slate-200" />
         </button>
-        <div className="flex items-center gap-10 pr-2">
+        <div className="flex items-center gap-4 pr-1">
           <button
             type="button"
             aria-label="Previous month"
             onClick={() => onMonthChange(new Date(month.getFullYear(), month.getMonth() - 1, 1))}
-            className="text-slate-500 transition-colors hover:text-slate-900"
+            className="text-slate-500 transition-colors hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
           >
-            <ChevronLeft className="h-10 w-10 stroke-[1.5]" />
+            <ChevronLeft className="h-5 w-5 stroke-[1.5]" />
           </button>
           <button
             type="button"
             aria-label="Next month"
             onClick={() => onMonthChange(new Date(month.getFullYear(), month.getMonth() + 1, 1))}
-            className="text-slate-500 transition-colors hover:text-slate-900"
+            className="text-slate-500 transition-colors hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
           >
-            <ChevronRight className="h-10 w-10 stroke-[1.5]" />
+            <ChevronRight className="h-5 w-5 stroke-[1.5]" />
           </button>
         </div>
       </div>
-      <div className="grid h-[74px] shrink-0 grid-cols-7 items-center border-b border-slate-300 text-[23px] font-normal text-slate-600">
+      <div className="grid h-8 shrink-0 grid-cols-7 items-center border-b border-slate-300 text-xs font-normal text-slate-600 dark:border-slate-700 dark:text-slate-400">
         {weekdays.map((weekday, index) => (
           <div key={`${weekday}-${index}`} className="text-center">
             {weekday}
@@ -203,11 +203,11 @@ function DatePickerCalendar({
             return (
               <div key={`${visibleMonth.getFullYear()}-${visibleMonth.getMonth()}`} className="space-y-2">
                 {weeks.map((week, weekIndex) => (
-                  <div key={weekIndex} className="grid h-[61px] grid-cols-7">
-                    {weekIndex === 0 && (
+                  <div key={weekIndex} className="grid h-9 grid-cols-7">
+                    {weekIndex === 0 && firstDay > 0 && (
                       <div
-                        style={{ gridColumn: `span ${Math.max(firstDay, 1)} / span ${Math.max(firstDay, 1)}` }}
-                        className="flex items-center px-6 text-[24px] font-bold text-slate-800"
+                        style={{ gridColumn: `span ${firstDay} / span ${firstDay}` }}
+                        className="flex items-center px-2 text-sm font-bold text-slate-800 dark:text-slate-200"
                       >
                         {monthLabel(visibleMonth)}
                       </div>
@@ -227,7 +227,7 @@ function DatePickerCalendar({
                       return (
                         <div
                           key={dayIndex}
-                          className={`flex h-[61px] items-center justify-center ${
+                          className={`flex h-9 items-center justify-center ${
                             inRange ? "bg-[#e7eeff]" : ""
                           }`}
                         >
@@ -235,15 +235,15 @@ function DatePickerCalendar({
                             type="button"
                             disabled={disabled}
                             onClick={() => onSelect(date)}
-                            className={`flex h-[61px] w-full items-center justify-center text-[24px] font-normal text-[#374151] transition-colors ${
+                            className={`flex h-9 w-full items-center justify-center text-sm font-normal text-[#374151] transition-colors dark:text-slate-200 ${
                               disabled
-                                ? "cursor-default !text-[#c5c8cc]"
-                                : "hover:bg-blue-50"
+                                ? "cursor-default !text-[#c5c8cc] dark:!text-slate-600"
+                                : "hover:bg-blue-50 dark:hover:bg-blue-950/40"
                             } ${
                               isSelected
-                                ? "h-[61px] w-[61px] rounded-full !bg-[#1976e8] !text-white"
+                                ? "h-9 w-9 rounded-full !bg-[#1976e8] !text-white"
                                 : isToday
-                                  ? "h-[61px] w-[61px] rounded-full border-2 border-slate-200"
+                                  ? "h-9 w-9 rounded-full border-2 border-slate-200"
                                   : ""
                             } ${isEnd && !isStart ? "rounded-full" : ""}`}
                           >
@@ -359,26 +359,26 @@ export function DateRangeFilter() {
           </Button>
         </PopoverTrigger>
         <PopoverContent
-          className="flex h-[1018px] max-h-[calc(100vh-1rem)] w-[800px] max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-[18px] border-slate-200 bg-white p-0 shadow-xl dark:border-slate-800 dark:bg-slate-950"
+          className="flex h-[640px] max-h-[calc(100vh-1rem)] w-[560px] max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-xl border-slate-200 bg-white p-0 shadow-xl dark:border-slate-800 dark:bg-slate-950"
           align="end"
           sideOffset={8}
         >
-          <div className="flex h-[138px] shrink-0 items-center justify-between border-b border-slate-200 px-8 dark:border-slate-800">
-            <div className="text-[34px] font-normal tracking-tight text-slate-900 dark:text-slate-100">
+          <div className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 px-4 dark:border-slate-800">
+            <div className="text-lg font-normal tracking-tight text-slate-900 dark:text-slate-100">
               Date range
             </div>
             <button
               type="button"
               aria-label="Close date range picker"
               onClick={() => setOpen(false)}
-              className="flex h-[92px] w-[92px] items-center justify-center rounded-full bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-900 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-900 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
             >
-              <X className="h-[52px] w-[52px] stroke-[1.5]" />
+              <X className="h-5 w-5 stroke-[1.5]" />
             </button>
           </div>
           <div className="flex min-h-0 flex-1 overflow-hidden">
-            <aside className="flex w-[280px] shrink-0 flex-col border-r border-slate-300 bg-white dark:border-slate-800 dark:bg-slate-950">
-              <div className="border-b border-slate-300 pb-4 pt-4 dark:border-slate-800">
+            <aside className="flex w-[170px] shrink-0 flex-col border-r border-slate-300 bg-white dark:border-slate-800 dark:bg-slate-950">
+              <div className="border-b border-slate-300 pb-2 pt-2 dark:border-slate-800">
               <button
                 type="button"
                 onClick={() => {
@@ -388,7 +388,7 @@ export function DateRangeFilter() {
                     to: fromDateStr(range.to),
                   });
                 }}
-                className={`w-full px-8 py-5 text-left text-[26px] font-normal transition-colors ${
+                className={`w-full px-4 py-2 text-left text-sm font-normal transition-colors ${
                   panelTab === "Custom"
                     ? "bg-[#e5edff] text-slate-900 dark:bg-blue-950/60 dark:text-blue-100"
                     : "text-slate-800 hover:bg-blue-50 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-blue-950/40"
@@ -397,7 +397,7 @@ export function DateRangeFilter() {
                 Custom
               </button>
               </div>
-              <div className="flex-1 space-y-1 pt-7">
+              <div className="flex-1 space-y-0.5 pt-3">
                 {PANEL_PRESETS.map((preset) => (
                   <button
                     key={preset.label}
@@ -407,7 +407,7 @@ export function DateRangeFilter() {
                       setRange(preset.build());
                       setOpen(false);
                     }}
-                    className={`w-full px-8 py-4 text-left text-[26px] font-normal transition-colors ${
+                    className={`w-full px-4 py-2 text-left text-sm font-normal transition-colors ${
                       panelTab === preset.label
                         ? "bg-[#e5edff] text-slate-900 dark:bg-blue-950/60 dark:text-blue-100"
                         : "text-slate-800 hover:bg-blue-50 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-blue-950/40"
@@ -417,29 +417,29 @@ export function DateRangeFilter() {
                   </button>
                 ))}
               </div>
-              <div className="flex h-[116px] shrink-0 items-center gap-6 border-t border-slate-300 px-8 text-[26px] text-slate-700 dark:border-slate-800 dark:text-slate-300">
+              <div className="flex h-12 shrink-0 items-center gap-3 border-t border-slate-300 px-4 text-sm text-slate-700 dark:border-slate-800 dark:text-slate-300">
                 <span>Compare</span>
                 <button
                   type="button"
                   aria-label="Compare date ranges"
                   aria-pressed={compare}
                   onClick={() => setCompare((value) => !value)}
-                  className={`relative h-[38px] w-[70px] rounded-full transition-colors ${
+                  className={`relative h-5 w-9 rounded-full transition-colors ${
                     compare ? "bg-blue-500" : "bg-slate-300 dark:bg-slate-700"
                   }`}
                 >
                   <span
-                    className={`absolute top-0.5 h-[34px] w-[34px] rounded-full bg-white shadow-md transition-transform ${
-                      compare ? "translate-x-[34px]" : "translate-x-0.5"
+                    className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-md transition-transform ${
+                      compare ? "translate-x-[18px]" : "translate-x-0.5"
                     }`}
                   />
                 </button>
               </div>
             </aside>
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-              <div className="flex h-[142px] shrink-0 flex-col gap-4 border-b border-slate-200 px-8 py-8 dark:border-slate-800 sm:flex-row sm:items-center">
+              <div className="flex shrink-0 flex-col gap-3 border-b border-slate-200 px-4 py-4 dark:border-slate-800 sm:flex-row sm:items-center">
                 <div className="relative min-w-0 flex-1">
-                  <label className="absolute -top-3 left-4 z-10 bg-white px-1 text-[24px] font-normal text-slate-600 dark:bg-slate-950 dark:text-slate-300">
+                  <label className="absolute -top-2 left-3 z-10 bg-white px-1 text-xs font-normal text-slate-600 dark:bg-slate-950 dark:text-slate-300">
                     Start date*
                   </label>
                   <Input
@@ -450,12 +450,12 @@ export function DateRangeFilter() {
                         ? formatDisplay(toDateStr(draft.from))
                         : "Select date"
                     }
-                    className="h-[78px] border-2 border-slate-500 bg-white px-4 text-[25px] font-normal text-slate-900 shadow-none focus-visible:border-blue-600 focus-visible:ring-1 focus-visible:ring-blue-600 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                    className="h-10 border-2 border-slate-500 bg-white px-3 text-sm font-normal text-slate-900 shadow-none focus-visible:border-blue-600 focus-visible:ring-1 focus-visible:ring-blue-600 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
                   />
                 </div>
-                <div className="hidden text-[30px] text-slate-700 sm:block">–</div>
+                <div className="hidden text-base text-slate-700 sm:block">–</div>
                 <div className="relative min-w-0 flex-1">
-                  <label className="absolute -top-3 left-4 z-10 bg-white px-1 text-[24px] font-normal text-slate-600 dark:bg-slate-950 dark:text-slate-300">
+                  <label className="absolute -top-2 left-3 z-10 bg-white px-1 text-xs font-normal text-slate-600 dark:bg-slate-950 dark:text-slate-300">
                     End date*
                   </label>
                   <Input
@@ -466,11 +466,11 @@ export function DateRangeFilter() {
                         ? formatDisplay(toDateStr(draft.to))
                         : "Select date"
                     }
-                    className="h-[78px] border-2 border-slate-500 bg-white px-4 text-[25px] font-normal text-slate-900 shadow-none focus-visible:border-blue-600 focus-visible:ring-1 focus-visible:ring-blue-600 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                    className="h-10 border-2 border-slate-500 bg-white px-3 text-sm font-normal text-slate-900 shadow-none focus-visible:border-blue-600 focus-visible:ring-1 focus-visible:ring-blue-600 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
                   />
                 </div>
               </div>
-              <div className="min-h-0 flex-1 overflow-y-auto px-8">
+              <div className="min-h-0 flex-1 overflow-y-auto px-4">
                 <DatePickerCalendar
                   month={viewMonth}
                   range={draft}
@@ -479,13 +479,13 @@ export function DateRangeFilter() {
                   onSelect={handleCalendarSelect}
                 />
               </div>
-              <div className="flex h-[82px] shrink-0 items-center justify-end border-t border-slate-200 bg-white px-8 dark:border-slate-800 dark:bg-slate-950">
+              <div className="flex h-12 shrink-0 items-center justify-end border-t border-slate-200 bg-white px-4 dark:border-slate-800 dark:bg-slate-950">
                 <Button
                   size="default"
                   onClick={apply}
                   disabled={!draft?.from}
                   variant="ghost"
-                  className="px-0 text-[26px] font-semibold text-blue-600 hover:bg-transparent hover:text-blue-700 dark:text-blue-400"
+                  className="px-0 text-sm font-semibold text-blue-600 hover:bg-transparent hover:text-blue-700 dark:text-blue-400"
                 >
                   Apply
                 </Button>
