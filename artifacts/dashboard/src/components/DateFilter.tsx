@@ -135,31 +135,31 @@ export function DateRangeFilter() {
               onSelect={setDraft}
               defaultMonth={fromDateStr(range.from)}
               disabled={{ after: today }}
-              className="mx-auto w-full min-w-[36rem] bg-transparent p-0"
+              className="relative mx-auto w-full min-w-[36rem] bg-transparent p-0 pt-10 text-slate-900 dark:text-slate-100"
               classNames={{
                 months: "flex flex-col gap-8 sm:flex-row sm:gap-10",
                 month: "w-full space-y-4 sm:w-[17rem]",
                 month_caption:
-                  "flex h-9 items-center justify-center px-10",
+                  "flex h-9 items-center justify-center px-12",
                 caption_label:
                   "text-sm font-semibold tracking-tight text-slate-900 dark:text-slate-100",
-                nav: "absolute inset-x-0 top-0 z-10 flex items-center justify-between px-1",
+                nav: "absolute inset-x-0 top-0 z-10 flex items-center justify-between px-0",
                 button_previous:
-                  "h-8 w-8 rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800",
+                  "h-8 w-8 rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-teal-50 hover:text-teal-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-teal-950",
                 button_next:
-                  "h-8 w-8 rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800",
+                  "h-8 w-8 rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-teal-50 hover:text-teal-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-teal-950",
                 weekdays: "flex w-full",
                 weekday:
-                  "flex-1 select-none py-1 text-center text-[0.68rem] font-semibold uppercase tracking-wide text-slate-400",
+                  "flex-1 select-none py-1 text-center text-[0.68rem] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300",
                 week: "mt-2 flex w-full",
                 day: "relative flex-1 p-0 text-center",
                 range_start: "rounded-l-md bg-transparent",
                 range_middle:
-                  "rounded-none bg-teal-50 dark:bg-teal-950/35",
+                  "rounded-none bg-teal-100 text-teal-900 dark:bg-teal-950/60 dark:text-teal-100",
                 range_end: "rounded-r-md bg-transparent",
                 today: "rounded-md bg-slate-100 dark:bg-slate-800",
-                outside: "text-slate-300 dark:text-slate-700",
-                disabled: "text-slate-300 opacity-50 dark:text-slate-700",
+                outside: "text-slate-400 dark:text-slate-600",
+                disabled: "text-slate-400 opacity-60 dark:text-slate-600",
               }}
             />
           </div>
