@@ -185,7 +185,7 @@ export function DateRangeFilter() {
           </Button>
         </PopoverTrigger>
         <PopoverContent
-          className="w-[calc(100vw-1rem)] max-w-[60rem] overflow-hidden rounded-xl border-slate-200 bg-white p-0 shadow-xl dark:border-slate-800 dark:bg-slate-950"
+          className="flex max-h-[calc(100vh-1rem)] w-[calc(100vw-1rem)] max-w-[60rem] flex-col overflow-hidden rounded-xl border-slate-200 bg-white p-0 shadow-xl dark:border-slate-800 dark:bg-slate-950"
           align="end"
           sideOffset={8}
         >
@@ -207,7 +207,7 @@ export function DateRangeFilter() {
               <X className="h-5 w-5" />
             </button>
           </div>
-          <div className="flex min-h-[38rem] flex-col sm:flex-row">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden sm:flex-row">
             <aside className="w-full shrink-0 border-b border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950 sm:w-64 sm:border-b-0 sm:border-r">
               <button
                 type="button"
@@ -247,7 +247,7 @@ export function DateRangeFilter() {
                 ))}
               </div>
             </aside>
-            <div className="flex min-w-0 flex-1 flex-col">
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
               <div className="flex flex-col gap-4 border-b border-slate-200 px-8 py-6 dark:border-slate-800 sm:flex-row sm:items-center">
                 <div className="relative min-w-0 flex-1">
                   <label className="absolute -top-2 left-3 z-10 bg-white px-1 text-xs font-medium text-slate-600 dark:bg-slate-950 dark:text-slate-300">
@@ -281,7 +281,7 @@ export function DateRangeFilter() {
                   />
                 </div>
               </div>
-              <div className="overflow-x-auto px-8 py-6">
+              <div className="min-h-0 flex-1 overflow-y-auto overflow-x-auto px-8 py-6">
                 <Calendar
                   mode="range"
                   numberOfMonths={1}
@@ -298,7 +298,8 @@ export function DateRangeFilter() {
                       date.toLocaleDateString(undefined, { weekday: "narrow" }),
                   }}
                   classNames={{
-                    months: "flex",
+                    root: "!w-full",
+                    months: "flex w-full",
                     month: "w-full space-y-4",
                     month_caption:
                       "flex h-10 items-center justify-start px-0",
@@ -314,17 +315,18 @@ export function DateRangeFilter() {
                       "flex-1 select-none py-2 text-center text-sm font-semibold uppercase text-slate-700 dark:text-slate-300",
                     week: "mt-2 flex w-full",
                     day: "relative flex-1 p-0 text-center",
-                    range_start: "rounded-l-full bg-blue-50 dark:bg-blue-950/60",
+                    table: "w-full",
+                    range_start: "rounded-l-full bg-blue-100 dark:bg-blue-950/60",
                     range_middle:
-                      "rounded-none bg-blue-50 text-slate-900 dark:bg-blue-950/60 dark:text-blue-100",
-                    range_end: "rounded-r-full bg-blue-50 dark:bg-blue-950/60",
+                      "rounded-none bg-[#e0e7ff] text-slate-900 dark:bg-blue-950/60 dark:text-blue-100",
+                    range_end: "rounded-r-full bg-blue-100 dark:bg-blue-950/60",
                     today: "rounded-full bg-transparent",
                     outside: "text-slate-400 dark:text-slate-600",
                     disabled: "text-slate-400 opacity-60 dark:text-slate-600",
                   }}
                 />
               </div>
-              <div className="mt-auto flex items-center justify-end gap-1 border-t border-slate-200 bg-white px-8 py-4 dark:border-slate-800 dark:bg-slate-950">
+              <div className="flex shrink-0 items-center justify-end gap-1 border-t border-slate-200 bg-white px-8 py-4 pb-5 dark:border-slate-800 dark:bg-slate-950">
                 <Button
                   variant="ghost"
                   size="sm"

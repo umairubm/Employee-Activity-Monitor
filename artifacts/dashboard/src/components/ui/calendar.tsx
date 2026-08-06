@@ -205,16 +205,16 @@ function CalendarDayButton({
       data-selected={modifiers.selected}
       className={cn(
         cn(
-          "text-slate-900 hover:bg-blue-50 hover:text-slate-900 dark:text-slate-100 dark:hover:bg-blue-950 dark:hover:text-blue-100 data-[outside=true]:text-slate-400 data-[outside=true]:hover:text-slate-500 data-[disabled=true]:text-slate-400 data-[disabled=true]:opacity-60 group-data-[focused=true]/day:border-ring group-data-[focused=true]/day:ring-ring/50 flex aspect-square h-auto w-full min-w-[--cell-size] flex-col gap-1 font-normal leading-none group-data-[focused=true]/day:relative group-data-[focused=true]/day:z-10 group-data-[focused=true]/day:ring-[3px] [&>span]:text-xs [&>span]:opacity-70",
+        "!text-[#0f172a] hover:!bg-blue-50 hover:!text-[#0f172a] disabled:opacity-100 dark:!text-slate-100 dark:hover:!bg-blue-950 dark:hover:!text-blue-100 data-[outside=true]:!text-[#94a3b8] data-[outside=true]:hover:!text-[#94a3b8] data-[disabled=true]:opacity-100 group-data-[focused=true]/day:border-ring group-data-[focused=true]/day:ring-ring/50 flex aspect-square h-auto w-full min-w-[--cell-size] flex-col gap-1 font-medium leading-none group-data-[focused=true]/day:relative group-data-[focused=true]/day:z-10 group-data-[focused=true]/day:ring-[3px] [&>span]:text-xs [&>span]:opacity-70",
           modifiers.today &&
             !modifiers.selected &&
-            "border border-slate-300 bg-white text-slate-900 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100",
+            "border border-slate-300 bg-white !text-[#0f172a] dark:border-slate-600 dark:bg-slate-950 dark:!text-slate-100",
           modifiers.selected &&
-            "bg-blue-600 text-white hover:bg-blue-700 hover:text-white",
+            "!bg-blue-600 !text-white hover:!bg-blue-700 hover:!text-white",
           modifiers.range_middle &&
-            "rounded-none bg-blue-50 text-slate-900 hover:bg-blue-100 hover:text-slate-900 dark:bg-blue-950/60 dark:text-blue-100 dark:hover:bg-blue-900/70",
+            "rounded-none !bg-[#e0e7ff] !text-[#0f172a] hover:!bg-blue-100 hover:!text-[#0f172a] dark:!bg-blue-950/60 dark:!text-blue-100 dark:hover:!bg-blue-900/70",
           (modifiers.range_start || modifiers.range_end) &&
-            "rounded-full bg-blue-600 text-white hover:bg-blue-700 hover:text-white",
+            "rounded-full !bg-blue-600 !text-white hover:!bg-blue-700 hover:!text-white",
         ),
         defaultClassNames.day,
         className
