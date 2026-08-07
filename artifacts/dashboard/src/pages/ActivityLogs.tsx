@@ -337,8 +337,17 @@ function ActivitySlots({ slots }: { slots: Uint8Array }) {
 /* ------------------------ session screenshot viewer ---------------------- */
 
 /**
- * Screenshots captured during one session's [startedAt, endedAt) window for a
- * given device. The hook only runs while the dialog is open (Radix mounts
+ * Screenshots are captured on a ~10-minute cadence, while activity sessions
+ * are often only seconds or minutes long — an exact [startedAt, endedAt)
+ * window would legitimately be empty for most sessions. Pad the query window
+ * so the modal shows the captures taken around the session; each thumbnail is
+ * labeled with its capture time so admins can tell exact-window shots apart.
+ */
+const SESSION_SCREENSHOT_PAD_MS = 5 * 60 * 1000;
+
+/**
+ * Screenshots captured during (and around) one session's window for a given
+ * device. The hook only runs while the dialog is open (Radix mounts
  * DialogContent children lazily), so we don't fetch for every session row.
  */
 function SessionScreenshots({
@@ -374,7 +383,7 @@ function SessionScreenshots({
     return (
       <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-12 text-center text-sm text-muted-foreground">
         <Camera className="mb-2 h-8 w-8 opacity-20" />
-        No screenshots were captured during this session.
+        No screenshots were captured around this session.
       </div>
     );
   }
@@ -609,8 +618,8 @@ function DeviceActivityPanel({
                       <ScrollArea className="max-h-[70vh] pr-2">
                         <SessionScreenshots
                           deviceId={log.deviceId}
-                          from={new Date(log.startedAt).toISOString()}
-                          to={new Date(log.endedAt).toISOString()}
+                          from={new Date(new Date(log.startedAt).getTime() - SESSION_SCREENSHOT_PAD_MS).toISOString()}
+                          to={new Date(new Date(log.endedAt).getTime() + SESSION_SCREENSHOT_PAD_MS).toISOString()}
                           tzOffsetMinutes={tzOffset}
                           fallbackZone={orgZone}
                         />
