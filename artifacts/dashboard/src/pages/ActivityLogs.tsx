@@ -337,13 +337,15 @@ function ActivitySlots({ slots }: { slots: Uint8Array }) {
 /* ------------------------ session screenshot viewer ---------------------- */
 
 /**
- * Screenshots are captured on a ~10-minute cadence, while activity sessions
- * are often only seconds or minutes long — an exact [startedAt, endedAt)
- * window would legitimately be empty for most sessions. Pad the query window
- * so the modal shows the captures taken around the session; each thumbnail is
- * labeled with its capture time so admins can tell exact-window shots apart.
+ * Screenshots are captured on a randomized cadence (up to 15 minutes between
+ * captures per device settings), while activity sessions are often only
+ * seconds or minutes long — an exact [startedAt, endedAt) window would
+ * legitimately be empty for most sessions. Pad the query window by the max
+ * capture interval so the modal always shows the captures taken around the
+ * session whenever the agent was running; each thumbnail is labeled with its
+ * capture time so admins can tell exact-window shots apart.
  */
-const SESSION_SCREENSHOT_PAD_MS = 5 * 60 * 1000;
+const SESSION_SCREENSHOT_PAD_MS = 15 * 60 * 1000;
 
 /**
  * Screenshots captured during (and around) one session's window for a given
