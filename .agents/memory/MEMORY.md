@@ -25,4 +25,5 @@
 - [Per-page permissions model](page-permissions.md) — NULL perms = full access; every tenant API group needs server-side gating; shared endpoints need any-of-pages gates; server/client key lists must stay in sync.
 - [One-time code redemption](one-time-code-redemption.md) — single-use codes need an atomic guarded UPDATE (re-check hash+expiry in WHERE, check rowCount); read-then-update races under concurrency.
 - [bytea prod/dev schema drift](bytea-prod-schema-drift.md) — staging col `text` in prod truncated every screenshot to ~53B; publish can't ALTER text→bytea (drizzle-kit customType bug emits `"undefined"."bytea"`); fix = rename col to force DROP+ADD.
+- [Codegen drift checks must not touch watched files](codegen-check-sandbox.md) — regenerate into a sandbox + hash-compare; in-place regen crashes Vite mid-write.
 - [React Day Picker modifier styling](react-day-picker-modifier-styling.md) — custom day-button data states must be styled explicitly; wrapper classNames alone can lose contrast or selected-range colors.

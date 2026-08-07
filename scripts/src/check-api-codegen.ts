@@ -7,9 +7,13 @@ import { fileURLToPath } from "node:url";
 
 /**
  * Fails if the committed generated API client is out of sync with the OpenAPI
- * spec. It regenerates the client from `lib/api-spec/openapi.yaml` into the real
- * output directories, compares the result against what was committed, then
- * restores the committed files so the working tree is left untouched.
+ * spec. It regenerates the client from `lib/api-spec/openapi.yaml` into a
+ * sandbox directory (via ORVAL_SANDBOX_DIR, honored by orval.config.ts) and
+ * compares the result against the committed files.
+ *
+ * The committed files are never touched: regenerating in place (the old
+ * approach) let dev servers watching lib/*\/src/generated serve half-written
+ * modules and crash at runtime.
  *
  * Exit code 1 => drift detected (someone edited the spec without re-running
  * `pnpm --filter @workspace/api-spec run codegen`).
@@ -19,9 +23,16 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, "..", "..");
 const apiSpecDir = path.join(repoRoot, "lib", "api-spec");
 
-const generatedDirs = [
-  path.join(repoRoot, "lib", "api-client-react", "src", "generated"),
-  path.join(repoRoot, "lib", "api-zod", "src", "generated"),
+// [committed generated dir, sandbox-relative mirror]
+const targets = [
+  {
+    committed: path.join(repoRoot, "lib", "api-client-react", "src", "generated"),
+    sandboxRel: path.join("api-client-react", "src", "generated"),
+  },
+  {
+    committed: path.join(repoRoot, "lib", "api-zod", "src", "generated"),
+    sandboxRel: path.join("api-zod", "src", "generated"),
+  },
 ];
 
 type Manifest = Map<string, string>;
@@ -49,17 +60,17 @@ function hashTree(dir: string): Manifest {
   return manifest;
 }
 
-function diffManifests(before: Manifest, after: Manifest): string[] {
+function diffManifests(committed: Manifest, regenerated: Manifest): string[] {
   const problems: string[] = [];
-  for (const [rel, hash] of before) {
-    if (!after.has(rel)) {
+  for (const [rel, hash] of committed) {
+    if (!regenerated.has(rel)) {
       problems.push(`removed by codegen: ${rel}`);
-    } else if (after.get(rel) !== hash) {
+    } else if (regenerated.get(rel) !== hash) {
       problems.push(`content differs: ${rel}`);
     }
   }
-  for (const rel of after.keys()) {
-    if (!before.has(rel)) {
+  for (const rel of regenerated.keys()) {
+    if (!committed.has(rel)) {
       problems.push(`added by codegen: ${rel}`);
     }
   }
@@ -67,34 +78,33 @@ function diffManifests(before: Manifest, after: Manifest): string[] {
 }
 
 function main() {
-  const backupRoot = fs.mkdtempSync(
-    path.join(os.tmpdir(), "api-codegen-check-"),
-  );
+  const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), "api-codegen-check-"));
 
-  // Snapshot the committed output (hashes + a physical backup for restore).
-  const committed = generatedDirs.map((dir, i) => {
-    const backup = path.join(backupRoot, String(i));
-    if (fs.existsSync(dir)) {
-      fs.cpSync(dir, backup, { recursive: true });
-    }
-    return { dir, backup, manifest: hashTree(dir) };
-  });
-
-  let regenerated = false;
   try {
+    // The react-query mutator lives next to the generated output; mirror it
+    // into the sandbox so the generated relative import is byte-identical.
+    const mutatorRel = path.join("api-client-react", "src", "custom-fetch.ts");
+    fs.mkdirSync(path.dirname(path.join(sandbox, mutatorRel)), {
+      recursive: true,
+    });
+    fs.copyFileSync(
+      path.join(repoRoot, "lib", mutatorRel),
+      path.join(sandbox, mutatorRel),
+    );
+
     // Regenerate straight from the spec (orval only; skip the codegen script's
     // extra typecheck step, which the `typecheck` validation already covers).
-    execFileSync(
-      "pnpm",
-      ["exec", "orval", "--config", "./orval.config.ts"],
-      { cwd: apiSpecDir, stdio: "inherit" },
-    );
-    regenerated = true;
+    execFileSync("pnpm", ["exec", "orval", "--config", "./orval.config.ts"], {
+      cwd: apiSpecDir,
+      stdio: "inherit",
+      env: { ...process.env, ORVAL_SANDBOX_DIR: sandbox },
+    });
 
     const problems: string[] = [];
-    for (const { dir, manifest } of committed) {
-      const label = path.relative(repoRoot, dir);
-      for (const p of diffManifests(manifest, hashTree(dir))) {
+    for (const { committed, sandboxRel } of targets) {
+      const label = path.relative(repoRoot, committed);
+      const regenerated = hashTree(path.join(sandbox, sandboxRel));
+      for (const p of diffManifests(hashTree(committed), regenerated)) {
         problems.push(`  [${label}] ${p}`);
       }
     }
@@ -112,16 +122,7 @@ function main() {
       console.log("API client is in sync with the OpenAPI spec.");
     }
   } finally {
-    if (regenerated) {
-      // Restore the committed files so the working tree is never mutated.
-      for (const { dir, backup } of committed) {
-        fs.rmSync(dir, { recursive: true, force: true });
-        if (fs.existsSync(backup)) {
-          fs.cpSync(backup, dir, { recursive: true });
-        }
-      }
-    }
-    fs.rmSync(backupRoot, { recursive: true, force: true });
+    fs.rmSync(sandbox, { recursive: true, force: true });
   }
 }
 
