@@ -19,6 +19,17 @@ export const HeartbeatBody = z.object({
   // reports, e.g. 330 for IST. Lets the dashboard render times as the device
   // user saw them. Bounded to ±  24h to reject garbage.
   tzOffsetMinutes: z.number().int().min(-1440).max(1440).optional(),
+  // Live utilization snapshot captured just before the heartbeat. Optional so
+  // older agents keep working; stored on the device row for the dashboard's
+  // System Metrics card.
+  metrics: z
+    .object({
+      cpuPercent: z.number().min(0).max(100).nullable().optional(),
+      ramPercent: z.number().min(0).max(100).nullable().optional(),
+      diskFreeBytes: z.number().nonnegative().nullable().optional(),
+      diskTotalBytes: z.number().nonnegative().nullable().optional(),
+    })
+    .optional(),
 });
 export type HeartbeatBody = z.infer<typeof HeartbeatBody>;
 
@@ -63,5 +74,8 @@ export type ScreenshotMeta = z.infer<typeof ScreenshotMeta>;
 export const CommandAckBody = z.object({
   commandId: z.string().uuid(),
   status: z.enum(["acknowledged", "completed", "failed"]),
+  // Optional human-readable failure detail from the agent (e.g. "unsupported
+  // on macOS"). Never contains sensitive payloads. Stored on the command row.
+  message: z.string().max(1000).optional(),
 });
 export type CommandAckBody = z.infer<typeof CommandAckBody>;

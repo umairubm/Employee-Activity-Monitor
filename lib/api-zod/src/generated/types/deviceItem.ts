@@ -5,6 +5,7 @@
  * API specification for Workforce Analytics & IT Management
  * OpenAPI spec version: 0.1.0
  */
+import type { DeviceItemMetrics } from "./deviceItemMetrics";
 import type { DeviceItemOsType } from "./deviceItemOsType";
 import type { DeviceItemSystemInfo } from "./deviceItemSystemInfo";
 
@@ -26,6 +27,19 @@ export interface DeviceItem {
   /** @nullable */
   lastSeenAt?: Date | null;
   isLocked: boolean;
+  /**
+   * When the current lock auto-expires; null while locked means "until manually unlocked".
+   * @nullable
+   */
+  lockedUntil?: Date | null;
+  usbBlockEnabled?: boolean;
+  /**
+   * Latest live utilization metrics reported by the agent.
+   * @nullable
+   */
+  metrics?: DeviceItemMetrics;
+  /** @nullable */
+  metricsAt?: Date | null;
   screenshotMinMinutes: number;
   screenshotMaxMinutes: number;
   idleThresholdSeconds: number;

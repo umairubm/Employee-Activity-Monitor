@@ -108,6 +108,23 @@ export const ListDevicesResponseItem = zod.object({
   enrolledAt: zod.coerce.date().nullish(),
   lastSeenAt: zod.coerce.date().nullish(),
   isLocked: zod.boolean(),
+  lockedUntil: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      'When the current lock auto-expires; null while locked means \"until manually unlocked\".',
+    ),
+  usbBlockEnabled: zod.boolean().optional(),
+  metrics: zod
+    .object({
+      cpuPercent: zod.number().nullish(),
+      ramPercent: zod.number().nullish(),
+      diskFreeBytes: zod.number().nullish(),
+      diskTotalBytes: zod.number().nullish(),
+    })
+    .nullish()
+    .describe("Latest live utilization metrics reported by the agent."),
+  metricsAt: zod.coerce.date().nullish(),
   screenshotMinMinutes: zod.number(),
   screenshotMaxMinutes: zod.number(),
   idleThresholdSeconds: zod.number(),
@@ -171,6 +188,23 @@ export const GetDeviceResponse = zod.object({
   enrolledAt: zod.coerce.date().nullish(),
   lastSeenAt: zod.coerce.date().nullish(),
   isLocked: zod.boolean(),
+  lockedUntil: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      'When the current lock auto-expires; null while locked means \"until manually unlocked\".',
+    ),
+  usbBlockEnabled: zod.boolean().optional(),
+  metrics: zod
+    .object({
+      cpuPercent: zod.number().nullish(),
+      ramPercent: zod.number().nullish(),
+      diskFreeBytes: zod.number().nullish(),
+      diskTotalBytes: zod.number().nullish(),
+    })
+    .nullish()
+    .describe("Latest live utilization metrics reported by the agent."),
+  metricsAt: zod.coerce.date().nullish(),
   screenshotMinMinutes: zod.number(),
   screenshotMaxMinutes: zod.number(),
   idleThresholdSeconds: zod.number(),
@@ -226,7 +260,16 @@ export const GetDeviceCommandsResponseItem = zod.object({
   deviceId: zod.string().uuid(),
   issuedById: zod.string().uuid().nullish(),
   issuedByUsername: zod.string().nullish(),
-  commandType: zod.enum(["lock_screen", "logout_user", "update_config"]),
+  commandType: zod.enum([
+    "lock_screen",
+    "logout_user",
+    "update_config",
+    "unlock_screen",
+    "reset_password",
+    "restart",
+    "shutdown",
+    "set_usb_block",
+  ]),
   payload: zod.string().nullish(),
   status: zod.enum([
     "pending",
@@ -255,9 +298,37 @@ export const IssueDeviceCommandParams = zod.object({
   id: zod.coerce.string().uuid(),
 });
 
+export const issueDeviceCommandBodyLockDurationMinutesMax = 10080;
+
+export const issueDeviceCommandBodyNewPasswordMin = 8;
+export const issueDeviceCommandBodyNewPasswordMax = 128;
+
 export const IssueDeviceCommandBody = zod.object({
-  commandType: zod.enum(["lock_screen", "logout_user"]),
+  commandType: zod.enum([
+    "lock_screen",
+    "logout_user",
+    "unlock_screen",
+    "reset_password",
+    "restart",
+    "shutdown",
+    "set_usb_block",
+  ]),
   reason: zod.string().optional(),
+  lockDurationMinutes: zod
+    .number()
+    .min(1)
+    .max(issueDeviceCommandBodyLockDurationMinutesMax)
+    .optional()
+    .describe(
+      'For lock_screen\/logout_user only. Lock the device for this many minutes; omit for \"until manually unlocked\".',
+    ),
+  newPassword: zod
+    .string()
+    .min(issueDeviceCommandBodyNewPasswordMin)
+    .max(issueDeviceCommandBodyNewPasswordMax)
+    .optional()
+    .describe("Required for reset_password. Never echoed back."),
+  enabled: zod.boolean().optional().describe("Required for set_usb_block."),
 });
 
 /**
@@ -277,7 +348,16 @@ export const CancelDeviceCommandResponse = zod.object({
   deviceId: zod.string().uuid(),
   issuedById: zod.string().uuid().nullish(),
   issuedByUsername: zod.string().nullish(),
-  commandType: zod.enum(["lock_screen", "logout_user", "update_config"]),
+  commandType: zod.enum([
+    "lock_screen",
+    "logout_user",
+    "update_config",
+    "unlock_screen",
+    "reset_password",
+    "restart",
+    "shutdown",
+    "set_usb_block",
+  ]),
   payload: zod.string().nullish(),
   status: zod.enum([
     "pending",
@@ -319,6 +399,23 @@ export const SetDeviceGroupResponse = zod.object({
   enrolledAt: zod.coerce.date().nullish(),
   lastSeenAt: zod.coerce.date().nullish(),
   isLocked: zod.boolean(),
+  lockedUntil: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      'When the current lock auto-expires; null while locked means \"until manually unlocked\".',
+    ),
+  usbBlockEnabled: zod.boolean().optional(),
+  metrics: zod
+    .object({
+      cpuPercent: zod.number().nullish(),
+      ramPercent: zod.number().nullish(),
+      diskFreeBytes: zod.number().nullish(),
+      diskTotalBytes: zod.number().nullish(),
+    })
+    .nullish()
+    .describe("Latest live utilization metrics reported by the agent."),
+  metricsAt: zod.coerce.date().nullish(),
   screenshotMinMinutes: zod.number(),
   screenshotMaxMinutes: zod.number(),
   idleThresholdSeconds: zod.number(),
@@ -448,6 +545,23 @@ export const UpdateDeviceConfigResponse = zod.object({
   enrolledAt: zod.coerce.date().nullish(),
   lastSeenAt: zod.coerce.date().nullish(),
   isLocked: zod.boolean(),
+  lockedUntil: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      'When the current lock auto-expires; null while locked means \"until manually unlocked\".',
+    ),
+  usbBlockEnabled: zod.boolean().optional(),
+  metrics: zod
+    .object({
+      cpuPercent: zod.number().nullish(),
+      ramPercent: zod.number().nullish(),
+      diskFreeBytes: zod.number().nullish(),
+      diskTotalBytes: zod.number().nullish(),
+    })
+    .nullish()
+    .describe("Latest live utilization metrics reported by the agent."),
+  metricsAt: zod.coerce.date().nullish(),
   screenshotMinMinutes: zod.number(),
   screenshotMaxMinutes: zod.number(),
   idleThresholdSeconds: zod.number(),
@@ -2372,10 +2486,20 @@ export const HeartbeatBody = zod.object({
   deviceId: zod.string().uuid(),
   systemName: zod.string().optional(),
   osType: zod.enum(["windows", "macos"]).optional(),
+  metrics: zod
+    .object({
+      cpuPercent: zod.number().nullish(),
+      ramPercent: zod.number().nullish(),
+      diskFreeBytes: zod.number().nullish(),
+      diskTotalBytes: zod.number().nullish(),
+    })
+    .optional()
+    .describe("Live utilization snapshot captured before the heartbeat."),
 });
 
 export const HeartbeatResponse = zod.object({
   isLocked: zod.boolean(),
+  lockedUntil: zod.coerce.date().nullish(),
   dataFrequencyMinutes: zod.number().optional(),
   screenshotIntervalRange: zod.string().optional(),
 });

@@ -201,6 +201,112 @@ describe("POST /devices/:id/commands", () => {
     expect(res.status).toBe(400);
     expect(await commandCount(device.id)).toBe(0);
   });
+
+  it("locks the device for a fixed duration and records lockedUntil", async () => {
+    const device = await newDevice({ isLocked: false });
+    const before = Date.now();
+    const res = await request(adminApp)
+      .post(`/devices/${device.id}/commands`)
+      .send({ commandType: "lock_screen", lockDurationMinutes: 30 });
+
+    expect(res.status).toBe(201);
+    const [row] = await db
+      .select()
+      .from(devicesTable)
+      .where(eq(devicesTable.id, device.id));
+    expect(row.isLocked).toBe(true);
+    expect(row.lockedUntil).not.toBeNull();
+    const untilMs = new Date(row.lockedUntil as unknown as string).getTime();
+    // ~30 minutes out (allow generous slack for test timing).
+    expect(untilMs).toBeGreaterThan(before + 25 * 60_000);
+    expect(untilMs).toBeLessThan(before + 35 * 60_000);
+  });
+
+  it("locks indefinitely (lockedUntil null) when no duration is given", async () => {
+    const device = await newDevice({ isLocked: false });
+    await request(adminApp)
+      .post(`/devices/${device.id}/commands`)
+      .send({ commandType: "lock_screen" });
+
+    const [row] = await db
+      .select()
+      .from(devicesTable)
+      .where(eq(devicesTable.id, device.id));
+    expect(row.isLocked).toBe(true);
+    expect(row.lockedUntil).toBeNull();
+  });
+
+  it("unlock_screen clears the device lock state", async () => {
+    const device = await newDevice({ isLocked: true });
+    const res = await request(adminApp)
+      .post(`/devices/${device.id}/commands`)
+      .send({ commandType: "unlock_screen" });
+
+    expect(res.status).toBe(201);
+    const [row] = await db
+      .select()
+      .from(devicesTable)
+      .where(eq(devicesTable.id, device.id));
+    expect(row.isLocked).toBe(false);
+    expect(row.lockedUntil).toBeNull();
+  });
+
+  it("reset_password requires a password and never echoes it back", async () => {
+    const device = await newDevice();
+    const missing = await request(adminApp)
+      .post(`/devices/${device.id}/commands`)
+      .send({ commandType: "reset_password" });
+    expect(missing.status).toBe(400);
+
+    const res = await request(adminApp)
+      .post(`/devices/${device.id}/commands`)
+      .send({ commandType: "reset_password", newPassword: "s3cret-pass" });
+    expect(res.status).toBe(201);
+    // Response is redacted, but the payload IS persisted for the agent to read.
+    expect(res.body.payload).toBeNull();
+    const [row] = await db
+      .select()
+      .from(deviceCommandsTable)
+      .where(eq(deviceCommandsTable.id, res.body.id));
+    expect(row.payload).toContain("s3cret-pass");
+
+    // Command history must also redact the password payload.
+    const history = await request(adminApp).get(`/devices/${device.id}/commands`);
+    const item = history.body.find((c: any) => c.id === res.body.id);
+    expect(item.payload).toBeNull();
+  });
+
+  it("set_usb_block flips the device usbBlockEnabled flag", async () => {
+    const device = await newDevice();
+    await request(adminApp)
+      .post(`/devices/${device.id}/commands`)
+      .send({ commandType: "set_usb_block", enabled: true });
+    let [row] = await db
+      .select()
+      .from(devicesTable)
+      .where(eq(devicesTable.id, device.id));
+    expect(row.usbBlockEnabled).toBe(true);
+
+    await request(adminApp)
+      .post(`/devices/${device.id}/commands`)
+      .send({ commandType: "set_usb_block", enabled: false });
+    [row] = await db
+      .select()
+      .from(devicesTable)
+      .where(eq(devicesTable.id, device.id));
+    expect(row.usbBlockEnabled).toBe(false);
+  });
+
+  it("accepts restart and shutdown command types", async () => {
+    const device = await newDevice();
+    for (const commandType of ["restart", "shutdown"] as const) {
+      const res = await request(adminApp)
+        .post(`/devices/${device.id}/commands`)
+        .send({ commandType });
+      expect(res.status).toBe(201);
+      expect(res.body.commandType).toBe(commandType);
+    }
+  });
 });
 
 describe("GET /devices/:id/commands", () => {

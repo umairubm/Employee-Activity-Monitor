@@ -69,18 +69,24 @@ class AgentAPI:
         self.device_secret = data["deviceSecret"]
         return data
 
-    def heartbeat(self, agent_version: str) -> dict:
+    def heartbeat(
+        self, agent_version: str, metrics: Optional[dict] = None
+    ) -> dict:
         # Report the device's wall-clock offset (minutes from UTC) so the
         # dashboard can display activity/screenshot times as the device user
         # saw them on their own clock.
         offset = datetime.now().astimezone().utcoffset()
         tz_offset_minutes = round(offset.total_seconds() / 60) if offset else 0
+        body: dict[str, Any] = {
+            "agentVersion": agent_version,
+            "tzOffsetMinutes": tz_offset_minutes,
+        }
+        # Best-effort live health metrics (each value may be null).
+        if metrics is not None:
+            body["metrics"] = metrics
         resp = requests.post(
             self._url("/heartbeat"),
-            json={
-                "agentVersion": agent_version,
-                "tzOffsetMinutes": tz_offset_minutes,
-            },
+            json=body,
             headers=self._auth_headers(),
             timeout=self.timeout,
         )
@@ -134,10 +140,18 @@ class AgentAPI:
             )
         return resp.json()
 
-    def ack_command(self, command_id: str, status: str) -> dict:
+    def ack_command(
+        self, command_id: str, status: str, message: Optional[str] = None
+    ) -> dict:
+        payload: dict[str, Any] = {"commandId": command_id, "status": status}
+        # The ack endpoint may accept an optional error/message field; include
+        # it when provided so failures carry a human-readable reason. Servers
+        # that don't recognize it simply ignore the extra key.
+        if message:
+            payload["message"] = message
         resp = requests.post(
             self._url("/commands/ack"),
-            json={"commandId": command_id, "status": status},
+            json=payload,
             headers=self._auth_headers(),
             timeout=self.timeout,
         )

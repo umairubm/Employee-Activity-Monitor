@@ -161,7 +161,12 @@ router.get("/:id/commands", async (req, res) => {
       )
       .orderBy(desc(deviceCommandsTable.issuedAt))
       .limit(50);
-    res.json(rows);
+    // Redact reset_password payloads — they contain the new password.
+    res.json(
+      rows.map((r) =>
+        r.commandType === "reset_password" ? { ...r, payload: null } : r,
+      ),
+    );
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }
@@ -274,10 +279,54 @@ router.patch(
   },
 );
 
-const issueCommandSchema = z.object({
-  commandType: z.enum(["lock_screen", "logout_user"]),
-  reason: z.string().max(500).optional(),
-});
+/**
+ * Admin-issuable commands. Lock/sign-out accept an optional duration (minutes)
+ * — omitted means "until manually unlocked"; the server records the lock state
+ * and expiry on the device row so the badge countdown and heartbeat expiry are
+ * consistent. `reset_password` carries the new password in the payload (never
+ * echoed back in command history). `set_usb_block` also flips the device's
+ * config flag so newly-enrolled heartbeats see it immediately.
+ */
+const issueCommandSchema = z.discriminatedUnion("commandType", [
+  z.object({
+    commandType: z.enum(["lock_screen", "logout_user"]),
+    reason: z.string().max(500).optional(),
+    lockDurationMinutes: z.number().int().min(1).max(10080).optional(),
+  }),
+  z.object({
+    commandType: z.enum(["unlock_screen", "restart", "shutdown"]),
+    reason: z.string().max(500).optional(),
+  }),
+  z.object({
+    commandType: z.literal("reset_password"),
+    reason: z.string().max(500).optional(),
+    newPassword: z.string().min(8).max(128),
+  }),
+  z.object({
+    commandType: z.literal("set_usb_block"),
+    reason: z.string().max(500).optional(),
+    enabled: z.boolean(),
+  }),
+]);
+
+/** Payload sent to the agent (stored as JSON text on the command row). */
+function commandPayload(
+  data: z.infer<typeof issueCommandSchema>,
+): string | null {
+  switch (data.commandType) {
+    case "lock_screen":
+    case "logout_user":
+      return data.lockDurationMinutes
+        ? JSON.stringify({ lockDurationMinutes: data.lockDurationMinutes })
+        : null;
+    case "reset_password":
+      return JSON.stringify({ newPassword: data.newPassword });
+    case "set_usb_block":
+      return JSON.stringify({ enabled: data.enabled });
+    default:
+      return null;
+  }
+}
 
 // POST /api/devices/:id/commands - issue an authorized IT command
 router.post(
@@ -306,19 +355,52 @@ router.post(
         return;
       }
 
+      const data = parsed.data;
       const [command] = await db
         .insert(deviceCommandsTable)
         .values({
           deviceId: String(req.params.id),
           companyId,
-          commandType: parsed.data.commandType,
-          reason: parsed.data.reason ?? null,
+          commandType: data.commandType,
+          payload: commandPayload(data),
+          reason: data.reason ?? null,
           issuedById: (req as AuthedRequest).user.id,
           status: "pending",
         })
         .returning();
 
-      res.status(201).json(command);
+      // Keep the device's lock state in sync with the command so the
+      // dashboard badge/countdown and heartbeat expiry agree.
+      if (
+        data.commandType === "lock_screen" ||
+        data.commandType === "logout_user"
+      ) {
+        const lockedUntil =
+          "lockDurationMinutes" in data && data.lockDurationMinutes
+            ? new Date(Date.now() + data.lockDurationMinutes * 60_000)
+            : null;
+        await db
+          .update(devicesTable)
+          .set({ isLocked: true, lockedUntil, updatedAt: new Date() })
+          .where(eq(devicesTable.id, String(req.params.id)));
+      } else if (data.commandType === "unlock_screen") {
+        await db
+          .update(devicesTable)
+          .set({ isLocked: false, lockedUntil: null, updatedAt: new Date() })
+          .where(eq(devicesTable.id, String(req.params.id)));
+      } else if (data.commandType === "set_usb_block") {
+        await db
+          .update(devicesTable)
+          .set({ usbBlockEnabled: data.enabled, updatedAt: new Date() })
+          .where(eq(devicesTable.id, String(req.params.id)));
+      }
+
+      // Never echo a password back to the client.
+      res.status(201).json({
+        ...command,
+        payload:
+          command.commandType === "reset_password" ? null : command.payload,
+      });
     } catch (error) {
       res.status(500).json({ error: (error as Error).message });
     }

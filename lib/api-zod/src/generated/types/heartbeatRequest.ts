@@ -5,10 +5,13 @@
  * API specification for Workforce Analytics & IT Management
  * OpenAPI spec version: 0.1.0
  */
+import type { HeartbeatRequestMetrics } from "./heartbeatRequestMetrics";
 import type { HeartbeatRequestOsType } from "./heartbeatRequestOsType";
 
 export interface HeartbeatRequest {
   deviceId: string;
   systemName?: string;
   osType?: HeartbeatRequestOsType;
+  /** Live utilization snapshot captured before the heartbeat. */
+  metrics?: HeartbeatRequestMetrics;
 }

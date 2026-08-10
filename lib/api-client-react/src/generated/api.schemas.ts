@@ -336,6 +336,21 @@ export const DeviceItemOsType = {
 } as const;
 
 /**
+ * Latest live utilization metrics reported by the agent.
+ * @nullable
+ */
+export type DeviceItemMetrics = {
+  /** @nullable */
+  cpuPercent?: number | null;
+  /** @nullable */
+  ramPercent?: number | null;
+  /** @nullable */
+  diskFreeBytes?: number | null;
+  /** @nullable */
+  diskTotalBytes?: number | null;
+} | null;
+
+/**
  * Latest hardware/system inventory snapshot reported by the agent.
  * @nullable
  */
@@ -359,6 +374,19 @@ export interface DeviceItem {
   /** @nullable */
   lastSeenAt?: string | null;
   isLocked: boolean;
+  /**
+   * When the current lock auto-expires; null while locked means "until manually unlocked".
+   * @nullable
+   */
+  lockedUntil?: string | null;
+  usbBlockEnabled?: boolean;
+  /**
+   * Latest live utilization metrics reported by the agent.
+   * @nullable
+   */
+  metrics?: DeviceItemMetrics;
+  /** @nullable */
+  metricsAt?: string | null;
   screenshotMinMinutes: number;
   screenshotMaxMinutes: number;
   idleThresholdSeconds: number;
@@ -444,6 +472,11 @@ export const DeviceCommandItemCommandType = {
   lock_screen: "lock_screen",
   logout_user: "logout_user",
   update_config: "update_config",
+  unlock_screen: "unlock_screen",
+  reset_password: "reset_password",
+  restart: "restart",
+  shutdown: "shutdown",
+  set_usb_block: "set_usb_block",
 } as const;
 
 export type DeviceCommandItemStatus =
@@ -495,11 +528,30 @@ export type IssueCommandRequestCommandType =
 export const IssueCommandRequestCommandType = {
   lock_screen: "lock_screen",
   logout_user: "logout_user",
+  unlock_screen: "unlock_screen",
+  reset_password: "reset_password",
+  restart: "restart",
+  shutdown: "shutdown",
+  set_usb_block: "set_usb_block",
 } as const;
 
 export interface IssueCommandRequest {
   commandType: IssueCommandRequestCommandType;
   reason?: string;
+  /**
+   * For lock_screen/logout_user only. Lock the device for this many minutes; omit for "until manually unlocked".
+   * @minimum 1
+   * @maximum 10080
+   */
+  lockDurationMinutes?: number;
+  /**
+   * Required for reset_password. Never echoed back.
+   * @minLength 8
+   * @maxLength 128
+   */
+  newPassword?: string;
+  /** Required for set_usb_block. */
+  enabled?: boolean;
 }
 
 export interface ActivityLogRecord {
@@ -1325,14 +1377,32 @@ export const HeartbeatRequestOsType = {
   macos: "macos",
 } as const;
 
+/**
+ * Live utilization snapshot captured before the heartbeat.
+ */
+export type HeartbeatRequestMetrics = {
+  /** @nullable */
+  cpuPercent?: number | null;
+  /** @nullable */
+  ramPercent?: number | null;
+  /** @nullable */
+  diskFreeBytes?: number | null;
+  /** @nullable */
+  diskTotalBytes?: number | null;
+};
+
 export interface HeartbeatRequest {
   deviceId: string;
   systemName?: string;
   osType?: HeartbeatRequestOsType;
+  /** Live utilization snapshot captured before the heartbeat. */
+  metrics?: HeartbeatRequestMetrics;
 }
 
 export interface HeartbeatResponse {
   isLocked: boolean;
+  /** @nullable */
+  lockedUntil?: string | null;
   dataFrequencyMinutes?: number;
   screenshotIntervalRange?: string;
 }

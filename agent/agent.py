@@ -12,6 +12,8 @@ Run:  python -m agent.agent      (from the repo root)
 
 from __future__ import annotations
 
+import getpass
+import json
 import os
 import random
 import subprocess
@@ -62,6 +64,11 @@ class MonitoringAgent:
         self._current = None  # active segment being accumulated
         self._last_screenshot = 0.0
         self._next_screenshot_gap = self._screenshot_gap()
+        # Timed-lock enforcement state. `_enforced_lock` mirrors the server's
+        # `isLocked`: while true we re-lock every poll cycle. `_locked_until`
+        # is the server-reported ISO expiry (informational).
+        self._enforced_lock = False
+        self._locked_until: str | None = None
         self.tray: tray_mod.AgentTray | None = None
 
     # --- helpers -------------------------------------------------------------
@@ -141,8 +148,11 @@ class MonitoringAgent:
         ctype = command.get("commandType")
         cid = command.get("id")
         reason = command.get("reason") or "Authorized IT action"
+        # payload is delivered as a JSON *string* (or null); parse best-effort.
+        payload = self._parse_payload(command.get("payload"))
         try:
             self.api.ack_command(cid, "acknowledged")
+
             if ctype in ("lock_screen", "logout_user"):
                 if self.tray:
                     label = "lock your screen" if ctype == "lock_screen" else "sign you out"
@@ -152,13 +162,184 @@ class MonitoringAgent:
                     )
                 time.sleep(3.0)
                 self._execute_os_command(ctype)
-            self.api.ack_command(cid, "completed")
+                self.api.ack_command(cid, "completed")
+
+            elif ctype == "unlock_screen":
+                # Stop re-locking immediately; no OS action needed. The next
+                # heartbeat should also report isLocked=false.
+                self._enforced_lock = False
+                self._locked_until = None
+                self.api.ack_command(cid, "completed")
+
+            elif ctype == "reset_password":
+                self._reset_password(cid, payload, reason)
+
+            elif ctype in ("restart", "shutdown"):
+                verb = "restart" if ctype == "restart" else "shut down"
+                if self.tray:
+                    self.tray.notify(
+                        f"IT is about to {verb} this computer. Reason: {reason}",
+                        "Workforce Analytics",
+                    )
+                # Ack completed BEFORE executing — the device goes down and the
+                # follow-up ack would never reach the server.
+                self.api.ack_command(cid, "completed")
+                time.sleep(3.0)
+                self._execute_power_command(ctype)
+
+            elif ctype == "set_usb_block":
+                self._set_usb_block(cid, payload)
+
+            else:
+                # Unknown command type — mark it done so it isn't redelivered.
+                self.api.ack_command(cid, "completed")
         except Exception as exc:  # noqa: BLE001
             print(f"[agent] command {ctype} failed: {exc}", file=sys.stderr)
             try:
-                self.api.ack_command(cid, "failed")
+                self.api.ack_command(cid, "failed", str(exc))
             except Exception:
                 pass
+
+    @staticmethod
+    def _parse_payload(raw: object) -> dict:
+        """Parse a command payload delivered as a JSON string (or None)."""
+        if isinstance(raw, dict):
+            return raw
+        if isinstance(raw, str) and raw.strip():
+            try:
+                parsed = json.loads(raw)
+                return parsed if isinstance(parsed, dict) else {}
+            except (ValueError, TypeError):
+                return {}
+        return {}
+
+    def _reset_password(self, cid, payload: dict, reason: str) -> None:
+        """Change the current logged-in user's password (Windows only).
+
+        The new password is passed to the PowerShell child via an ENVIRONMENT
+        VARIABLE, never as a command-line argument, so it can't leak to other
+        local users through argv (tasklist/WMI). The env var is scoped to just
+        this child process. The password is NEVER logged.
+        """
+        if not sys.platform.startswith("win"):
+            self.api.ack_command(cid, "failed", "unsupported on this OS")
+            return
+        new_password = payload.get("newPassword")
+        if not new_password:
+            self.api.ack_command(cid, "failed", "missing newPassword")
+            return
+        if self.tray:
+            self.tray.notify(
+                f"IT is about to reset your Windows password. Reason: {reason}",
+                "Workforce Analytics",
+            )
+        username = os.environ.get("USERNAME") or getpass.getuser()
+        # PowerShell reads the password from $env:WFA_NEW_PW (not argv) and
+        # applies it with Set-LocalUser. The username is a simple identifier;
+        # embed it as a single-quoted literal.
+        script = (
+            "$ErrorActionPreference='Stop';"
+            f"Set-LocalUser -Name '{username}' "
+            "-Password (ConvertTo-SecureString $env:WFA_NEW_PW "
+            "-AsPlainText -Force)"
+        )
+        child_env = dict(os.environ)
+        child_env["WFA_NEW_PW"] = new_password
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=child_env,
+        )
+        if result.returncode == 0:
+            self.api.ack_command(cid, "completed")
+        else:
+            # Do not include stdout/stderr — keep the password out of the ack.
+            self.api.ack_command(cid, "failed", "requires admin")
+
+    def _execute_power_command(self, ctype: str) -> None:
+        if ctype == "restart":
+            if sys.platform.startswith("win"):
+                subprocess.run(["shutdown", "/r", "/t", "5"], check=False)
+            elif sys.platform == "darwin":
+                subprocess.run(
+                    ["osascript", "-e",
+                     'tell application "System Events" to restart'],
+                    check=False,
+                )
+            else:
+                if subprocess.run(["systemctl", "reboot"], check=False).returncode != 0:
+                    subprocess.run(["shutdown", "-r", "now"], check=False)
+        elif ctype == "shutdown":
+            if sys.platform.startswith("win"):
+                subprocess.run(["shutdown", "/s", "/t", "5"], check=False)
+            elif sys.platform == "darwin":
+                subprocess.run(
+                    ["osascript", "-e",
+                     'tell application "System Events" to shut down'],
+                    check=False,
+                )
+            else:
+                if subprocess.run(["systemctl", "poweroff"], check=False).returncode != 0:
+                    subprocess.run(["shutdown", "-h", "now"], check=False)
+
+    def _set_usb_block(self, cid, payload: dict) -> None:
+        """Enable/disable USB mass-storage via the USBSTOR registry key."""
+        if not sys.platform.startswith("win"):
+            self.api.ack_command(cid, "failed", "unsupported on this OS")
+            return
+        enabled = bool(payload.get("enabled"))
+        if self._apply_usb_block(enabled):
+            # Persist so we converge on subsequent heartbeats too.
+            self.cfg.usb_block_enabled = enabled
+            try:
+                self.cfg.save()
+            except Exception:  # noqa: BLE001
+                pass
+            self.api.ack_command(cid, "completed")
+        else:
+            self.api.ack_command(cid, "failed", "requires admin")
+
+    @staticmethod
+    def _apply_usb_block(enabled: bool) -> bool:
+        """Set HKLM USBSTOR Start value: 4 blocks, 3 allows. Windows only.
+
+        Returns True on success. Requires admin rights.
+        """
+        if not sys.platform.startswith("win"):
+            return False
+        value = "4" if enabled else "3"
+        result = subprocess.run(
+            [
+                "reg", "add",
+                r"HKLM\SYSTEM\CurrentControlSet\Services\USBSTOR",
+                "/v", "Start", "/t", "REG_DWORD", "/d", value, "/f",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return result.returncode == 0
+
+    def _enforce_lock(self, is_locked: bool) -> None:
+        """Re-lock the screen while the server reports the device is locked.
+
+        Called once per poll cycle. When ``is_locked`` is true we invoke the
+        same OS lock used by ``lock_screen`` so the user cannot stay logged in
+        for the admin-selected duration. When the server flips it to false
+        (duration elapsed, or an explicit unlock) we simply stop re-locking —
+        no explicit OS unlock exists or is needed. Best-effort per-OS (Linux
+        lock may be unsupported).
+        """
+        if not is_locked:
+            self._enforced_lock = False
+            return
+        self._enforced_lock = True
+        try:
+            self._execute_os_command("lock_screen")
+        except Exception as exc:  # noqa: BLE001 — never crash the poll loop
+            print(f"[agent] re-lock failed: {exc}", file=sys.stderr)
 
     def _execute_os_command(self, ctype: str) -> None:
         if ctype == "lock_screen":
@@ -229,9 +410,22 @@ class MonitoringAgent:
                     self._pending_logs[0:0] = batch
                 print(f"[agent] activity sync failed: {exc}", file=sys.stderr)
 
-        # Heartbeat + commands.
-        hb = self.api.heartbeat(AGENT_VERSION)
+        # Heartbeat + commands. Include best-effort live health metrics.
+        metrics = system_info_mod.collect_metrics()
+        hb = self.api.heartbeat(AGENT_VERSION, metrics)
+        self._locked_until = hb.get("lockedUntil")
+        # Timed-lock enforcement: the server flips isLocked to false when the
+        # admin-selected duration elapses. While it is true we RE-LOCK the
+        # screen once per poll cycle so the user can't stay logged in — even if
+        # they unlock locally, the next heartbeat re-locks within the interval.
+        self._enforce_lock(bool(hb.get("isLocked")))
         self.cfg.apply_server_config(hb.get("config", {}))
+        # Idempotently converge USB blocking with the server's desired state so
+        # a reinstalled/offline device catches up. Best-effort; swallow errors.
+        try:
+            self._apply_usb_block(bool(self.cfg.usb_block_enabled))
+        except Exception:  # noqa: BLE001
+            pass
         for command in hb.get("commands", []):
             self._handle_command(command)
         if self.tray:

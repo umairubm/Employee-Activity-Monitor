@@ -41,6 +41,11 @@ export const devicesTable = pgTable("devices", {
   enrolledAt: timestamp("enrolled_at", { withTimezone: true }),
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
   isLocked: boolean("is_locked").notNull().default(false),
+  // When set, the lock expires automatically at this instant (checked on each
+  // heartbeat). Null while locked means "until manually unlocked".
+  lockedUntil: timestamp("locked_until", { withTimezone: true }),
+  // Whether the agent should block USB mass-storage devices.
+  usbBlockEnabled: boolean("usb_block_enabled").notNull().default(false),
   screenshotMinMinutes: integer("screenshot_min_minutes").notNull().default(5),
   screenshotMaxMinutes: integer("screenshot_max_minutes").notNull().default(15),
   idleThresholdSeconds: integer("idle_threshold_seconds").notNull().default(120),
@@ -58,6 +63,11 @@ export const devicesTable = pgTable("devices", {
   systemInfo: jsonb("system_info").$type<
     Record<string, string | number | boolean | null>
   >(),
+  // Latest live utilization metrics reported by the agent on heartbeat
+  // (cpuPercent, ramPercent, diskFreeBytes, diskTotalBytes). Null until first
+  // reported; `metricsAt` records when they were captured.
+  metrics: jsonb("metrics").$type<Record<string, number | null>>(),
+  metricsAt: timestamp("metrics_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -96,6 +106,10 @@ export const publicDeviceColumns = {
   enrolledAt: devicesTable.enrolledAt,
   lastSeenAt: devicesTable.lastSeenAt,
   isLocked: devicesTable.isLocked,
+  lockedUntil: devicesTable.lockedUntil,
+  usbBlockEnabled: devicesTable.usbBlockEnabled,
+  metrics: devicesTable.metrics,
+  metricsAt: devicesTable.metricsAt,
   screenshotMinMinutes: devicesTable.screenshotMinMinutes,
   screenshotMaxMinutes: devicesTable.screenshotMaxMinutes,
   idleThresholdSeconds: devicesTable.idleThresholdSeconds,

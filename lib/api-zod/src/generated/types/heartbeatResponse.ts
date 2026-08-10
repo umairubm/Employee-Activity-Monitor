@@ -8,6 +8,8 @@
 
 export interface HeartbeatResponse {
   isLocked: boolean;
+  /** @nullable */
+  lockedUntil?: Date | null;
   dataFrequencyMinutes?: number;
   screenshotIntervalRange?: string;
 }

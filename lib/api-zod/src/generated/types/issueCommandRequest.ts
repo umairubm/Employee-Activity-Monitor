@@ -10,4 +10,18 @@ import type { IssueCommandRequestCommandType } from "./issueCommandRequestComman
 export interface IssueCommandRequest {
   commandType: IssueCommandRequestCommandType;
   reason?: string;
+  /**
+   * For lock_screen/logout_user only. Lock the device for this many minutes; omit for "until manually unlocked".
+   * @minimum 1
+   * @maximum 10080
+   */
+  lockDurationMinutes?: number;
+  /**
+   * Required for reset_password. Never echoed back.
+   * @minLength 8
+   * @maxLength 128
+   */
+  newPassword?: string;
+  /** Required for set_usb_block. */
+  enabled?: boolean;
 }

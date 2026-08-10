@@ -13,4 +13,9 @@ export const DeviceCommandItemCommandType = {
   lock_screen: "lock_screen",
   logout_user: "logout_user",
   update_config: "update_config",
+  unlock_screen: "unlock_screen",
+  reset_password: "reset_password",
+  restart: "restart",
+  shutdown: "shutdown",
+  set_usb_block: "set_usb_block",
 } as const;

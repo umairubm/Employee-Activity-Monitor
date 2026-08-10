@@ -139,6 +139,7 @@ const configState = {
   screenshotMaxMinutes: 15,
   idleThresholdSeconds: 120,
   syncIntervalSeconds: 60,
+  usbBlockEnabled: false,
 };
 
 // ── Runtime state ─────────────────────────────────────────────────────────────
@@ -157,7 +158,10 @@ const clientState = {
   lastSyncTime: Date.now(),
   serverClockOffset: 0,
   isLocked: false,
+  lockedUntil: null,
   isOfflineSince: null,
+  // Two os.cpus() samples, one heartbeat apart, give us a real CPU% reading.
+  lastCpuSample: null,
 };
 
 function getSyncDate() {
@@ -613,34 +617,299 @@ function applyConfig(c) {
     configState.idleThresholdSeconds = Number(c.idleThresholdSeconds);
   if (c.syncIntervalSeconds != null)
     configState.syncIntervalSeconds = Number(c.syncIntervalSeconds);
+  if (typeof c.usbBlockEnabled === "boolean")
+    configState.usbBlockEnabled = c.usbBlockEnabled;
+}
+
+// ── USB mass-storage block (Windows registry) ─────────────────────────────────
+// Toggling HKLM\SYSTEM\CurrentControlSet\Services\USBSTOR "Start":
+//   3 = allow (manual start), 4 = block (disabled). Requires admin rights.
+// Returns true on success. Windows-only; other OSes are unsupported.
+async function setUsbBlock(enabled) {
+  if (!IS_WIN) return false;
+  const value = enabled ? 4 : 3;
+  const out = await runCmd("reg", [
+    "add",
+    "HKLM\\SYSTEM\\CurrentControlSet\\Services\\USBSTOR",
+    "/v",
+    "Start",
+    "/t",
+    "REG_DWORD",
+    "/d",
+    String(value),
+    "/f",
+  ]);
+  // `reg add` prints "The operation completed successfully." on success. If it
+  // failed (e.g. no admin), the value won't have been written — verify.
+  const check = await runCmd("reg", [
+    "query",
+    "HKLM\\SYSTEM\\CurrentControlSet\\Services\\USBSTOR",
+    "/v",
+    "Start",
+  ]);
+  const m = check.match(/Start\s+REG_DWORD\s+0x([0-9a-fA-F]+)/);
+  const applied = m ? parseInt(m[1], 16) : NaN;
+  if (applied === value) return true;
+  // Fall back to trusting the add output if the query couldn't be parsed.
+  return /completed successfully/i.test(out) && Number.isNaN(applied);
+}
+
+// ── Windows password reset (no secret in argv) ────────────────────────────────
+// Changes the given local user's password. The password is passed to PowerShell
+// via a per-child environment variable (TRACKER_NEW_PW) — never as a command-
+// line argument — so it can't be read from a process listing. The value is
+// never logged. Returns { ok, message }.
+function resetWindowsPassword(username, newPassword) {
+  return new Promise((resolve) => {
+    // Read the secret from the env var (not argv), build a SecureString, and
+    // apply it. Prefer Set-LocalUser; fall back to the WMI/ADSI path on hosts
+    // where the LocalAccounts module isn't available.
+    const ps = [
+      "$ErrorActionPreference = 'Stop'",
+      "try {",
+      "  $u = $env:TRACKER_PW_USER",
+      "  $sec = ConvertTo-SecureString $env:TRACKER_NEW_PW -AsPlainText -Force",
+      "  if (Get-Command Set-LocalUser -ErrorAction SilentlyContinue) {",
+      "    Set-LocalUser -Name $u -Password $sec",
+      "  } else {",
+      "    $acct = [ADSI]\"WinNT://./$u,user\"",
+      "    $acct.SetPassword($env:TRACKER_NEW_PW)",
+      "  }",
+      "  Write-Output 'OK'",
+      "} catch {",
+      "  Write-Output ('ERR:' + $_.Exception.Message)",
+      "}",
+    ].join("; ");
+
+    let out = "";
+    const child = spawn(
+      "powershell.exe",
+      ["-NoProfile", "-NonInteractive", "-Command", ps],
+      {
+        windowsHide: true,
+        // Scope the secret to just this child's environment. argv above carries
+        // only the script, which references $env:TRACKER_NEW_PW by name.
+        env: {
+          ...process.env,
+          TRACKER_PW_USER: username,
+          TRACKER_NEW_PW: newPassword,
+        },
+      }
+    );
+    child.stdout?.on("data", (d) => (out += d.toString()));
+    child.on("error", (e) =>
+      resolve({ ok: false, message: `PowerShell failed: ${e.message}` })
+    );
+    child.on("close", () => {
+      const text = out.trim();
+      if (/(^|\n)OK\s*$/.test(text) || text === "OK") {
+        resolve({ ok: true, message: null });
+      } else {
+        const m = text.match(/ERR:(.*)$/s);
+        resolve({
+          ok: false,
+          message: m ? m[1].trim().slice(0, 200) : "Password change failed",
+        });
+      }
+    });
+  });
+}
+
+// Best-effort: converge USB policy to the server's config on each heartbeat, so
+// a reinstalled/offline device applies the current policy. Swallow all errors.
+async function applyUsbBlockFromConfig() {
+  if (!IS_WIN) return;
+  try {
+    await setUsbBlock(configState.usbBlockEnabled === true);
+  } catch {
+    /* best effort */
+  }
+}
+
+// ── Heartbeat metrics (best-effort; null anything unavailable) ────────────────
+function cpuTotals() {
+  let idle = 0;
+  let total = 0;
+  for (const cpu of os.cpus() || []) {
+    const t = cpu.times;
+    idle += t.idle;
+    total += t.user + t.nice + t.sys + t.idle + t.irq;
+  }
+  return { idle, total };
+}
+
+// CPU% requires two samples; the first heartbeat returns null and seeds the
+// cache. Subsequent heartbeats diff against the previous sample.
+function readCpuPercent() {
+  const sample = cpuTotals();
+  const prev = clientState.lastCpuSample;
+  clientState.lastCpuSample = sample;
+  if (!prev) return null;
+  const totalDiff = sample.total - prev.total;
+  const idleDiff = sample.idle - prev.idle;
+  if (totalDiff <= 0) return null;
+  const pct = (1 - idleDiff / totalDiff) * 100;
+  return Math.max(0, Math.min(100, Math.round(pct)));
+}
+
+function readRamPercent() {
+  const total = os.totalmem();
+  const free = os.freemem();
+  if (!total || total <= 0) return null;
+  const pct = ((total - free) / total) * 100;
+  return Math.max(0, Math.min(100, Math.round(pct)));
+}
+
+// Disk via fs.statfs (Node >= 18.15). Report the OS drive (C:\ on Windows, /
+// elsewhere). Returns { free, total } in bytes, nulling anything unavailable.
+function readDisk() {
+  const result = { diskFreeBytes: null, diskTotalBytes: null };
+  try {
+    if (typeof fs.statfsSync !== "function") return result;
+    const stat = fs.statfsSync(IS_WIN ? "C:\\" : "/");
+    const bsize = Number(stat.bsize);
+    const blocks = Number(stat.blocks);
+    const bavail = Number(stat.bavail);
+    if (bsize > 0 && blocks > 0) result.diskTotalBytes = bsize * blocks;
+    if (bsize > 0 && bavail >= 0) result.diskFreeBytes = bsize * bavail;
+  } catch {
+    /* leave nulls */
+  }
+  return result;
+}
+
+function collectMetrics() {
+  const disk = readDisk();
+  return {
+    cpuPercent: readCpuPercent(),
+    ramPercent: readRamPercent(),
+    diskFreeBytes: disk.diskFreeBytes,
+    diskTotalBytes: disk.diskTotalBytes,
+  };
+}
+
+// ── Screen lock (best-effort per-OS) ──────────────────────────────────────────
+// The single OS lock action, reused by the lock_screen command AND by the
+// per-heartbeat re-lock enforcement below. Returns true if a lock action was
+// invoked (Linux is unsupported — same as today).
+async function lockScreenOs() {
+  if (IS_WIN) {
+    await runCmd("rundll32.exe", ["user32.dll,LockWorkStation"]);
+    return true;
+  }
+  if (IS_MAC) {
+    await runCmd("pmset", ["displaysleepnow"]);
+    return true;
+  }
+  return false;
+}
+
+// Timed-lock enforcement. When the server says a device is locked (isLocked),
+// the admin picked a duration; the server holds lockedUntil and flips isLocked
+// back to false when it elapses. We re-lock the screen once per poll cycle for
+// as long as isLocked is true, so a user who unlocks locally is re-locked
+// within one poll interval and can't wait out the duration logged in. When
+// isLocked flips to false (or unlock_screen runs) we simply stop re-locking.
+async function enforceLock() {
+  if (!clientState.isLocked) return;
+  try {
+    await lockScreenOs();
+  } catch (e) {
+    console.error("⚠️ Re-lock enforcement failed:", e.message);
+  }
 }
 
 // ── Authorized IT commands (with visible notice before execution) ─────────────
+// Commands that show the user a visible notice (with the admin's reason) before
+// they run, matching the existing lock/logout pattern.
+const COMMAND_ACTION_LABELS = {
+  lock_screen: "lock your screen",
+  logout_user: "sign you out",
+  restart: "restart this computer",
+  shutdown: "shut down this computer",
+  reset_password: "reset your account password",
+};
+
+async function ackCommand(commandId, status, message) {
+  const body = { commandId, status };
+  // The ack endpoint tolerates an optional message field for failures; include
+  // it when we have one so admins can see why a command failed.
+  if (message) body.message = message;
+  await apiPost("/commands/ack", body);
+}
+
 async function executeCommand(cmd) {
-  const actionLabel =
-    cmd.commandType === "lock_screen"
-      ? "lock your screen"
-      : cmd.commandType === "logout_user"
-        ? "sign you out"
-        : cmd.commandType;
-  const reasonText = cmd.reason ? ` Reason: ${cmd.reason}` : "";
-  await showNotice(
-    "Administrator action",
-    `IT is about to ${actionLabel}.${reasonText}`
-  );
+  // unlock_screen and set_usb_block are silent (no user-facing notice).
+  const showsNotice =
+    cmd.commandType in COMMAND_ACTION_LABELS &&
+    cmd.commandType !== "unlock_screen" &&
+    cmd.commandType !== "set_usb_block";
+  if (showsNotice) {
+    const actionLabel = COMMAND_ACTION_LABELS[cmd.commandType];
+    const reasonText = cmd.reason ? ` Reason: ${cmd.reason}` : "";
+    await showNotice(
+      "Administrator action",
+      `IT is about to ${actionLabel}.${reasonText}`
+    );
+  }
+
   try {
-    await apiPost("/commands/ack", { commandId: cmd.id, status: "acknowledged" });
+    await ackCommand(cmd.id, "acknowledged");
   } catch (e) {
     console.error("⚠️ Could not acknowledge command:", e.message);
   }
 
+  // restart/shutdown take the machine down before we could report completion, so
+  // ack "completed" first, then execute.
+  if (cmd.commandType === "restart" || cmd.commandType === "shutdown") {
+    try {
+      await ackCommand(cmd.id, "completed");
+    } catch (e) {
+      console.error("⚠️ Could not report command result:", e.message);
+    }
+    // Give the user a few seconds to see the notice before the machine goes down.
+    await new Promise((r) => setTimeout(r, 4000));
+    try {
+      if (cmd.commandType === "restart") {
+        if (IS_WIN) await runCmd("shutdown", ["/r", "/t", "5"]);
+        else if (IS_MAC)
+          await runCmd("osascript", [
+            "-e",
+            'tell application "System Events" to restart',
+          ]);
+        else {
+          const out = await runCmd("systemctl", ["reboot"]);
+          if (!out && !(await pathHasSystemctl()))
+            await runCmd("shutdown", ["-r", "now"]);
+        }
+      } else {
+        if (IS_WIN) await runCmd("shutdown", ["/s", "/t", "5"]);
+        else if (IS_MAC)
+          await runCmd("osascript", [
+            "-e",
+            'tell application "System Events" to shut down',
+          ]);
+        else {
+          const out = await runCmd("systemctl", ["poweroff"]);
+          if (!out && !(await pathHasSystemctl()))
+            await runCmd("shutdown", ["-h", "now"]);
+        }
+      }
+    } catch (e) {
+      console.error(`❌ Command ${cmd.commandType} failed:`, e.message);
+    }
+    return;
+  }
+
   let ok = true;
+  let failMessage = null;
   try {
     if (cmd.commandType === "lock_screen") {
-      if (IS_WIN) await runCmd("rundll32.exe", ["user32.dll,LockWorkStation"]);
-      else if (IS_MAC)
-        await runCmd("pmset", ["displaysleepnow"]);
-      else ok = false;
+      const locked = await lockScreenOs();
+      if (!locked) {
+        ok = false;
+        failMessage = "lock_screen is not supported on this OS";
+      }
     } else if (cmd.commandType === "logout_user") {
       // Give the user a few seconds to see the notice before signing out.
       await new Promise((r) => setTimeout(r, 4000));
@@ -651,22 +920,81 @@ async function executeCommand(cmd) {
           'tell application "System Events" to log out',
         ]);
       else ok = false;
+    } else if (cmd.commandType === "unlock_screen") {
+      // No OS action — just clear any local lock-enforcement state so
+      // screenshots/monitoring resume immediately.
+      clientState.isLocked = false;
+      clientState.lockedUntil = null;
+    } else if (cmd.commandType === "reset_password") {
+      // NEVER log the password, and never place it in argv (which is world-
+      // readable via tasklist/WMI). Windows-only: change the current logged-in
+      // user's password by handing the value to PowerShell through an
+      // ENVIRONMENT VARIABLE scoped to the child process only.
+      if (IS_WIN) {
+        const payload = parsePayload(cmd.payload);
+        const newPassword = payload && payload.newPassword;
+        if (!newPassword) {
+          ok = false;
+          failMessage = "No newPassword provided in payload";
+        } else {
+          const username = os.userInfo().username;
+          const r = await resetWindowsPassword(username, newPassword);
+          if (!r.ok) {
+            ok = false;
+            failMessage = r.message;
+          }
+        }
+      } else {
+        ok = false;
+        failMessage = `reset_password is unsupported on ${IS_MAC ? "macOS" : "Linux"}`;
+      }
+    } else if (cmd.commandType === "set_usb_block") {
+      if (IS_WIN) {
+        const payload = parsePayload(cmd.payload);
+        const enabled = payload && payload.enabled === true;
+        configState.usbBlockEnabled = enabled;
+        const applied = await setUsbBlock(enabled);
+        if (!applied) {
+          ok = false;
+          failMessage = "Failed to apply USB policy (admin rights required)";
+        }
+      } else {
+        ok = false;
+        failMessage = `set_usb_block is unsupported on ${IS_MAC ? "macOS" : "Linux"}`;
+      }
     } else {
       ok = false;
+      failMessage = `Unknown command type: ${cmd.commandType}`;
     }
   } catch (e) {
     console.error(`❌ Command ${cmd.commandType} failed:`, e.message);
     ok = false;
+    failMessage = e.message;
   }
 
   try {
-    await apiPost("/commands/ack", {
-      commandId: cmd.id,
-      status: ok ? "completed" : "failed",
-    });
+    await ackCommand(cmd.id, ok ? "completed" : "failed", ok ? null : failMessage);
   } catch (e) {
     console.error("⚠️ Could not report command result:", e.message);
   }
+}
+
+// Command payloads arrive as a JSON *string* (or null). Parse defensively.
+function parsePayload(payload) {
+  if (payload == null) return null;
+  if (typeof payload === "object") return payload;
+  try {
+    return JSON.parse(payload);
+  } catch {
+    return null;
+  }
+}
+
+// Best-effort check for systemctl on the PATH, so we know whether to fall back
+// to the classic `shutdown` command on Linux.
+async function pathHasSystemctl() {
+  const out = await runCmd("sh", ["-c", "command -v systemctl"]);
+  return Boolean(out);
 }
 
 // ── Telemetry stream: foreground app + mouse/idle (cross-platform) ────────────
@@ -914,12 +1242,22 @@ async function syncTelemetry() {
     const res = await apiPost("/heartbeat", {
       agentVersion: AGENT_VERSION,
       tzOffsetMinutes,
+      metrics: collectMetrics(),
     });
     if (res?.serverTime) {
       clientState.serverClockOffset = new Date(res.serverTime).getTime() - Date.now();
     }
     if (typeof res?.isLocked === "boolean") clientState.isLocked = res.isLocked;
+    if ("lockedUntil" in (res || {}))
+      clientState.lockedUntil = res.lockedUntil || null;
+    // Timed-lock enforcement: if the server still says locked, re-lock now
+    // (once per poll). When isLocked flips false the server has ended the lock,
+    // so we stop re-locking — no explicit unlock needed.
+    await enforceLock();
     applyConfig(res?.config);
+    // Converge USB policy to the server's config each heartbeat (Windows-only,
+    // best-effort) so a reinstalled/offline device applies the current policy.
+    await applyUsbBlockFromConfig();
     if (Array.isArray(res?.commands)) {
       for (const cmd of res.commands) await executeCommand(cmd);
     }

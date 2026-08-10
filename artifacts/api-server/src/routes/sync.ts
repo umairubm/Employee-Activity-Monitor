@@ -174,6 +174,7 @@ function deviceConfig(device: Device) {
     screenshotMaxMinutes: device.screenshotMaxMinutes,
     idleThresholdSeconds: device.idleThresholdSeconds,
     syncIntervalSeconds: device.syncIntervalSeconds,
+    usbBlockEnabled: device.usbBlockEnabled,
   };
 }
 
@@ -364,13 +365,34 @@ router.post(
       return;
     }
 
+    // Timed locks expire server-side: past `lockedUntil` the device reads as
+    // unlocked on its next heartbeat without any admin action.
+    const now = new Date();
+    const lockExpired =
+      device.isLocked &&
+      device.lockedUntil !== null &&
+      device.lockedUntil.getTime() <= now.getTime();
+
+    const m = parsed.data.metrics;
     const [updated] = await db
       .update(devicesTable)
       .set({
-        lastSeenAt: new Date(),
+        lastSeenAt: now,
         agentVersion: parsed.data.agentVersion ?? device.agentVersion,
         tzOffsetMinutes: parsed.data.tzOffsetMinutes ?? device.tzOffsetMinutes,
-        updatedAt: new Date(),
+        ...(lockExpired ? { isLocked: false, lockedUntil: null } : {}),
+        ...(m
+          ? {
+              metrics: {
+                cpuPercent: m.cpuPercent ?? null,
+                ramPercent: m.ramPercent ?? null,
+                diskFreeBytes: m.diskFreeBytes ?? null,
+                diskTotalBytes: m.diskTotalBytes ?? null,
+              },
+              metricsAt: now,
+            }
+          : {}),
+        updatedAt: now,
       })
       .where(eq(devicesTable.id, device.id))
       .returning();
@@ -388,6 +410,7 @@ router.post(
     res.json({
       serverTime: new Date().toISOString(),
       isLocked: updated.isLocked,
+      lockedUntil: updated.lockedUntil ? updated.lockedUntil.toISOString() : null,
       config: deviceConfig(updated),
       commands: pending.map((c) => ({
         id: c.id,
@@ -593,12 +616,15 @@ router.post(
       res.status(400).json({ error: "Invalid command ack payload" });
       return;
     }
-    const { commandId, status } = parsed.data;
+    const { commandId, status, message } = parsed.data;
 
     const now = new Date();
     const patch: Partial<typeof deviceCommandsTable.$inferInsert> = { status };
     if (status === "acknowledged") patch.acknowledgedAt = now;
     if (status === "completed" || status === "failed") patch.completedAt = now;
+    // Persist the agent's failure detail so admins can see WHY a command failed
+    // (e.g. "unsupported on macOS") in command history.
+    if (status === "failed" && message) patch.cancelReason = message;
 
     // Atomic guard: only advance a command that is still in a non-terminal
     // state (pending or acknowledged). A device must never resurrect a command

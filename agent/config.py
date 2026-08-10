@@ -125,6 +125,7 @@ class AgentConfig:
     screenshot_max_minutes: int = 15
     idle_threshold_seconds: int = 120
     sync_interval_seconds: int = 300
+    usb_block_enabled: bool = False
 
     @property
     def is_enrolled(self) -> bool:
@@ -154,6 +155,7 @@ class AgentConfig:
             "screenshotMaxMinutes": "screenshot_max_minutes",
             "idleThresholdSeconds": "idle_threshold_seconds",
             "syncIntervalSeconds": "sync_interval_seconds",
+            "usbBlockEnabled": "usb_block_enabled",
         }
         changed = False
         for remote, local in mapping.items():

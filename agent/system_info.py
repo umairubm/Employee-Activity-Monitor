@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import platform
+import shutil
 import socket
 import subprocess
 import sys
@@ -325,6 +326,43 @@ def collect() -> dict[str, Value]:
 _CACHE_TTL_SECONDS = 60 * 60
 _cache: dict[str, Value] = {}
 _cache_at: float = 0.0
+
+
+def collect_metrics() -> dict[str, Optional[float]]:
+    """Best-effort live health metrics for the heartbeat.
+
+    Returns a flat dict with cpuPercent (0-100), ramPercent (0-100),
+    diskFreeBytes, and diskTotalBytes. Any value that can't be determined is
+    reported as None rather than omitted, so the shape stays stable.
+    """
+    metrics: dict[str, Optional[float]] = {
+        "cpuPercent": None,
+        "ramPercent": None,
+        "diskFreeBytes": None,
+        "diskTotalBytes": None,
+    }
+
+    if psutil is not None:
+        try:
+            # Non-blocking sample (percent since the previous call). Best-effort.
+            metrics["cpuPercent"] = float(psutil.cpu_percent(interval=None))
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            metrics["ramPercent"] = float(psutil.virtual_memory().percent)
+        except Exception:  # noqa: BLE001
+            pass
+
+    # Disk usage is available from the stdlib even without psutil.
+    disk_path = "C:\\" if sys.platform.startswith("win") else "/"
+    try:
+        usage = shutil.disk_usage(disk_path)
+        metrics["diskFreeBytes"] = float(usage.free)
+        metrics["diskTotalBytes"] = float(usage.total)
+    except Exception:  # noqa: BLE001
+        pass
+
+    return metrics
 
 
 def get_cached(force: bool = False) -> dict[str, Value]:

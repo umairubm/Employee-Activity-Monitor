@@ -74,21 +74,52 @@ config, lock state, and any pending remote commands.
 
 Request body:
 ```json
-{ "agentVersion": "1.2.0" }
+{
+  "agentVersion": "1.2.0",
+  "tzOffsetMinutes": -300,
+  "metrics": {
+    "cpuPercent": 12.5,
+    "ramPercent": 48.0,
+    "diskFreeBytes": 123456789,
+    "diskTotalBytes": 512000000000
+  }
+}
 ```
-(`agentVersion` optional.)
+(`agentVersion`, `tzOffsetMinutes`, and `metrics` all optional. Each metric
+value is a number 0–100 for the percentages, a byte count for the disk fields,
+or `null` when the agent can't determine it — CPU% may be `null` without
+`psutil`.)
 
 Success `200`:
 ```json
 {
   "serverTime": "2026-07-03T10:21:49.000Z",
   "isLocked": false,
+  "lockedUntil": null,
   "config": { /* device config */ },
   "commands": [
-    { "id": "<uuid>", "commandType": "lock", "payload": {}, "reason": "..." }
+    { "id": "<uuid>", "commandType": "lock", "payload": null, "reason": "..." }
   ]
 }
 ```
+
+`lockedUntil` is an ISO timestamp (or `null`) accompanying `isLocked`.
+
+Each command's `payload` is a JSON **string** (or `null`). Command types the
+agent handles:
+
+| commandType | payload | OS action |
+|---|---|---|
+| `lock_screen` | — | lock the workstation |
+| `logout_user` | — | sign the user out |
+| `unlock_screen` | — | clear local lock-enforcement state (no OS action) |
+| `reset_password` | `{"newPassword":"…"}` | Windows: `net user <user> <pw>` (macOS/Linux unsupported → `failed`) |
+| `restart` | — | reboot (ack `completed` **before** executing) |
+| `shutdown` | — | power off (ack `completed` **before** executing) |
+| `set_usb_block` | `{"enabled":true\|false}` | Windows: USBSTOR `Start`=4 (block)/3 (allow); macOS/Linux unsupported → `failed` |
+
+The agent also applies `config.usbBlockEnabled` idempotently on every heartbeat
+(Windows, best-effort) so a reinstalled/offline device converges.
 
 ---
 
@@ -169,6 +200,8 @@ Request body:
 Field rules:
 - `commandId` — UUID.
 - `status` — one of `"acknowledged"`, `"completed"`, `"failed"`.
+- `message` — optional human-readable error/detail (the agent may include this
+  on a `"failed"` ack).
 
 Errors:
 - `400` — invalid payload.
@@ -212,6 +245,10 @@ Field rules:
   `min <= max` (screenshot cadence is randomized in this range).
 - `idleThresholdSeconds` — int 10–7200 (no-input time counted as idle).
 - `syncIntervalSeconds` — int 10–3600 (how often the agent reports).
+
+The `config` object the agent receives in `enroll`/`heartbeat` also carries
+`usbBlockEnabled` (boolean) — the desired USB mass-storage blocking state the
+agent applies idempotently on Windows.
 
 Responses:
 - `PATCH /api/devices/config` → `200 { "updated": <count> }`

@@ -2234,6 +2234,29 @@ components:
           format: date-time
         isLocked:
           type: boolean
+        lockedUntil:
+          type: [string, "null"]
+          format: date-time
+          description: >-
+            When the current lock auto-expires; null while locked means
+            "until manually unlocked".
+        usbBlockEnabled:
+          type: boolean
+        metrics:
+          type: [object, "null"]
+          description: Latest live utilization metrics reported by the agent.
+          properties:
+            cpuPercent:
+              type: [number, "null"]
+            ramPercent:
+              type: [number, "null"]
+            diskFreeBytes:
+              type: [number, "null"]
+            diskTotalBytes:
+              type: [number, "null"]
+        metricsAt:
+          type: [string, "null"]
+          format: date-time
         screenshotMinMinutes:
           type: integer
         screenshotMaxMinutes:
@@ -2357,7 +2380,17 @@ components:
           type: [string, "null"]
         commandType:
           type: string
-          enum: [lock_screen, logout_user, update_config]
+          enum:
+            [
+              lock_screen,
+              logout_user,
+              update_config,
+              unlock_screen,
+              reset_password,
+              restart,
+              shutdown,
+              set_usb_block,
+            ]
         payload:
           type: [string, "null"]
         status:
@@ -2395,9 +2428,33 @@ components:
       properties:
         commandType:
           type: string
-          enum: [lock_screen, logout_user]
+          enum:
+            [
+              lock_screen,
+              logout_user,
+              unlock_screen,
+              reset_password,
+              restart,
+              shutdown,
+              set_usb_block,
+            ]
         reason:
           type: string
+        lockDurationMinutes:
+          type: integer
+          minimum: 1
+          maximum: 10080
+          description: >-
+            For lock_screen/logout_user only. Lock the device for this many
+            minutes; omit for "until manually unlocked".
+        newPassword:
+          type: string
+          minLength: 8
+          maxLength: 128
+          description: Required for reset_password. Never echoed back.
+        enabled:
+          type: boolean
+          description: Required for set_usb_block.
       required: [commandType]
     ActivityLogRecord:
       type: object
@@ -3523,6 +3580,18 @@ components:
         osType:
           type: string
           enum: [windows, macos]
+        metrics:
+          type: object
+          description: Live utilization snapshot captured before the heartbeat.
+          properties:
+            cpuPercent:
+              type: [number, "null"]
+            ramPercent:
+              type: [number, "null"]
+            diskFreeBytes:
+              type: [number, "null"]
+            diskTotalBytes:
+              type: [number, "null"]
       required:
         - deviceId
     HeartbeatResponse:
@@ -3530,6 +3599,9 @@ components:
       properties:
         isLocked:
           type: boolean
+        lockedUntil:
+          type: [string, "null"]
+          format: date-time
         dataFrequencyMinutes:
           type: integer
         screenshotIntervalRange:
