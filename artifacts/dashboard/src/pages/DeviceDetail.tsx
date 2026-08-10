@@ -563,30 +563,30 @@ export default function DeviceDetail({ id }: { id: string }) {
           </CardHeader>
           <CardContent className="space-y-4">
             <TooltipProvider>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-3 gap-2">
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button variant="outline" className="gap-2 w-full" onClick={() => setPasswordDialogOpen(true)}>
-                      <KeyRound className="h-4 w-4" />
-                      Reset System Password
+                    <Button variant="outline" className="gap-2 w-full min-w-0 whitespace-normal text-center leading-tight" onClick={() => setPasswordDialogOpen(true)}>
+                      <KeyRound className="h-4 w-4 shrink-0" />
+                      <span className="min-w-0">Reset System Password</span>
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>Remotely change the OS account password</TooltipContent>
                 </Tooltip>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button variant="outline" className="gap-2 w-full" onClick={() => openDialog('restart')}>
-                      <RotateCcw className="h-4 w-4" />
-                      Restart Device
+                    <Button variant="outline" className="gap-2 w-full min-w-0 whitespace-normal text-center leading-tight" onClick={() => openDialog('restart')}>
+                      <RotateCcw className="h-4 w-4 shrink-0" />
+                      <span className="min-w-0">Restart Device</span>
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>Reboot the device (confirmation required)</TooltipContent>
                 </Tooltip>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button variant="outline" className="gap-2 w-full text-destructive hover:text-destructive" onClick={() => openDialog('shutdown')}>
-                      <Power className="h-4 w-4" />
-                      Force Shutdown
+                    <Button variant="outline" className="gap-2 w-full min-w-0 whitespace-normal text-center leading-tight text-destructive hover:text-destructive" onClick={() => openDialog('shutdown')}>
+                      <Power className="h-4 w-4 shrink-0" />
+                      <span className="min-w-0">Force Shutdown</span>
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>Power off the device (confirmation required)</TooltipContent>
