@@ -19,6 +19,8 @@ import type {
 import type {
   AcknowledgeAllResult,
   ActivityLogRecord,
+  AgentReleaseUploadRequest,
+  AgentReleaseUploadResponse,
   AttendanceOverrideItem,
   AttendanceOverrideUpsert,
   AttendanceRangeReport,
@@ -83,10 +85,14 @@ import type {
   Logout200,
   OkResult,
   ProjectItem,
+  PushAgentUpdateRequest,
+  PushAgentUpdateResponse,
   RenameDeviceGroup200,
   ResetCodeResult,
   ResetPassword200,
   ResetPasswordRequest,
+  ResolveCommandDownloadUrl200,
+  ResolveCommandDownloadUrlBody,
   ReviewLeaveRequest,
   ScreenshotFlagInput,
   ScreenshotListItem,
@@ -944,6 +950,182 @@ export const useCancelDeviceCommand = <
   TContext
 > => {
   return useMutation(getCancelDeviceCommandMutationOptions(options));
+};
+
+/**
+ * @summary Request a private upload URL for an agent installer
+ */
+export const getRequestAgentReleaseUploadUrlUrl = () => {
+  return `/api/devices/agent-releases/upload-url`;
+};
+
+export const requestAgentReleaseUploadUrl = async (
+  agentReleaseUploadRequest: AgentReleaseUploadRequest,
+  options?: RequestInit,
+): Promise<AgentReleaseUploadResponse> => {
+  return customFetch<AgentReleaseUploadResponse>(
+    getRequestAgentReleaseUploadUrlUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(agentReleaseUploadRequest),
+    },
+  );
+};
+
+export const getRequestAgentReleaseUploadUrlMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof requestAgentReleaseUploadUrl>>,
+    TError,
+    { data: BodyType<AgentReleaseUploadRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof requestAgentReleaseUploadUrl>>,
+  TError,
+  { data: BodyType<AgentReleaseUploadRequest> },
+  TContext
+> => {
+  const mutationKey = ["requestAgentReleaseUploadUrl"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof requestAgentReleaseUploadUrl>>,
+    { data: BodyType<AgentReleaseUploadRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return requestAgentReleaseUploadUrl(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RequestAgentReleaseUploadUrlMutationResult = NonNullable<
+  Awaited<ReturnType<typeof requestAgentReleaseUploadUrl>>
+>;
+export type RequestAgentReleaseUploadUrlMutationBody =
+  BodyType<AgentReleaseUploadRequest>;
+export type RequestAgentReleaseUploadUrlMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Request a private upload URL for an agent installer
+ */
+export const useRequestAgentReleaseUploadUrl = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof requestAgentReleaseUploadUrl>>,
+    TError,
+    { data: BodyType<AgentReleaseUploadRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof requestAgentReleaseUploadUrl>>,
+  TError,
+  { data: BodyType<AgentReleaseUploadRequest> },
+  TContext
+> => {
+  return useMutation(getRequestAgentReleaseUploadUrlMutationOptions(options));
+};
+
+/**
+ * @summary Create an agent release and push it to one or all devices
+ */
+export const getPushAgentUpdateUrl = () => {
+  return `/api/devices/agent-updates`;
+};
+
+export const pushAgentUpdate = async (
+  pushAgentUpdateRequest: PushAgentUpdateRequest,
+  options?: RequestInit,
+): Promise<PushAgentUpdateResponse> => {
+  return customFetch<PushAgentUpdateResponse>(getPushAgentUpdateUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(pushAgentUpdateRequest),
+  });
+};
+
+export const getPushAgentUpdateMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pushAgentUpdate>>,
+    TError,
+    { data: BodyType<PushAgentUpdateRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof pushAgentUpdate>>,
+  TError,
+  { data: BodyType<PushAgentUpdateRequest> },
+  TContext
+> => {
+  const mutationKey = ["pushAgentUpdate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof pushAgentUpdate>>,
+    { data: BodyType<PushAgentUpdateRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return pushAgentUpdate(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PushAgentUpdateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof pushAgentUpdate>>
+>;
+export type PushAgentUpdateMutationBody = BodyType<PushAgentUpdateRequest>;
+export type PushAgentUpdateMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Create an agent release and push it to one or all devices
+ */
+export const usePushAgentUpdate = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pushAgentUpdate>>,
+    TError,
+    { data: BodyType<PushAgentUpdateRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof pushAgentUpdate>>,
+  TError,
+  { data: BodyType<PushAgentUpdateRequest> },
+  TContext
+> => {
+  return useMutation(getPushAgentUpdateMutationOptions(options));
 };
 
 /**
@@ -7340,6 +7522,96 @@ export const useHeartbeat = <
   TContext
 > => {
   return useMutation(getHeartbeatMutationOptions(options));
+};
+
+/**
+ * @summary Resolve a device update command to a fresh installer URL
+ */
+export const getResolveCommandDownloadUrlUrl = () => {
+  return `/api/sync/commands/download-url`;
+};
+
+export const resolveCommandDownloadUrl = async (
+  resolveCommandDownloadUrlBody: ResolveCommandDownloadUrlBody,
+  options?: RequestInit,
+): Promise<ResolveCommandDownloadUrl200> => {
+  return customFetch<ResolveCommandDownloadUrl200>(
+    getResolveCommandDownloadUrlUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(resolveCommandDownloadUrlBody),
+    },
+  );
+};
+
+export const getResolveCommandDownloadUrlMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof resolveCommandDownloadUrl>>,
+    TError,
+    { data: BodyType<ResolveCommandDownloadUrlBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof resolveCommandDownloadUrl>>,
+  TError,
+  { data: BodyType<ResolveCommandDownloadUrlBody> },
+  TContext
+> => {
+  const mutationKey = ["resolveCommandDownloadUrl"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof resolveCommandDownloadUrl>>,
+    { data: BodyType<ResolveCommandDownloadUrlBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return resolveCommandDownloadUrl(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ResolveCommandDownloadUrlMutationResult = NonNullable<
+  Awaited<ReturnType<typeof resolveCommandDownloadUrl>>
+>;
+export type ResolveCommandDownloadUrlMutationBody =
+  BodyType<ResolveCommandDownloadUrlBody>;
+export type ResolveCommandDownloadUrlMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Resolve a device update command to a fresh installer URL
+ */
+export const useResolveCommandDownloadUrl = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof resolveCommandDownloadUrl>>,
+    TError,
+    { data: BodyType<ResolveCommandDownloadUrlBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof resolveCommandDownloadUrl>>,
+  TError,
+  { data: BodyType<ResolveCommandDownloadUrlBody> },
+  TContext
+> => {
+  return useMutation(getResolveCommandDownloadUrlMutationOptions(options));
 };
 
 /**

@@ -62,6 +62,11 @@ export interface DeviceItem {
    */
   tokenEmployeeId?: string | null;
   /**
+   * Username of the employee assigned to this device.
+   * @nullable
+   */
+  assignedUsername?: string | null;
+  /**
    * Region of the enrollment token this device was enrolled with.
    * @nullable
    */

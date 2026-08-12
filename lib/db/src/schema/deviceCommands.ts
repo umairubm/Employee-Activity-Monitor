@@ -5,6 +5,7 @@ import {
   timestamp,
   pgEnum,
   index,
+  integer,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
@@ -22,11 +23,14 @@ export const commandTypeEnum = pgEnum("command_type", [
   "restart",
   "shutdown",
   "set_usb_block",
+  "update_agent",
 ]);
 
 export const commandStatusEnum = pgEnum("command_status", [
   "pending",
   "acknowledged",
+  "downloading",
+  "installing",
   "completed",
   "failed",
   "cancelled",
@@ -50,6 +54,9 @@ export const deviceCommandsTable = pgTable(
     }),
     commandType: commandTypeEnum("command_type").notNull(),
     payload: text("payload"),
+    // Larger values are delivered first. Remote agent updates use 1000 so an
+    // update is not stuck behind ordinary configuration commands.
+    priority: integer("priority").notNull().default(0),
     status: commandStatusEnum("status").notNull().default("pending"),
     reason: text("reason"),
     cancelReason: text("cancel_reason"),

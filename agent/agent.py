@@ -16,6 +16,7 @@ import getpass
 import json
 import os
 import random
+import tempfile
 import subprocess
 import sys
 import threading
@@ -190,6 +191,9 @@ class MonitoringAgent:
             elif ctype == "set_usb_block":
                 self._set_usb_block(cid, payload)
 
+            elif ctype == "update_agent":
+                self._update_agent(cid, payload, reason)
+
             else:
                 # Unknown command type — mark it done so it isn't redelivered.
                 self.api.ack_command(cid, "completed")
@@ -300,6 +304,90 @@ class MonitoringAgent:
             self.api.ack_command(cid, "completed")
         else:
             self.api.ack_command(cid, "failed", "requires admin")
+
+    def _update_agent(self, cid, payload: dict, reason: str) -> None:
+        version = str(payload.get("version") or "").strip()
+        file_name = str(payload.get("fileName") or "").strip()
+        if not version or not file_name:
+            self.api.ack_command(cid, "failed", "missing update payload")
+            return
+        if self.tray:
+            self.tray.notify(
+                "An authorized agent update is about to install silently in the background.",
+                "Workforce Analytics",
+            )
+        try:
+            self.api.ack_command(cid, "acknowledged")
+        except Exception:
+            return
+        release = self.api.command_download_url(cid)
+        download_url = str(release.get("downloadUrl") or "").strip()
+        file_name = str(release.get("fileName") or file_name).strip()
+        if not download_url.startswith(("http://", "https://")):
+            self.api.ack_command(cid, "failed", "unsupported update source")
+            return
+        if self.tray:
+            self.tray.notify(
+                f"Authorized update for version {version} is downloading silently.",
+                "Workforce Analytics",
+            )
+        try:
+            self.api.ack_command(cid, "downloading")
+        except Exception:
+            return
+        temp_path = None
+        try:
+            suffix = ".exe" if file_name.lower().endswith(".exe") else ""
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                temp_path = tmp.name
+                with self.api.download_file(download_url) as resp:
+                    for chunk in resp.iter_content(chunk_size=1024 * 1024):
+                        if chunk:
+                            tmp.write(chunk)
+            if not sys.platform.startswith("win") or not file_name.lower().endswith(".exe"):
+                self.api.ack_command(cid, "failed", "unsupported on this OS")
+                if temp_path:
+                    try:
+                        os.unlink(temp_path)
+                    except OSError:
+                        pass
+                return
+            try:
+                self.api.ack_command(cid, "installing")
+            except Exception:
+                return
+            creationflags = 0
+            startupinfo = None
+            if sys.platform.startswith("win"):
+                creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(
+                    subprocess, "DETACHED_PROCESS", 0
+                )
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 1)
+                startupinfo.wShowWindow = 0
+            subprocess.Popen(
+                [temp_path, "/S"],
+                cwd=os.path.dirname(temp_path) or None,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                close_fds=True,
+                creationflags=creationflags,
+                startupinfo=startupinfo,
+            )
+            self.quit()
+            return
+        except Exception as exc:  # noqa: BLE001
+            if temp_path:
+                try:
+                    os.unlink(temp_path)
+                except OSError:
+                    pass
+            try:
+                self.api.ack_command(cid, "failed", "update failed")
+            except Exception:
+                pass
+            raise exc
 
     @staticmethod
     def _apply_usb_block(enabled: bool) -> bool:

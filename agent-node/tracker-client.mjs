@@ -39,6 +39,8 @@ import readline from "readline";
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
+import { createWriteStream } from "fs";
+import { Readable } from "stream";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -828,6 +830,7 @@ const COMMAND_ACTION_LABELS = {
   restart: "restart this computer",
   shutdown: "shut down this computer",
   reset_password: "reset your account password",
+  update_agent: "update this agent",
 };
 
 async function ackCommand(commandId, status, message) {
@@ -857,6 +860,99 @@ async function executeCommand(cmd) {
     await ackCommand(cmd.id, "acknowledged");
   } catch (e) {
     console.error("⚠️ Could not acknowledge command:", e.message);
+  }
+
+  if (cmd.commandType === "update_agent") {
+    let payload = null;
+    let installerPath = null;
+    let downloadStarted = false;
+    try {
+      payload = parsePayload(cmd.payload);
+      const version = payload && payload.version;
+      let fileName = payload && payload.fileName;
+      if (!version || !fileName) {
+        throw new Error("Missing update payload fields");
+      }
+      const release = await apiPost("/commands/download-url", {
+        commandId: cmd.id,
+      });
+      const downloadUrl = String(release.downloadUrl || "");
+      fileName = String(release.fileName || fileName);
+      const url = new URL(downloadUrl);
+      if (!["http:", "https:"].includes(url.protocol)) {
+        throw new Error("Unsupported download URL");
+      }
+      if (!IS_WIN || path.extname(fileName).toLowerCase() !== ".exe") {
+        throw new Error("unsupported update installer");
+      }
+
+      await ackCommand(cmd.id, "downloading");
+      downloadStarted = true;
+
+      const tmpBase = path.join(
+        os.tmpdir(),
+        `tracker-update-${process.pid}-${Date.now()}-${crypto.randomBytes(6).toString("hex")}`
+      );
+      installerPath = `${tmpBase}${path.extname(fileName) || ".exe"}`;
+      const res = await fetch(url, { redirect: "follow" });
+      if (!res.ok || !res.body) {
+        throw new Error(`Download failed with status ${res.status}`);
+      }
+
+      await new Promise((resolve, reject) => {
+        const out = createWriteStream(installerPath, { mode: 0o700 });
+        const cleanup = (err) => {
+          out.destroy();
+          reject(err);
+        };
+        out.on("error", cleanup);
+        out.on("finish", resolve);
+        Readable.fromWeb(res.body).on("error", cleanup).pipe(out);
+      });
+
+      await ackCommand(cmd.id, "installing");
+      const child = await new Promise((resolve, reject) => {
+        const spawned = spawn(installerPath, ["/S"], {
+          detached: true,
+          windowsHide: true,
+          stdio: "ignore",
+        });
+        spawned.once("error", reject);
+        spawned.once("spawn", () => resolve(spawned));
+      });
+      child.unref();
+      process.exit(0);
+    } catch (e) {
+      if (installerPath) {
+        try {
+          fs.unlinkSync(installerPath);
+        } catch {
+          /* ignore */
+        }
+      }
+      if (!downloadStarted) {
+        try {
+          await ackCommand(
+            cmd.id,
+            "failed",
+            e.message ? e.message.slice(0, 200) : "update_agent failed"
+          );
+        } catch {
+          /* ignore */
+        }
+      } else {
+        try {
+          await ackCommand(
+            cmd.id,
+            "failed",
+            e.message ? e.message.slice(0, 200) : "update_agent failed"
+          );
+        } catch {
+          /* ignore */
+        }
+      }
+      return;
+    }
   }
 
   // restart/shutdown take the machine down before we could report completion, so

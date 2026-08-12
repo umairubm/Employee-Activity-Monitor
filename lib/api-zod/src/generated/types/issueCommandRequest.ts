@@ -24,4 +24,13 @@ export interface IssueCommandRequest {
   newPassword?: string;
   /** Required for set_usb_block. */
   enabled?: boolean;
+  /**
+   * Required for update_agent.
+   * @pattern ^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$
+   */
+  version?: string;
+  /** Required for update_agent. */
+  downloadUrl?: string;
+  /** Optional installer file name for update_agent. */
+  fileName?: string;
 }

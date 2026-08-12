@@ -12,6 +12,8 @@ export type DeviceCommandItemStatus =
 export const DeviceCommandItemStatus = {
   pending: "pending",
   acknowledged: "acknowledged",
+  downloading: "downloading",
+  installing: "installing",
   completed: "completed",
   failed: "failed",
   cancelled: "cancelled",

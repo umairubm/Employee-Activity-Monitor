@@ -147,6 +147,10 @@ export const ListDevicesResponseItem = zod.object({
     .describe(
       "Employee ID of the enrollment token this device was enrolled with.",
     ),
+  assignedUsername: zod
+    .string()
+    .nullish()
+    .describe("Username of the employee assigned to this device."),
   tokenRegion: zod
     .string()
     .nullish()
@@ -227,6 +231,10 @@ export const GetDeviceResponse = zod.object({
     .describe(
       "Employee ID of the enrollment token this device was enrolled with.",
     ),
+  assignedUsername: zod
+    .string()
+    .nullish()
+    .describe("Username of the employee assigned to this device."),
   tokenRegion: zod
     .string()
     .nullish()
@@ -269,11 +277,18 @@ export const GetDeviceCommandsResponseItem = zod.object({
     "restart",
     "shutdown",
     "set_usb_block",
+    "update_agent",
   ]),
   payload: zod.string().nullish(),
+  targetVersion: zod
+    .string()
+    .nullish()
+    .describe("Version requested by an update_agent command."),
   status: zod.enum([
     "pending",
     "acknowledged",
+    "downloading",
+    "installing",
     "completed",
     "failed",
     "cancelled",
@@ -303,6 +318,10 @@ export const issueDeviceCommandBodyLockDurationMinutesMax = 10080;
 export const issueDeviceCommandBodyNewPasswordMin = 8;
 export const issueDeviceCommandBodyNewPasswordMax = 128;
 
+export const issueDeviceCommandBodyVersionRegExp = new RegExp(
+  "^\\d+\\.\\d+\\.\\d+(?:[-+][0-9A-Za-z.-]+)?$",
+);
+
 export const IssueDeviceCommandBody = zod.object({
   commandType: zod.enum([
     "lock_screen",
@@ -312,6 +331,7 @@ export const IssueDeviceCommandBody = zod.object({
     "restart",
     "shutdown",
     "set_usb_block",
+    "update_agent",
   ]),
   reason: zod.string().optional(),
   lockDurationMinutes: zod
@@ -329,6 +349,20 @@ export const IssueDeviceCommandBody = zod.object({
     .optional()
     .describe("Required for reset_password. Never echoed back."),
   enabled: zod.boolean().optional().describe("Required for set_usb_block."),
+  version: zod
+    .string()
+    .regex(issueDeviceCommandBodyVersionRegExp)
+    .optional()
+    .describe("Required for update_agent."),
+  downloadUrl: zod
+    .string()
+    .url()
+    .optional()
+    .describe("Required for update_agent."),
+  fileName: zod
+    .string()
+    .optional()
+    .describe("Optional installer file name for update_agent."),
 });
 
 /**
@@ -357,11 +391,18 @@ export const CancelDeviceCommandResponse = zod.object({
     "restart",
     "shutdown",
     "set_usb_block",
+    "update_agent",
   ]),
   payload: zod.string().nullish(),
+  targetVersion: zod
+    .string()
+    .nullish()
+    .describe("Version requested by an update_agent command."),
   status: zod.enum([
     "pending",
     "acknowledged",
+    "downloading",
+    "installing",
     "completed",
     "failed",
     "cancelled",
@@ -374,6 +415,40 @@ export const CancelDeviceCommandResponse = zod.object({
   acknowledgedAt: zod.coerce.date().nullish(),
   completedAt: zod.coerce.date().nullish(),
   cancelledAt: zod.coerce.date().nullish(),
+});
+
+/**
+ * @summary Request a private upload URL for an agent installer
+ */
+
+export const requestAgentReleaseUploadUrlBodySizeMax = 524288000;
+
+export const RequestAgentReleaseUploadUrlBody = zod.object({
+  name: zod.string().min(1),
+  size: zod.number().min(1).max(requestAgentReleaseUploadUrlBodySizeMax),
+  contentType: zod.string().min(1),
+});
+
+export const RequestAgentReleaseUploadUrlResponse = zod.object({
+  uploadURL: zod.string().url(),
+  objectPath: zod.string(),
+});
+
+/**
+ * @summary Create an agent release and push it to one or all devices
+ */
+export const pushAgentUpdateBodyVersionRegExp = new RegExp(
+  "^\\d+\\.\\d+\\.\\d+(?:[-+][0-9A-Za-z.-]+)?$",
+);
+
+export const PushAgentUpdateBody = zod.object({
+  version: zod.string().regex(pushAgentUpdateBodyVersionRegExp),
+  downloadUrl: zod.string().url().nullish(),
+  objectPath: zod.string().nullish(),
+  fileName: zod.string().min(1),
+  targetMode: zod.enum(["all", "device"]),
+  deviceId: zod.string().uuid().nullish(),
+  reason: zod.string().nullish(),
 });
 
 /**
@@ -438,6 +513,10 @@ export const SetDeviceGroupResponse = zod.object({
     .describe(
       "Employee ID of the enrollment token this device was enrolled with.",
     ),
+  assignedUsername: zod
+    .string()
+    .nullish()
+    .describe("Username of the employee assigned to this device."),
   tokenRegion: zod
     .string()
     .nullish()
@@ -584,6 +663,10 @@ export const UpdateDeviceConfigResponse = zod.object({
     .describe(
       "Employee ID of the enrollment token this device was enrolled with.",
     ),
+  assignedUsername: zod
+    .string()
+    .nullish()
+    .describe("Username of the employee assigned to this device."),
   tokenRegion: zod
     .string()
     .nullish()
@@ -2502,6 +2585,19 @@ export const HeartbeatResponse = zod.object({
   lockedUntil: zod.coerce.date().nullish(),
   dataFrequencyMinutes: zod.number().optional(),
   screenshotIntervalRange: zod.string().optional(),
+});
+
+/**
+ * @summary Resolve a device update command to a fresh installer URL
+ */
+export const ResolveCommandDownloadUrlBody = zod.object({
+  commandId: zod.string().uuid(),
+});
+
+export const ResolveCommandDownloadUrlResponse = zod.object({
+  version: zod.string(),
+  fileName: zod.string().nullable(),
+  downloadUrl: zod.string().url(),
 });
 
 /**

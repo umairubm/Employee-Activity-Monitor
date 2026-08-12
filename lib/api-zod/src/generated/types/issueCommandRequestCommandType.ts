@@ -17,4 +17,5 @@ export const IssueCommandRequestCommandType = {
   restart: "restart",
   shutdown: "shutdown",
   set_usb_block: "set_usb_block",
+  update_agent: "update_agent",
 } as const;

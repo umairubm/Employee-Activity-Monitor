@@ -73,7 +73,13 @@ export type ScreenshotMeta = z.infer<typeof ScreenshotMeta>;
 
 export const CommandAckBody = z.object({
   commandId: z.string().uuid(),
-  status: z.enum(["acknowledged", "completed", "failed"]),
+  status: z.enum([
+    "acknowledged",
+    "downloading",
+    "installing",
+    "completed",
+    "failed",
+  ]),
   // Optional human-readable failure detail from the agent (e.g. "unsupported
   // on macOS"). Never contains sensitive payloads. Stored on the command row.
   message: z.string().max(1000).optional(),

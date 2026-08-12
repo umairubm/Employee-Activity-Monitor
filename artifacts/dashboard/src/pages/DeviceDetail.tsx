@@ -31,6 +31,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { AgentUpdateDialog } from "@/components/AgentUpdateDialog";
 
 const SYSTEM_INFO_GROUPS: { label: string; icon: typeof Server; fields: string[] }[] = [
   { label: "System", icon: Server, fields: ["Host Name", "Operating System", "OS Version", "Manufacturer", "Model", "Serial_Number"] },
@@ -56,6 +57,7 @@ const COMMAND_LABELS: Record<string, string> = {
   shutdown: "Shutdown",
   set_usb_block: "USB Storage",
   update_config: "Update Config",
+  update_agent: "Update Agent",
 };
 
 /** Duration picker choices for Lock Screen / Force Sign Out. */
@@ -345,6 +347,7 @@ export default function DeviceDetail({ id }: { id: string }) {
         </div>
         
         <div className="flex flex-wrap gap-2">
+          <AgentUpdateDialog selectedDevice={device} defaultTargetMode="device" />
           {device.isLocked && (
             <Button
               className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white"
@@ -769,7 +772,12 @@ export default function DeviceDetail({ id }: { id: string }) {
                   commands?.map(cmd => (
                     <TableRow key={cmd.id}>
                       <TableCell className="font-medium">
-                        {COMMAND_LABELS[cmd.commandType] ?? cmd.commandType}
+                        <div>{COMMAND_LABELS[cmd.commandType] ?? cmd.commandType}</div>
+                        {cmd.commandType === "update_agent" && cmd.targetVersion && (
+                          <div className="text-xs font-normal text-muted-foreground">
+                            Target v{cmd.targetVersion}
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell>
                         <Badge variant={
@@ -777,7 +785,9 @@ export default function DeviceDetail({ id }: { id: string }) {
                           cmd.status === 'failed' ? 'destructive' :
                           cmd.status === 'pending' ? 'secondary' : 'outline'
                         } className={cmd.status === 'completed' ? "bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/25 border-emerald-500/20" : ""}>
-                          {cmd.status}
+                           {cmd.commandType === "update_agent" && cmd.status === "completed" && cmd.targetVersion
+                             ? `Successfully Updated to v${cmd.targetVersion}`
+                             : cmd.status}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground whitespace-nowrap">

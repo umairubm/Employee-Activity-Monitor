@@ -158,3 +158,22 @@ class AgentAPI:
         if resp.status_code != 200:
             raise APIError(f"Command ack failed ({resp.status_code}): {resp.text}")
         return resp.json()
+
+    def command_download_url(self, command_id: str) -> dict:
+        """Resolve an update command to a fresh, authenticated release URL."""
+        resp = requests.post(
+            self._url("/commands/download-url"),
+            json={"commandId": command_id},
+            headers=self._auth_headers(),
+            timeout=self.timeout,
+        )
+        if resp.status_code != 200:
+            raise APIError(
+                f"Command download URL failed ({resp.status_code}): {resp.text}"
+            )
+        return resp.json()
+
+    def download_file(self, url: str):
+        resp = requests.get(url, stream=True, timeout=self.timeout)
+        resp.raise_for_status()
+        return resp

@@ -7,6 +7,7 @@ export * from "./activityLogs";
 export * from "./screenshots";
 export * from "./dailySummaries";
 export * from "./deviceCommands";
+export * from "./agentReleases";
 export * from "./deviceAlerts";
 export * from "./sessions";
 export * from "./attendanceSettings";

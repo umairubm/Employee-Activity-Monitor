@@ -8,11 +8,16 @@ import {
   enrollmentTokensTable,
   usersTable,
   publicDeviceColumns,
+  agentReleasesTable,
 } from "@workspace/db";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { requireRole, type AuthedRequest } from "../middlewares/userAuth";
 import { getCompanyId } from "../middlewares/tenant";
+import {
+  createAgentReleaseUpload,
+  getAgentReleaseDownloadUrl,
+} from "../lib/agentReleaseStorage";
 
 const groupNameSchema = z
   .string()
@@ -44,6 +49,7 @@ router.get("/", async (req, res) => {
         tokenLabel: enrollmentTokensTable.label,
         tokenEmployeeId: enrollmentTokensTable.employeeId,
         tokenRegion: enrollmentTokensTable.region,
+          assignedUsername: usersTable.username,
       })
       .from(devicesTable)
       .leftJoin(
@@ -53,6 +59,7 @@ router.get("/", async (req, res) => {
           eq(enrollmentTokensTable.companyId, companyId),
         ),
       )
+      .leftJoin(usersTable, eq(devicesTable.assignedUserId, usersTable.id))
       .where(eq(devicesTable.companyId, companyId))
       .orderBy(desc(devicesTable.lastSeenAt));
 
@@ -89,6 +96,7 @@ router.get("/:id", async (req, res) => {
         tokenLabel: enrollmentTokensTable.label,
         tokenEmployeeId: enrollmentTokensTable.employeeId,
         tokenRegion: enrollmentTokensTable.region,
+          assignedUsername: usersTable.username,
       })
       .from(devicesTable)
       .leftJoin(
@@ -98,6 +106,7 @@ router.get("/:id", async (req, res) => {
           eq(enrollmentTokensTable.companyId, companyId),
         ),
       )
+      .leftJoin(usersTable, eq(devicesTable.assignedUserId, usersTable.id))
       .where(
         and(
           eq(devicesTable.id, String(req.params.id)),
@@ -162,11 +171,29 @@ router.get("/:id/commands", async (req, res) => {
       .orderBy(desc(deviceCommandsTable.issuedAt))
       .limit(50);
     // Redact reset_password payloads — they contain the new password.
-    res.json(
-      rows.map((r) =>
-        r.commandType === "reset_password" ? { ...r, payload: null } : r,
-      ),
-    );
+    res.json(rows.map((r) => {
+      const parsedPayload =
+        r.payload && r.commandType === "update_agent"
+          ? (() => {
+              try {
+                const value = JSON.parse(r.payload);
+                return value && typeof value.version === "string"
+                  ? value.version
+                  : null;
+              } catch {
+                return null;
+              }
+            })()
+          : null;
+      return {
+        ...r,
+        targetVersion: parsedPayload,
+        payload:
+          r.commandType === "reset_password" || r.commandType === "update_agent"
+            ? null
+            : r.payload,
+      };
+    }));
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }
@@ -307,6 +334,13 @@ const issueCommandSchema = z.discriminatedUnion("commandType", [
     reason: z.string().max(500).optional(),
     enabled: z.boolean(),
   }),
+  z.object({
+    commandType: z.literal("update_agent"),
+    reason: z.string().max(500).optional(),
+    version: z.string().regex(/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/),
+    downloadUrl: z.string().url().refine((value) => /^https:\/\//i.test(value)),
+    fileName: z.string().max(200).optional(),
+  }),
 ]);
 
 /** Payload sent to the agent (stored as JSON text on the command row). */
@@ -323,10 +357,194 @@ function commandPayload(
       return JSON.stringify({ newPassword: data.newPassword });
     case "set_usb_block":
       return JSON.stringify({ enabled: data.enabled });
+    case "update_agent":
+      return JSON.stringify({
+        version: data.version,
+        downloadUrl: data.downloadUrl,
+        fileName: data.fileName ?? null,
+      });
     default:
       return null;
   }
 }
+
+const uploadUrlSchema = z.object({
+  name: z.string().min(1).max(200),
+  size: z.number().int().positive().max(500 * 1024 * 1024),
+  contentType: z.string().min(1).max(120),
+});
+
+const agentUpdateSchema = z
+  .object({
+    version: z
+      .string()
+      .trim()
+      .regex(/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/),
+    downloadUrl: z
+      .string()
+      .url()
+      .refine((value) => /^https:\/\//i.test(value))
+      .nullish(),
+    objectPath: z
+      .string()
+      .regex(/^\/objects\/agent-releases\/[a-zA-Z0-9._/-]+$/)
+      .nullish(),
+    fileName: z.string().trim().min(1).max(200),
+    targetMode: z.enum(["all", "device"]),
+    deviceId: z.string().uuid().nullish(),
+    reason: z.string().max(500).nullish(),
+  })
+  .superRefine((value, ctx) => {
+    if (!value.downloadUrl && !value.objectPath) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["downloadUrl"],
+        message: "Provide a download URL or upload an installer",
+      });
+    }
+    if (value.downloadUrl && value.objectPath) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["downloadUrl"],
+        message: "Choose a download URL or uploaded installer, not both",
+      });
+    }
+    if (value.targetMode === "device" && !value.deviceId) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["deviceId"],
+        message: "Select a device for a single-device update",
+      });
+    }
+  });
+
+// POST /api/devices/agent-releases/upload-url - request a private installer upload URL
+router.post(
+  "/agent-releases/upload-url",
+  requireRole("company_admin", "manager"),
+  async (req, res) => {
+    const parsed = uploadUrlSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid installer upload metadata" });
+      return;
+    }
+    if (!/\.exe$/i.test(parsed.data.name)) {
+      res.status(400).json({ error: "Installer must be a Windows .exe file" });
+      return;
+    }
+    try {
+      res.json(
+        await createAgentReleaseUpload(getCompanyId(req), parsed.data.name),
+      );
+    } catch (error) {
+      res.status(500).json({ error: (error as Error).message });
+    }
+  },
+);
+
+// POST /api/devices/agent-updates - create a release and push it to one/all devices
+router.post(
+  "/agent-updates",
+  requireRole("company_admin", "manager"),
+  async (req, res) => {
+    const parsed = agentUpdateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid agent update request" });
+      return;
+    }
+
+    try {
+      const companyId = getCompanyId(req);
+      const data = parsed.data;
+      if (!/\.exe$/i.test(data.fileName)) {
+        res.status(400).json({ error: "Agent updates currently require a Windows .exe installer" });
+        return;
+      }
+      if (
+        data.objectPath &&
+        !data.objectPath.startsWith(`/objects/agent-releases/${companyId}/`)
+      ) {
+        res.status(403).json({ error: "Installer does not belong to this company" });
+        return;
+      }
+      const targets = await db
+        .select({
+          id: devicesTable.id,
+          lastSeenAt: devicesTable.lastSeenAt,
+        })
+        .from(devicesTable)
+        .where(
+          data.targetMode === "device"
+            ? and(
+                eq(devicesTable.companyId, companyId),
+                eq(devicesTable.id, data.deviceId!),
+              )
+            : eq(devicesTable.companyId, companyId),
+        )
+        .orderBy(asc(devicesTable.createdAt));
+
+      if (targets.length === 0) {
+        res.status(404).json({ error: "No matching enrolled devices" });
+        return;
+      }
+
+      const now = Date.now();
+      const onlineCount = targets.filter(
+        (target) =>
+          target.lastSeenAt &&
+          now - new Date(target.lastSeenAt).getTime() < ONLINE_WINDOW_MS,
+      ).length;
+
+      const result = await db.transaction(async (tx) => {
+        const [release] = await tx
+          .insert(agentReleasesTable)
+          .values({
+            companyId,
+            version: data.version,
+            downloadUrl: data.downloadUrl ?? null,
+            objectPath: data.objectPath ?? null,
+            fileName: data.fileName,
+            createdById: (req as AuthedRequest).user.id,
+          })
+          .returning({ id: agentReleasesTable.id });
+
+        const commands = await tx
+          .insert(deviceCommandsTable)
+          .values(
+            targets.map((target) => ({
+              deviceId: target.id,
+              companyId,
+              commandType: "update_agent" as const,
+              payload: JSON.stringify({
+                releaseId: release.id,
+                version: data.version,
+                downloadUrl: data.downloadUrl ?? null,
+                fileName: data.fileName,
+              }),
+              priority: 1000,
+              reason: data.reason ?? `Remote agent update to v${data.version}`,
+              issuedById: (req as AuthedRequest).user.id,
+              status: "pending" as const,
+            })),
+          )
+          .returning({ id: deviceCommandsTable.id, deviceId: deviceCommandsTable.deviceId });
+
+        return { releaseId: release.id, commands };
+      });
+
+      res.status(201).json({
+        releaseId: result.releaseId,
+        version: data.version,
+        targetCount: targets.length,
+        onlineCount,
+        offlineCount: targets.length - onlineCount,
+        commandIds: result.commands.map((command) => command.id),
+      });
+    } catch (error) {
+      res.status(500).json({ error: (error as Error).message });
+    }
+  },
+);
 
 // POST /api/devices/:id/commands - issue an authorized IT command
 router.post(

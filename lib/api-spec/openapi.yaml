@@ -207,6 +207,44 @@ paths:
               schema:
                 $ref: "#/components/schemas/DeviceCommandItem"
 
+  /devices/agent-releases/upload-url:
+    post:
+      operationId: requestAgentReleaseUploadUrl
+      tags: [devices]
+      summary: Request a private upload URL for an agent installer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentReleaseUploadRequest"
+      responses:
+        "200":
+          description: Upload URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentReleaseUploadResponse"
+
+  /devices/agent-updates:
+    post:
+      operationId: pushAgentUpdate
+      tags: [devices]
+      summary: Create an agent release and push it to one or all devices
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PushAgentUpdateRequest"
+      responses:
+        "201":
+          description: Update commands issued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PushAgentUpdateResponse"
+
   /devices/{id}/group:
     patch:
       operationId: setDeviceGroup
@@ -1673,6 +1711,38 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HeartbeatResponse"
+  /sync/commands/download-url:
+    post:
+      operationId: resolveCommandDownloadUrl
+      tags: [sync]
+      summary: Resolve a device update command to a fresh installer URL
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                commandId:
+                  type: string
+                  format: uuid
+              required: [commandId]
+      responses:
+        "200":
+          description: Fresh installer URL
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version:
+                    type: string
+                  fileName:
+                    type: [string, "null"]
+                  downloadUrl:
+                    type: string
+                    format: uri
+                required: [version, fileName, downloadUrl]
   /sync/activity:
     post:
       operationId: syncActivity
@@ -2281,6 +2351,9 @@ components:
         tokenEmployeeId:
           type: [string, "null"]
           description: Employee ID of the enrollment token this device was enrolled with.
+        assignedUsername:
+          type: [string, "null"]
+          description: Username of the employee assigned to this device.
         tokenRegion:
           type: [string, "null"]
           description: Region of the enrollment token this device was enrolled with.
@@ -2390,12 +2463,16 @@ components:
               restart,
               shutdown,
               set_usb_block,
+              update_agent,
             ]
         payload:
           type: [string, "null"]
+        targetVersion:
+          type: [string, "null"]
+          description: Version requested by an update_agent command.
         status:
           type: string
-          enum: [pending, acknowledged, completed, failed, cancelled]
+          enum: [pending, acknowledged, downloading, installing, completed, failed, cancelled]
         reason:
           type: [string, "null"]
         cancelReason:
@@ -2437,6 +2514,7 @@ components:
               restart,
               shutdown,
               set_usb_block,
+              update_agent,
             ]
         reason:
           type: string
@@ -2455,7 +2533,84 @@ components:
         enabled:
           type: boolean
           description: Required for set_usb_block.
+        version:
+          type: string
+          pattern: '^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$'
+          description: Required for update_agent.
+        downloadUrl:
+          type: string
+          format: uri
+          description: Required for update_agent.
+        fileName:
+          type: string
+          description: Optional installer file name for update_agent.
       required: [commandType]
+    AgentReleaseUploadRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+        size:
+          type: integer
+          minimum: 1
+          maximum: 524288000
+        contentType:
+          type: string
+          minLength: 1
+      required: [name, size, contentType]
+    AgentReleaseUploadResponse:
+      type: object
+      properties:
+        uploadURL:
+          type: string
+          format: uri
+        objectPath:
+          type: string
+      required: [uploadURL, objectPath]
+    PushAgentUpdateRequest:
+      type: object
+      properties:
+        version:
+          type: string
+          pattern: '^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$'
+        downloadUrl:
+          type: [string, "null"]
+          format: uri
+        objectPath:
+          type: [string, "null"]
+        fileName:
+          type: string
+          minLength: 1
+        targetMode:
+          type: string
+          enum: [all, device]
+        deviceId:
+          type: [string, "null"]
+          format: uuid
+        reason:
+          type: [string, "null"]
+      required: [version, fileName, targetMode]
+    PushAgentUpdateResponse:
+      type: object
+      properties:
+        releaseId:
+          type: string
+          format: uuid
+        version:
+          type: string
+        targetCount:
+          type: integer
+        onlineCount:
+          type: integer
+        offlineCount:
+          type: integer
+        commandIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+      required: [releaseId, version, targetCount, onlineCount, offlineCount, commandIds]
     ActivityLogRecord:
       type: object
       properties:

@@ -6,7 +6,20 @@ import {
   raw as rawBody,
 } from "express";
 import { createHash } from "node:crypto";
-import { and, count, eq, sql, isNull, or, gt, lt, inArray } from "drizzle-orm";
+import { z } from "zod/v4";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  sql,
+  isNull,
+  or,
+  gt,
+  lt,
+  inArray,
+} from "drizzle-orm";
 import {
   db,
   devicesTable,
@@ -14,6 +27,7 @@ import {
   activityLogsTable,
   screenshotsTable,
   deviceCommandsTable,
+  agentReleasesTable,
   deviceAlertsTable,
   companiesTable,
   type Device,
@@ -32,6 +46,7 @@ import {
 } from "../lib/syncValidation";
 import { generateSecret, hashSecret } from "../lib/secrets";
 import { deviceAuth, type DeviceRequest } from "../middlewares/deviceAuth";
+import { getAgentReleaseDownloadUrl } from "../lib/agentReleaseStorage";
 import {
   loadCategories,
   classify,
@@ -374,6 +389,24 @@ router.post(
       device.lockedUntil.getTime() <= now.getTime();
 
     const m = parsed.data.metrics;
+    const reportedVersion = parsed.data.agentVersion;
+    if (reportedVersion) {
+      // A self-updating agent may be terminated by its installer before it can
+      // send a final "completed" ack. The first heartbeat from the new build is
+      // the authoritative success signal.
+      await db
+        .update(deviceCommandsTable)
+        .set({ status: "completed", completedAt: now })
+        .where(
+          and(
+            eq(deviceCommandsTable.deviceId, device.id),
+            eq(deviceCommandsTable.commandType, "update_agent"),
+            eq(deviceCommandsTable.status, "installing"),
+            sql`payload::jsonb ->> 'version' = ${reportedVersion}`,
+          ),
+        );
+    }
+
     const [updated] = await db
       .update(devicesTable)
       .set({
@@ -405,6 +438,10 @@ router.post(
           eq(deviceCommandsTable.deviceId, device.id),
           eq(deviceCommandsTable.status, "pending"),
         ),
+      )
+      .orderBy(
+        desc(deviceCommandsTable.priority),
+        asc(deviceCommandsTable.issuedAt),
       );
 
     res.json({
@@ -607,6 +644,97 @@ router.post(
  * Agent reports progress on an issued command (acknowledged / completed / failed).
  */
 router.post(
+  "/commands/download-url",
+  deviceAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const device = (req as DeviceRequest).device;
+    if (!device.companyId) {
+      res.status(403).json({ error: "Device is not assigned to a company" });
+      return;
+    }
+    const commandId = z.string().uuid().safeParse(req.body?.commandId);
+    if (!commandId.success) {
+      res.status(400).json({ error: "Invalid command id" });
+      return;
+    }
+    const [command] = await db
+      .select({
+        payload: deviceCommandsTable.payload,
+        companyId: deviceCommandsTable.companyId,
+      })
+      .from(deviceCommandsTable)
+      .where(
+        and(
+          eq(deviceCommandsTable.id, commandId.data),
+          eq(deviceCommandsTable.deviceId, device.id),
+          eq(deviceCommandsTable.commandType, "update_agent"),
+          eq(deviceCommandsTable.companyId, device.companyId),
+        ),
+      );
+    if (!command) {
+      res.status(404).json({ error: "Update command not found" });
+      return;
+    }
+
+    let payload: {
+      releaseId?: string;
+      version?: string;
+      downloadUrl?: string | null;
+      fileName?: string;
+    } = {};
+    try {
+      payload = command.payload ? JSON.parse(command.payload) : {};
+    } catch {
+      res.status(409).json({ error: "Update command payload is invalid" });
+      return;
+    }
+
+    let downloadUrl = payload.downloadUrl ?? null;
+    if (payload.releaseId) {
+      const [release] = await db
+        .select({
+          version: agentReleasesTable.version,
+          downloadUrl: agentReleasesTable.downloadUrl,
+          objectPath: agentReleasesTable.objectPath,
+          fileName: agentReleasesTable.fileName,
+        })
+        .from(agentReleasesTable)
+        .where(
+          and(
+            eq(agentReleasesTable.id, payload.releaseId),
+            eq(agentReleasesTable.companyId, device.companyId),
+          ),
+        );
+      if (!release) {
+        res.status(404).json({ error: "Agent release not found" });
+        return;
+      }
+      if (release.objectPath) {
+        downloadUrl = await getAgentReleaseDownloadUrl(release.objectPath);
+      } else {
+        downloadUrl = release.downloadUrl;
+      }
+      res.json({
+        version: release.version,
+        fileName: release.fileName ?? payload.fileName ?? null,
+        downloadUrl,
+      });
+      return;
+    }
+
+    if (!downloadUrl || !payload.version || !payload.fileName) {
+      res.status(409).json({ error: "Update command payload is incomplete" });
+      return;
+    }
+    res.json({
+      version: payload.version,
+      fileName: payload.fileName,
+      downloadUrl,
+    });
+  },
+);
+
+router.post(
   "/commands/ack",
   deviceAuth,
   async (req: Request, res: Response): Promise<void> => {
@@ -619,8 +747,52 @@ router.post(
     const { commandId, status, message } = parsed.data;
 
     const now = new Date();
+    const [current] = await db
+      .select({
+        id: deviceCommandsTable.id,
+        commandType: deviceCommandsTable.commandType,
+        status: deviceCommandsTable.status,
+      })
+      .from(deviceCommandsTable)
+      .where(
+        and(
+          eq(deviceCommandsTable.id, commandId),
+          eq(deviceCommandsTable.deviceId, device.id),
+        ),
+      );
+    if (!current) {
+      res.status(404).json({ error: "Command not found" });
+      return;
+    }
+
+    const allowedStatuses =
+      current.commandType === "update_agent"
+        ? {
+            acknowledged: ["pending"] as const,
+            downloading: ["acknowledged"] as const,
+            installing: ["downloading"] as const,
+            completed: ["installing"] as const,
+            failed: ["pending", "acknowledged", "downloading", "installing"] as const,
+          }[status]
+        : {
+            acknowledged: ["pending"] as const,
+            downloading: ["pending", "acknowledged"] as const,
+            installing: ["pending", "acknowledged", "downloading"] as const,
+            completed: ["pending", "acknowledged", "downloading", "installing"] as const,
+            failed: ["pending", "acknowledged", "downloading", "installing"] as const,
+          }[status];
+    if (!allowedStatuses?.includes(current.status as never)) {
+      res.json({ id: current.id, status: current.status });
+      return;
+    }
     const patch: Partial<typeof deviceCommandsTable.$inferInsert> = { status };
-    if (status === "acknowledged") patch.acknowledgedAt = now;
+    if (
+      status === "acknowledged" ||
+      status === "downloading" ||
+      status === "installing"
+    ) {
+      patch.acknowledgedAt = now;
+    }
     if (status === "completed" || status === "failed") patch.completedAt = now;
     // Persist the agent's failure detail so admins can see WHY a command failed
     // (e.g. "unsupported on macOS") in command history.
@@ -639,7 +811,7 @@ router.post(
         and(
           eq(deviceCommandsTable.id, commandId),
           eq(deviceCommandsTable.deviceId, device.id),
-          inArray(deviceCommandsTable.status, ["pending", "acknowledged"]),
+          or(...allowedStatuses.map((value) => eq(deviceCommandsTable.status, value))),
         ),
       )
       .returning();

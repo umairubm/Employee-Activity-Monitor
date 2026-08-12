@@ -409,6 +409,11 @@ export interface DeviceItem {
    */
   tokenEmployeeId?: string | null;
   /**
+   * Username of the employee assigned to this device.
+   * @nullable
+   */
+  assignedUsername?: string | null;
+  /**
    * Region of the enrollment token this device was enrolled with.
    * @nullable
    */
@@ -477,6 +482,7 @@ export const DeviceCommandItemCommandType = {
   restart: "restart",
   shutdown: "shutdown",
   set_usb_block: "set_usb_block",
+  update_agent: "update_agent",
 } as const;
 
 export type DeviceCommandItemStatus =
@@ -485,6 +491,8 @@ export type DeviceCommandItemStatus =
 export const DeviceCommandItemStatus = {
   pending: "pending",
   acknowledged: "acknowledged",
+  downloading: "downloading",
+  installing: "installing",
   completed: "completed",
   failed: "failed",
   cancelled: "cancelled",
@@ -500,6 +508,11 @@ export interface DeviceCommandItem {
   commandType: DeviceCommandItemCommandType;
   /** @nullable */
   payload?: string | null;
+  /**
+   * Version requested by an update_agent command.
+   * @nullable
+   */
+  targetVersion?: string | null;
   status: DeviceCommandItemStatus;
   /** @nullable */
   reason?: string | null;
@@ -533,6 +546,7 @@ export const IssueCommandRequestCommandType = {
   restart: "restart",
   shutdown: "shutdown",
   set_usb_block: "set_usb_block",
+  update_agent: "update_agent",
 } as const;
 
 export interface IssueCommandRequest {
@@ -552,6 +566,65 @@ export interface IssueCommandRequest {
   newPassword?: string;
   /** Required for set_usb_block. */
   enabled?: boolean;
+  /**
+   * Required for update_agent.
+   * @pattern ^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$
+   */
+  version?: string;
+  /** Required for update_agent. */
+  downloadUrl?: string;
+  /** Optional installer file name for update_agent. */
+  fileName?: string;
+}
+
+export interface AgentReleaseUploadRequest {
+  /** @minLength 1 */
+  name: string;
+  /**
+   * @minimum 1
+   * @maximum 524288000
+   */
+  size: number;
+  /** @minLength 1 */
+  contentType: string;
+}
+
+export interface AgentReleaseUploadResponse {
+  uploadURL: string;
+  objectPath: string;
+}
+
+export type PushAgentUpdateRequestTargetMode =
+  (typeof PushAgentUpdateRequestTargetMode)[keyof typeof PushAgentUpdateRequestTargetMode];
+
+export const PushAgentUpdateRequestTargetMode = {
+  all: "all",
+  device: "device",
+} as const;
+
+export interface PushAgentUpdateRequest {
+  /** @pattern ^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$ */
+  version: string;
+  /** @nullable */
+  downloadUrl?: string | null;
+  /** @nullable */
+  objectPath?: string | null;
+  /** @minLength 1 */
+  fileName: string;
+  targetMode: PushAgentUpdateRequestTargetMode;
+  /** @nullable */
+  deviceId?: string | null;
+  /** @nullable */
+  reason?: string | null;
+}
+
+export interface PushAgentUpdateResponse {
+  releaseId: string;
+  version: string;
+  targetCount: number;
+  onlineCount: number;
+  offlineCount: number;
+  commandIds: string[];
 }
 
 export interface ActivityLogRecord {
@@ -1680,6 +1753,17 @@ export type ListCategoriesParams = {
    * Only categories matching apps observed on devices in this group
    */
   deviceGroup?: string;
+};
+
+export type ResolveCommandDownloadUrlBody = {
+  commandId: string;
+};
+
+export type ResolveCommandDownloadUrl200 = {
+  version: string;
+  /** @nullable */
+  fileName: string | null;
+  downloadUrl: string;
 };
 
 export type SyncActivity200 = {

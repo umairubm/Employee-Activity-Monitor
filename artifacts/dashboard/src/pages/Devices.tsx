@@ -28,6 +28,7 @@ import { MonitorSmartphone, Search, CheckCircle2, XCircle, Clock, ShieldCheck, F
 import { formatDistanceToNow } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { ALL_GROUPS as ALL } from "@/hooks/use-group-filter";
+import { AgentUpdateDialog } from "@/components/AgentUpdateDialog";
 
 export default function Devices() {
   const queryClient = useQueryClient();
@@ -142,6 +143,7 @@ export default function Devices() {
           <p className="text-muted-foreground mt-1">Monitor enrolled company devices.</p>
         </div>
         <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+          <AgentUpdateDialog devices={devices ?? []} />
           <Button variant="outline" className="gap-2" onClick={openRename} disabled={groups.length === 0}>
             <FolderSync className="h-4 w-4" /> Rename group
           </Button>
@@ -177,12 +179,13 @@ export default function Devices() {
             <TableHeader>
               <TableRow>
                 <TableHead>System Name</TableHead>
-                <TableHead>Employee ID</TableHead>
+                <TableHead>Employee</TableHead>
                 <TableHead>Group</TableHead>
                 <TableHead>Region</TableHead>
                 <TableHead>Label</TableHead>
                 <TableHead>OS</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Agent Version</TableHead>
                 <TableHead>Consent</TableHead>
                 <TableHead>Last Seen</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
@@ -191,7 +194,7 @@ export default function Devices() {
             <TableBody>
               {filteredDevices?.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={10} className="h-32 text-center text-muted-foreground">
+                  <TableCell colSpan={11} className="h-32 text-center text-muted-foreground">
                     No devices found.
                   </TableCell>
                 </TableRow>
@@ -213,8 +216,13 @@ export default function Devices() {
                       <div className="text-xs text-muted-foreground font-mono mt-1">{device.hardwareHash.substring(0, 8)}...</div>
                     </TableCell>
                     <TableCell className="text-sm">
-                      {device.tokenEmployeeId ? (
-                        <span className="font-medium">{device.tokenEmployeeId}</span>
+                      {device.assignedUsername || device.tokenEmployeeId ? (
+                        <div>
+                          <span className="font-medium">{device.assignedUsername || device.tokenEmployeeId}</span>
+                          {device.assignedUsername && device.tokenEmployeeId && (
+                            <div className="text-xs text-muted-foreground">{device.tokenEmployeeId}</div>
+                          )}
+                        </div>
                       ) : (
                         <span className="text-muted-foreground">—</span>
                       )}
@@ -253,6 +261,15 @@ export default function Devices() {
                         <div className="flex items-center gap-1.5 text-muted-foreground text-sm">
                           <XCircle className="h-4 w-4" /> Offline
                         </div>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {device.agentVersion ? (
+                        <Badge variant="outline" className="font-mono text-xs">
+                          v{device.agentVersion}
+                        </Badge>
+                      ) : (
+                        <span className="text-sm text-muted-foreground">Unknown</span>
                       )}
                     </TableCell>
                     <TableCell>

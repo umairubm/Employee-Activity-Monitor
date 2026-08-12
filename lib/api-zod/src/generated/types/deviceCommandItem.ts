@@ -18,6 +18,11 @@ export interface DeviceCommandItem {
   commandType: DeviceCommandItemCommandType;
   /** @nullable */
   payload?: string | null;
+  /**
+   * Version requested by an update_agent command.
+   * @nullable
+   */
+  targetVersion?: string | null;
   status: DeviceCommandItemStatus;
   /** @nullable */
   reason?: string | null;
