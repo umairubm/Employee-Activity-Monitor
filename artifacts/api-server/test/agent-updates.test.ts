@@ -105,6 +105,95 @@ describe("Remote Agent Update Manager", () => {
     });
   });
 
+  it("pushes a code patch and resolves its kind at download time", async () => {
+    const { device, secret } = await createDeviceWithSecret({
+      companyId: UPDATE_COMPANY_ID,
+    });
+    deviceIds.push(device.id);
+
+    const pushed = await request(adminApp)
+      .post("/devices/agent-updates")
+      .send({
+        version: "4.9.0",
+        kind: "patch",
+        downloadUrl: "https://downloads.example.test/agent-4.9.0.zip",
+        objectPath: null,
+        fileName: "agent-4.9.0.zip",
+        targetMode: "device",
+        deviceId: device.id,
+        reason: null,
+      });
+    expect(pushed.status).toBe(201);
+    releaseIds.push(pushed.body.releaseId);
+
+    const [command] = await db
+      .select()
+      .from(deviceCommandsTable)
+      .where(
+        and(
+          eq(deviceCommandsTable.deviceId, device.id),
+          eq(deviceCommandsTable.commandType, "update_agent"),
+        ),
+      );
+    expect(JSON.parse(command.payload ?? "{}").kind).toBe("patch");
+
+    const resolved = await request(syncApp)
+      .post("/sync/commands/download-url")
+      .set("x-device-id", device.id)
+      .set("x-device-secret", secret)
+      .send({ commandId: command.id });
+    expect(resolved.status).toBe(200);
+    expect(resolved.body.kind).toBe("patch");
+    expect(resolved.body.fileName).toBe("agent-4.9.0.zip");
+  });
+
+  it("rejects a patch whose file is not a .zip", async () => {
+    const device = await createDevice({ companyId: UPDATE_COMPANY_ID });
+    deviceIds.push(device.id);
+
+    const response = await request(adminApp)
+      .post("/devices/agent-updates")
+      .send({
+        version: "4.9.1",
+        kind: "patch",
+        downloadUrl: "https://downloads.example.test/agent-4.9.1.exe",
+        objectPath: null,
+        fileName: "agent-4.9.1.exe",
+        targetMode: "device",
+        deviceId: device.id,
+        reason: null,
+      });
+    expect(response.status).toBe(400);
+  });
+
+  it("carries kind through the generic command endpoint and validates the extension", async () => {
+    const device = await createDevice({ companyId: UPDATE_COMPANY_ID });
+    deviceIds.push(device.id);
+
+    const ok = await request(adminApp)
+      .post(`/devices/${device.id}/commands`)
+      .send({
+        commandType: "update_agent",
+        kind: "patch",
+        version: "5.0.0",
+        downloadUrl: "https://downloads.example.test/agent-5.0.0.zip",
+        fileName: "agent-5.0.0.zip",
+      });
+    expect(ok.status).toBe(201);
+    expect(JSON.parse(ok.body.payload ?? "{}").kind).toBe("patch");
+
+    const mismatch = await request(adminApp)
+      .post(`/devices/${device.id}/commands`)
+      .send({
+        commandType: "update_agent",
+        kind: "patch",
+        version: "5.0.1",
+        downloadUrl: "https://downloads.example.test/agent-5.0.1.exe",
+        fileName: "agent-5.0.1.exe",
+      });
+    expect(mismatch.status).toBe(400);
+  });
+
   it("does not let a tenant target a device owned by another tenant", async () => {
     const foreign = await createDevice({ companyId: OTHER_COMPANY_ID });
     deviceIds.push(foreign.id);

@@ -594,6 +594,17 @@ export interface AgentReleaseUploadResponse {
   objectPath: string;
 }
 
+/**
+ * installer = full Windows .exe the agent runs; patch = a .zip bundle of updated files the agent extracts over its install dir and restarts.
+ */
+export type PushAgentUpdateRequestKind =
+  (typeof PushAgentUpdateRequestKind)[keyof typeof PushAgentUpdateRequestKind];
+
+export const PushAgentUpdateRequestKind = {
+  installer: "installer",
+  patch: "patch",
+} as const;
+
 export type PushAgentUpdateRequestTargetMode =
   (typeof PushAgentUpdateRequestTargetMode)[keyof typeof PushAgentUpdateRequestTargetMode];
 
@@ -605,6 +616,8 @@ export const PushAgentUpdateRequestTargetMode = {
 export interface PushAgentUpdateRequest {
   /** @pattern ^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$ */
   version: string;
+  /** installer = full Windows .exe the agent runs; patch = a .zip bundle of updated files the agent extracts over its install dir and restarts. */
+  kind?: PushAgentUpdateRequestKind;
   /** @nullable */
   downloadUrl?: string | null;
   /** @nullable */
@@ -1759,8 +1772,17 @@ export type ResolveCommandDownloadUrlBody = {
   commandId: string;
 };
 
+export type ResolveCommandDownloadUrl200Kind =
+  (typeof ResolveCommandDownloadUrl200Kind)[keyof typeof ResolveCommandDownloadUrl200Kind];
+
+export const ResolveCommandDownloadUrl200Kind = {
+  installer: "installer",
+  patch: "patch",
+} as const;
+
 export type ResolveCommandDownloadUrl200 = {
   version: string;
+  kind: ResolveCommandDownloadUrl200Kind;
   /** @nullable */
   fileName: string | null;
   downloadUrl: string;

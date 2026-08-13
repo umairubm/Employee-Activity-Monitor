@@ -334,13 +334,32 @@ const issueCommandSchema = z.discriminatedUnion("commandType", [
     reason: z.string().max(500).optional(),
     enabled: z.boolean(),
   }),
-  z.object({
-    commandType: z.literal("update_agent"),
-    reason: z.string().max(500).optional(),
-    version: z.string().regex(/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/),
-    downloadUrl: z.string().url().refine((value) => /^https:\/\//i.test(value)),
-    fileName: z.string().max(200).optional(),
-  }),
+  z
+    .object({
+      commandType: z.literal("update_agent"),
+      reason: z.string().max(500).optional(),
+      kind: z.enum(["installer", "patch"]).default("installer"),
+      version: z.string().regex(/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/),
+      downloadUrl: z
+        .string()
+        .url()
+        .refine((value) => /^https:\/\//i.test(value)),
+      fileName: z.string().max(200).optional(),
+    })
+    .superRefine((value, ctx) => {
+      if (!value.fileName) return;
+      const expectedExt = value.kind === "patch" ? /\.zip$/i : /\.exe$/i;
+      if (!expectedExt.test(value.fileName)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["fileName"],
+          message:
+            value.kind === "patch"
+              ? "A patch must be a .zip bundle"
+              : "An installer must be a Windows .exe file",
+        });
+      }
+    }),
 ]);
 
 /** Payload sent to the agent (stored as JSON text on the command row). */
@@ -360,6 +379,7 @@ function commandPayload(
     case "update_agent":
       return JSON.stringify({
         version: data.version,
+        kind: data.kind,
         downloadUrl: data.downloadUrl,
         fileName: data.fileName ?? null,
       });
@@ -380,6 +400,7 @@ const agentUpdateSchema = z
       .string()
       .trim()
       .regex(/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/),
+    kind: z.enum(["installer", "patch"]).default("installer"),
     downloadUrl: z
       .string()
       .url()
@@ -395,6 +416,17 @@ const agentUpdateSchema = z
     reason: z.string().max(500).nullish(),
   })
   .superRefine((value, ctx) => {
+    const expectedExt = value.kind === "patch" ? /\.zip$/i : /\.exe$/i;
+    if (!expectedExt.test(value.fileName)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["fileName"],
+        message:
+          value.kind === "patch"
+            ? "A patch must be a .zip bundle"
+            : "An installer must be a Windows .exe file",
+      });
+    }
     if (!value.downloadUrl && !value.objectPath) {
       ctx.addIssue({
         code: "custom",
@@ -428,8 +460,8 @@ router.post(
       res.status(400).json({ error: "Invalid installer upload metadata" });
       return;
     }
-    if (!/\.exe$/i.test(parsed.data.name)) {
-      res.status(400).json({ error: "Installer must be a Windows .exe file" });
+    if (!/\.(exe|zip)$/i.test(parsed.data.name)) {
+      res.status(400).json({ error: "Upload a Windows .exe installer or a .zip patch" });
       return;
     }
     try {
@@ -456,10 +488,6 @@ router.post(
     try {
       const companyId = getCompanyId(req);
       const data = parsed.data;
-      if (!/\.exe$/i.test(data.fileName)) {
-        res.status(400).json({ error: "Agent updates currently require a Windows .exe installer" });
-        return;
-      }
       if (
         data.objectPath &&
         !data.objectPath.startsWith(`/objects/agent-releases/${companyId}/`)
@@ -501,6 +529,7 @@ router.post(
           .values({
             companyId,
             version: data.version,
+            kind: data.kind,
             downloadUrl: data.downloadUrl ?? null,
             objectPath: data.objectPath ?? null,
             fileName: data.fileName,
@@ -518,6 +547,7 @@ router.post(
               payload: JSON.stringify({
                 releaseId: release.id,
                 version: data.version,
+                kind: data.kind,
                 downloadUrl: data.downloadUrl ?? null,
                 fileName: data.fileName,
               }),

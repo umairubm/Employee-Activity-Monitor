@@ -5,11 +5,14 @@
  * API specification for Workforce Analytics & IT Management
  * OpenAPI spec version: 0.1.0
  */
+import type { PushAgentUpdateRequestKind } from "./pushAgentUpdateRequestKind";
 import type { PushAgentUpdateRequestTargetMode } from "./pushAgentUpdateRequestTargetMode";
 
 export interface PushAgentUpdateRequest {
   /** @pattern ^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$ */
   version: string;
+  /** installer = full Windows .exe the agent runs; patch = a .zip bundle of updated files the agent extracts over its install dir and restarts. */
+  kind?: PushAgentUpdateRequestKind;
   /** @nullable */
   downloadUrl?: string | null;
   /** @nullable */

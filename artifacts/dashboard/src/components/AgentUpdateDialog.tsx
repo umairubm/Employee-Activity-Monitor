@@ -36,6 +36,7 @@ import { useToast } from "@/hooks/use-toast";
 
 type TargetMode = "all" | "device";
 type SourceMode = "url" | "file";
+type ReleaseKind = "installer" | "patch";
 type SubmitState = "idle" | "submitting" | "success" | "error";
 
 interface AgentUpdateDialogProps {
@@ -68,9 +69,9 @@ function fileNameFromUrl(value: string, version: string) {
   }
 }
 
-function isInstallerFile(file: File) {
+function isValidArtifactFile(file: File, kind: ReleaseKind) {
   const name = file.name.toLowerCase();
-  return name.endsWith(".exe");
+  return kind === "patch" ? name.endsWith(".zip") : name.endsWith(".exe");
 }
 
 export function AgentUpdateDialog({
@@ -83,6 +84,7 @@ export function AgentUpdateDialog({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [version, setVersion] = useState("");
+  const [kind, setKind] = useState<ReleaseKind>("installer");
   const [sourceMode, setSourceMode] = useState<SourceMode>("url");
   const [downloadUrl, setDownloadUrl] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -121,26 +123,37 @@ export function AgentUpdateDialog({
     version.length > 0 && !VERSION_PATTERN.test(version.trim())
       ? "Use a version such as 4.8.1 or 4.8.1-beta.2."
       : "";
+  const urlExtOk =
+    kind === "patch"
+      ? /\.zip$/i.test(downloadUrl.trim())
+      : /\.exe$/i.test(downloadUrl.trim());
   const urlError =
-    sourceMode === "url" &&
-    downloadUrl.length > 0 &&
-    !/^https:\/\//i.test(downloadUrl.trim())
-      ? "The download URL must use HTTPS."
+    sourceMode === "url" && downloadUrl.length > 0
+      ? !/^https:\/\//i.test(downloadUrl.trim())
+        ? "The download URL must use HTTPS."
+        : !urlExtOk
+          ? kind === "patch"
+            ? "The URL must point to a .zip patch bundle."
+            : "The URL must point to a Windows .exe installer."
+          : ""
       : "";
   const fileError =
-    sourceMode === "file" && file && !isInstallerFile(file)
-       ? "Choose a Windows .exe installer."
+    sourceMode === "file" && file && !isValidArtifactFile(file, kind)
+      ? kind === "patch"
+        ? "Choose a .zip patch bundle."
+        : "Choose a Windows .exe installer."
       : "";
   const formInvalid =
     !VERSION_PATTERN.test(version.trim()) ||
     (sourceMode === "url"
-      ? !/^https:\/\//i.test(downloadUrl.trim())
+      ? !/^https:\/\//i.test(downloadUrl.trim()) || !urlExtOk
       : !file || Boolean(fileError) || file.size > MAX_FILE_SIZE) ||
     (targetMode === "device" && !singleDevice);
 
   useEffect(() => {
     if (!open) return;
     setVersion("");
+    setKind("installer");
     setSourceMode("url");
     setDownloadUrl("");
     setFile(null);
@@ -198,6 +211,7 @@ export function AgentUpdateDialog({
 
       const payload: PushAgentUpdateRequest = {
         version: trimmedVersion,
+        kind,
         downloadUrl: resolvedDownloadUrl,
         objectPath,
         fileName: resolvedFileName,
@@ -317,7 +331,41 @@ export function AgentUpdateDialog({
             </section>
 
             <fieldset className="space-y-3">
-              <legend className="text-sm font-semibold">Installer source</legend>
+              <legend className="text-sm font-semibold">Release type</legend>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <label className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${kind === "installer" ? "border-primary bg-primary/5" : "border-border"}`}>
+                  <input
+                    type="radio"
+                    name="agent-kind"
+                    value="installer"
+                    checked={kind === "installer"}
+                    onChange={() => { setKind("installer"); setFile(null); if (fileInputRef.current) fileInputRef.current.value = ""; }}
+                    className="mt-1 accent-[hsl(var(--primary))]"
+                  />
+                  <span>
+                    <span className="block text-sm font-medium">Full installer (.exe)</span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">The agent runs it and reinstalls itself.</span>
+                  </span>
+                </label>
+                <label className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${kind === "patch" ? "border-primary bg-primary/5" : "border-border"}`}>
+                  <input
+                    type="radio"
+                    name="agent-kind"
+                    value="patch"
+                    checked={kind === "patch"}
+                    onChange={() => { setKind("patch"); setFile(null); if (fileInputRef.current) fileInputRef.current.value = ""; }}
+                    className="mt-1 accent-[hsl(var(--primary))]"
+                  />
+                  <span>
+                    <span className="block text-sm font-medium">Code patch (.zip)</span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">The agent extracts it over its files and restarts.</span>
+                  </span>
+                </label>
+              </div>
+            </fieldset>
+
+            <fieldset className="space-y-3">
+              <legend className="text-sm font-semibold">{kind === "patch" ? "Patch source" : "Installer source"}</legend>
               <div className="grid gap-2 sm:grid-cols-2">
                 <label className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${sourceMode === "url" ? "border-primary bg-primary/5" : "border-border"}`}>
                   <input
@@ -371,15 +419,15 @@ export function AgentUpdateDialog({
                   <label htmlFor="agent-installer" className="flex cursor-pointer items-center gap-3 rounded-lg border border-dashed border-input bg-muted/20 px-4 py-3 hover:bg-muted/40">
                     <FileArchive className="h-5 w-5 shrink-0 text-muted-foreground" />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium">{file?.name || "Choose an installer file"}</span>
-                       <span className="block text-xs text-muted-foreground">{file ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : "Windows .exe installer"}</span>
+                      <span className="block truncate text-sm font-medium">{file?.name || (kind === "patch" ? "Choose a patch bundle" : "Choose an installer file")}</span>
+                       <span className="block text-xs text-muted-foreground">{file ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : kind === "patch" ? ".zip patch bundle" : "Windows .exe installer"}</span>
                     </span>
                     <Upload className="h-4 w-4 text-muted-foreground" />
                     <input
                       ref={fileInputRef}
                       id="agent-installer"
                       type="file"
-                       accept=".exe,application/vnd.microsoft.portable-executable,application/octet-stream"
+                       accept={kind === "patch" ? ".zip,application/zip,application/octet-stream" : ".exe,application/vnd.microsoft.portable-executable,application/octet-stream"}
                       onChange={handleFileChange}
                       className="sr-only"
                     />

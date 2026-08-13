@@ -5,9 +5,11 @@
  * API specification for Workforce Analytics & IT Management
  * OpenAPI spec version: 0.1.0
  */
+import type { ResolveCommandDownloadUrl200Kind } from "./resolveCommandDownloadUrl200Kind";
 
 export type ResolveCommandDownloadUrl200 = {
   version: string;
+  kind: ResolveCommandDownloadUrl200Kind;
   /** @nullable */
   fileName: string | null;
   downloadUrl: string;

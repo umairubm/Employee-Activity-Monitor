@@ -440,9 +440,16 @@ export const RequestAgentReleaseUploadUrlResponse = zod.object({
 export const pushAgentUpdateBodyVersionRegExp = new RegExp(
   "^\\d+\\.\\d+\\.\\d+(?:[-+][0-9A-Za-z.-]+)?$",
 );
+export const pushAgentUpdateBodyKindDefault = `installer`;
 
 export const PushAgentUpdateBody = zod.object({
   version: zod.string().regex(pushAgentUpdateBodyVersionRegExp),
+  kind: zod
+    .enum(["installer", "patch"])
+    .default(pushAgentUpdateBodyKindDefault)
+    .describe(
+      "installer = full Windows .exe the agent runs; patch = a .zip bundle of updated files the agent extracts over its install dir and restarts.",
+    ),
   downloadUrl: zod.string().url().nullish(),
   objectPath: zod.string().nullish(),
   fileName: zod.string().min(1),
@@ -2596,6 +2603,7 @@ export const ResolveCommandDownloadUrlBody = zod.object({
 
 export const ResolveCommandDownloadUrlResponse = zod.object({
   version: zod.string(),
+  kind: zod.enum(["installer", "patch"]),
   fileName: zod.string().nullable(),
   downloadUrl: zod.string().url(),
 });

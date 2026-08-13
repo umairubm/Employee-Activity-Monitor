@@ -1737,12 +1737,15 @@ paths:
                 properties:
                   version:
                     type: string
+                  kind:
+                    type: string
+                    enum: [installer, patch]
                   fileName:
                     type: [string, "null"]
                   downloadUrl:
                     type: string
                     format: uri
-                required: [version, fileName, downloadUrl]
+                required: [version, kind, fileName, downloadUrl]
   /sync/activity:
     post:
       operationId: syncActivity
@@ -2574,6 +2577,13 @@ components:
         version:
           type: string
           pattern: '^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$'
+        kind:
+          type: string
+          enum: [installer, patch]
+          default: installer
+          description: >-
+            installer = full Windows .exe the agent runs; patch = a .zip bundle
+            of updated files the agent extracts over its install dir and restarts.
         downloadUrl:
           type: [string, "null"]
           format: uri

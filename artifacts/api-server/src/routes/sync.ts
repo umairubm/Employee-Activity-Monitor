@@ -679,6 +679,7 @@ router.post(
     let payload: {
       releaseId?: string;
       version?: string;
+      kind?: "installer" | "patch";
       downloadUrl?: string | null;
       fileName?: string;
     } = {};
@@ -694,6 +695,7 @@ router.post(
       const [release] = await db
         .select({
           version: agentReleasesTable.version,
+          kind: agentReleasesTable.kind,
           downloadUrl: agentReleasesTable.downloadUrl,
           objectPath: agentReleasesTable.objectPath,
           fileName: agentReleasesTable.fileName,
@@ -716,6 +718,7 @@ router.post(
       }
       res.json({
         version: release.version,
+        kind: release.kind,
         fileName: release.fileName ?? payload.fileName ?? null,
         downloadUrl,
       });
@@ -728,6 +731,7 @@ router.post(
     }
     res.json({
       version: payload.version,
+      kind: payload.kind ?? "installer",
       fileName: payload.fileName,
       downloadUrl,
     });

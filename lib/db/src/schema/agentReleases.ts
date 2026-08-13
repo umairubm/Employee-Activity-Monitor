@@ -3,6 +3,7 @@ import {
   uuid,
   text,
   timestamp,
+  pgEnum,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
@@ -10,12 +11,21 @@ import { z } from "zod/v4";
 import { companiesTable } from "./companies";
 import { usersTable } from "./users";
 
+// A release is either a full installer the agent runs (.exe) or a lightweight
+// code patch (.zip) the agent extracts over its files and then restarts. The
+// delivery pipeline is identical; only the agent-side apply step differs.
+export const agentReleaseKindEnum = pgEnum("agent_release_kind", [
+  "installer",
+  "patch",
+]);
+
 export const agentReleasesTable = pgTable("agent_releases", {
   id: uuid("id").primaryKey().defaultRandom(),
   companyId: uuid("company_id")
     .notNull()
     .references(() => companiesTable.id, { onDelete: "cascade" }),
   version: text("version").notNull(),
+  kind: agentReleaseKindEnum("kind").notNull().default("installer"),
   downloadUrl: text("download_url"),
   objectPath: text("object_path"),
   fileName: text("file_name"),
