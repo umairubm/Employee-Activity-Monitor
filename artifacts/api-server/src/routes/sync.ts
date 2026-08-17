@@ -168,12 +168,18 @@ router.post(
       return;
     }
 
+    const now = new Date();
+    const lockExpired =
+      device.isLocked && device.lockedUntil !== null &&
+      device.lockedUntil.getTime() <= now.getTime();
+
     const [updated] = await db
       .update(devicesTable)
       .set({
-        lastSeenAt: new Date(),
+        lastSeenAt: now,
         agentVersion: parsed.data.agentVersion ?? device.agentVersion,
-        updatedAt: new Date(),
+        updatedAt: now,
+        ...(lockExpired ? { isLocked: false, lockedUntil: null } : {}),
       })
       .where(eq(devicesTable.id, device.id))
       .returning();
@@ -189,8 +195,9 @@ router.post(
       );
 
     res.json({
-      serverTime: new Date().toISOString(),
+      serverTime: now.toISOString(),
       isLocked: updated.isLocked,
+      lockedUntil: updated.lockedUntil ? updated.lockedUntil.toISOString() : null,
       config: deviceConfig(updated),
       commands: pending.map((c) => ({
         id: c.id,

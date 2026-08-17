@@ -99,8 +99,9 @@ router.get("/:id/commands", async (req, res) => {
 });
 
 const issueCommandSchema = z.object({
-  commandType: z.enum(["lock_screen", "logout_user"]),
+  commandType: z.enum(["lock_screen", "unlock_screen", "logout_user", "update_agent"]),
   reason: z.string().max(500).optional(),
+  payload: z.any().optional(),
 });
 
 // POST /api/devices/:id/commands - issue an authorized IT command
@@ -124,11 +125,40 @@ router.post(
         return;
       }
 
+      let payloadStr: string | null = null;
+      let lockDurationMinutes: number | null = null;
+      if (parsed.data.payload !== undefined && parsed.data.payload !== null) {
+        if (typeof parsed.data.payload === "string") {
+          payloadStr = parsed.data.payload;
+          try {
+            const parsedPayload = JSON.parse(parsed.data.payload);
+            lockDurationMinutes = parsedPayload.duration ?? parsedPayload.lockDurationMinutes ?? null;
+          } catch (e) {}
+        } else {
+          payloadStr = JSON.stringify(parsed.data.payload);
+          lockDurationMinutes = parsed.data.payload?.duration ?? parsed.data.payload?.lockDurationMinutes ?? null;
+        }
+      }
+
+      if (parsed.data.commandType === "lock_screen") {
+        const lockedUntil = lockDurationMinutes
+          ? new Date(Date.now() + lockDurationMinutes * 60_000)
+          : null;                       // null = lock until explicit unlock
+        await db.update(devicesTable)
+          .set({ isLocked: true, lockedUntil, updatedAt: new Date() })
+          .where(eq(devicesTable.id, String(req.params.id)));
+      } else if (parsed.data.commandType === "unlock_screen") {
+        await db.update(devicesTable)
+          .set({ isLocked: false, lockedUntil: null, updatedAt: new Date() })
+          .where(eq(devicesTable.id, String(req.params.id)));
+      }
+
       const [command] = await db
         .insert(deviceCommandsTable)
         .values({
           deviceId: String(req.params.id),
           commandType: parsed.data.commandType,
+          payload: payloadStr,
           reason: parsed.data.reason ?? null,
           issuedById: (req as AuthedRequest).user.id,
           status: "pending",

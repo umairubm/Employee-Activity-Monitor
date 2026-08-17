@@ -63,6 +63,10 @@ class MonitoringAgent:
         self._last_screenshot = 0.0
         self._next_screenshot_gap = self._screenshot_gap()
         self.tray: tray_mod.AgentTray | None = None
+        self._enforced_lock = False
+        self._locked_until: str | None = None
+        # Background re-lock thread
+        threading.Thread(target=self._lock_enforcer_loop, daemon=True).start()
 
     # --- helpers -------------------------------------------------------------
 
@@ -138,17 +142,152 @@ class MonitoringAgent:
         ctype = command.get("commandType")
         cid = command.get("id")
         reason = command.get("reason") or "Authorized IT action"
+        payload = command.get("payload") or {}
         try:
-            self.api.ack_command(cid, "acknowledged")
-            if ctype in ("lock_screen", "logout_user", "uninstall"):
+            if ctype == "update_agent":
+                self._update_agent(cid, payload, reason)
+            elif ctype == "unlock_screen":
+                self.api.ack_command(cid, "acknowledged")
+                self._enforced_lock = False
+                self._locked_until = None
+                self.api.ack_command(cid, "completed")
+            elif ctype in ("lock_screen", "logout_user"):
+                self.api.ack_command(cid, "acknowledged")
                 self._execute_os_command(ctype)
-            self.api.ack_command(cid, "completed")
+                self.api.ack_command(cid, "completed")
+            else:
+                self.api.ack_command(cid, "acknowledged")
+                if ctype == "uninstall":
+                    self._execute_os_command(ctype)
+                self.api.ack_command(cid, "completed")
         except Exception as exc:  # noqa: BLE001
             print(f"[agent] command {ctype} failed: {exc}", file=sys.stderr)
             try:
-                self.api.ack_command(cid, "failed")
+                self.api.ack_command(cid, "failed", str(exc))
             except Exception:
                 pass
+
+    def _update_agent(self, cid: str, payload: dict, reason: str) -> None:
+        self.api.ack_command(cid, "acknowledged")
+        try:
+            release = self.api.command_download_url(cid)
+            kind = str(release.get("kind") or payload.get("kind") or "installer").strip()
+            download_url = str(release.get("downloadUrl") or "").strip()
+            file_name = str(release.get("fileName") or "").strip()
+            if not download_url.startswith(("http://", "https://")):
+                self.api.ack_command(cid, "failed", "unsupported update source")
+                return
+            self.api.ack_command(cid, "downloading")
+            
+            import tempfile
+            import requests
+            
+            suffix = ".zip" if kind == "patch" else (".exe" if file_name.lower().endswith(".exe") else "")
+            temp_fd, temp_path = tempfile.mkstemp(suffix=suffix)
+            try:
+                os.close(temp_fd)
+                with requests.get(download_url, stream=True, timeout=60) as r:
+                    r.raise_for_status()
+                    with open(temp_path, "wb") as f:
+                        for chunk in r.iter_content(chunk_size=8192):
+                            f.write(chunk)
+                
+                self.api.ack_command(cid, "installing")
+                if kind == "patch":
+                    self._apply_patch(temp_path)
+                else:
+                    self._run_installer(temp_path)
+            finally:
+                try:
+                    if os.path.exists(temp_path) and kind != "patch":
+                        os.unlink(temp_path)
+                except Exception:
+                    pass
+        except Exception as exc:
+            print(f"[agent] update failed: {exc}", file=sys.stderr)
+            try:
+                self.api.ack_command(cid, "failed", str(exc))
+            except Exception:
+                pass
+
+    def _run_installer(self, temp_path: str) -> None:
+        cmd = [temp_path]
+        if temp_path.lower().endswith(".exe"):
+            cmd.append("/S")
+        subprocess.Popen(
+            cmd,
+            creationflags=getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            close_fds=True
+        )
+        os._exit(0)
+
+    def _apply_patch(self, zip_path: str) -> None:
+        import zipfile
+        import tempfile
+        install_dir = os.path.dirname(os.path.abspath(__file__))
+        staging = tempfile.mkdtemp(prefix="agent-patch-")
+        try:
+            with zipfile.ZipFile(zip_path) as zf:
+                # guard against zip-slip: reject any member that escapes staging
+                for m in zf.namelist():
+                    dest = os.path.realpath(os.path.join(staging, m))
+                    if not dest.startswith(os.path.realpath(staging) + os.sep):
+                        raise ValueError(f"unsafe path in patch: {m}")
+                zf.extractall(staging)
+        except Exception:
+            try:
+                shutil.rmtree(staging)
+            except Exception:
+                pass
+            raise
+        finally:
+            try:
+                os.unlink(zip_path)
+            except Exception:
+                pass
+
+        self._spawn_swap_and_restart(staging, install_dir)
+        os._exit(0)
+
+    def _spawn_swap_and_restart(self, staging: str, install_dir: str) -> None:
+        import tempfile
+        pid = os.getpid()
+        launch = f'"{sys.executable}" "{os.path.join(install_dir, "agent.py")}"'
+        bat = os.path.join(tempfile.gettempdir(), f"agent-swap-{pid}.bat")
+        with open(bat, "w") as f:
+            f.write(
+                "@echo off\r\n"
+                f":wait\r\n"
+                f'tasklist /FI "PID eq {pid}" | find "{pid}" >nul && (timeout /t 1 >nul & goto wait)\r\n'
+                f'robocopy "{staging}" "{install_dir}" /E /IS /IT >nul\r\n'
+                f'start "" {launch}\r\n'
+                f'rmdir /s /q "{staging}"\r\n'
+                f'del "%~f0"\r\n'
+            )
+        subprocess.Popen(
+            ["cmd", "/c", bat],
+            creationflags=getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            close_fds=True
+        )
+
+    def _enforce_lock(self, is_locked: bool) -> None:
+        if not is_locked:
+            self._enforced_lock = False
+            return
+        self._enforced_lock = True
+        try:
+            self._execute_os_command("lock_screen")
+        except Exception as exc:
+            print(f"[agent] re-lock failed: {exc}", file=sys.stderr)
+
+    def _lock_enforcer_loop(self) -> None:
+        while not self._stop.is_set():
+            if self._enforced_lock:
+                try:
+                    self._execute_os_command("lock_screen")
+                except Exception:
+                    pass
+            time.sleep(2.0)
 
     def _execute_os_command(self, ctype: str) -> None:
         if ctype == "uninstall":
@@ -238,6 +377,8 @@ class MonitoringAgent:
         # Heartbeat + commands.
         hb = self.api.heartbeat(AGENT_VERSION)
         self.cfg.apply_server_config(hb.get("config", {}))
+        self._locked_until = hb.get("lockedUntil")
+        self._enforce_lock(bool(hb.get("isLocked")))
         for command in hb.get("commands", []):
             self._handle_command(command)
         if self.tray:

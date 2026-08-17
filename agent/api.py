@@ -114,13 +114,27 @@ class AgentAPI:
             raise APIError(f"Screenshot upload failed ({resp.status_code}): {resp.text}")
         return resp.json()
 
-    def ack_command(self, command_id: str, status: str) -> dict:
+    def ack_command(self, command_id: str, status: str, error_msg: Optional[str] = None) -> dict:
+        payload = {"commandId": command_id, "status": status}
+        if error_msg is not None:
+            payload["message"] = error_msg
         resp = requests.post(
             self._url("/commands/ack"),
-            json={"commandId": command_id, "status": status},
+            json=payload,
             headers=self._auth_headers(),
             timeout=self.timeout,
         )
         if resp.status_code != 200:
             raise APIError(f"Command ack failed ({resp.status_code}): {resp.text}")
         return resp.json()
+
+    def command_download_url(self, command_id: str) -> dict:
+        resp = requests.post(
+            self._url(f"/commands/{command_id}/download-url"),
+            headers=self._auth_headers(),
+            timeout=self.timeout,
+        )
+        if resp.status_code != 200:
+            raise APIError(f"Get command download URL failed ({resp.status_code}): {resp.text}")
+        return resp.json()
+
