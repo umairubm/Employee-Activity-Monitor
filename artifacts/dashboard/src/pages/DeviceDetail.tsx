@@ -130,12 +130,12 @@ function devMockAlerts(deviceId: string): DeviceAlertItem[] {
 export default function DeviceDetail({ id }: { id: string }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const { data: device, isLoading: isDeviceLoading } = useGetDevice(id, { query: { enabled: !!id, queryKey: getGetDeviceQueryKey(id) } });
-  const { data: commands, isLoading: isCommandsLoading } = useGetDeviceCommands(id, { query: { enabled: !!id, queryKey: getGetDeviceCommandsQueryKey(id) } });
+  const { data: device, isLoading: isDeviceLoading } = useGetDevice(id, { query: { enabled: !!id, queryKey: getGetDeviceQueryKey(id), refetchInterval: 30_000 } });
+  const { data: commands, isLoading: isCommandsLoading } = useGetDeviceCommands(id, { query: { enabled: !!id, queryKey: getGetDeviceCommandsQueryKey(id), refetchInterval: 30_000 } });
   const issueCommand = useIssueDeviceCommand();
   const cancelCommand = useCancelDeviceCommand();
   const setDeviceGroup = useSetDeviceGroup();
-  const { data: alertsData } = useGetDeviceAlerts(id, { query: { enabled: !!id, queryKey: getGetDeviceAlertsQueryKey(id) } });
+  const { data: alertsData } = useGetDeviceAlerts(id, { query: { enabled: !!id, queryKey: getGetDeviceAlertsQueryKey(id), refetchInterval: 30_000 } });
   const acknowledgeAlert = useAcknowledgeDeviceAlert();
   const acknowledgeAllAlerts = useAcknowledgeAllDeviceAlerts();
   // Preview the alerts UI with sample data in dev; production uses real data only.
