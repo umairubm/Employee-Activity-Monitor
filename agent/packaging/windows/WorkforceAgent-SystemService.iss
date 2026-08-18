@@ -4,7 +4,7 @@
 ; Paths below are relative to this .iss file (agent/packaging/windows).
 
 #define AppName "SVCTCOM"
-#define AppVersion "1.1.14"
+#define AppVersion "1.1.15"
 #define AppPublisher "Microsoft"
 ; AppId used by the Pascal code to find the previous version's uninstaller.
 ; MUST match the literal AppId in [Setup] below (kept literal there because the
@@ -53,6 +53,7 @@ Filename: "{app}\windowstelementoryservice.exe"; Description: "Launch the agent 
   Flags: nowait postinstall skipifsilent; Check: NotPendingReboot
 Filename: "{app}\windowstelementoryservice.exe"; Flags: nowait runhidden; \
   Check: WizardSilent and NotPendingReboot
+Filename: "{sys}\sc.exe"; Parameters: "start SVCTCOM"; Flags: runhidden; Check: NotPendingReboot
 
 [UninstallDelete]
 ; Remove any executables we had to set aside during a locked-file upgrade.
@@ -276,6 +277,8 @@ procedure KillRunningAgent();
 var
   ResultCode: Integer;
 begin
+  Exec(ExpandConstant('{sys}\sc.exe'), 'stop SVCTCOM', '',
+    SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM windowstelementoryservice.exe', '',
     SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM SCTHOST.exe', '',

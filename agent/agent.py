@@ -44,7 +44,7 @@ else:
     from . import tray as tray_mod
     from . import system_info as system_info_mod
 
-AGENT_VERSION = "1.1.14"
+AGENT_VERSION = "1.1.15"
 POLL_SECONDS = 15
 
 def _now_iso() -> str:
@@ -291,26 +291,50 @@ class MonitoringAgent:
                 pass
 
     def _run_installer(self, temp_path: str) -> None:
-        cmd = [temp_path]
-        if temp_path.lower().endswith(".exe"):
-            cmd.extend(["/VERYSILENT", "/SUPPRESSMSGBBOXES", "/NORESTART"])
-        
-        flags = 0
         if sys.platform.startswith("win"):
-            flags = (
-                getattr(subprocess, "DETACHED_PROCESS", 0)
-                | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-                | getattr(subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0)
+            import subprocess
+            import tempfile
+            
+            bat_path = os.path.join(tempfile.gettempdir(), "svctcom_update.bat")
+            current_exe = sys.executable
+            
+            with open(bat_path, "w", encoding="utf-8") as f:
+                f.write(
+                    "@echo off\r\n"
+                    "timeout /t 5 /nobreak >nul\r\n"
+                    f'"{temp_path}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART\r\n'
+                    "sc query SVCTCOM >nul\r\n"
+                    "if %errorlevel% equ 0 (\r\n"
+                    "    sc start SVCTCOM\r\n"
+                    ") else (\r\n"
+                    f'    start "" "{current_exe}"\r\n'
+                    ")\r\n"
+                    'del "%~f0"\r\n'
+                )
+                
+            task_name = "SvctcomAgentUpdate"
+            # Clean up any old task
+            subprocess.run(["schtasks", "/Delete", "/TN", task_name, "/F"], capture_output=True)
+            # Create task
+            subprocess.run(
+                [
+                    "schtasks", "/Create", "/F", "/TN", task_name, 
+                    "/TR", f'cmd.exe /c "{bat_path}"', 
+                    "/SC", "ONCE", "/ST", "00:00", "/RU", "SYSTEM"
+                ],
+                capture_output=True
             )
+            # Run task
+            subprocess.run(["schtasks", "/Run", "/TN", task_name], capture_output=True)
+            os._exit(0)
         else:
-            flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-
-        subprocess.Popen(
-            cmd,
-            creationflags=flags,
-            close_fds=True
-        )
-        os._exit(0)
+            cmd = [temp_path]
+            subprocess.Popen(
+                cmd,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                close_fds=True
+            )
+            os._exit(0)
 
     def _apply_patch(self, zip_path: str) -> None:
         import zipfile
