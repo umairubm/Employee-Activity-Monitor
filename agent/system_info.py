@@ -28,7 +28,7 @@ class SysInfo:
                 'Serial_Number': "",
                 'Ram_Type': "",
                 'HD_Type': "",
-                'USB_Devices': ", ".join(self.get_usb_devices()) or ""
+                'USB_Devices': ", ".join(self.get_usb_devices()) or "None"
             }
             
             if platform.system() == "Windows":
