@@ -44,7 +44,7 @@ else:
     from . import tray as tray_mod
     from . import system_info as system_info_mod
 
-AGENT_VERSION = "1.1.17"
+AGENT_VERSION = "1.1.18"
 POLL_SECONDS = 15
 
 def _now_iso() -> str:
@@ -319,18 +319,23 @@ class MonitoringAgent:
             task_name = "SvctcomAgentUpdate"
             # Clean up any old task (don't check=True on delete since it might not exist yet)
             subprocess.run(["schtasks", "/Delete", "/TN", task_name, "/F"], capture_output=True)
-            # Create task with proper nesting of double-quotes for path with spaces
-            subprocess.run(
+            # Create task with single double-quotes around bat_path
+            result_create = subprocess.run(
                 [
                     "schtasks", "/Create", "/F", "/TN", task_name, 
-                    "/TR", f'cmd /c ""{bat_path}""', 
+                    "/TR", f'cmd /c "{bat_path}"', 
                     "/SC", "ONCE", "/ST", "00:00", "/RU", "SYSTEM"
                 ],
-                check=True,
-                capture_output=True
+                capture_output=True,
+                text=True
             )
+            if result_create.returncode != 0:
+                raise RuntimeError(f"schtasks create failed: {result_create.stderr.strip() or result_create.stdout.strip()}")
+
             # Run task
-            subprocess.run(["schtasks", "/Run", "/TN", task_name], check=True, capture_output=True)
+            result_run = subprocess.run(["schtasks", "/Run", "/TN", task_name], capture_output=True, text=True)
+            if result_run.returncode != 0:
+                raise RuntimeError(f"schtasks run failed: {result_run.stderr.strip() or result_run.stdout.strip()}")
             os._exit(0)
         else:
             cmd = [temp_path]
