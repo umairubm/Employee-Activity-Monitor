@@ -44,7 +44,7 @@ else:
     from . import tray as tray_mod
     from . import system_info as system_info_mod
 
-AGENT_VERSION = "1.1.15"
+AGENT_VERSION = "1.1.16"
 POLL_SECONDS = 15
 
 def _now_iso() -> str:
@@ -301,31 +301,36 @@ class MonitoringAgent:
             with open(bat_path, "w", encoding="utf-8") as f:
                 f.write(
                     "@echo off\r\n"
+                    "set LOG=C:\\Windows\\Temp\\svctcom_update.log\r\n"
+                    "echo ==== update start %date% %time% ==== >> %LOG%\r\n"
                     "timeout /t 5 /nobreak >nul\r\n"
-                    f'"{temp_path}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART\r\n'
+                    f'"{temp_path}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART >> %LOG% 2>&1\r\n'
+                    "echo installer exit: %errorlevel% >> %LOG%\r\n"
                     "sc query SVCTCOM >nul\r\n"
                     "if %errorlevel% equ 0 (\r\n"
-                    "    sc start SVCTCOM\r\n"
+                    "    sc start SVCTCOM >> %LOG% 2>&1\r\n"
+                    "    echo sc start exit: %errorlevel% >> %LOG%\r\n"
                     ") else (\r\n"
-                    f'    start "" "{current_exe}"\r\n'
+                    f'    start "" "{current_exe}" >> %LOG% 2>&1\r\n'
+                    "    echo start exe exit: %errorlevel% >> %LOG%\r\n"
                     ")\r\n"
-                    'del "%~f0"\r\n'
                 )
                 
             task_name = "SvctcomAgentUpdate"
-            # Clean up any old task
+            # Clean up any old task (don't check=True on delete since it might not exist yet)
             subprocess.run(["schtasks", "/Delete", "/TN", task_name, "/F"], capture_output=True)
-            # Create task
+            # Create task with proper nesting of double-quotes for path with spaces
             subprocess.run(
                 [
                     "schtasks", "/Create", "/F", "/TN", task_name, 
-                    "/TR", f'cmd.exe /c "{bat_path}"', 
+                    "/TR", f'cmd /c ""{bat_path}""', 
                     "/SC", "ONCE", "/ST", "00:00", "/RU", "SYSTEM"
                 ],
+                check=True,
                 capture_output=True
             )
             # Run task
-            subprocess.run(["schtasks", "/Run", "/TN", task_name], capture_output=True)
+            subprocess.run(["schtasks", "/Run", "/TN", task_name], check=True, capture_output=True)
             os._exit(0)
         else:
             cmd = [temp_path]
