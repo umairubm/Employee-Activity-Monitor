@@ -44,7 +44,7 @@ else:
     from . import tray as tray_mod
     from . import system_info as system_info_mod
 
-AGENT_VERSION = "1.1.13"
+AGENT_VERSION = "1.1.14"
 POLL_SECONDS = 15
 
 def _now_iso() -> str:
@@ -294,9 +294,20 @@ class MonitoringAgent:
         cmd = [temp_path]
         if temp_path.lower().endswith(".exe"):
             cmd.extend(["/VERYSILENT", "/SUPPRESSMSGBBOXES", "/NORESTART"])
+        
+        flags = 0
+        if sys.platform.startswith("win"):
+            flags = (
+                getattr(subprocess, "DETACHED_PROCESS", 0)
+                | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                | getattr(subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0)
+            )
+        else:
+            flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
         subprocess.Popen(
             cmd,
-            creationflags=getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            creationflags=flags,
             close_fds=True
         )
         os._exit(0)
