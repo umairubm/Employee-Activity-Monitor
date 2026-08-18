@@ -199,20 +199,34 @@ export async function getReleases(perPage = 15): Promise<LatestRelease[]> {
   const data = (await res.json()) as Array<{
     tag_name: string;
     draft?: boolean;
+    published_at?: string | null;
+    created_at?: string;
     assets?: Array<{ id: number; name: string; size: number; updated_at: string; url: string }>;
   }>;
-  return data
-    .filter((r) => !r.draft)
-    .map((r) => ({
-      tag: r.tag_name,
-      assets: (r.assets ?? []).map((a) => ({
-        id: a.id,
-        name: a.name,
-        size: a.size,
-        updatedAt: a.updated_at,
-        apiUrl: a.url,
-      })),
-    }));
+  return (
+    data
+      .filter((r) => !r.draft)
+      // GitHub's list endpoint is NOT reliably newest-first: it orders by the
+      // release's created_at, which for CI-created releases can inherit an
+      // older timestamp — observed in practice pushing brand-new releases to
+      // the END of the list. Sort by publish date ourselves so
+      // findPlatformAsset's "first match wins" scan is truly newest-first.
+      .sort(
+        (a, b) =>
+          (Date.parse(b.published_at ?? b.created_at ?? "") || 0) -
+          (Date.parse(a.published_at ?? a.created_at ?? "") || 0),
+      )
+      .map((r) => ({
+        tag: r.tag_name,
+        assets: (r.assets ?? []).map((a) => ({
+          id: a.id,
+          name: a.name,
+          size: a.size,
+          updatedAt: a.updated_at,
+          apiUrl: a.url,
+        })),
+      }))
+  );
 }
 
 /**

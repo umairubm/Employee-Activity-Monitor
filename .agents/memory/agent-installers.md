@@ -76,3 +76,11 @@ workflow-scope block and still fires the `on: push: tags` trigger. Trade-off: th
 published asset keeps the legacy `SystemService` filename (dashboard matches by
 platform/extension, so downloads still resolve). A fully clean rename needs a push
 with `workflow` scope (user's own git / github.com).
+
+## GitHub /releases list is NOT newest-first
+
+The `GET /repos/{owner}/{repo}/releases` list orders by the release object's
+created_at, which for CI-created releases can inherit older timestamps — brand-new
+releases were observed at the END of the list, so "first matching asset wins"
+served a stale installer version. `getReleases` must sort by `published_at`
+(fallback `created_at`) descending before any first-match scan.
