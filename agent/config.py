@@ -49,6 +49,7 @@ class AgentConfig:
     screenshot_max_minutes: int = 15
     idle_threshold_seconds: int = 120
     sync_interval_seconds: int = 300
+    heartbeat_interval_seconds: int = 10
 
     @property
     def is_enrolled(self) -> bool:

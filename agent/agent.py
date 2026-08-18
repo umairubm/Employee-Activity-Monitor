@@ -329,26 +329,32 @@ class MonitoringAgent:
 
     def _worker(self) -> None:
         last_sync = 0.0
+        last_heartbeat = 0.0
         while not self._stop.is_set():
             try:
                 if self.is_active():
                     self._observe()
                     self._maybe_screenshot()
 
-                if time.time() - last_sync >= self.cfg.sync_interval_seconds:
-                    last_sync = time.time()
-                    self._sync()
+                now = time.time()
+                if now - last_heartbeat >= self.cfg.heartbeat_interval_seconds:
+                    last_heartbeat = now
+                    self._heartbeat()
+
+                if now - last_sync >= self.cfg.sync_interval_seconds:
+                    last_sync = now
+                    self._sync_activity()
             except Exception as exc:  # noqa: BLE001
                 print(f"[agent] worker error: {exc}", file=sys.stderr)
             self._stop.wait(POLL_SECONDS)
         # Final flush on shutdown.
         self._flush_segment()
         try:
-            self._sync()
+            self._sync_activity()
         except Exception:
             pass
 
-    def _sync(self) -> None:
+    def _sync_activity(self) -> None:
         # Push buffered activity.
         self._flush_segment()
         with self._lock:
@@ -374,6 +380,7 @@ class MonitoringAgent:
                     self._pending_logs[0:0] = batch
                 print(f"[agent] activity sync failed: {exc}", file=sys.stderr)
 
+    def _heartbeat(self) -> None:
         # Heartbeat + commands.
         hb = self.api.heartbeat(AGENT_VERSION)
         self.cfg.apply_server_config(hb.get("config", {}))
