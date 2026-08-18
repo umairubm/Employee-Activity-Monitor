@@ -320,22 +320,39 @@ class MonitoringAgent:
             # Clean up any old task (don't check=True on delete since it might not exist yet)
             subprocess.run(["schtasks", "/Delete", "/TN", task_name, "/F"], capture_output=True)
             # Create task with single double-quotes around bat_path
-            result_create = subprocess.run(
-                [
-                    "schtasks", "/Create", "/F", "/TN", task_name, 
-                    "/TR", f'cmd /c "{bat_path}"', 
-                    "/SC", "ONCE", "/ST", "00:00", "/RU", "SYSTEM"
-                ],
-                capture_output=True,
-                text=True
-            )
-            if result_create.returncode != 0:
-                raise RuntimeError(f"schtasks create failed: {result_create.stderr.strip() or result_create.stdout.strip()}")
+            try:
+                import getpass
+                result_create = subprocess.run(
+                    [
+                        "schtasks", "/Create", "/F", "/TN", task_name, 
+                        "/TR", f'cmd /c "{bat_path}"', 
+                        "/SC", "ONCE", "/ST", "00:00", "/RU", "SYSTEM"
+                    ],
+                    capture_output=True,
+                    text=True
+                )
+                if result_create.returncode != 0:
+                    raise RuntimeError(
+                        f"schtasks create failed (user={getpass.getuser()}): "
+                        f"{result_create.stderr.strip() or result_create.stdout.strip()}"
+                    )
 
-            # Run task
-            result_run = subprocess.run(["schtasks", "/Run", "/TN", task_name], capture_output=True, text=True)
-            if result_run.returncode != 0:
-                raise RuntimeError(f"schtasks run failed: {result_run.stderr.strip() or result_run.stdout.strip()}")
+                # Run task
+                result_run = subprocess.run(["schtasks", "/Run", "/TN", task_name], capture_output=True, text=True)
+                if result_run.returncode != 0:
+                    raise RuntimeError(
+                        f"schtasks run failed (user={getpass.getuser()}): "
+                        f"{result_run.stderr.strip() or result_run.stdout.strip()}"
+                    )
+            except Exception as e:
+                # Log error and fallback to direct execution of the batch file
+                with open(os.path.join(tempfile.gettempdir(), "svctcom_update.log"), "a", encoding="utf-8") as lf:
+                    lf.write(f"schtasks failed: {e}. Falling back to direct Popen execution.\n")
+                subprocess.Popen(
+                    ["cmd", "/c", bat_path],
+                    creationflags=getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                    close_fds=True
+                )
             os._exit(0)
         else:
             cmd = [temp_path]
@@ -668,6 +685,8 @@ def uninstall_agent() -> None:
 
 
 def main() -> int:
+    import getpass
+    print(f"[agent] Starting agent v{AGENT_VERSION} as user '{getpass.getuser()}'", file=sys.stderr)
     if "--uninstall" in sys.argv:
         uninstall_agent()
         return 0
