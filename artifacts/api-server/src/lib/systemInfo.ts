@@ -21,6 +21,7 @@ export const ALERT_FIELDS = [
   "Ram_Type",
   "Ram_Size",
   "Serial_Number",
+  "USB_Devices",
 ] as const;
 
 export type SnapshotValue = string | number | boolean | null;
