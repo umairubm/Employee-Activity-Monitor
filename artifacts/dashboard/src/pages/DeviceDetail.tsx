@@ -806,6 +806,11 @@ export default function DeviceDetail({ id }: { id: string }) {
                             Cancelled: {cmd.cancelReason}
                           </div>
                         )}
+                        {cmd.status === 'failed' && cmd.cancelReason && (
+                          <div className="text-xs text-destructive/80 truncate" title={cmd.cancelReason}>
+                            Failed: {cmd.cancelReason}
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
                         {format(new Date(cmd.issuedAt), "MMM d, HH:mm")}
