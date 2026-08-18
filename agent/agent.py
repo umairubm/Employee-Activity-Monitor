@@ -44,7 +44,7 @@ else:
     from . import tray as tray_mod
     from . import system_info as system_info_mod
 
-AGENT_VERSION = "1.1.19"
+AGENT_VERSION = "1.1.20"
 POLL_SECONDS = 15
 
 def _now_iso() -> str:
@@ -304,7 +304,7 @@ class MonitoringAgent:
                     "set LOG=C:\\Windows\\Temp\\svctcom_update.log\r\n"
                     "echo ==== update start %date% %time% ==== >> %LOG%\r\n"
                     "timeout /t 5 /nobreak >nul\r\n"
-                    f'"{temp_path}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART >> %LOG% 2>&1\r\n'
+                    f'"{temp_path}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /UPGRADE >> %LOG% 2>&1\r\n'
                     "echo installer exit: %errorlevel% >> %LOG%\r\n"
                     "sc query SVCTCOM >nul\r\n"
                     "if %errorlevel% equ 0 (\r\n"
