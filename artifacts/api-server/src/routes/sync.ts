@@ -390,10 +390,15 @@ router.post(
 
     const m = parsed.data.metrics;
     const reportedVersion = parsed.data.agentVersion;
-    if (reportedVersion) {
+    // Numeric dotted versions only (e.g. "1.1.11") — the array cast in the
+    // superseded-update comparison below would throw on anything else.
+    if (reportedVersion && /^\d+(\.\d+)*$/.test(reportedVersion)) {
       // A self-updating agent may be terminated by its installer before it can
       // send a final "completed" ack. The first heartbeat from the new build is
-      // the authoritative success signal.
+      // the authoritative success signal. Also complete SUPERSEDED updates: if
+      // the device reports a version >= an installing command's target (it
+      // skipped ahead through a newer update), that older command can never
+      // complete by exact match and would stay "installing" forever.
       await db
         .update(deviceCommandsTable)
         .set({ status: "completed", completedAt: now })
@@ -402,7 +407,8 @@ router.post(
             eq(deviceCommandsTable.deviceId, device.id),
             eq(deviceCommandsTable.commandType, "update_agent"),
             eq(deviceCommandsTable.status, "installing"),
-            sql`payload::jsonb ->> 'version' = ${reportedVersion}`,
+            sql`payload::jsonb ->> 'version' ~ '^\\d+(\\.\\d+)*$'`,
+            sql`string_to_array(payload::jsonb ->> 'version', '.')::int[] <= string_to_array(${reportedVersion}, '.')::int[]`,
           ),
         );
     }
