@@ -39,7 +39,7 @@ const SYSTEM_INFO_GROUPS: { label: string; icon: typeof Server; fields: string[]
   { label: "Memory", icon: MemoryStick, fields: ["Ram_Size", "Ram_Type"] },
   { label: "Storage", icon: HardDrive, fields: ["Total Disk Space", "HD Size", "HD_Type", "Available Space"] },
   { label: "Network", icon: Network, fields: ["Ip"] },
-  { label: "USB Devices", icon: HardDrive, fields: ["USB_Devices"] },
+  { label: "USB Devices", icon: Usb, fields: ["USB_Devices"] },
 ];
 
 type IssuableCommand =
@@ -908,7 +908,7 @@ export default function DeviceDetail({ id }: { id: string }) {
                 )}
               </CardTitle>
               <CardDescription>
-                Changes detected in this device's hardware identity (CPU, RAM, disk size, model, serial, host name, OS).
+                Changes detected in this device's hardware identity (CPU, RAM, disk size, model, serial, host name, OS, USB devices).
               </CardDescription>
             </div>
             {unackAlerts.length > 0 && (
