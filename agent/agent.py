@@ -12,6 +12,7 @@ Run:  python -m agent.agent      (from the repo root)
 
 from __future__ import annotations
 
+import json
 import os
 import random
 import shutil
@@ -19,7 +20,8 @@ import subprocess
 import sys
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+from pathlib import Path
 
 # Allow running both as a module (python -m agent.agent) and as a script.
 if __package__ in (None, ""):
@@ -42,7 +44,7 @@ else:
     from . import tray as tray_mod
     from . import system_info as system_info_mod
 
-AGENT_VERSION = "1.1.12"
+AGENT_VERSION = "1.1.13"
 POLL_SECONDS = 15
 
 def _now_iso() -> str:
@@ -58,17 +60,94 @@ class MonitoringAgent:
         self._stop = threading.Event()
         self._paused = threading.Event()  # set => paused
         self._lock = threading.Lock()
-        self._pending_logs: list[dict] = []
+        self._pending_logs: list[dict] = self._load_offline_logs()
         self._current = None  # active segment being accumulated
         self._last_screenshot = 0.0
         self._next_screenshot_gap = self._screenshot_gap()
         self.tray: tray_mod.AgentTray | None = None
         self._enforced_lock = False
         self._locked_until: str | None = None
-        # Background re-lock thread
+        # Background re-lock and USB monitoring threads
         threading.Thread(target=self._lock_enforcer_loop, daemon=True).start()
+        threading.Thread(target=self._usb_monitor_loop, daemon=True).start()
 
     # --- helpers -------------------------------------------------------------
+
+    def _offline_logs_path(self) -> Path:
+        return config_mod.config_dir() / "offline_logs.json"
+
+    def _load_offline_logs(self) -> list[dict]:
+        path = self._offline_logs_path()
+        if path.exists():
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception as exc:
+                print(f"[agent] failed to load offline logs: {exc}", file=sys.stderr)
+        return []
+
+    def _save_offline_logs(self) -> None:
+        path = self._offline_logs_path()
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(self._pending_logs, f, indent=2)
+        except Exception as exc:
+            print(f"[agent] failed to save offline logs: {exc}", file=sys.stderr)
+
+    def _usb_monitor_loop(self) -> None:
+        # Wait a bit on startup for system to settle
+        time.sleep(2)
+        try:
+            prev_devices = set(system_info_mod.sysinfo.get_usb_devices())
+        except Exception:
+            prev_devices = set()
+
+        while not self._stop.is_set():
+            time.sleep(5)
+            try:
+                curr_devices = set(system_info_mod.sysinfo.get_usb_devices())
+            except Exception:
+                continue
+
+            if curr_devices != prev_devices:
+                added = curr_devices - prev_devices
+                removed = prev_devices - curr_devices
+                
+                # We drop 'None' from set operations since it represents zero state
+                added.discard("None")
+                removed.discard("None")
+
+                now = datetime.now(timezone.utc)
+                now_str = now.isoformat()
+                end_str = (now + timedelta(seconds=1)).isoformat()
+
+                for dev in added:
+                    log_entry = {
+                        "processName": "USB_Monitor",
+                        "windowTitle": f"USB Connected: {dev}",
+                        "startedAt": now_str,
+                        "endedAt": end_str,
+                        "durationSeconds": 1,
+                        "idleSeconds": 0
+                    }
+                    with self._lock:
+                        self._pending_logs.append(log_entry)
+                        self._save_offline_logs()
+
+                for dev in removed:
+                    log_entry = {
+                        "processName": "USB_Monitor",
+                        "windowTitle": f"USB Disconnected: {dev}",
+                        "startedAt": now_str,
+                        "endedAt": end_str,
+                        "durationSeconds": 1,
+                        "idleSeconds": 0
+                    }
+                    with self._lock:
+                        self._pending_logs.append(log_entry)
+                        self._save_offline_logs()
+
+                prev_devices = curr_devices
 
     def _screenshot_gap(self) -> float:
         lo = max(1, self.cfg.screenshot_min_minutes)
@@ -104,6 +183,7 @@ class MonitoringAgent:
                         "idleSeconds": min(elapsed, seg["idle"]),
                     }
                 )
+                self._save_offline_logs()
         self._current = None
 
     def _observe(self) -> None:
@@ -360,6 +440,7 @@ class MonitoringAgent:
         with self._lock:
             batch = self._pending_logs[:]
             self._pending_logs.clear()
+            self._save_offline_logs()
         if batch:
             try:
                 try:
@@ -378,6 +459,7 @@ class MonitoringAgent:
             except Exception as exc:  # noqa: BLE001
                 with self._lock:  # requeue on failure
                     self._pending_logs[0:0] = batch
+                    self._save_offline_logs()
                 print(f"[agent] activity sync failed: {exc}", file=sys.stderr)
 
     def _heartbeat(self) -> None:
