@@ -27,7 +27,8 @@ class SysInfo:
                 'Model': "",
                 'Serial_Number': "",
                 'Ram_Type': "",
-                'HD_Type': ""
+                'HD_Type': "",
+                'USB_Devices': ", ".join(self.get_usb_devices()) or ""
             }
             
             if platform.system() == "Windows":
@@ -113,6 +114,42 @@ class SysInfo:
                 return f"{round(usage.free / (1024**3))} GB"
         except Exception:
             return ""
+
+    def get_usb_devices(self) -> list[str]:
+        devices = []
+        try:
+            if platform.system() == "Windows":
+                import ctypes
+                bitmask = ctypes.windll.kernel32.GetLogicalDrives()
+                for i in range(26):
+                    if bitmask & (1 << i):
+                        drive_letter = f"{chr(65 + i)}:\\"
+                        if ctypes.windll.kernel32.GetDriveTypeW(drive_letter) == 2:
+                            volume_name_buf = ctypes.create_unicode_buffer(1024)
+                            ctypes.windll.kernel32.GetVolumeInformationW(
+                                drive_letter, volume_name_buf, 1024, None, None, None, None, 0
+                            )
+                            label = volume_name_buf.value
+                            name = f"{drive_letter}"
+                            if label:
+                                name += f" ({label})"
+                            devices.append(name)
+            elif platform.system() == "Linux":
+                import psutil
+                for p in psutil.disk_partitions(all=True):
+                    if "removable" in p.opts or "/media" in p.mountpoint:
+                        devices.append(f"{p.mountpoint} ({p.device})")
+            elif platform.system() == "Darwin":
+                import os
+                if os.path.exists("/Volumes"):
+                    for item in os.listdir("/Volumes"):
+                        path = os.path.join("/Volumes", item)
+                        if os.path.islink(path):
+                            continue
+                        devices.append(item)
+        except Exception:
+            pass
+        return devices
 
 sysinfo = SysInfo()
 
