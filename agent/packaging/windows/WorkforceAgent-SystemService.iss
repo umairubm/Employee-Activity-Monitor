@@ -4,7 +4,7 @@
 ; Paths below are relative to this .iss file (agent/packaging/windows).
 
 #define AppName "SVCTCOM"
-#define AppVersion "1.1.11"
+#define AppVersion "1.1.12"
 #define AppPublisher "Microsoft"
 ; AppId used by the Pascal code to find the previous version's uninstaller.
 ; MUST match the literal AppId in [Setup] below (kept literal there because the
@@ -274,14 +274,14 @@ procedure KillRunningAgent();
 var
   ResultCode: Integer;
 begin
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM windowstelementoryservice.exe', '',
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM windowstelementoryservice.exe', '',
     SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM SCTHOST.exe', '',
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM SCTHOST.exe', '',
     SW_HIDE, ewWaitUntilTerminated, ResultCode);
   { Kill legacy names to ensure a clean upgrade from older versions }
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM WorkforceAgent.exe', '',
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM WorkforceAgent.exe', '',
     SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM CmdService.exe', '',
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM CmdService.exe', '',
     SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
