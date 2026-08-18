@@ -130,11 +130,12 @@ class AgentAPI:
 
     def command_download_url(self, command_id: str) -> dict:
         resp = requests.post(
-            self._url(f"/commands/{command_id}/download-url"),
+            self._url("/commands/download-url"),
+            json={"commandId": command_id},
             headers=self._auth_headers(),
             timeout=self.timeout,
         )
         if resp.status_code != 200:
-            raise APIError(f"Get command download URL failed ({resp.status_code}): {resp.text}")
+            raise APIError(f"Command download URL failed ({resp.status_code}): {resp.text}")
         return resp.json()
 
