@@ -70,7 +70,13 @@ export async function createAgentReleaseUpload(
 }> {
   const objectId = randomUUID();
   const safeName = safeFileName(fileName);
-  const fullPath = `${getPrivateObjectDir()}/agent-releases/${companyId}/${objectId}-${safeName}`;
+  // Path relative to the private object dir. The public-facing objectPath is
+  // built from THIS (not the parsed object name) so it stays
+  // `/objects/agent-releases/...` regardless of whether PRIVATE_OBJECT_DIR ends
+  // in a `.private` segment. getAgentReleaseDownloadUrl re-prepends
+  // PRIVATE_OBJECT_DIR to this same relative path, so the two must agree.
+  const relativePath = `agent-releases/${companyId}/${objectId}-${safeName}`;
+  const fullPath = `${getPrivateObjectDir()}/${relativePath}`;
   const { bucketName, objectName } = parseObjectPath(fullPath);
   return {
     uploadURL: await signObjectUrl({
@@ -79,7 +85,7 @@ export async function createAgentReleaseUpload(
       method: "PUT",
       ttlSec: 15 * 60,
     }),
-    objectPath: `/objects/${objectName}`,
+    objectPath: `/objects/${relativePath}`,
   };
 }
 

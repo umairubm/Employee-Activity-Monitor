@@ -28,3 +28,4 @@
 - [Codegen drift checks must not touch watched files](codegen-check-sandbox.md) — regenerate into a sandbox + hash-compare; in-place regen crashes Vite mid-write.
 - [React Day Picker modifier styling](react-day-picker-modifier-styling.md) — custom day-button data states must be styled explicitly; wrapper classNames alone can lose contrast or selected-range colors.
 - [Remote agent update delivery](remote-agent-update-delivery.md) — uploaded installers need tenant-owned paths, fresh per-device signed URLs, and monotonic progress before heartbeat completion.
+- [Agent release objectPath convention](agent-release-objectpath.md) — objectPath must be `/objects/agent-releases/...` (relative to PRIVATE_OBJECT_DIR); leaking the `.private` segment breaks upload validation + download resolution.
