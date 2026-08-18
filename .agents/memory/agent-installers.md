@@ -84,3 +84,6 @@ created_at, which for CI-created releases can inherit older timestamps — brand
 releases were observed at the END of the list, so "first matching asset wins"
 served a stale installer version. `getReleases` must sort by `published_at`
 (fallback `created_at`) descending before any first-match scan.
+
+## Service self-update hand-off
+A Windows-service agent cannot launch its own installer as a child process — Windows tears down the process tree when the service stops. Working pattern (verified in prod, v1.1.16): agent writes a batch (wait 5s → silent install → `sc start SVCTCOM`, all output logged to C:\Windows\Temp\svctcom_update.log), registers a one-time Task Scheduler task as SYSTEM with `/TR 'cmd /c ""<bat>""'` (nested double-quote escaping is mandatory), runs it with check=True, acks "installing", then exits. Heartbeat with new version auto-completes the command server-side.
