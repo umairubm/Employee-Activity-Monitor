@@ -166,6 +166,7 @@ export default function Login() {
             <Input 
               id="username" 
               placeholder="admin" 
+              autoComplete="username"
               {...register("username")}
               className={errors.username ? "border-destructive focus-visible:ring-destructive" : ""}
             />
@@ -179,6 +180,7 @@ export default function Login() {
                 id="password"
                 type={showPassword ? "text" : "password"}
                 placeholder="••••••••"
+                autoComplete="current-password"
                 {...register("password")}
                 className={`pr-10 ${errors.password ? "border-destructive focus-visible:ring-destructive" : ""}`}
               />
