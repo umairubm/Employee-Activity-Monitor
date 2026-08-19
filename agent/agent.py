@@ -591,6 +591,8 @@ def ensure_enrolled(force_setup: bool = False) -> config_mod.AgentConfig | None:
         default_token = os.environ.get("AGENT_ENROLL_TOKEN", "")
 
         if not default_server or not default_token:
+            if sys.platform == "win32":
+                return None
             res = consent_mod.show_consent_dialog(default_server, default_token)
             if not res:
                 return None
