@@ -529,6 +529,7 @@ export default function Tokens() {
                   <TableHead>Status</TableHead>
                   <TableHead>Uses</TableHead>
                   <TableHead>Enrolled Devices</TableHead>
+                  <TableHead>Created by</TableHead>
                   <TableHead>Created</TableHead>
                   <TableHead>Expires</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -537,7 +538,7 @@ export default function Tokens() {
               <TableBody>
                 {tokens?.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="h-32 text-center text-muted-foreground">
+                    <TableCell colSpan={9} className="h-32 text-center text-muted-foreground">
                       <div className="flex flex-col items-center justify-center">
                         <KeyRound className="h-8 w-8 mb-2 opacity-20" />
                         No enrollment tokens exist.
@@ -584,6 +585,9 @@ export default function Tokens() {
                               ))}
                             </div>
                           )}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {token.createdByUsername ?? <span className="text-muted-foreground">—</span>}
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
                           {format(new Date(token.createdAt), "MMM d, yyyy")}
@@ -677,6 +681,10 @@ export default function Tokens() {
                   <div className="space-y-0.5">
                     <dt className="text-xs text-muted-foreground">Region</dt>
                     <dd>{detailsToken.region ? <Badge variant="outline" className="font-normal">{detailsToken.region}</Badge> : <span className="text-muted-foreground">Undefined</span>}</dd>
+                  </div>
+                  <div className="space-y-0.5">
+                    <dt className="text-xs text-muted-foreground">Created by</dt>
+                    <dd className="font-medium">{detailsToken.createdByUsername ?? <span className="text-muted-foreground">—</span>}</dd>
                   </div>
                   <div className="space-y-0.5">
                     <dt className="text-xs text-muted-foreground">Created</dt>

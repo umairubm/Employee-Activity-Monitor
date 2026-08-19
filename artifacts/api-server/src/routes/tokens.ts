@@ -1,6 +1,11 @@
 import { Router, type IRouter, type Request } from "express";
 import { z } from "zod/v4";
-import { db, enrollmentTokensTable, devicesTable } from "@workspace/db";
+import {
+  db,
+  enrollmentTokensTable,
+  devicesTable,
+  usersTable,
+} from "@workspace/db";
 import { and, desc, eq, inArray, isNotNull, or, type SQL } from "drizzle-orm";
 import { generateEnrollmentToken } from "../lib/secrets";
 import { requireRole, type AuthedRequest } from "../middlewares/userAuth";
@@ -12,17 +17,20 @@ const router: IRouter = Router();
 type EnrolledDeviceRef = { id: string; systemName: string };
 
 /**
- * Visibility predicate for enrollment tokens under the caller's per-manager
- * scope, or undefined when unrestricted. A token is visible when its
- * deviceGroup is in allowedGroups OR its region is in allowedRegions — the same
- * predicate the list uses, applied to mutations so out-of-scope tokens 404.
+ * Visibility predicate for enrollment tokens, or undefined when unrestricted.
+ * Company admins (and super users) see every token. A manager sees a token
+ * when they created it themselves, OR its deviceGroup is in their
+ * allowedGroups, OR its region is in their allowedRegions. The same predicate
+ * is applied to mutations so out-of-visibility tokens 404.
  */
 function tokenScopeCondition(req: Request): SQL | undefined {
+  const user = (req as AuthedRequest).user;
+  if (user.role !== "manager") return undefined;
   const { groups, regions } = getUserScope(req);
-  const parts: SQL[] = [];
+  const parts: SQL[] = [eq(enrollmentTokensTable.createdById, user.id)];
   if (groups) parts.push(inArray(enrollmentTokensTable.deviceGroup, groups));
   if (regions) parts.push(inArray(enrollmentTokensTable.region, regions));
-  return parts.length > 0 ? or(...parts) : undefined;
+  return or(...parts);
 }
 
 /**
@@ -65,6 +73,22 @@ async function enrolledDevicesByToken(
   return byToken;
 }
 
+/**
+ * Resolve the username of a token's creator for single-token responses so the
+ * shape matches the list route's `createdByUsername`. Null when the token has
+ * no recorded creator (legacy tokens) or the account was deleted.
+ */
+async function creatorUsername(
+  createdById: string | null,
+): Promise<string | null> {
+  if (!createdById) return null;
+  const [row] = await db
+    .select({ username: usersTable.username })
+    .from(usersTable)
+    .where(eq(usersTable.id, createdById));
+  return row?.username ?? null;
+}
+
 // GET /api/tokens - list enrollment tokens, each with the device(s) that
 // enrolled using it so admins can see exactly where a token's uses went.
 router.get("/", async (req, res) => {
@@ -74,8 +98,12 @@ router.get("/", async (req, res) => {
     // token is visible when its deviceGroup is in allowedGroups OR its region
     // is in allowedRegions. Unrestricted managers/admins see every token.
     const rows = await db
-      .select()
+      .select({
+        token: enrollmentTokensTable,
+        createdByUsername: usersTable.username,
+      })
       .from(enrollmentTokensTable)
+      .leftJoin(usersTable, eq(enrollmentTokensTable.createdById, usersTable.id))
       .where(
         and(
           eq(enrollmentTokensTable.companyId, companyId),
@@ -87,13 +115,14 @@ router.get("/", async (req, res) => {
     const byToken = await enrolledDevicesByToken(
       req,
       companyId,
-      rows.map((r) => r.id),
+      rows.map((r) => r.token.id),
     );
 
     res.json(
       rows.map((row) => ({
-        ...row,
-        enrolledDevices: byToken.get(row.id) ?? [],
+        ...row.token,
+        createdByUsername: row.createdByUsername,
+        enrolledDevices: byToken.get(row.token.id) ?? [],
       })),
     );
   } catch (error) {
@@ -146,11 +175,22 @@ const createSchema = z.object({
 router.get("/groups", async (req, res) => {
   try {
     const companyId = getCompanyId(req);
+    const isManager = (req as AuthedRequest).user.role === "manager";
+    const { groups: allowedGroups } = getUserScope(req);
+    const allowed = allowedGroups ? new Set(allowedGroups) : null;
+
+    // Managers only learn group names from tokens they can actually see
+    // (own + in-scope, via tokenScopeCondition). Device-derived names are
+    // additionally filtered to allowedGroups — and skipped entirely for a
+    // manager with no group scope (e.g. an installer), so an owner-only
+    // manager can't enumerate the company's group taxonomy.
     const [fromDevices, fromTokens] = await Promise.all([
-      db
-        .selectDistinct({ group: devicesTable.deviceGroup })
-        .from(devicesTable)
-        .where(eq(devicesTable.companyId, companyId)),
+      isManager && !allowed
+        ? Promise.resolve([])
+        : db
+            .selectDistinct({ group: devicesTable.deviceGroup })
+            .from(devicesTable)
+            .where(eq(devicesTable.companyId, companyId)),
       db
         .selectDistinct({ group: enrollmentTokensTable.deviceGroup })
         .from(enrollmentTokensTable)
@@ -158,17 +198,17 @@ router.get("/groups", async (req, res) => {
           and(
             eq(enrollmentTokensTable.companyId, companyId),
             isNotNull(enrollmentTokensTable.deviceGroup),
+            tokenScopeCondition(req),
           ),
         ),
     ]);
-    // A group-scoped manager only sees their allowed groups.
-    const { groups: allowedGroups } = getUserScope(req);
-    const allowed = allowedGroups ? new Set(allowedGroups) : null;
     const groups = new Set<string>();
     for (const r of fromDevices)
       if (r.group && (!allowed || allowed.has(r.group))) groups.add(r.group);
-    for (const r of fromTokens)
-      if (r.group && (!allowed || allowed.has(r.group))) groups.add(r.group);
+    for (const r of fromTokens) if (r.group) groups.add(r.group);
+    // A group-scoped manager should always be able to mint into any of their
+    // allowed groups, even before a device or token exists there.
+    if (isManager && allowedGroups) for (const g of allowedGroups) groups.add(g);
     res.json([...groups].sort((a, b) => a.localeCompare(b)));
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
@@ -182,6 +222,9 @@ router.get("/groups", async (req, res) => {
 router.get("/regions", async (req, res) => {
   try {
     const companyId = getCompanyId(req);
+    // Managers only learn region names from tokens they can actually see
+    // (own + in-scope), plus their own allowedRegions — never the whole
+    // company taxonomy.
     const fromTokens = await db
       .selectDistinct({ region: enrollmentTokensTable.region })
       .from(enrollmentTokensTable)
@@ -189,14 +232,15 @@ router.get("/regions", async (req, res) => {
         and(
           eq(enrollmentTokensTable.companyId, companyId),
           isNotNull(enrollmentTokensTable.region),
+          tokenScopeCondition(req),
         ),
       );
-    // A region-scoped manager only sees their allowed regions.
+    const isManager = (req as AuthedRequest).user.role === "manager";
     const { regions: allowedRegions } = getUserScope(req);
-    const allowed = allowedRegions ? new Set(allowedRegions) : null;
     const regions = new Set<string>();
-    for (const r of fromTokens)
-      if (r.region && (!allowed || allowed.has(r.region))) regions.add(r.region);
+    for (const r of fromTokens) if (r.region) regions.add(r.region);
+    if (isManager && allowedRegions)
+      for (const r of allowedRegions) regions.add(r);
     res.json([...regions].sort((a, b) => a.localeCompare(b)));
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
@@ -253,7 +297,11 @@ router.post("/", requireRole("company_admin", "manager"), async (req, res) => {
 
     // A brand-new token has no enrolled devices yet, but the response shape
     // must still match the OpenAPI `EnrollmentTokenItem` contract.
-    res.status(201).json({ ...token, enrolledDevices: [] });
+    res.status(201).json({
+      ...token,
+      createdByUsername: (req as AuthedRequest).user.username,
+      enrolledDevices: [],
+    });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }
@@ -328,6 +376,7 @@ router.patch(
         ]);
         res.json({
           ...existing,
+          createdByUsername: await creatorUsername(existing.createdById),
           enrolledDevices: byToken.get(existing.id) ?? [],
         });
         return;
@@ -372,7 +421,11 @@ router.patch(
       });
 
       const byToken = await enrolledDevicesByToken(req, companyId, [updated.id]);
-      res.json({ ...updated, enrolledDevices: byToken.get(updated.id) ?? [] });
+      res.json({
+        ...updated,
+        createdByUsername: await creatorUsername(updated.createdById),
+        enrolledDevices: byToken.get(updated.id) ?? [],
+      });
     } catch (error) {
       res.status(500).json({ error: (error as Error).message });
     }
@@ -403,7 +456,11 @@ router.post(
         return;
       }
       const byToken = await enrolledDevicesByToken(req, companyId, [updated.id]);
-      res.json({ ...updated, enrolledDevices: byToken.get(updated.id) ?? [] });
+      res.json({
+        ...updated,
+        createdByUsername: await creatorUsername(updated.createdById),
+        enrolledDevices: byToken.get(updated.id) ?? [],
+      });
     } catch (error) {
       res.status(500).json({ error: (error as Error).message });
     }

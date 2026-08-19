@@ -1401,6 +1401,11 @@ export interface EnrollmentTokenItem {
   region?: string | null;
   /** @nullable */
   createdById?: string | null;
+  /**
+   * Username of the user who generated this token.
+   * @nullable
+   */
+  createdByUsername: string | null;
   /** @nullable */
   assignedUserId?: string | null;
   maxUses: number;

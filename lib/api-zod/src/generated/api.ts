@@ -1884,6 +1884,10 @@ export const ListTokensResponseItem = zod.object({
   deviceGroup: zod.string().nullish(),
   region: zod.string().nullish(),
   createdById: zod.string().uuid().nullish(),
+  createdByUsername: zod
+    .string()
+    .nullable()
+    .describe("Username of the user who generated this token."),
   assignedUserId: zod.string().uuid().nullish(),
   maxUses: zod.number(),
   useCount: zod.number(),
@@ -1997,6 +2001,10 @@ export const UpdateTokenResponse = zod.object({
   deviceGroup: zod.string().nullish(),
   region: zod.string().nullish(),
   createdById: zod.string().uuid().nullish(),
+  createdByUsername: zod
+    .string()
+    .nullable()
+    .describe("Username of the user who generated this token."),
   assignedUserId: zod.string().uuid().nullish(),
   maxUses: zod.number(),
   useCount: zod.number(),
@@ -2026,6 +2034,10 @@ export const RevokeTokenResponse = zod.object({
   deviceGroup: zod.string().nullish(),
   region: zod.string().nullish(),
   createdById: zod.string().uuid().nullish(),
+  createdByUsername: zod
+    .string()
+    .nullable()
+    .describe("Username of the user who generated this token."),
   assignedUserId: zod.string().uuid().nullish(),
   maxUses: zod.number(),
   useCount: zod.number(),

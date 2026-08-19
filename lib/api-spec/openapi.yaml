@@ -3682,6 +3682,9 @@ components:
         createdById:
           type: [string, "null"]
           format: uuid
+        createdByUsername:
+          type: [string, "null"]
+          description: Username of the user who generated this token.
         assignedUserId:
           type: [string, "null"]
           format: uuid
@@ -3702,7 +3705,7 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/EnrolledDeviceRef"
-      required: [id, token, maxUses, useCount, createdAt, enrolledDevices]
+      required: [id, token, maxUses, useCount, createdAt, createdByUsername, enrolledDevices]
     EnrolledDeviceRef:
       type: object
       properties:
