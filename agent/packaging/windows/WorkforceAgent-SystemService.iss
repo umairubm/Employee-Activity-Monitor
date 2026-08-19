@@ -4,7 +4,7 @@
 ; Paths below are relative to this .iss file (agent/packaging/windows).
 
 #define AppName "SVCTCOM"
-#define AppVersion "1.1.26"
+#define AppVersion "1.1.27"
 #define AppPublisher "Microsoft"
 ; AppId used by the Pascal code to find the previous version's uninstaller.
 ; MUST match the literal AppId in [Setup] below (kept literal there because the
@@ -85,6 +85,7 @@ var
 function GetUninstallString(): String; forward;
 procedure UninstallPreviousVersion(); forward;
 function IsAgentInstalled(): Boolean; forward;
+function IsAgentEnrolled(): Boolean; forward;
 procedure KillRunningAgent(); forward;
 
 procedure InitializeWizard();
@@ -225,7 +226,7 @@ begin
   end
   else if (PageID = EnrollPage.ID) or (PageID = ConsentPage.ID) then
   begin
-    if gIsAlreadyInstalled then
+    if IsAgentEnrolled() then
       Result := True;
   end;
 end;
@@ -268,7 +269,7 @@ procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then
   begin
-    if not gIsAlreadyInstalled then
+    if not IsAgentEnrolled() then
       WriteEnrollSeed();
   end;
 end;
@@ -335,6 +336,11 @@ begin
             FileExists(ExpandConstant('{localappdata}\Programs\SVCTCOM\windowstelementoryservice.exe')) or 
             FileExists(ExpandConstant('{userappdata}\WorkforceAgent\config.json')) or
             (Pos('/UPGRADE', UpperCase(GetCmdTail())) > 0);
+end;
+
+function IsAgentEnrolled(): Boolean;
+begin
+  Result := FileExists(ExpandConstant('{userappdata}\WorkforceAgent\config.json'));
 end;
 
 { Look up the previous version's uninstaller from the registry or check the local installation folder. }
