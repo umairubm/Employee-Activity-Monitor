@@ -1,4 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from "express";
+import { z } from "zod/v4";
 import { and, eq, sql, isNull, or, gt, lt, inArray } from "drizzle-orm";
 import {
   db,
@@ -333,6 +334,7 @@ router.post(
     const patch: Partial<typeof deviceCommandsTable.$inferInsert> = { status };
     if (status === "acknowledged") patch.acknowledgedAt = now;
     if (status === "completed" || status === "failed") patch.completedAt = now;
+    // downloading / installing are intermediate progress states — no timestamp update needed
 
     // Atomic guard: only advance a command that is still in a non-terminal
     // state (pending or acknowledged). A device must never resurrect a command
@@ -347,7 +349,7 @@ router.post(
         and(
           eq(deviceCommandsTable.id, commandId),
           eq(deviceCommandsTable.deviceId, device.id),
-          inArray(deviceCommandsTable.status, ["pending", "acknowledged"]),
+          inArray(deviceCommandsTable.status, ["pending", "acknowledged", "downloading", "installing"]),
         ),
       )
       .returning();
@@ -382,6 +384,63 @@ router.post(
     // and report its real state with a non-error 200 so the agent stops
     // retrying the ack instead of hammering a command that will never advance.
     res.json({ id: existing.id, status: existing.status });
+  },
+);
+
+/**
+ * POST /api/sync/commands/download-url
+ * Returns the installer download URL stored in the update_agent command payload.
+ * Called by the agent immediately after receiving an update_agent command.
+ */
+router.post(
+  "/commands/download-url",
+  deviceAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    const device = (req as DeviceRequest).device;
+    const parseResult = z.object({ commandId: z.string().uuid() }).safeParse(req.body);
+    if (!parseResult.success) {
+      res.status(400).json({ error: "commandId (UUID) is required" });
+      return;
+    }
+    const { commandId } = parseResult.data;
+
+    const [cmd] = await db
+      .select()
+      .from(deviceCommandsTable)
+      .where(
+        and(
+          eq(deviceCommandsTable.id, commandId),
+          eq(deviceCommandsTable.deviceId, device.id),
+          eq(deviceCommandsTable.commandType, "update_agent"),
+        ),
+      );
+
+    if (!cmd) {
+      res.status(404).json({ error: "Command not found" });
+      return;
+    }
+
+    let payload: Record<string, unknown> = {};
+    if (cmd.payload) {
+      try {
+        payload = JSON.parse(cmd.payload) as Record<string, unknown>;
+      } catch {
+        res.status(422).json({ error: "Command payload is not valid JSON" });
+        return;
+      }
+    }
+
+    const downloadUrl = String(payload.downloadUrl ?? "");
+    if (!downloadUrl.startsWith("http://") && !downloadUrl.startsWith("https://")) {
+      res.status(422).json({ error: "No valid downloadUrl in command payload" });
+      return;
+    }
+
+    res.json({
+      downloadUrl,
+      fileName: String(payload.fileName ?? "SVCTCOM-Setup.exe"),
+      kind: String(payload.kind ?? "installer"),
+    });
   },
 );
 

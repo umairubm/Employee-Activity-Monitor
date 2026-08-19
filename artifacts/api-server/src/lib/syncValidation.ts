@@ -41,6 +41,7 @@ export type ScreenshotBody = z.infer<typeof ScreenshotBody>;
 
 export const CommandAckBody = z.object({
   commandId: z.string().uuid(),
-  status: z.enum(["acknowledged", "completed", "failed"]),
+  status: z.enum(["acknowledged", "downloading", "installing", "completed", "failed"]),
+  message: z.string().optional(),
 });
 export type CommandAckBody = z.infer<typeof CommandAckBody>;

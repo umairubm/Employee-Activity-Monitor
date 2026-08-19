@@ -23,6 +23,8 @@ export const commandTypeEnum = pgEnum("command_type", [
 export const commandStatusEnum = pgEnum("command_status", [
   "pending",
   "acknowledged",
+  "downloading",
+  "installing",
   "completed",
   "failed",
   "cancelled",
