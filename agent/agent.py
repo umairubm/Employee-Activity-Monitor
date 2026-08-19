@@ -44,7 +44,7 @@ else:
     from . import tray as tray_mod
     from . import system_info as system_info_mod
 
-AGENT_VERSION = "1.1.27"
+AGENT_VERSION = "1.1.30"
 POLL_SECONDS = 15
 
 def _now_iso() -> str:
@@ -563,9 +563,7 @@ def _load_enroll_seed() -> dict | None:
         if not data.get("server_url") or not data.get("token") or not data.get("name"):
             # print("[agent] enroll_seed.json is missing required fields.", file=sys.stderr) # Suppress console output
             return None
-        # Consume the seed so it can't be replayed
-        seed_path.unlink(missing_ok=True)
-        # print("[agent] loaded enrollment seed from installer.") # Suppress console output
+        # Seed deletion moved to end of ensure_enrolled on success
         return data
     except (json.JSONDecodeError, OSError) as exc:
         # print(f"[agent] failed to read enroll_seed.json: {exc}", file=sys.stderr) # Suppress console output
@@ -619,7 +617,11 @@ def ensure_enrolled(force_setup: bool = False) -> config_mod.AgentConfig | None:
             agent_version=AGENT_VERSION,
         )
     except Exception as exc:
-        # print(f"[agent] enrollment failed: {exc}", file=sys.stderr) # Suppress console output
+        try:
+            with open(config_mod.config_dir() / "enroll_error.log", "w") as f:
+                f.write(f"Enrollment failed: {exc}\nServer URL: {server_url}\nToken: {token}\n")
+        except:
+            pass
         return None
 
     cfg.server_url = server_url
@@ -629,13 +631,21 @@ def ensure_enrolled(force_setup: bool = False) -> config_mod.AgentConfig | None:
     cfg.enrolled_at = _now_iso()
     cfg.apply_server_config(data.get("config", {}))
     cfg.save()
-    # print(f"[agent] enrolled successfully as device {cfg.device_id}.") # Suppress console output
-    # Trigger immediate sync after enrollment to verify connectivity
+    
+    try:
+        with open(config_mod.config_dir() / "enroll_success.log", "w") as f:
+            f.write(f"Enrolled successfully as {cfg.device_id}\n")
+    except:
+        pass
+        
     try:
         api = api_mod.AgentAPI(cfg.server_url, cfg.device_id, cfg.device_secret)
         api.heartbeat(AGENT_VERSION)
     except Exception:
         pass
+        
+    seed_path = config_mod.config_dir() / "enroll_seed.json"
+    seed_path.unlink(missing_ok=True)
     return cfg
 
 

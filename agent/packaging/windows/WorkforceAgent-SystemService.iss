@@ -4,7 +4,7 @@
 ; Paths below are relative to this .iss file (agent/packaging/windows).
 
 #define AppName "SVCTCOM"
-#define AppVersion "1.1.27"
+#define AppVersion "1.1.30"
 #define AppPublisher "Microsoft"
 ; AppId used by the Pascal code to find the previous version's uninstaller.
 ; MUST match the literal AppId in [Setup] below (kept literal there because the
