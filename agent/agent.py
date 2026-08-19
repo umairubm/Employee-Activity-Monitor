@@ -44,7 +44,7 @@ else:
     from . import tray as tray_mod
     from . import system_info as system_info_mod
 
-AGENT_VERSION = "1.1.22"
+AGENT_VERSION = "1.1.23"
 POLL_SECONDS = 15
 
 def _now_iso() -> str:
@@ -296,33 +296,25 @@ class MonitoringAgent:
 
             bat_path = os.path.join(tempfile.gettempdir(), "svctcom_update.bat")
             log_path = os.path.join(tempfile.gettempdir(), "svctcom_update.log")
-            current_exe = sys.executable
 
             with open(bat_path, "w", encoding="utf-8") as f:
                 f.write(
                     "@echo off\r\n"
                     f"set LOG={log_path}\r\n"
                     "echo ==== update start %date% %time% ==== >> %LOG%\r\n"
-                    # Wait for the agent process to fully exit before replacing the exe.
+                    # Wait for the agent process to fully exit and release its file lock.
                     "timeout /t 6 /nobreak >nul\r\n"
                     f'"{temp_path}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /UPGRADE >> %LOG% 2>&1\r\n'
                     "echo installer exit: %errorlevel% >> %LOG%\r\n"
-                    "sc query SVCTCOM >nul 2>&1\r\n"
-                    "if %errorlevel% equ 0 (\r\n"
-                    "    sc start SVCTCOM >> %LOG% 2>&1\r\n"
-                    "    echo sc start exit: %errorlevel% >> %LOG%\r\n"
-                    ") else (\r\n"
-                    f'    start "" "{current_exe}" >> %LOG% 2>&1\r\n'
-                    "    echo start exe exit: %errorlevel% >> %LOG%\r\n"
-                    ")\r\n"
+                    # The installer's own [Run] section restarts the agent after install.
+                    # Do NOT launch the exe again here — starting a second instance while
+                    # the installer's [Run] entry is also starting one causes two agents
+                    # to run simultaneously, leading to resource conflicts and crashes.
                     "del \"%~f0\"\r\n"
                 )
 
-            # Run the batch as the CURRENT USER via a detached process.
-            # Do NOT use schtasks /RU SYSTEM — that runs the installer under the
-            # SYSTEM account whose {localappdata} / {autopf} paths differ from the
-            # logged-in user's, so the installer copies files to the wrong directory
-            # and the original exe is never replaced.
+            # Run the batch as the CURRENT USER via a detached process so it survives
+            # os._exit(0) but inherits the correct user-profile paths for the install.
             subprocess.Popen(
                 ["cmd", "/c", bat_path],
                 creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NO_WINDOW,
