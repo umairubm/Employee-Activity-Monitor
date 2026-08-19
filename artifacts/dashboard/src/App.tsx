@@ -60,11 +60,17 @@ function ProtectedRoute({ route, params }: { route: AppRoute; params: Record<str
   }
 
   if (!canAccess(route, user)) {
-    // Send the user to their own landing page if they have one; otherwise the
-    // account simply has no console access.
+    // Send the user to their preferred landing page, or — when page
+    // permissions lock that down too — the first page they can access.
+    // Only when no page at all is accessible does the account truly have
+    // no console access.
     const home = defaultRouteForRole(user.role);
-    if (home && home !== location) {
-      return <Redirect to={home} />;
+    const fallback =
+      home && APP_ROUTES.some((r) => r.href === home && canAccess(r, user))
+        ? home
+        : APP_ROUTES.find((r) => r.nav && canAccess(r, user))?.href;
+    if (fallback && fallback !== location) {
+      return <Redirect to={fallback} />;
     }
     return <AccessRestricted />;
   }
