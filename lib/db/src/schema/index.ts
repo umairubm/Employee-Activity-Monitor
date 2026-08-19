@@ -8,3 +8,4 @@ export * from "./dailySummaries";
 export * from "./deviceCommands";
 export * from "./sessions";
 export * from "./attendanceSettings";
+export * from "./deviceAlerts";

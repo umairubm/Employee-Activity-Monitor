@@ -8,6 +8,7 @@ import {
   activityLogsTable,
   screenshotsTable,
   deviceCommandsTable,
+  deviceAlertsTable,
   type Device,
 } from "@workspace/db";
 import {
@@ -255,6 +256,15 @@ router.post(
     });
 
     await db.insert(activityLogsTable).values(values);
+
+    if (parsed.data.hardwareChanges && Object.keys(parsed.data.hardwareChanges).length > 0) {
+      await db.insert(deviceAlertsTable).values({
+        deviceId: device.id,
+        alertType: "hardware_change",
+        oldValue: parsed.data.hardwareChanges.old,
+        newValue: parsed.data.hardwareChanges.new,
+      });
+    }
 
     res.status(201).json({ accepted: values.length });
   },

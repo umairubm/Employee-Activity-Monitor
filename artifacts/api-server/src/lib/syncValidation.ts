@@ -29,6 +29,7 @@ export const ActivityLogItem = z.object({
 
 export const ActivityBody = z.object({
   logs: z.array(ActivityLogItem).min(1).max(500),
+  hardwareChanges: z.record(z.any()).optional(),
 });
 export type ActivityBody = z.infer<typeof ActivityBody>;
 

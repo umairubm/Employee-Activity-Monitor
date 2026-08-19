@@ -50,6 +50,7 @@ class AgentConfig:
     idle_threshold_seconds: int = 120
     sync_interval_seconds: int = 300
     heartbeat_interval_seconds: int = 10
+    hardware_baseline: dict = field(default_factory=dict)
 
     @property
     def is_enrolled(self) -> bool:
