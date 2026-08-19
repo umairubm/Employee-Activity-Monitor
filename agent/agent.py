@@ -45,7 +45,7 @@ else:
     from . import system_info as system_info_mod
 
 # You can change this to 1.1.32, etc. to test auto-update
-AGENT_VERSION = "1.1.32"
+AGENT_VERSION = "1.1.33"
 POLL_SECONDS = 15
 
 def _now_iso() -> str:
@@ -316,10 +316,19 @@ class MonitoringAgent:
 
             # Run the batch as the CURRENT USER via a detached process so it survives
             # os._exit(0) but inherits the correct user-profile paths for the install.
+            env = os.environ.copy()
+            # PyInstaller sets _MEIPASS2 in the child process. If inherited, the new agent 
+            # will try to use the old, deleted temp folder and fail with a DLL error.
+            env.pop("_MEIPASS2", None)
+            for k in list(env.keys()):
+                if k.startswith("_PYI") or k.startswith("_MEI"):
+                    env.pop(k, None)
+
             subprocess.Popen(
                 ["cmd", "/c", bat_path],
                 creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NO_WINDOW,
                 close_fds=True,
+                env=env,
             )
             os._exit(0)
         else:
