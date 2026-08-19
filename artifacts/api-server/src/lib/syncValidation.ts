@@ -20,7 +20,7 @@ export type HeartbeatBody = z.infer<typeof HeartbeatBody>;
 
 export const ActivityLogItem = z.object({
   processName: z.string().min(1),
-  windowTitle: z.string().optional(),
+  windowTitle: z.string().nullable().optional(),
   startedAt: z.coerce.date(),
   endedAt: z.coerce.date(),
   durationSeconds: z.number().int().nonnegative(),

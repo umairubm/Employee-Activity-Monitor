@@ -60,7 +60,7 @@ def _active_window_windows() -> Tuple[str, str]:
         process = psutil.Process(pid.value).name()
     except Exception:
         pass
-    return (process, title)
+    return (process or "unknown", title)
 
 
 def _idle_windows() -> int:
