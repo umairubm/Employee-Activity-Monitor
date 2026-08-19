@@ -59,7 +59,10 @@ elif is_mac:
 a = Analysis(
     [str(SPEC_DIR / "launcher-system-service.py")],
     pathex=[str(REPO_ROOT)],
-    binaries=[],
+    binaries=[
+        ("C:\\Windows\\System32\\vcruntime140.dll", "."),
+        ("C:\\Windows\\System32\\vcruntime140_1.dll", ".")
+    ] if is_win else [],
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
