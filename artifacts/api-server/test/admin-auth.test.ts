@@ -206,8 +206,8 @@ describe("login brute-force protection", () => {
   it("locks out after repeated failures, even for the correct password", async () => {
     const { user, password } = await newUser({ role: "company_admin" });
 
-    // Five wrong attempts: all should be 401 (not yet locked).
-    for (let i = 0; i < 5; i++) {
+    // Ten wrong attempts: all should be 401 (not yet locked).
+    for (let i = 0; i < 10; i++) {
       const res = await request(app)
         .post("/api/auth/login")
         .send({ username: user.username, password: "wrong-password" });
@@ -237,7 +237,7 @@ describe("login brute-force protection", () => {
     });
 
     // Hammer the victim account into a lockout.
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 11; i++) {
       await request(app)
         .post("/api/auth/login")
         .send({ username: victim.username, password: "wrong-password" });

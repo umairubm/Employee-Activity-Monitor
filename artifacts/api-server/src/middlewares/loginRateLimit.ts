@@ -16,9 +16,9 @@ import type { Request, Response, NextFunction } from "express";
  * accounts independent in local/direct setups.
  */
 
-const MAX_FAILURES = 5;
+const MAX_FAILURES = 10;
 const WINDOW_MS = 15 * 60 * 1000; // 15 minutes
-const LOCKOUT_MS = 15 * 60 * 1000; // 15 minutes
+const LOCKOUT_MS = 5 * 60 * 1000; // 5 minutes
 
 interface AttemptRecord {
   failures: number;
