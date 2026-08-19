@@ -2075,6 +2075,16 @@ components:
           oneOf:
             - $ref: "#/components/schemas/PagePermissions"
             - type: "null"
+        allowedGroups:
+          type: [array, "null"]
+          items:
+            type: string
+          description: Device groups this manager may see; null = all groups.
+        allowedRegions:
+          type: [array, "null"]
+          items:
+            type: string
+          description: Regions this manager may see; null = all regions.
         createdAt:
           type: string
           format: date-time
@@ -2201,6 +2211,14 @@ components:
           oneOf:
             - $ref: "#/components/schemas/PagePermissions"
             - type: "null"
+        allowedGroups:
+          type: [array, "null"]
+          items:
+            type: string
+        allowedRegions:
+          type: [array, "null"]
+          items:
+            type: string
       required: [username, email, password]
     UpdateManagerRequest:
       type: object
@@ -2218,6 +2236,14 @@ components:
           oneOf:
             - $ref: "#/components/schemas/PagePermissions"
             - type: "null"
+        allowedGroups:
+          type: [array, "null"]
+          items:
+            type: string
+        allowedRegions:
+          type: [array, "null"]
+          items:
+            type: string
     UpdateSecuritySettingsRequest:
       type: object
       properties:

@@ -6,6 +6,8 @@ import {
   useUpdateManager,
   useDeleteManager,
   useGenerateManagerResetCode,
+  useListTokenGroups,
+  useListTokenRegions,
   type CompanyUser,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -89,6 +91,75 @@ function PagePermissionsEditor({
   );
 }
 
+/**
+ * Group/region scoping editor for managers. `value === null` means "sees
+ * everything"; otherwise the manager only sees devices in the checked groups
+ * (or enrolled with a token in the checked regions).
+ */
+function ScopeEditor({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: string[];
+  value: string[] | null;
+  onChange: (next: string[] | null) => void;
+}) {
+  const restricted = value !== null;
+  const id = `restrict-${label.replace(/\s+/g, "-").toLowerCase()}`;
+  const toggle = (name: string, checked: boolean) => {
+    const cur = new Set(value ?? []);
+    if (checked) cur.add(name);
+    else cur.delete(name);
+    onChange([...cur]);
+  };
+  return (
+    <div className="grid gap-2">
+      <div className="flex items-center gap-2">
+        <input
+          id={id}
+          type="checkbox"
+          className="h-4 w-4"
+          checked={restricted}
+          onChange={(e) => onChange(e.target.checked ? [] : null)}
+        />
+        <Label htmlFor={id} className="cursor-pointer">
+          Limit to specific {label}
+        </Label>
+      </div>
+      {restricted ? (
+        options.length === 0 ? (
+          <p className="text-xs text-muted-foreground">No {label} exist yet.</p>
+        ) : (
+          <div className="max-h-40 overflow-y-auto rounded-lg border border-border divide-y divide-border">
+            {options.map((name) => (
+              <label key={name} className="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={value?.includes(name) ?? false}
+                  onChange={(e) => toggle(name, e.target.checked)}
+                />
+                <span>{name}</span>
+              </label>
+            ))}
+          </div>
+        )
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          No limit: this user sees all {label}.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// One-click preset: an "Installer" is a manager who can only see the
+// Enrollment Tokens and Download Agent pages.
+const INSTALLER_PERMS: PagePermissions = { tokens: "view", downloads: "view" };
+
 export default function Managers() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -121,12 +192,19 @@ export default function Managers() {
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<Role>("manager");
   const [perms, setPerms] = useState<PagePermissions | null>(null);
+  const [groups, setGroups] = useState<string[] | null>(null);
+  const [regions, setRegions] = useState<string[] | null>(null);
 
   const [editing, setEditing] = useState<CompanyUser | null>(null);
   const [editEmail, setEditEmail] = useState("");
   const [editPassword, setEditPassword] = useState("");
   const [editRole, setEditRole] = useState<Role>("manager");
   const [editPerms, setEditPerms] = useState<PagePermissions | null>(null);
+  const [editGroups, setEditGroups] = useState<string[] | null>(null);
+  const [editRegions, setEditRegions] = useState<string[] | null>(null);
+
+  const { data: knownGroups } = useListTokenGroups();
+  const { data: knownRegions } = useListTokenRegions();
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: getListManagersQueryKey() });
 
@@ -136,6 +214,15 @@ export default function Managers() {
     setPassword("");
     setRole("manager");
     setPerms(null);
+    setGroups(null);
+    setRegions(null);
+  };
+
+  const applyInstallerPreset = () => {
+    setRole("manager");
+    setPerms({ ...INSTALLER_PERMS });
+    setGroups(null);
+    setRegions(null);
   };
 
   const handleCreate = () => {
@@ -148,7 +235,17 @@ export default function Managers() {
       return;
     }
     createUser.mutate(
-      { data: { username, email, password, role, pagePermissions: perms } },
+      {
+        data: {
+          username,
+          email,
+          password,
+          role,
+          pagePermissions: perms,
+          allowedGroups: groups,
+          allowedRegions: regions,
+        },
+      },
       {
         onSuccess: () => {
           invalidate();
@@ -175,6 +272,8 @@ export default function Managers() {
     setEditPassword("");
     setEditRole(u.role === "team_member" ? "team_member" : "manager");
     setEditPerms((u.pagePermissions as PagePermissions | null | undefined) ?? null);
+    setEditGroups(u.allowedGroups ?? null);
+    setEditRegions(u.allowedRegions ?? null);
   };
 
   const handleUpdate = () => {
@@ -195,6 +294,8 @@ export default function Managers() {
           password: editPassword || undefined,
           role: editRole,
           pagePermissions: editPerms,
+          allowedGroups: editGroups,
+          allowedRegions: editRegions,
         },
       },
       {
@@ -262,6 +363,18 @@ export default function Managers() {
                 </select>
               </div>
               <PagePermissionsEditor perms={perms} onChange={setPerms} />
+              {role === "manager" && (
+                <>
+                  <ScopeEditor label="device groups" options={knownGroups ?? []} value={groups} onChange={setGroups} />
+                  <ScopeEditor label="regions" options={knownRegions ?? []} value={regions} onChange={setRegions} />
+                </>
+              )}
+              <Button type="button" variant="outline" size="sm" className="justify-self-start" onClick={applyInstallerPreset}>
+                Use Installer preset
+              </Button>
+              <p className="text-xs text-muted-foreground -mt-2">
+                Installer: a manager who can only see Enrollment Tokens and Download Agent.
+              </p>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
@@ -386,6 +499,12 @@ export default function Managers() {
               </select>
             </div>
             <PagePermissionsEditor perms={editPerms} onChange={setEditPerms} />
+            {editRole === "manager" && (
+              <>
+                <ScopeEditor label="device groups" options={knownGroups ?? []} value={editGroups} onChange={setEditGroups} />
+                <ScopeEditor label="regions" options={knownRegions ?? []} value={editRegions} onChange={setEditRegions} />
+              </>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditing(null)}>Cancel</Button>

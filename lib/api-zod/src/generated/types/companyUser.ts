@@ -14,5 +14,15 @@ export interface CompanyUser {
   email: string;
   role: CompanyUserRole;
   pagePermissions?: PagePermissions | null;
+  /**
+   * Device groups this manager may see; null = all groups.
+   * @nullable
+   */
+  allowedGroups?: string[] | null;
+  /**
+   * Regions this manager may see; null = all regions.
+   * @nullable
+   */
+  allowedRegions?: string[] | null;
   createdAt?: Date;
 }

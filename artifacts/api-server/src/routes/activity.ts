@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { activityLogsTable, devicesTable } from "@workspace/db";
 import { and, asc, desc, eq, gte, inArray, lt } from "drizzle-orm";
 import { getCompanyId } from "../middlewares/tenant";
+import { visibleDeviceIdsSubquery } from "../lib/deviceScope";
 
 const router: IRouter = Router();
 
@@ -19,7 +20,13 @@ router.get("/", async (req, res) => {
     const { deviceId, userId, group } = req.query as Record<string, string | undefined>;
     const limit = parseLimit(req.query.limit, 50, 200);
 
-    const conditions = [eq(activityLogsTable.companyId, companyId)];
+    const conditions = [
+      eq(activityLogsTable.companyId, companyId),
+      inArray(
+        activityLogsTable.deviceId,
+        visibleDeviceIdsSubquery(req, companyId),
+      ),
+    ];
     if (deviceId) conditions.push(eq(activityLogsTable.deviceId, deviceId));
     if (userId) conditions.push(eq(activityLogsTable.userId, userId));
     if (group)
@@ -73,6 +80,10 @@ router.get("/range", async (req, res) => {
       eq(activityLogsTable.companyId, companyId),
       gte(activityLogsTable.startedAt, from),
       lt(activityLogsTable.startedAt, to),
+      inArray(
+        activityLogsTable.deviceId,
+        visibleDeviceIdsSubquery(req, companyId),
+      ),
     ];
     if (deviceId) conditions.push(eq(activityLogsTable.deviceId, deviceId));
     if (group)
@@ -108,12 +119,14 @@ router.get("/timeline", async (req, res) => {
     const companyId = getCompanyId(req);
     const { deviceId } = req.query as Record<string, string | undefined>;
     const logs = await db.query.activityLogsTable.findMany({
-      where: deviceId
-        ? and(
-            eq(activityLogsTable.companyId, companyId),
-            eq(activityLogsTable.deviceId, deviceId),
-          )
-        : eq(activityLogsTable.companyId, companyId),
+      where: and(
+        eq(activityLogsTable.companyId, companyId),
+        deviceId ? eq(activityLogsTable.deviceId, deviceId) : undefined,
+        inArray(
+          activityLogsTable.deviceId,
+          visibleDeviceIdsSubquery(req, companyId),
+        ),
+      ),
       limit: 100,
       orderBy: [desc(activityLogsTable.startedAt)],
     });

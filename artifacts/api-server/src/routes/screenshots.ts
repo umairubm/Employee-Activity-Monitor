@@ -1,10 +1,11 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request } from "express";
 import { z } from "zod/v4";
 import { db, screenshotsTable, devicesTable } from "@workspace/db";
 import { and, count, desc, eq, gte, inArray, lt } from "drizzle-orm";
 import { getTemporaryLink, deleteFile } from "../lib/dropbox";
 import { requireRole } from "../middlewares/userAuth";
 import { getCompanyId } from "../middlewares/tenant";
+import { visibleDeviceIdsSubquery } from "../lib/deviceScope";
 
 const router: IRouter = Router();
 
@@ -44,6 +45,7 @@ function parseRange(
 
 /** Build the shared screenshot WHERE filters for list and count. */
 function buildFilters(opts: {
+  req: Request;
   companyId: string;
   deviceId?: string;
   group?: string;
@@ -69,6 +71,11 @@ function buildFilters(opts: {
             ),
         )
       : undefined,
+    // Restrict to devices visible under the caller's per-manager scope.
+    inArray(
+      screenshotsTable.deviceId,
+      visibleDeviceIdsSubquery(opts.req, opts.companyId),
+    ),
     opts.fromDate ? gte(screenshotsTable.capturedAt, opts.fromDate) : undefined,
     opts.toDate ? lt(screenshotsTable.capturedAt, opts.toDate) : undefined,
   ].filter(Boolean);
@@ -92,6 +99,7 @@ router.get("/", async (req, res) => {
     }
 
     const filters = buildFilters({
+      req,
       companyId,
       deviceId,
       group,
@@ -142,6 +150,7 @@ router.get("/count", async (req, res) => {
     }
 
     const filters = buildFilters({
+      req,
       companyId,
       deviceId,
       group,
@@ -182,6 +191,10 @@ router.patch(
           and(
             eq(screenshotsTable.id, String(req.params.id)),
             eq(screenshotsTable.companyId, companyId),
+            inArray(
+              screenshotsTable.deviceId,
+              visibleDeviceIdsSubquery(req, companyId),
+            ),
           ),
         )
         .returning({
@@ -210,6 +223,10 @@ router.delete("/:id", requireRole("company_admin", "manager"), async (req, res) 
         and(
           eq(screenshotsTable.id, String(req.params.id)),
           eq(screenshotsTable.companyId, companyId),
+          inArray(
+            screenshotsTable.deviceId,
+            visibleDeviceIdsSubquery(req, companyId),
+          ),
         ),
       )
       .returning({ dropboxPath: screenshotsTable.dropboxPath });
@@ -258,6 +275,10 @@ router.get("/:id/image", async (req, res) => {
         and(
           eq(screenshotsTable.id, String(req.params.id)),
           eq(screenshotsTable.companyId, companyId),
+          inArray(
+            screenshotsTable.deviceId,
+            visibleDeviceIdsSubquery(req, companyId),
+          ),
         ),
       );
     if (!shot) {
@@ -282,6 +303,10 @@ router.get("/:id/image", async (req, res) => {
         and(
           eq(screenshotsTable.id, String(req.params.id)),
           eq(screenshotsTable.companyId, companyId),
+          inArray(
+            screenshotsTable.deviceId,
+            visibleDeviceIdsSubquery(req, companyId),
+          ),
         ),
       );
     if (!staged?.pendingData) {

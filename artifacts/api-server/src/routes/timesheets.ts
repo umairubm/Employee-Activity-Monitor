@@ -12,6 +12,10 @@ import { and, asc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { coveredSecondsByKey, spanSecondsByKey, correctOverlap } from "../lib/activityTime";
 import { getCompanyId } from "../middlewares/tenant";
 import {
+  deviceScopeCondition,
+  visibleDeviceIdsSubquery,
+} from "../lib/deviceScope";
+import {
   MAX_RANGE_DAYS,
   applyShiftStartTime,
   eachDayUTC,
@@ -114,6 +118,7 @@ router.get("/", async (req, res) => {
         and(
           eq(devicesTable.companyId, companyId),
           group ? eq(devicesTable.deviceGroup, group) : undefined,
+          deviceScopeCondition(req),
         ),
       )
       .orderBy(asc(devicesTable.systemName));
@@ -157,6 +162,10 @@ router.get("/", async (req, res) => {
           eq(activityLogsTable.companyId, companyId),
           gte(activityLogsTable.startedAt, rangeStart),
           lt(activityLogsTable.startedAt, rangeEnd),
+          inArray(
+            activityLogsTable.deviceId,
+            visibleDeviceIdsSubquery(req, companyId),
+          ),
         ),
       )
       .groupBy(activityLogsTable.deviceId, dayBucket);
@@ -189,20 +198,19 @@ router.get("/", async (req, res) => {
     const keyExpr = sql`${activityLogsTable.deviceId}::text || '|' || to_char(${activityLogsTable.startedAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD')`;
     const groupExtraWhere = and(
       eq(activityLogsTable.companyId, companyId),
-      group
-        ? inArray(
-            activityLogsTable.deviceId,
-            db
-              .select({ id: devicesTable.id })
-              .from(devicesTable)
-              .where(
-                and(
-                  eq(devicesTable.companyId, companyId),
-                  eq(devicesTable.deviceGroup, group),
-                ),
-              ),
-          )
-        : undefined,
+      inArray(
+        activityLogsTable.deviceId,
+        db
+          .select({ id: devicesTable.id })
+          .from(devicesTable)
+          .where(
+            and(
+              eq(devicesTable.companyId, companyId),
+              group ? eq(devicesTable.deviceGroup, group) : undefined,
+              deviceScopeCondition(req),
+            ),
+          ),
+      ),
     );
     const coveredByKey = await coveredSecondsByKey({
       rangeStart,

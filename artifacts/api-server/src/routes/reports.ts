@@ -20,6 +20,10 @@ import {
 } from "drizzle-orm";
 import { coveredSecondsByKey, spanSecondsByKey, correctOverlap } from "../lib/activityTime";
 import { getCompanyId } from "../middlewares/tenant";
+import {
+  deviceScopeCondition,
+  visibleDeviceIdsSubquery,
+} from "../lib/deviceScope";
 
 const router: IRouter = Router();
 
@@ -87,37 +91,48 @@ router.get("/summary", async (req, res) => {
     rangeEnd.setDate(rangeEnd.getDate() + 1);
     const onlineSince = new Date(Date.now() - 5 * 60 * 1000);
 
-    const deviceIdsInGroup = group
-      ? db
-          .select({ id: devicesTable.id })
-          .from(devicesTable)
-          .where(
-            and(
-              eq(devicesTable.deviceGroup, group),
-              eq(devicesTable.companyId, companyId),
-            ),
-          )
-      : null;
+    // Device-id set visible to this caller within the current group filter and
+    // their per-manager scope. Used to restrict every device-derived count
+    // (screenshots/commands/activity) to devices the manager may see.
+    const visibleDeviceIds = db
+      .select({ id: devicesTable.id })
+      .from(devicesTable)
+      .where(
+        and(
+          eq(devicesTable.companyId, companyId),
+          group ? eq(devicesTable.deviceGroup, group) : undefined,
+          deviceScopeCondition(req),
+        ),
+      );
 
     const deviceGroupFilter = group
       ? eq(devicesTable.deviceGroup, group)
       : undefined;
-    const screenshotGroupFilter = deviceIdsInGroup
-      ? inArray(screenshotsTable.deviceId, deviceIdsInGroup)
-      : undefined;
-    const commandGroupFilter = deviceIdsInGroup
-      ? inArray(deviceCommandsTable.deviceId, deviceIdsInGroup)
-      : undefined;
-    const activityGroupFilter = deviceIdsInGroup
-      ? inArray(activityLogsTable.deviceId, deviceIdsInGroup)
-      : undefined;
+    const screenshotGroupFilter = inArray(
+      screenshotsTable.deviceId,
+      visibleDeviceIds,
+    );
+    const commandGroupFilter = inArray(
+      deviceCommandsTable.deviceId,
+      visibleDeviceIds,
+    );
+    const activityGroupFilter = inArray(
+      activityLogsTable.deviceId,
+      visibleDeviceIds,
+    );
 
     const [[devices], [online], [users], [shots], [pending]] =
       await Promise.all([
         db
           .select({ value: count() })
           .from(devicesTable)
-          .where(and(eq(devicesTable.companyId, companyId), deviceGroupFilter)),
+          .where(
+            and(
+              eq(devicesTable.companyId, companyId),
+              deviceGroupFilter,
+              deviceScopeCondition(req),
+            ),
+          ),
         db
           .select({ value: count() })
           .from(devicesTable)
@@ -126,6 +141,7 @@ router.get("/summary", async (req, res) => {
               eq(devicesTable.companyId, companyId),
               gt(devicesTable.lastSeenAt, onlineSince),
               deviceGroupFilter,
+              deviceScopeCondition(req),
             ),
           ),
         db
@@ -281,39 +297,34 @@ router.get("/leaderboard", async (req, res) => {
         eq(activityLogsTable.categoryId, appCategoriesTable.id),
       )
       .where(
-        group
-          ? and(
-              eq(activityLogsTable.companyId, companyId),
-              gte(activityLogsTable.startedAt, rangeStart),
-              lt(activityLogsTable.startedAt, rangeEnd),
-              eq(devicesTable.deviceGroup, group),
-            )
-          : and(
-              eq(activityLogsTable.companyId, companyId),
-              gte(activityLogsTable.startedAt, rangeStart),
-              lt(activityLogsTable.startedAt, rangeEnd),
-            ),
+        and(
+          eq(activityLogsTable.companyId, companyId),
+          gte(activityLogsTable.startedAt, rangeStart),
+          lt(activityLogsTable.startedAt, rangeEnd),
+          group ? eq(devicesTable.deviceGroup, group) : undefined,
+          deviceScopeCondition(req),
+        ),
       )
       .groupBy(activityLogsTable.deviceId, devicesTable.systemName);
 
-    // Correct each device's naive sums for overlapping duplicate-agent logs.
-    const leaderboardExtraWhere = group
-      ? and(
-          eq(activityLogsTable.companyId, companyId),
-          inArray(
-            activityLogsTable.deviceId,
-            db
-              .select({ id: devicesTable.id })
-              .from(devicesTable)
-              .where(
-                and(
-                  eq(devicesTable.deviceGroup, group),
-                  eq(devicesTable.companyId, companyId),
-                ),
-              ),
+    // Correct each device's naive sums for overlapping duplicate-agent logs,
+    // restricted to the devices visible under the current group + user scope.
+    const leaderboardExtraWhere = and(
+      eq(activityLogsTable.companyId, companyId),
+      inArray(
+        activityLogsTable.deviceId,
+        db
+          .select({ id: devicesTable.id })
+          .from(devicesTable)
+          .where(
+            and(
+              eq(devicesTable.companyId, companyId),
+              group ? eq(devicesTable.deviceGroup, group) : undefined,
+              deviceScopeCondition(req),
+            ),
           ),
-        )
-      : eq(activityLogsTable.companyId, companyId);
+      ),
+    );
     const coveredByDevice = await coveredSecondsByKey({
       rangeStart,
       rangeEnd,
@@ -394,7 +405,9 @@ router.get("/group-comparison", async (req, res) => {
           deviceCount: count(devicesTable.id),
         })
         .from(devicesTable)
-        .where(eq(devicesTable.companyId, companyId))
+        .where(
+          and(eq(devicesTable.companyId, companyId), deviceScopeCondition(req)),
+        )
         .groupBy(devicesTable.deviceGroup),
       // Per-device activity totals within the range (aggregated to groups in JS
       // after correcting each device for overlapping duplicate-agent logs).
@@ -416,14 +429,18 @@ router.get("/group-comparison", async (req, res) => {
             eq(activityLogsTable.companyId, companyId),
             gte(activityLogsTable.startedAt, rangeStart),
             lt(activityLogsTable.startedAt, rangeEnd),
+            deviceScopeCondition(req),
           ),
         )
         .groupBy(activityLogsTable.deviceId, devicesTable.deviceGroup),
     ]);
 
-    const groupComparisonExtraWhere = eq(
-      activityLogsTable.companyId,
-      companyId,
+    const groupComparisonExtraWhere = and(
+      eq(activityLogsTable.companyId, companyId),
+      inArray(
+        activityLogsTable.deviceId,
+        visibleDeviceIdsSubquery(req, companyId),
+      ),
     );
     const coveredByDevice = await coveredSecondsByKey({
       rangeStart,

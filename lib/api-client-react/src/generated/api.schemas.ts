@@ -194,6 +194,16 @@ export interface CompanyUser {
   email: string;
   role: CompanyUserRole;
   pagePermissions?: PagePermissions | null;
+  /**
+   * Device groups this manager may see; null = all groups.
+   * @nullable
+   */
+  allowedGroups?: string[] | null;
+  /**
+   * Regions this manager may see; null = all regions.
+   * @nullable
+   */
+  allowedRegions?: string[] | null;
   createdAt?: string;
 }
 
@@ -271,6 +281,10 @@ export interface CreateManagerRequest {
   password: string;
   role?: CreateManagerRequestRole;
   pagePermissions?: PagePermissions | null;
+  /** @nullable */
+  allowedGroups?: string[] | null;
+  /** @nullable */
+  allowedRegions?: string[] | null;
 }
 
 export type UpdateManagerRequestRole =
@@ -287,6 +301,10 @@ export interface UpdateManagerRequest {
   password?: string;
   role?: UpdateManagerRequestRole;
   pagePermissions?: PagePermissions | null;
+  /** @nullable */
+  allowedGroups?: string[] | null;
+  /** @nullable */
+  allowedRegions?: string[] | null;
 }
 
 export interface UpdateSecuritySettingsRequest {

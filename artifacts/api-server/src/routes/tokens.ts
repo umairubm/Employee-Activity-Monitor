@@ -1,21 +1,40 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request } from "express";
 import { z } from "zod/v4";
 import { db, enrollmentTokensTable, devicesTable } from "@workspace/db";
-import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, or, type SQL } from "drizzle-orm";
 import { generateEnrollmentToken } from "../lib/secrets";
 import { requireRole, type AuthedRequest } from "../middlewares/userAuth";
 import { getCompanyId } from "../middlewares/tenant";
+import { getUserScope, visibleDeviceIdsSubquery } from "../lib/deviceScope";
 
 const router: IRouter = Router();
 
 type EnrolledDeviceRef = { id: string; systemName: string };
 
 /**
+ * Visibility predicate for enrollment tokens under the caller's per-manager
+ * scope, or undefined when unrestricted. A token is visible when its
+ * deviceGroup is in allowedGroups OR its region is in allowedRegions — the same
+ * predicate the list uses, applied to mutations so out-of-scope tokens 404.
+ */
+function tokenScopeCondition(req: Request): SQL | undefined {
+  const { groups, regions } = getUserScope(req);
+  const parts: SQL[] = [];
+  if (groups) parts.push(inArray(enrollmentTokensTable.deviceGroup, groups));
+  if (regions) parts.push(inArray(enrollmentTokensTable.region, regions));
+  return parts.length > 0 ? or(...parts) : undefined;
+}
+
+/**
  * Fetch the device(s) that enrolled via the given token ids, grouped by token,
  * so every token response can carry an `enrolledDevices` array (matching the
- * OpenAPI contract). Returns an empty map when no ids are supplied.
+ * OpenAPI contract). Returns an empty map when no ids are supplied. Devices are
+ * tenant-scoped by companyId and further restricted to the caller's visible
+ * device set so hidden devices don't leak through token expansion.
  */
 async function enrolledDevicesByToken(
+  req: Request,
+  companyId: string,
   tokenIds: string[],
 ): Promise<Map<string, EnrolledDeviceRef[]>> {
   const byToken = new Map<string, EnrolledDeviceRef[]>();
@@ -28,7 +47,13 @@ async function enrolledDevicesByToken(
       enrolledViaTokenId: devicesTable.enrolledViaTokenId,
     })
     .from(devicesTable)
-    .where(inArray(devicesTable.enrolledViaTokenId, tokenIds))
+    .where(
+      and(
+        inArray(devicesTable.enrolledViaTokenId, tokenIds),
+        eq(devicesTable.companyId, companyId),
+        inArray(devicesTable.id, visibleDeviceIdsSubquery(req, companyId)),
+      ),
+    )
     .orderBy(desc(devicesTable.enrolledAt));
 
   for (const d of devices) {
@@ -45,13 +70,25 @@ async function enrolledDevicesByToken(
 router.get("/", async (req, res) => {
   try {
     const companyId = getCompanyId(req);
+    // A scoped manager only sees tokens matching their group/region scope: a
+    // token is visible when its deviceGroup is in allowedGroups OR its region
+    // is in allowedRegions. Unrestricted managers/admins see every token.
     const rows = await db
       .select()
       .from(enrollmentTokensTable)
-      .where(eq(enrollmentTokensTable.companyId, companyId))
+      .where(
+        and(
+          eq(enrollmentTokensTable.companyId, companyId),
+          tokenScopeCondition(req),
+        ),
+      )
       .orderBy(desc(enrollmentTokensTable.createdAt));
 
-    const byToken = await enrolledDevicesByToken(rows.map((r) => r.id));
+    const byToken = await enrolledDevicesByToken(
+      req,
+      companyId,
+      rows.map((r) => r.id),
+    );
 
     res.json(
       rows.map((row) => ({
@@ -124,9 +161,14 @@ router.get("/groups", async (req, res) => {
           ),
         ),
     ]);
+    // A group-scoped manager only sees their allowed groups.
+    const { groups: allowedGroups } = getUserScope(req);
+    const allowed = allowedGroups ? new Set(allowedGroups) : null;
     const groups = new Set<string>();
-    for (const r of fromDevices) if (r.group) groups.add(r.group);
-    for (const r of fromTokens) if (r.group) groups.add(r.group);
+    for (const r of fromDevices)
+      if (r.group && (!allowed || allowed.has(r.group))) groups.add(r.group);
+    for (const r of fromTokens)
+      if (r.group && (!allowed || allowed.has(r.group))) groups.add(r.group);
     res.json([...groups].sort((a, b) => a.localeCompare(b)));
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
@@ -149,8 +191,12 @@ router.get("/regions", async (req, res) => {
           isNotNull(enrollmentTokensTable.region),
         ),
       );
+    // A region-scoped manager only sees their allowed regions.
+    const { regions: allowedRegions } = getUserScope(req);
+    const allowed = allowedRegions ? new Set(allowedRegions) : null;
     const regions = new Set<string>();
-    for (const r of fromTokens) if (r.region) regions.add(r.region);
+    for (const r of fromTokens)
+      if (r.region && (!allowed || allowed.has(r.region))) regions.add(r.region);
     res.json([...regions].sort((a, b) => a.localeCompare(b)));
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
@@ -168,6 +214,25 @@ router.post("/", requireRole("company_admin", "manager"), async (req, res) => {
     const { label, maxUses, expiresDays, employeeId, deviceGroup, region } =
       parsed.data;
     const companyId = getCompanyId(req);
+
+    // A scoped manager may only mint tokens within their scope: the requested
+    // deviceGroup must be in allowedGroups OR the region must be in
+    // allowedRegions. A token with neither field in scope (including nulls) is
+    // rejected so it can't enroll devices they'd never see.
+    const { groups: allowedGroups, regions: allowedRegions } =
+      getUserScope(req);
+    if (allowedGroups || allowedRegions) {
+      const groupInScope =
+        !!allowedGroups && !!deviceGroup && allowedGroups.includes(deviceGroup);
+      const regionInScope =
+        !!allowedRegions && !!region && allowedRegions.includes(region);
+      if (!groupInScope && !regionInScope) {
+        res
+          .status(403)
+          .json({ error: "Token group/region is outside your scope" });
+        return;
+      }
+    }
 
     const [token] = await db
       .insert(enrollmentTokensTable)
@@ -233,6 +298,7 @@ router.patch(
           and(
             eq(enrollmentTokensTable.id, String(req.params.id)),
             eq(enrollmentTokensTable.companyId, companyId),
+            tokenScopeCondition(req),
           ),
         );
       if (!existing) {
@@ -257,7 +323,9 @@ router.patch(
       if (data.expiresAt !== undefined) updates.expiresAt = data.expiresAt;
 
       if (Object.keys(updates).length === 0) {
-        const byToken = await enrolledDevicesByToken([existing.id]);
+        const byToken = await enrolledDevicesByToken(req, companyId, [
+          existing.id,
+        ]);
         res.json({
           ...existing,
           enrolledDevices: byToken.get(existing.id) ?? [],
@@ -293,13 +361,17 @@ router.patch(
               and(
                 eq(devicesTable.enrolledViaTokenId, existing.id),
                 eq(devicesTable.companyId, companyId),
+                inArray(
+                  devicesTable.id,
+                  visibleDeviceIdsSubquery(req, companyId),
+                ),
               ),
             );
         }
         return row;
       });
 
-      const byToken = await enrolledDevicesByToken([updated.id]);
+      const byToken = await enrolledDevicesByToken(req, companyId, [updated.id]);
       res.json({ ...updated, enrolledDevices: byToken.get(updated.id) ?? [] });
     } catch (error) {
       res.status(500).json({ error: (error as Error).message });
@@ -321,6 +393,7 @@ router.post(
           and(
             eq(enrollmentTokensTable.id, String(req.params.id)),
             eq(enrollmentTokensTable.companyId, companyId),
+            tokenScopeCondition(req),
           ),
         )
         .returning();
@@ -329,7 +402,7 @@ router.post(
         res.status(404).json({ error: "Token not found" });
         return;
       }
-      const byToken = await enrolledDevicesByToken([updated.id]);
+      const byToken = await enrolledDevicesByToken(req, companyId, [updated.id]);
       res.json({ ...updated, enrolledDevices: byToken.get(updated.id) ?? [] });
     } catch (error) {
       res.status(500).json({ error: (error as Error).message });

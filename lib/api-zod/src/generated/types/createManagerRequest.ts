@@ -15,4 +15,8 @@ export interface CreateManagerRequest {
   password: string;
   role?: CreateManagerRequestRole;
   pagePermissions?: PagePermissions | null;
+  /** @nullable */
+  allowedGroups?: string[] | null;
+  /** @nullable */
+  allowedRegions?: string[] | null;
 }

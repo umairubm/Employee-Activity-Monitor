@@ -77,12 +77,22 @@ const pagePermissionsSchema = z
   .partialRecord(z.enum(PAGE_KEYS), z.enum(["view", "edit"]))
   .nullable();
 
+// Device groups / regions a manager is limited to. null or omitted = no
+// restriction (sees everything, like before). Free-form strings matching the
+// enrollment-token taxonomy.
+const scopeListSchema = z
+  .array(z.string().trim().min(1).max(100))
+  .max(200)
+  .nullable();
+
 const createSchema = z.object({
   username: z.string().min(1).max(100),
   email: z.email(),
   password: z.string().min(8).max(200),
   role: z.enum(MANAGEABLE_ROLES).default("manager"),
   pagePermissions: pagePermissionsSchema.optional(),
+  allowedGroups: scopeListSchema.optional(),
+  allowedRegions: scopeListSchema.optional(),
 });
 
 const updateSchema = z.object({
@@ -90,7 +100,15 @@ const updateSchema = z.object({
   password: z.string().min(8).max(200).optional(),
   role: z.enum(MANAGEABLE_ROLES).optional(),
   pagePermissions: pagePermissionsSchema.optional(),
+  allowedGroups: scopeListSchema.optional(),
+  allowedRegions: scopeListSchema.optional(),
 });
+
+/** Normalize a scope list: empty array behaves like null (no restriction). */
+function normalizeScopeList(list: string[] | null | undefined): string[] | null {
+  if (!list || list.length === 0) return null;
+  return [...new Set(list)];
+}
 
 /**
  * Turn a Zod validation failure into a human-readable message naming the
@@ -123,6 +141,8 @@ router.get("/", async (req, res) => {
         email: usersTable.email,
         role: usersTable.role,
         pagePermissions: usersTable.pagePermissions,
+        allowedGroups: usersTable.allowedGroups,
+        allowedRegions: usersTable.allowedRegions,
         createdAt: usersTable.createdAt,
       })
       .from(usersTable)
@@ -166,6 +186,8 @@ router.post("/", async (req, res) => {
           role: parsed.data.role,
           companyId,
           pagePermissions: parsed.data.pagePermissions ?? null,
+          allowedGroups: normalizeScopeList(parsed.data.allowedGroups),
+          allowedRegions: normalizeScopeList(parsed.data.allowedRegions),
         })
         .returning({
           id: usersTable.id,
@@ -173,6 +195,8 @@ router.post("/", async (req, res) => {
           email: usersTable.email,
           role: usersTable.role,
           pagePermissions: usersTable.pagePermissions,
+          allowedGroups: usersTable.allowedGroups,
+          allowedRegions: usersTable.allowedRegions,
           createdAt: usersTable.createdAt,
         });
       return created;
@@ -209,6 +233,12 @@ router.patch("/:id", async (req, res) => {
     if (parsed.data.role) updates.role = parsed.data.role;
     if ("pagePermissions" in parsed.data) {
       updates.pagePermissions = parsed.data.pagePermissions ?? null;
+    }
+    if ("allowedGroups" in parsed.data) {
+      updates.allowedGroups = normalizeScopeList(parsed.data.allowedGroups);
+    }
+    if ("allowedRegions" in parsed.data) {
+      updates.allowedRegions = normalizeScopeList(parsed.data.allowedRegions);
     }
     if (parsed.data.password) {
       await validatePasswordPolicy(companyId, parsed.data.password);
@@ -255,6 +285,8 @@ router.patch("/:id", async (req, res) => {
           email: usersTable.email,
           role: usersTable.role,
           pagePermissions: usersTable.pagePermissions,
+          allowedGroups: usersTable.allowedGroups,
+          allowedRegions: usersTable.allowedRegions,
           createdAt: usersTable.createdAt,
         });
       return row;

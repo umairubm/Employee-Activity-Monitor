@@ -14,4 +14,8 @@ export interface UpdateManagerRequest {
   password?: string;
   role?: UpdateManagerRequestRole;
   pagePermissions?: PagePermissions | null;
+  /** @nullable */
+  allowedGroups?: string[] | null;
+  /** @nullable */
+  allowedRegions?: string[] | null;
 }

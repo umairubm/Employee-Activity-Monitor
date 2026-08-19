@@ -7,6 +7,7 @@ import {
   boolean,
   jsonb,
   pgEnum,
+  index,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
@@ -74,7 +75,11 @@ export const devicesTable = pgTable("devices", {
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
-});
+}, (t) => [
+  // Manager group/region scoping filters every device query by these columns.
+  index("devices_company_group_idx").on(t.companyId, t.deviceGroup),
+  index("devices_enrolled_via_token_idx").on(t.enrolledViaTokenId),
+]);
 
 export const devicesRelations = relations(devicesTable, ({ one }) => ({
   assignedUser: one(usersTable, {

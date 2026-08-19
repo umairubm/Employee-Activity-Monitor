@@ -9,7 +9,7 @@ import {
   attendanceSettingsTable,
   type AttendanceSettings,
 } from "@workspace/db";
-import { and, asc, eq, gte, inArray, lt, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, lt, or, sql } from "drizzle-orm";
 import {
   coveredSecondsByKey,
   spanSecondsByKey,
@@ -18,6 +18,11 @@ import {
 } from "../lib/activityTime";
 import { requireRole } from "../middlewares/userAuth";
 import { getCompanyId } from "../middlewares/tenant";
+import {
+  deviceScopeCondition,
+  visibleDeviceIdsSubquery,
+  getUserScope,
+} from "../lib/deviceScope";
 import {
   DEFAULT_SETTINGS,
   MAX_RANGE_DAYS,
@@ -122,6 +127,28 @@ router.put(
   },
 );
 
+/**
+ * WHERE predicate restricting attendance-override rows to the caller's scope,
+ * or undefined when unrestricted. A scoped manager may see a per-device
+ * override only when the device is visible to them, and a group override only
+ * when the group is in their allowedGroups.
+ */
+function overrideScopeCondition(
+  req: Parameters<typeof getCompanyId>[0],
+  companyId: string,
+) {
+  const { groups, regions } = getUserScope(req);
+  if (!groups && !regions) return undefined;
+  const deviceVisible = inArray(
+    attendanceSettingsTable.deviceId,
+    visibleDeviceIdsSubquery(req, companyId),
+  );
+  const groupVisible = groups
+    ? inArray(attendanceSettingsTable.deviceGroup, groups)
+    : undefined;
+  return or(deviceVisible, groupVisible);
+}
+
 // GET /api/attendance/overrides - list all per-device and per-team overrides.
 router.get("/overrides", async (req, res) => {
   try {
@@ -152,6 +179,7 @@ router.get("/overrides", async (req, res) => {
         and(
           eq(attendanceSettingsTable.companyId, companyId),
           sql`${attendanceSettingsTable.deviceId} is not null or ${attendanceSettingsTable.deviceGroup} is not null`,
+          overrideScopeCondition(req, companyId),
         ),
       )
       .orderBy(asc(attendanceSettingsTable.createdAt));
@@ -227,6 +255,7 @@ router.put(
             and(
               eq(devicesTable.id, data.deviceId),
               eq(devicesTable.companyId, companyId),
+              deviceScopeCondition(req),
             ),
           );
         if (!device) {
@@ -244,6 +273,13 @@ router.put(
           })
           .returning();
         res.json({ ...row, scope: "device" as const });
+        return;
+      }
+
+      // A group-scoped manager may only manage overrides for allowed groups.
+      const { groups: allowedGroups } = getUserScope(req);
+      if (allowedGroups && !allowedGroups.includes(data.deviceGroup)) {
+        res.status(403).json({ error: "Group is outside your scope" });
         return;
       }
 
@@ -285,6 +321,7 @@ router.delete(
             eq(attendanceSettingsTable.companyId, companyId),
             // Guard the single global default row from deletion via this route.
             sql`(${attendanceSettingsTable.deviceId} is not null or ${attendanceSettingsTable.deviceGroup} is not null)`,
+            overrideScopeCondition(req, companyId),
           ),
         )
         .returning({ id: attendanceSettingsTable.id });
@@ -368,6 +405,7 @@ router.get("/range", async (req, res) => {
         and(
           eq(devicesTable.companyId, companyId),
           group ? eq(devicesTable.deviceGroup, group) : undefined,
+          deviceScopeCondition(req),
         ),
       )
       .orderBy(asc(devicesTable.systemName));
@@ -385,20 +423,19 @@ router.get("/range", async (req, res) => {
     const keyExpr = sql`${activityLogsTable.deviceId}::text || '|' || to_char(${activityLogsTable.startedAt} AT TIME ZONE ${tz}, 'YYYY-MM-DD')`;
     const keyExtraWhere = and(
       eq(activityLogsTable.companyId, companyId),
-      group
-        ? inArray(
-            activityLogsTable.deviceId,
-            db
-              .select({ id: devicesTable.id })
-              .from(devicesTable)
-              .where(
-                and(
-                  eq(devicesTable.companyId, companyId),
-                  eq(devicesTable.deviceGroup, group),
-                ),
-              ),
-          )
-        : undefined,
+      inArray(
+        activityLogsTable.deviceId,
+        db
+          .select({ id: devicesTable.id })
+          .from(devicesTable)
+          .where(
+            and(
+              eq(devicesTable.companyId, companyId),
+              group ? eq(devicesTable.deviceGroup, group) : undefined,
+              deviceScopeCondition(req),
+            ),
+          ),
+      ),
     );
     const spanByKey = await spanSecondsByKey({
       rangeStart,
@@ -621,6 +658,7 @@ router.get("/", async (req, res) => {
         and(
           eq(devicesTable.companyId, companyId),
           group ? eq(devicesTable.deviceGroup, group) : undefined,
+          deviceScopeCondition(req),
         ),
       )
       .orderBy(asc(devicesTable.systemName));
@@ -652,6 +690,10 @@ router.get("/", async (req, res) => {
           eq(activityLogsTable.companyId, companyId),
           gte(activityLogsTable.startedAt, dayStart),
           lt(activityLogsTable.startedAt, dayEnd),
+          inArray(
+            activityLogsTable.deviceId,
+            visibleDeviceIdsSubquery(req, companyId),
+          ),
         ),
       )
       .groupBy(activityLogsTable.deviceId);
@@ -662,20 +704,19 @@ router.get("/", async (req, res) => {
     // merged) for this single day.
     const dayExtraWhere = and(
       eq(activityLogsTable.companyId, companyId),
-      group
-        ? inArray(
-            activityLogsTable.deviceId,
-            db
-              .select({ id: devicesTable.id })
-              .from(devicesTable)
-              .where(
-                and(
-                  eq(devicesTable.companyId, companyId),
-                  eq(devicesTable.deviceGroup, group),
-                ),
-              ),
-          )
-        : undefined,
+      inArray(
+        activityLogsTable.deviceId,
+        db
+          .select({ id: devicesTable.id })
+          .from(devicesTable)
+          .where(
+            and(
+              eq(devicesTable.companyId, companyId),
+              group ? eq(devicesTable.deviceGroup, group) : undefined,
+              deviceScopeCondition(req),
+            ),
+          ),
+      ),
     );
     const coveredByDevice = await coveredSecondsByKey({
       rangeStart: dayStart,

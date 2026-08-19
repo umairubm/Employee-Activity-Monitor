@@ -18,6 +18,11 @@ import {
   createAgentReleaseUpload,
   getAgentReleaseDownloadUrl,
 } from "../lib/agentReleaseStorage";
+import {
+  deviceScopeCondition,
+  visibleDeviceIdsSubquery,
+  getUserScope,
+} from "../lib/deviceScope";
 
 const groupNameSchema = z
   .string()
@@ -60,7 +65,7 @@ router.get("/", async (req, res) => {
         ),
       )
       .leftJoin(usersTable, eq(devicesTable.assignedUserId, usersTable.id))
-      .where(eq(devicesTable.companyId, companyId))
+      .where(and(eq(devicesTable.companyId, companyId), deviceScopeCondition(req)))
       .orderBy(desc(devicesTable.lastSeenAt));
 
     const counts = await db
@@ -73,6 +78,10 @@ router.get("/", async (req, res) => {
         and(
           eq(deviceAlertsTable.companyId, companyId),
           isNull(deviceAlertsTable.acknowledgedAt),
+          inArray(
+            deviceAlertsTable.deviceId,
+            visibleDeviceIdsSubquery(req, companyId),
+          ),
         ),
       )
       .groupBy(deviceAlertsTable.deviceId);
@@ -111,6 +120,7 @@ router.get("/:id", async (req, res) => {
         and(
           eq(devicesTable.id, String(req.params.id)),
           eq(devicesTable.companyId, companyId),
+          deviceScopeCondition(req),
         ),
       );
     if (!row) {
@@ -166,6 +176,10 @@ router.get("/:id/commands", async (req, res) => {
         and(
           eq(deviceCommandsTable.deviceId, String(req.params.id)),
           eq(deviceCommandsTable.companyId, companyId),
+          inArray(
+            deviceCommandsTable.deviceId,
+            visibleDeviceIdsSubquery(req, companyId),
+          ),
         ),
       )
       .orderBy(desc(deviceCommandsTable.issuedAt))
@@ -220,6 +234,10 @@ router.get("/:id/alerts", async (req, res) => {
         and(
           eq(deviceAlertsTable.deviceId, String(req.params.id)),
           eq(deviceAlertsTable.companyId, companyId),
+          inArray(
+            deviceAlertsTable.deviceId,
+            visibleDeviceIdsSubquery(req, companyId),
+          ),
         ),
       )
       .orderBy(desc(deviceAlertsTable.detectedAt))
@@ -250,6 +268,10 @@ router.patch(
             eq(deviceAlertsTable.deviceId, String(req.params.id)),
             eq(deviceAlertsTable.companyId, companyId),
             isNull(deviceAlertsTable.acknowledgedAt),
+            inArray(
+              deviceAlertsTable.deviceId,
+              visibleDeviceIdsSubquery(req, companyId),
+            ),
           ),
         )
         .returning({ id: deviceAlertsTable.id });
@@ -277,6 +299,10 @@ router.patch(
             eq(deviceAlertsTable.deviceId, String(req.params.id)),
             eq(deviceAlertsTable.companyId, companyId),
             isNull(deviceAlertsTable.acknowledgedAt),
+            inArray(
+              deviceAlertsTable.deviceId,
+              visibleDeviceIdsSubquery(req, companyId),
+            ),
           ),
         )
         .returning();
@@ -293,6 +319,10 @@ router.patch(
             eq(deviceAlertsTable.id, String(req.params.alertId)),
             eq(deviceAlertsTable.deviceId, String(req.params.id)),
             eq(deviceAlertsTable.companyId, companyId),
+            inArray(
+              deviceAlertsTable.deviceId,
+              visibleDeviceIdsSubquery(req, companyId),
+            ),
           ),
         );
       if (!existing) {
@@ -506,8 +536,12 @@ router.post(
             ? and(
                 eq(devicesTable.companyId, companyId),
                 eq(devicesTable.id, data.deviceId!),
+                deviceScopeCondition(req),
               )
-            : eq(devicesTable.companyId, companyId),
+            : and(
+                eq(devicesTable.companyId, companyId),
+                deviceScopeCondition(req),
+              ),
         )
         .orderBy(asc(devicesTable.createdAt));
 
@@ -596,6 +630,7 @@ router.post(
           and(
             eq(devicesTable.id, String(req.params.id)),
             eq(devicesTable.companyId, companyId),
+            deviceScopeCondition(req),
           ),
         );
       if (!device) {
@@ -691,6 +726,10 @@ router.patch(
             eq(deviceCommandsTable.deviceId, deviceId),
             eq(deviceCommandsTable.companyId, companyId),
             eq(deviceCommandsTable.status, "pending"),
+            inArray(
+              deviceCommandsTable.deviceId,
+              visibleDeviceIdsSubquery(req, companyId),
+            ),
           ),
         )
         .returning();
@@ -710,6 +749,10 @@ router.patch(
             eq(deviceCommandsTable.id, commandId),
             eq(deviceCommandsTable.deviceId, deviceId),
             eq(deviceCommandsTable.companyId, companyId),
+            inArray(
+              deviceCommandsTable.deviceId,
+              visibleDeviceIdsSubquery(req, companyId),
+            ),
           ),
         );
 
@@ -751,10 +794,13 @@ router.patch("/config", requireRole("company_admin", "manager"), async (req, res
       return;
     }
     const companyId = getCompanyId(req);
+    // A scoped manager may only reconfigure the devices visible to them.
     const updated = await db
       .update(devicesTable)
       .set({ ...parsed.data, updatedAt: new Date() })
-      .where(eq(devicesTable.companyId, companyId))
+      .where(
+        and(eq(devicesTable.companyId, companyId), deviceScopeCondition(req)),
+      )
       .returning({ id: devicesTable.id });
     res.json({ updated: updated.length });
   } catch (error) {
@@ -781,6 +827,7 @@ router.patch(
           and(
             eq(devicesTable.id, String(req.params.id)),
             eq(devicesTable.companyId, companyId),
+            deviceScopeCondition(req),
           ),
         )
         .returning(publicDeviceColumns);
@@ -816,6 +863,7 @@ router.patch(
           and(
             eq(devicesTable.id, String(req.params.id)),
             eq(devicesTable.companyId, companyId),
+            deviceScopeCondition(req),
           ),
         )
         .returning(publicDeviceColumns);
@@ -851,6 +899,12 @@ router.post(
       }
       const companyId = getCompanyId(req);
       const { from, to } = parsed.data;
+      // A group-scoped manager may only rename a group within their scope.
+      const { groups: allowedGroups } = getUserScope(req);
+      if (allowedGroups && !allowedGroups.includes(from)) {
+        res.status(403).json({ error: "Group is outside your scope" });
+        return;
+      }
       const result = await db.transaction(async (tx) => {
         const devices = await tx
           .update(devicesTable)

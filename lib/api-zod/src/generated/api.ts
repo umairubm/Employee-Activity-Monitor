@@ -2189,6 +2189,14 @@ export const GetCompanyResponse = zod
               zod.null(),
             ])
             .optional(),
+          allowedGroups: zod
+            .array(zod.string())
+            .nullish()
+            .describe("Device groups this manager may see; null = all groups."),
+          allowedRegions: zod
+            .array(zod.string())
+            .nullish()
+            .describe("Regions this manager may see; null = all regions."),
           createdAt: zod.coerce.date().optional(),
         }),
       ),
@@ -2419,6 +2427,14 @@ export const ListManagersResponseItem = zod.object({
       zod.null(),
     ])
     .optional(),
+  allowedGroups: zod
+    .array(zod.string())
+    .nullish()
+    .describe("Device groups this manager may see; null = all groups."),
+  allowedRegions: zod
+    .array(zod.string())
+    .nullish()
+    .describe("Regions this manager may see; null = all regions."),
   createdAt: zod.coerce.date().optional(),
 });
 export const ListManagersResponse = zod.array(ListManagersResponseItem);
@@ -2443,6 +2459,8 @@ export const CreateManagerBody = zod.object({
       zod.null(),
     ])
     .optional(),
+  allowedGroups: zod.array(zod.string()).nullish(),
+  allowedRegions: zod.array(zod.string()).nullish(),
 });
 
 /**
@@ -2468,6 +2486,8 @@ export const UpdateManagerBody = zod.object({
       zod.null(),
     ])
     .optional(),
+  allowedGroups: zod.array(zod.string()).nullish(),
+  allowedRegions: zod.array(zod.string()).nullish(),
 });
 
 export const UpdateManagerResponse = zod.object({
@@ -2485,6 +2505,14 @@ export const UpdateManagerResponse = zod.object({
       zod.null(),
     ])
     .optional(),
+  allowedGroups: zod
+    .array(zod.string())
+    .nullish()
+    .describe("Device groups this manager may see; null = all groups."),
+  allowedRegions: zod
+    .array(zod.string())
+    .nullish()
+    .describe("Regions this manager may see; null = all regions."),
   createdAt: zod.coerce.date().optional(),
 });
 
