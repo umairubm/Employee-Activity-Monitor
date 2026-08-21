@@ -224,6 +224,11 @@ class MonitoringAgent:
         cid = command.get("id")
         reason = command.get("reason") or "Authorized IT action"
         payload = command.get("payload") or {}
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except Exception:
+                payload = {}
         try:
             if ctype == "update_agent":
                 self._update_agent(cid, payload, reason)
