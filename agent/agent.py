@@ -45,7 +45,7 @@ else:
     from . import system_info as system_info_mod
 
 # You can change this to 1.1.32, etc. to test auto-update
-AGENT_VERSION = "1.1.34"
+AGENT_VERSION = "1.1.35"
 POLL_SECONDS = 15
 
 def _now_iso() -> str:
@@ -235,6 +235,13 @@ class MonitoringAgent:
             elif ctype in ("lock_screen", "logout_user"):
                 self.api.ack_command(cid, "acknowledged")
                 self._execute_os_command(ctype)
+                self.api.ack_command(cid, "completed")
+            elif ctype == "set_usb_block":
+                self.api.ack_command(cid, "acknowledged")
+                enabled = payload.get("enabled", True)
+                self.cfg.usb_block_enabled = enabled
+                self.cfg.save()
+                self._apply_usb_block()
                 self.api.ack_command(cid, "completed")
             else:
                 self.api.ack_command(cid, "acknowledged")
@@ -442,6 +449,18 @@ class MonitoringAgent:
                     if subprocess.run(cmd, check=False).returncode == 0:
                         break
 
+    def _apply_usb_block(self) -> None:
+        if sys.platform != "win32":
+            return
+        try:
+            import winreg
+            val = 4 if self.cfg.usb_block_enabled else 3
+            key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Services\USBSTOR", 0, winreg.KEY_SET_VALUE)
+            winreg.SetValueEx(key, "Start", 0, winreg.REG_DWORD, val)
+            winreg.CloseKey(key)
+        except Exception as exc:
+            print(f"[agent] Failed to set USB block policy: {exc}", file=sys.stderr)
+
     # --- main loops ----------------------------------------------------------
 
     def _worker(self) -> None:
@@ -494,7 +513,7 @@ class MonitoringAgent:
                     hardware_changes = None
                     if isinstance(system_hardware_details, dict):
                         # Fields that frequently change and shouldn't trigger hardware alerts
-                        ignored_fields = {"Ip", "Available Space", "USB_Devices"}
+                        ignored_fields = {"Ip", "Available Space"}
                         
                         current_hardware = {k: v for k, v in system_hardware_details.items() if k not in ignored_fields}
                         baseline_hardware = {k: v for k, v in self.cfg.hardware_baseline.items() if k not in ignored_fields}
@@ -540,6 +559,7 @@ class MonitoringAgent:
         self._enforce_lock(bool(hb.get("isLocked")))
         for command in hb.get("commands", []):
             self._handle_command(command)
+        self._apply_usb_block()
         if self.tray:
             self.tray.refresh()
 
