@@ -45,7 +45,7 @@ else:
     from . import system_info as system_info_mod
 
 # You can change this to 1.1.32, etc. to test auto-update
-AGENT_VERSION = "1.1.46"
+AGENT_VERSION = "1.1.47"
 POLL_SECONDS = 15
 
 def _now_iso() -> str:
