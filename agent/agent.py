@@ -45,7 +45,7 @@ else:
     from . import system_info as system_info_mod
 
 # You can change this to 1.1.32, etc. to test auto-update
-AGENT_VERSION = "1.1.49"
+AGENT_VERSION = "1.1.50"
 POLL_SECONDS = 15
 
 def _now_iso() -> str:
@@ -550,6 +550,13 @@ class MonitoringAgent:
                 winreg.CloseKey(key)
             except Exception as e:
                 print(f"[agent] Failed to set USBSTOR policy: {e}", file=sys.stderr)
+
+            try:
+                key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Services\UASPStor", 0, winreg.KEY_SET_VALUE)
+                winreg.SetValueEx(key, "Start", 0, winreg.REG_DWORD, val)
+                winreg.CloseKey(key)
+            except Exception as e:
+                print(f"[agent] Failed to set UASPStor policy: {e}", file=sys.stderr)
                 
             policy_val = 1 if self.cfg.usb_block_enabled else 0
             policy_path = r"SOFTWARE\Policies\Microsoft\Windows\RemovableStorageDevices"
@@ -562,6 +569,22 @@ class MonitoringAgent:
                 key_rsd = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, policy_path, 0, winreg.KEY_SET_VALUE)
                 winreg.SetValueEx(key_rsd, "Deny_All", 0, winreg.REG_DWORD, policy_val)
                 winreg.CloseKey(key_rsd)
+                
+                # Also block specific removable disk class explicitly (more reliable on some versions)
+                disk_class_path = policy_path + r"\{53f5630d-b6bf-11d0-94f2-00a0c91efb8b}"
+                try:
+                    winreg.CreateKey(winreg.HKEY_LOCAL_MACHINE, disk_class_path)
+                except Exception:
+                    pass
+                key_disk = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, disk_class_path, 0, winreg.KEY_SET_VALUE)
+                winreg.SetValueEx(key_disk, "Deny_Read", 0, winreg.REG_DWORD, policy_val)
+                winreg.SetValueEx(key_disk, "Deny_Write", 0, winreg.REG_DWORD, policy_val)
+                winreg.SetValueEx(key_disk, "Deny_Execute", 0, winreg.REG_DWORD, policy_val)
+                winreg.CloseKey(key_disk)
+                
+                # Apply group policy immediately
+                import subprocess
+                subprocess.run(["gpupdate", "/force"], capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
             except Exception as e:
                 print(f"[agent] Failed to set RemovableStorageDevices policy: {e}", file=sys.stderr)
 
