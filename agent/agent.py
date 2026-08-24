@@ -45,7 +45,7 @@ else:
     from . import system_info as system_info_mod
 
 # You can change this to 1.1.32, etc. to test auto-update
-AGENT_VERSION = "1.1.44"
+AGENT_VERSION = "1.1.45"
 POLL_SECONDS = 15
 
 def _now_iso() -> str:
@@ -317,27 +317,49 @@ class MonitoringAgent:
 
             ps1_path = os.path.join(tempfile.gettempdir(), "svctcom_update.ps1")
             log_path = os.path.join(tempfile.gettempdir(), "svctcom_update.log")
-
             pid = os.getpid()
+            exe_name = "windowstelementoryservice.exe"
 
-            # Use PowerShell with -WindowStyle Hidden — guaranteed zero visible UI.
-            # A cmd.exe batch file can appear on screen and get paused by QuickEdit mode
-            # if the user accidentally clicks it; PowerShell hidden windows cannot.
+            # Escape backslashes for embedding in PS1 string literals
+            log_ps = log_path.replace("\\", "\\\\")
+            tmp_ps = temp_path.replace("\\", "\\\\")
+
             ps1_script = (
-                f"$log = '{log_path}'\r\n"
-                f"Add-Content $log '==== update start ' + (Get-Date).ToString()\r\n"
-                # Wait for the agent process to fully exit so its file lock is released.
+                "$ErrorActionPreference = 'SilentlyContinue'\r\n"
+                f"$log = \"{log_ps}\"\r\n"
+                f"Add-Content -Path $log -Value (\"==== ps1 start \" + (Get-Date))\r\n"
+                # Wait for agent process to exit fully
                 f"while (Get-Process -Id {pid} -ErrorAction SilentlyContinue) {{ Start-Sleep -Seconds 1 }}\r\n"
-                f"$p = Start-Process -FilePath '{temp_path}' "
+                f"Add-Content -Path $log -Value 'agent process gone, running installer'\r\n"
+                # Run installer silently
+                f"$p = Start-Process -FilePath \"{tmp_ps}\" "
                 f"-ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /UPGRADE' "
                 f"-Wait -PassThru\r\n"
-                f"Add-Content $log \"installer exit: $($p.ExitCode)\"\r\n"
-                # Find and restart the agent after install (silent installs skip [Run] skipifsilent entries).
-                f"$exe = Get-ChildItem -Path \"$env:ProgramFiles\" -Filter windowstelementoryservice.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1\r\n"
-                f"if (-not $exe) {{ $exe = Get-ChildItem -Path \"$env:LOCALAPPDATA\\Programs\" -Filter windowstelementoryservice.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 }}\r\n"
-                f"if ($exe) {{ Add-Content $log \"restarting: $($exe.FullName)\"; Start-Process $exe.FullName }}\r\n"
-                f"else {{ Add-Content $log 'agent exe not found after install' }}\r\n"
-                f"Remove-Item $PSCommandPath -Force -ErrorAction SilentlyContinue\r\n"
+                f"Add-Content -Path $log -Value (\"installer exit: \" + $p.ExitCode)\r\n"
+                # Find agent exe — check all known install locations
+                "$exe = $null\r\n"
+                f"$candidates = @(\r\n"
+                f"  \"$env:ProgramFiles\\SVCTCOM\\{exe_name}\",\r\n"
+                f"  \"$env:ProgramFiles\\SVCTCOM\\{exe_name}\",\r\n"
+                f"  \"${env:ProgramFiles(x86)}\\SVCTCOM\\{exe_name}\",\r\n"
+                f"  \"$env:LOCALAPPDATA\\Programs\\SVCTCOM\\{exe_name}\"\r\n"
+                ")\r\n"
+                "foreach ($c in $candidates) { if (Test-Path $c) { $exe = $c; break } }\r\n"
+                "if (-not $exe) {\r\n"
+                f"  $found = Get-ChildItem -Path $env:ProgramFiles -Filter {exe_name} -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1\r\n"
+                "  if ($found) { $exe = $found.FullName }\r\n"
+                "}\r\n"
+                "if (-not $exe) {\r\n"
+                f"  $found = Get-ChildItem -Path \"$env:LOCALAPPDATA\\Programs\" -Filter {exe_name} -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1\r\n"
+                "  if ($found) { $exe = $found.FullName }\r\n"
+                "}\r\n"
+                "if ($exe) {\r\n"
+                "  Add-Content -Path $log -Value (\"restarting: \" + $exe)\r\n"
+                "  Start-Process -FilePath $exe\r\n"
+                "} else {\r\n"
+                "  Add-Content -Path $log -Value 'ERROR: agent exe not found'\r\n"
+                "}\r\n"
+                "Remove-Item -Path $PSCommandPath -Force -ErrorAction SilentlyContinue\r\n"
             )
 
             with open(ps1_path, "w", encoding="utf-8") as f:
@@ -349,19 +371,27 @@ class MonitoringAgent:
                 if k.startswith("_PYI") or k.startswith("_MEI"):
                     env.pop(k, None)
 
+            # Use absolute path to powershell so it works even if PATH is stripped
+            ps_exe = os.path.join(
+                os.environ.get("SystemRoot", r"C:\Windows"),
+                r"System32\WindowsPowerShell\v1.0\powershell.exe",
+            )
+            if not os.path.exists(ps_exe):
+                ps_exe = "powershell"
+
             subprocess.Popen(
                 [
-                    "powershell",
+                    ps_exe,
                     "-WindowStyle", "Hidden",
                     "-NonInteractive",
                     "-ExecutionPolicy", "Bypass",
                     "-File", ps1_path,
                 ],
                 creationflags=subprocess.DETACHED_PROCESS,
-                close_fds=True,
                 env=env,
             )
             os._exit(0)
+
 
         else:
             subprocess.Popen(
