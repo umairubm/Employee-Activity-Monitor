@@ -488,11 +488,29 @@ class MonitoringAgent:
         try:
             import winreg
             val = 4 if self.cfg.usb_block_enabled else 3
-            key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Services\USBSTOR", 0, winreg.KEY_SET_VALUE)
-            winreg.SetValueEx(key, "Start", 0, winreg.REG_DWORD, val)
-            winreg.CloseKey(key)
+            try:
+                key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Services\USBSTOR", 0, winreg.KEY_SET_VALUE)
+                winreg.SetValueEx(key, "Start", 0, winreg.REG_DWORD, val)
+                winreg.CloseKey(key)
+            except Exception as e:
+                print(f"[agent] Failed to set USBSTOR policy: {e}", file=sys.stderr)
+                
+            policy_val = 1 if self.cfg.usb_block_enabled else 0
+            policy_path = r"SOFTWARE\Policies\Microsoft\Windows\RemovableStorageDevices"
+            
+            try:
+                try:
+                    winreg.CreateKey(winreg.HKEY_LOCAL_MACHINE, policy_path)
+                except Exception:
+                    pass
+                key_rsd = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, policy_path, 0, winreg.KEY_SET_VALUE)
+                winreg.SetValueEx(key_rsd, "Deny_All", 0, winreg.REG_DWORD, policy_val)
+                winreg.CloseKey(key_rsd)
+            except Exception as e:
+                print(f"[agent] Failed to set RemovableStorageDevices policy: {e}", file=sys.stderr)
+
         except Exception as exc:
-            print(f"[agent] Failed to set USB block policy: {exc}", file=sys.stderr)
+            print(f"[agent] Failed to apply USB block: {exc}", file=sys.stderr)
 
     # --- main loops ----------------------------------------------------------
 
