@@ -45,7 +45,7 @@ else:
     from . import system_info as system_info_mod
 
 # You can change this to 1.1.32, etc. to test auto-update
-AGENT_VERSION = "1.1.35"
+AGENT_VERSION = "1.1.36"
 POLL_SECONDS = 15
 
 def _now_iso() -> str:
@@ -228,6 +228,14 @@ class MonitoringAgent:
             try:
                 payload = json.loads(payload)
             except Exception:
+                pass
+        
+        if not isinstance(payload, dict):
+            if isinstance(payload, bool):
+                payload = {"enabled": payload}
+            elif isinstance(payload, str) and payload.lower() in ("true", "false"):
+                payload = {"enabled": payload.lower() == "true"}
+            else:
                 payload = {}
         try:
             if ctype == "update_agent":
@@ -237,7 +245,7 @@ class MonitoringAgent:
                 self._enforced_lock = False
                 self._locked_until = None
                 self.api.ack_command(cid, "completed")
-            elif ctype in ("lock_screen", "logout_user"):
+            elif ctype in ("lock_screen", "logout_user", "restart", "shutdown"):
                 self.api.ack_command(cid, "acknowledged")
                 self._execute_os_command(ctype)
                 self.api.ack_command(cid, "completed")
@@ -453,6 +461,26 @@ class MonitoringAgent:
                 ):
                     if subprocess.run(cmd, check=False).returncode == 0:
                         break
+        elif ctype == "restart":
+            if sys.platform.startswith("win"):
+                subprocess.run(["shutdown", "/r", "/t", "0"], check=False)
+            elif sys.platform == "darwin":
+                subprocess.run(
+                    ["osascript", "-e", 'tell app "System Events" to restart'],
+                    check=False,
+                )
+            else:
+                subprocess.run(["reboot"], check=False)
+        elif ctype == "shutdown":
+            if sys.platform.startswith("win"):
+                subprocess.run(["shutdown", "/s", "/t", "0"], check=False)
+            elif sys.platform == "darwin":
+                subprocess.run(
+                    ["osascript", "-e", 'tell app "System Events" to shut down'],
+                    check=False,
+                )
+            else:
+                subprocess.run(["shutdown", "-h", "now"], check=False)
 
     def _apply_usb_block(self) -> None:
         if sys.platform != "win32":

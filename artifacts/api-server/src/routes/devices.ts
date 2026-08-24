@@ -99,7 +99,7 @@ router.get("/:id/commands", async (req, res) => {
 });
 
 const issueCommandSchema = z.object({
-  commandType: z.enum(["lock_screen", "unlock_screen", "logout_user", "update_agent", "set_usb_block"]),
+  commandType: z.enum(["lock_screen", "unlock_screen", "logout_user", "update_agent", "set_usb_block", "restart", "shutdown"]),
   reason: z.string().max(500).optional(),
   payload: z.any().optional(),
 });

@@ -19,6 +19,8 @@ export const commandTypeEnum = pgEnum("command_type", [
   "unlock_screen",
   "update_agent",
   "set_usb_block",
+  "restart",
+  "shutdown",
 ]);
 
 export const commandStatusEnum = pgEnum("command_status", [
