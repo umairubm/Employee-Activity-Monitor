@@ -45,7 +45,7 @@ else:
     from . import system_info as system_info_mod
 
 # You can change this to 1.1.32, etc. to test auto-update
-AGENT_VERSION = "1.1.45"
+AGENT_VERSION = "1.1.46"
 POLL_SECONDS = 15
 
 def _now_iso() -> str:
@@ -379,18 +379,32 @@ class MonitoringAgent:
             if not os.path.exists(ps_exe):
                 ps_exe = "powershell"
 
+            # Use wscript.exe as a reliable "no window" launcher.
+            # Direct subprocess.Popen + DETACHED_PROCESS is unreliable inside a
+            # PyInstaller exe because the child inherits broken console handles.
+            # wscript.exe with window-style 0 is guaranteed to be fully hidden.
+            wscript = os.path.join(
+                os.environ.get("SystemRoot", r"C:\Windows"),
+                r"System32\wscript.exe",
+            )
+            vbs_path = os.path.join(tempfile.gettempdir(), "svctcom_update.vbs")
+            vbs_content = (
+                'Set sh = CreateObject("WScript.Shell")\r\n'
+                f'sh.Run "powershell.exe -ExecutionPolicy Bypass -NonInteractive -WindowStyle Hidden -File ""{ps1_path}""", 0, False\r\n'
+            )
+            with open(vbs_path, "w", encoding="utf-8") as vf:
+                vf.write(vbs_content)
+
             subprocess.Popen(
-                [
-                    ps_exe,
-                    "-WindowStyle", "Hidden",
-                    "-NonInteractive",
-                    "-ExecutionPolicy", "Bypass",
-                    "-File", ps1_path,
-                ],
-                creationflags=subprocess.DETACHED_PROCESS,
+                [wscript, "//nologo", vbs_path],
+                creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NO_WINDOW,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
                 env=env,
             )
             os._exit(0)
+
 
 
         else:
