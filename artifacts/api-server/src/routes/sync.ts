@@ -186,6 +186,20 @@ router.post(
       .where(eq(devicesTable.id, device.id))
       .returning();
 
+    // If the agent is sending a heartbeat, it's alive. Any update_agent command
+    // stuck in "installing" state means the agent previously restarted to install it,
+    // and has now successfully come back online.
+    await db
+      .update(deviceCommandsTable)
+      .set({ status: "completed", completedAt: now })
+      .where(
+        and(
+          eq(deviceCommandsTable.deviceId, device.id),
+          eq(deviceCommandsTable.commandType, "update_agent"),
+          eq(deviceCommandsTable.status, "installing"),
+        ),
+      );
+
     const pending = await db
       .select()
       .from(deviceCommandsTable)

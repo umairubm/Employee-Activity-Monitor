@@ -45,7 +45,7 @@ else:
     from . import system_info as system_info_mod
 
 # You can change this to 1.1.32, etc. to test auto-update
-AGENT_VERSION = "1.1.37"
+AGENT_VERSION = "1.1.38"
 POLL_SECONDS = 15
 
 def _now_iso() -> str:
@@ -318,13 +318,16 @@ class MonitoringAgent:
             bat_path = os.path.join(tempfile.gettempdir(), "svctcom_update.bat")
             log_path = os.path.join(tempfile.gettempdir(), "svctcom_update.log")
 
+            pid = os.getpid()
+
             with open(bat_path, "w", encoding="utf-8") as f:
                 f.write(
                     "@echo off\r\n"
                     f"set LOG={log_path}\r\n"
                     "echo ==== update start %date% %time% ==== >> %LOG%\r\n"
                     # Wait for the agent process to fully exit and release its file lock.
-                    "timeout /t 6 /nobreak >nul\r\n"
+                    f":wait\r\n"
+                    f'tasklist /FI "PID eq {pid}" | find "{pid}" >nul && (timeout /t 1 /nobreak >nul 2>&1 & goto wait)\r\n'
                     f'"{temp_path}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /UPGRADE >> %LOG% 2>&1\r\n'
                     "echo installer exit: %errorlevel% >> %LOG%\r\n"
                     # The installer's own [Run] section restarts the agent after install.
