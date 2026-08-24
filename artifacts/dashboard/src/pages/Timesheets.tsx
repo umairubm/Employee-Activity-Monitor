@@ -214,6 +214,26 @@ export default function Timesheets() {
     });
   }, [rows, filterActive, filterField, filterOp, hoursNum, minsNum]);
 
+  // Summary totals follow the duration filter: when a filter is active, the
+  // Total/Active time cards sum only the rows actually displayed; clearing the
+  // filter restores the server-computed unfiltered report totals.
+  const displayedTotals = useMemo(() => {
+    if (!filterActive) {
+      return {
+        workedSeconds: totals?.workedSeconds ?? 0,
+        activeSeconds: totals?.activeSeconds ?? 0,
+      };
+    }
+    return filteredRows.reduce(
+      (acc, r) => {
+        acc.workedSeconds += r.totalSeconds;
+        acc.activeSeconds += r.activeSeconds;
+        return acc;
+      },
+      { workedSeconds: 0, activeSeconds: 0 },
+    );
+  }, [filterActive, filteredRows, totals]);
+
   const clearFilter = () => {
     setFilterField("none");
     setFilterHours("");
@@ -422,12 +442,12 @@ export default function Timesheets() {
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <Card><CardContent className="p-4">
-          <p className="text-xs text-muted-foreground">Total time</p>
-          <p className="text-2xl font-bold">{fmtHours(totals?.workedSeconds ?? 0)}</p>
+          <p className="text-xs text-muted-foreground">Total time{filterActive && <span className="ml-1 text-[10px] uppercase tracking-wide text-primary">(filtered)</span>}</p>
+          <p className="text-2xl font-bold">{fmtHours(displayedTotals.workedSeconds)}</p>
         </CardContent></Card>
         <Card><CardContent className="p-4">
-          <p className="text-xs text-muted-foreground">Active time</p>
-          <p className="text-2xl font-bold text-emerald-600">{fmtHours(totals?.activeSeconds ?? 0)}</p>
+          <p className="text-xs text-muted-foreground">Active time{filterActive && <span className="ml-1 text-[10px] uppercase tracking-wide text-primary">(filtered)</span>}</p>
+          <p className="text-2xl font-bold text-emerald-600">{fmtHours(displayedTotals.activeSeconds)}</p>
         </CardContent></Card>
         <Card><CardContent className="p-4">
           <p className="text-xs text-muted-foreground flex items-center gap-1">
