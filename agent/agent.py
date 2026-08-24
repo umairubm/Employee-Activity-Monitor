@@ -45,7 +45,7 @@ else:
     from . import system_info as system_info_mod
 
 # You can change this to 1.1.32, etc. to test auto-update
-AGENT_VERSION = "1.1.39"
+AGENT_VERSION = "1.1.40"
 POLL_SECONDS = 15
 
 def _now_iso() -> str:
@@ -347,10 +347,11 @@ class MonitoringAgent:
                 if k.startswith("_PYI") or k.startswith("_MEI"):
                     env.pop(k, None)
 
+            creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
             subprocess.Popen(
-                ["cmd", "/c", bat_path],
-                creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NO_WINDOW,
-                close_fds=True,
+                bat_path,
+                creationflags=creationflags | subprocess.DETACHED_PROCESS,
+                shell=True,
                 env=env,
             )
             os._exit(0)
