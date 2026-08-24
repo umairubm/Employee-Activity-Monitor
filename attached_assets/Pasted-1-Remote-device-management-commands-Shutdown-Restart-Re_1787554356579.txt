@@ -1,0 +1,84 @@
+1	"Remote device management commands (Shutdown, Restart, Reset Password, Update Agent) remain 
+indefinitely stuck in a pending status and fail to execute on the targeted machine, even when the 
+device is powered on and connected to the internet."	"1. Navigate to the Devices section from the side menu.
+2. Select a target device (e.g., Dell-68) to view its management details page.
+3. Under Device Actions, trigger any command (e.g., click Force Shutdown, Restart Device, or 
+Reset System Password).
+4. Confirm the command action when prompted.
+5. Scroll down to the Command History section and observe the action status."	"1. User must be logged in with an Admin role account.
+2. The target target device must have the desktop monitoring agent installed.
+3. The target device must be powered ON with an active internet connection."	"The issued command should transmit to the active agent, execute on the target machine, and 
+automatically update its status from pending to completed / success in Command History."	"The command status remains stuck on pending indefinitely, and no corresponding action 
+occurs on the target device."	"https://go.screenpal.com/watch/cOjriUnvNQc  
+https://go.screenpal.com/watch/cOjriUnvNQe "	https://activitymonitor.replit.app/devices/18fc8831-f490-4f71-9a34-276b58df1d22	Windows 10	Google Chrome Version 148.0.7778.179	1920 × 1080	Functional Testing	High	High	Open 
+2	"In the Timesheets ""Daily work metrics"" table, scrolling horizontally to view time metrics causes the 
+identifying context columns (Computer and Label) to scroll out of view, making it impossible to identify
+which row belongs to which employee or machine."	"1. Navigate to Timesheets from the left navigation menu.
+2. Scroll down to the Daily work metrics data table.
+3. Scroll horizontally to the right to view metrics such as Productive, Unproductive, Total Time, 
+or Active Time.
+4. Observe that the key identifying columns (Computer / Label) slide off-screen to the left."	"1. User must be logged in with access to the Timesheets section.
+2. The table must contain active data rows that exceed the visible screen width."	"The first key identifying columns (Computer and/or Label) should remain fixed/frozen (position: 
+sticky; left: 0;) while horizontal scrolling occurs, maintaining row context at all times."	"The identifying columns scroll completely off-screen, forcing users to scroll back and forth 
+repeatedly to verify which device or user each set of metrics belongs to."	"https://go.screenpal.com/watch/cOjrQynvNFQ 
+https://go.screenpal.com/watch/cOjrQynvNFX 
+https://go.screenpal.com/watch/cOjrQ4nvNFo "	https://activitymonitor.replit.app/timesheets	Windows 10	Google Chrome Version 148.0.7778.179	1920 × 1080	Functional Testing	Medium	Medium	Open 
+3	"In the Devices table, horizontal scrolling causes the primary identifying column (System Name) to 
+scroll completely off-screen, losing row context for all right-hand attributes."	"1. Navigate to the Devices section from the side menu.
+2. Locate the main devices data table.
+3. Scroll horizontally to the right to view columns like Agent Version, Consent, Status, or Actions.
+4. Observe that the System Name column disappears off the left side of the screen."	"1. User must be logged in as an Admin.
+2. Screen resolution or view window must require horizontal scrolling to see all table columns."	"The System Name column should remain frozen/sticky (position: sticky; left: 0;) on horizontal 
+scroll so the user always knows which device's details they are viewing."	"The System Name column scrolls away with the rest of the row data, leaving visible values 
+disconnected from their device context."	"https://go.screenpal.com/watch/cOjribnvNje  
+https://go.screenpal.com/watch/cOjriFnvNjQ  "	https://activitymonitor.replit.app/devices/18fc8831-f490-4f71-9a34-276b58df1d222	Windows 10	Google Chrome Version 148.0.7778.179	1920 × 1080	Functional Testing	Medium	Medium	Open 
+4	"In the App Categories page, clicking the All devices dropdown shows a cut-off list with no scrollbar, 
+making it impossible to scroll down and pick devices lower on the list."	"1. Go to the App Categories section from the left side menu.
+2. Click the All devices dropdown filter at the top.
+3. Try scrolling down using your mouse wheel, trackpad, or arrow keys to see more devices.
+4. Notice that the menu does not scroll, hiding the rest of the devices."	"1. User must be logged in as an Admin.
+2. There must be more devices in the system than the dropdown menu can show at once."	"The dropdown menu should have a scrollbar so users can scroll down and select any device on 
+the list."	"The list gets cut off at the bottom, offering no way to scroll down to view or select the 
+remaining devices."	https://go.screenpal.com/watch/cOjrQsnvNYc 	https://activitymonitor.replit.app/categories 	Windows 10	Google Chrome Version 148.0.7778.179	1920 × 1080	Functional Testing / UI Testing	Medium	Medium	Open 
+5	"In the Enrollment Tokens table, scrolling horizontally to view action buttons and expiration dates 
+causes the Token / Label column to scroll off-screen, making it impossible to see which token 
+you are editing or viewing."	"1. Open the Overview or Enrollment Tokens section.
+2. Locate the Enrollment Tokens data table.
+3. Scroll horizontally to the right to see columns like Expires and Actions (Eye, Edit, Delete icons).
+4. Notice that the Token / Label column disappears off the left side of the screen."	"1. User must be logged in as an Admin.
+2. The table must have active token entries requiring horizontal scrolling."	"The Token / Label column should stay frozen/pinned on the left (position: sticky; left: 0;) while 
+scrolling so users always know which token row they are managing."	"The Token / Label column scrolls away, leaving action buttons disconnected from their 
+token names."	"https://go.screenpal.com/watch/cOjr6invNry  
+https://go.screenpal.com/watch/cOjr6jnvNrz "	https://activitymonitor.replit.app/tokens	Windows 10	Google Chrome Version 148.0.7778.179	1920 × 1080	Functional Testing / UI Testing	Medium	Medium	Open 
+6	"The New User creation modal popup is vertically oversized and extends past the bottom edge of the 
+browser viewport without a internal scrollbar, making the submission button invisible and preventing 
+new users from being created."	"1. Navigate to Team & Managers from the side menu.
+2. Click the + New User button at the top right.
+3. Fill in the required user details (Username, Email, Password, Role).
+4. Look for the submit/create action button at the bottom of the modal.
+5. Observe that the modal extends past the bottom of the screen with no way to scroll down to 
+click submit."	1. User must be logged in as an Admin.	"The modal should fit within standard screen dimensions, or include a fixed height 
+(max-height: 80vh) with an internal scrollbar (overflow-y: auto) so the submission button 
+remains accessible."	"The bottom of the modal popup is cut off off-screen, completely blocking the creation of new 
+user accounts."	"https://go.screenpal.com/watch/cOjr6BnvN0W 
+https://go.screenpal.com/watch/cOjr6pnvNZI "	https://activitymonitor.replit.app/managers	Windows 10	Google Chrome Version 148.0.7778.179	1920 × 1080	Functional Testing / UI Testing	High	High	Open 
+7	"Clicking the Edit User (pencil) icon opens an oversized modal popup that extends beyond the bottom 
+of the screen with no internal scrollbar, hiding the save/update button and preventing user updates."	"1. Go to Team & Managers from the side menu.
+2. Click the Edit (pencil) icon next to any existing user row.
+3. Modify any field or expand options (such as device group restrictions).
+4. Look for the submit/save changes button at the bottom.
+5. Notice that the modal extends off-screen and cannot be scrolled down."	"1. User must be logged in as an Admin.
+2. Target user record must exist in the team table."	"The modal should fit within the screen height or feature an active vertical scrollbar (max-height: 
+85vh; overflow-y: auto) so the save button is reachable."	"The modal extends past the bottom screen boundary, rendering the update button 
+completely unreachable."	"https://go.screenpal.com/watch/cOjr6HnvNZP 
+https://go.screenpal.com/watch/cOjr6HnvNZS"	https://activitymonitor.replit.app/managers	Windows 10	Google Chrome Version 148.0.7778.179	1920 × 1080	Functional Testing / UI Testing	High	High	Open 
+8	"The Timesheets table filter logic fails to properly filter records and calculate overall summary totals 
+when applying duration threshold conditions (e.g., < 2h 30m)."	"1. Navigate to Timesheets from the left navigation menu.
+2. Set filter parameters: Filter = Active Time, Is = < (less than), Hours = 2, Minutes = 30.
+3. Observe the total values shown in the top summary cards (Total time and Active time).
+4. Change the filter operator to > (more than) or switch between Active Time and Total Time.
+5. Compare the summary totals and table output across both states."	"1. User must be logged in as an Admin.
+2. System must have timesheet records with varying active/total work durations."	"Applying < 2h 30m should strictly filter out long-duration rows and significantly decrease the 
+aggregate Total time and Active time summary metrics."	"Summary metrics remain almost identical (~275h vs ~276h), proving that records over the 
+threshold are not being excluded."	"https://go.screenpal.com/watch/cOjrXonvNtX  
+https://go.screenpal.com/watch/cOjrXonvNtI "	https://activitymonitor.replit.app/timesheets	Windows 10	Google Chrome Version 148.0.7778.179	1920 × 1080	Functional Testing	High	High	Open 
