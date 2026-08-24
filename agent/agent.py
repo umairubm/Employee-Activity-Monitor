@@ -45,7 +45,7 @@ else:
     from . import system_info as system_info_mod
 
 # You can change this to 1.1.32, etc. to test auto-update
-AGENT_VERSION = "1.1.47"
+AGENT_VERSION = "1.1.48"
 POLL_SECONDS = 15
 
 def _now_iso() -> str:
@@ -341,7 +341,7 @@ class MonitoringAgent:
                 f"$candidates = @(\r\n"
                 f"  \"$env:ProgramFiles\\SVCTCOM\\{exe_name}\",\r\n"
                 f"  \"$env:ProgramFiles\\SVCTCOM\\{exe_name}\",\r\n"
-                f"  \"${env:ProgramFiles(x86)}\\SVCTCOM\\{exe_name}\",\r\n"
+                f"  \"${{env:ProgramFiles(x86)}}\\SVCTCOM\\{exe_name}\",\r\n"
                 f"  \"$env:LOCALAPPDATA\\Programs\\SVCTCOM\\{exe_name}\"\r\n"
                 ")\r\n"
                 "foreach ($c in $candidates) { if (Test-Path $c) { $exe = $c; break } }\r\n"
