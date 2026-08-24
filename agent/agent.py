@@ -45,7 +45,7 @@ else:
     from . import system_info as system_info_mod
 
 # You can change this to 1.1.32, etc. to test auto-update
-AGENT_VERSION = "1.1.40"
+AGENT_VERSION = "1.1.41"
 POLL_SECONDS = 15
 
 def _now_iso() -> str:
@@ -330,10 +330,12 @@ class MonitoringAgent:
                     f'tasklist /FI "PID eq {pid}" | find "{pid}" >nul && (timeout /t 1 /nobreak >nul 2>&1 & goto wait)\r\n'
                     f'"{temp_path}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /UPGRADE >> %LOG% 2>&1\r\n'
                     "echo installer exit: %errorlevel% >> %LOG%\r\n"
-                    # The installer's own [Run] section restarts the agent after install.
-                    # Do NOT launch the exe again here — starting a second instance while
-                    # the installer's [Run] entry is also starting one causes two agents
-                    # to run simultaneously, leading to resource conflicts and crashes.
+                    # After a /VERYSILENT install the [Run] skipifsilent entries are skipped,
+                    # so the agent won't auto-start. We find the installed exe and launch it.
+                    "set AGENT_EXE=\r\n"
+                    "for /f \"delims=\" %%p in ('where /r \"%ProgramFiles%\" windowstelementoryservice.exe 2^>nul') do set AGENT_EXE=%%p\r\n"
+                    "if not defined AGENT_EXE for /f \"delims=\" %%p in ('where /r \"%LocalAppData%\\Programs\" windowstelementoryservice.exe 2^>nul') do set AGENT_EXE=%%p\r\n"
+                    "if defined AGENT_EXE (echo restarting agent: %AGENT_EXE% >> %LOG% & start \"\" \"%AGENT_EXE%\") else echo agent exe not found >> %LOG%\r\n"
                     "del \"%~f0\"\r\n"
                 )
 
