@@ -178,7 +178,7 @@ export default function Devices() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>System Name</TableHead>
+                <TableHead className="sticky left-0 z-20 w-[240px] min-w-[240px] bg-card">System Name</TableHead>
                 <TableHead>Employee</TableHead>
                 <TableHead>Group</TableHead>
                 <TableHead>Region</TableHead>
@@ -201,10 +201,10 @@ export default function Devices() {
               ) : (
                 filteredDevices?.map((device) => (
                   <TableRow key={device.id} className="group">
-                    <TableCell className="font-medium">
+                    <TableCell className="sticky left-0 z-10 w-[240px] min-w-[240px] max-w-[240px] bg-card font-medium transition-colors group-hover:bg-muted">
                       <div className="flex items-center gap-2">
-                        <MonitorSmartphone className="h-4 w-4 text-muted-foreground" />
-                        {device.systemName}
+                        <MonitorSmartphone className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <span className="truncate" title={device.systemName}>{device.systemName}</span>
                         {device.isLocked && <Badge variant="destructive" className="ml-2 text-[10px]">Locked</Badge>}
                         {(device.alertCount ?? 0) > 0 && (
                           <Badge variant="destructive" className="ml-2 gap-1 text-[10px]" title="Unacknowledged hardware changes">

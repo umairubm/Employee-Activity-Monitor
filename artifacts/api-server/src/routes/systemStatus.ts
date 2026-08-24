@@ -44,6 +44,7 @@ router.get("/dropbox", async (_req, res) => {
         id: screenshotsTable.id,
         deviceId: screenshotsTable.deviceId,
         deviceName: devicesTable.systemName,
+        deviceTzOffsetMinutes: devicesTable.tzOffsetMinutes,
         companyId: screenshotsTable.companyId,
         status: screenshotsTable.status,
         attempts: screenshotsTable.attempts,

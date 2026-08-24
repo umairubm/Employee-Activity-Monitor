@@ -337,7 +337,7 @@ export default function Managers() {
               New User
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Create User</DialogTitle>
               <DialogDescription>Add a manager or team member to your company.</DialogDescription>
@@ -477,7 +477,7 @@ export default function Managers() {
       </Dialog>
 
       <Dialog open={!!editing} onOpenChange={(o) => { if (!o) setEditing(null); }}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit {editing?.username}</DialogTitle>
             <DialogDescription>Update this user's email, password, or role.</DialogDescription>

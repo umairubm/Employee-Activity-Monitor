@@ -898,10 +898,10 @@ export default function ActivityLogs() {
                           {formatHm(agg.totalSeconds)}
                         </TableCell>
                         <TableCell className="text-center tabular-nums text-muted-foreground">
-                          {agg.startedAt ? format(agg.startedAt, "HH:mm") : "—"}
+                          {agg.startedAt ? format(agg.startedAt, "h:mm a") : "—"}
                         </TableCell>
                         <TableCell className="text-center tabular-nums text-muted-foreground">
-                          {agg.endedAt ? format(agg.endedAt, "HH:mm") : "—"}
+                          {agg.endedAt ? format(agg.endedAt, "h:mm a") : "—"}
                         </TableCell>
                         <TableCell>
                           <ActivitySlots slots={agg.slots} />

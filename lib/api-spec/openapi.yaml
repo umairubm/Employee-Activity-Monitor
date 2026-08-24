@@ -1921,6 +1921,8 @@ components:
           format: uuid
         deviceName:
           type: [string, "null"]
+        deviceTzOffsetMinutes:
+          type: [integer, "null"]
         companyId:
           type: [string, "null"]
           format: uuid
@@ -1939,7 +1941,16 @@ components:
           type: string
           format: date-time
       required:
-        [id, deviceId, status, attempts, fileSizeBytes, capturedAt, createdAt]
+        [
+          id,
+          deviceId,
+          deviceTzOffsetMinutes,
+          status,
+          attempts,
+          fileSizeBytes,
+          capturedAt,
+          createdAt,
+        ]
     LoginRequest:
       type: object
       properties:

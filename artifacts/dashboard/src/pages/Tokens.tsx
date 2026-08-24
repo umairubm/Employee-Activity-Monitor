@@ -524,7 +524,7 @@ export default function Tokens() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Token / Label</TableHead>
+                  <TableHead className="sticky left-0 z-20 w-[220px] min-w-[220px] bg-card">Token / Label</TableHead>
                   <TableHead>Employee / Group / Region</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Uses</TableHead>
@@ -552,10 +552,10 @@ export default function Tokens() {
                     const isActive = status === "active";
 
                     return (
-                      <TableRow key={token.id} className={!isActive ? "opacity-60" : ""}>
-                        <TableCell>
-                          <div className="font-mono text-sm">{token.token}</div>
-                          {token.label && <div className="text-xs text-muted-foreground mt-1">{token.label}</div>}
+                      <TableRow key={token.id} className={`group ${!isActive ? "opacity-60" : ""}`}>
+                        <TableCell className="sticky left-0 z-10 w-[220px] min-w-[220px] max-w-[220px] bg-card transition-colors group-hover:bg-muted">
+                          <div className="font-mono text-sm truncate" title={token.token}>{token.token}</div>
+                          {token.label && <div className="text-xs text-muted-foreground mt-1 truncate" title={token.label}>{token.label}</div>}
                         </TableCell>
                         <TableCell className="text-sm">
                           <div className="flex flex-col gap-1">

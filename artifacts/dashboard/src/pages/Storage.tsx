@@ -6,6 +6,7 @@ import {
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { formatDeviceTime } from "@/lib/device-time";
 import {
   Card,
   CardContent,
@@ -353,7 +354,7 @@ export default function Storage() {
                         )}
                       </TableCell>
                       <TableCell className="whitespace-nowrap text-muted-foreground">
-                        {fmtDate(e.capturedAt)}
+                        {formatDeviceTime(e.capturedAt, e.deviceTzOffsetMinutes, "MMM d, yyyy h:mm a")}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
                         {e.attempts}

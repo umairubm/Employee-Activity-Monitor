@@ -457,8 +457,8 @@ export default function Timesheets() {
                 <TableRow>
                   <TableHead>Date</TableHead>
                   <TableHead>Groups</TableHead>
-                  <TableHead>Computer</TableHead>
-                  <TableHead>Label</TableHead>
+                  <TableHead className="sticky left-0 z-20 w-[170px] min-w-[170px] bg-card">Computer</TableHead>
+                  <TableHead className="sticky left-[170px] z-20 w-[140px] min-w-[140px] border-r bg-card">Label</TableHead>
                   <TableHead>Region</TableHead>
                   <TableHead>User</TableHead>
                   <TableHead>First Activity</TableHead>
@@ -478,11 +478,11 @@ export default function Timesheets() {
                   <TableRow><TableCell colSpan={14} className="h-32 text-center text-muted-foreground">{filterActive ? "No rows match the filter." : "No activity in this range."}</TableCell></TableRow>
                 ) : (
                   filteredRows.map((r) => (
-                    <TableRow key={`${r.deviceId}-${r.date}`}>
+                    <TableRow key={`${r.deviceId}-${r.date}`} className="group">
                       <TableCell className="whitespace-nowrap text-sm tabular-nums">{`${r.date}T00:00:00`}</TableCell>
                       <TableCell><Badge variant="secondary" className="font-normal">{r.deviceGroup}</Badge></TableCell>
-                      <TableCell className="font-medium whitespace-nowrap">{r.systemName}</TableCell>
-                      <TableCell className="whitespace-nowrap text-sm">{r.tokenLabel ?? <span className="text-muted-foreground">—</span>}</TableCell>
+                      <TableCell className="sticky left-0 z-10 w-[170px] min-w-[170px] max-w-[170px] truncate bg-card font-medium whitespace-nowrap transition-colors group-hover:bg-muted" title={r.systemName}>{r.systemName}</TableCell>
+                      <TableCell className="sticky left-[170px] z-10 w-[140px] min-w-[140px] max-w-[140px] truncate border-r bg-card whitespace-nowrap text-sm transition-colors group-hover:bg-muted" title={r.tokenLabel ?? undefined}>{r.tokenLabel ?? <span className="text-muted-foreground">—</span>}</TableCell>
                       <TableCell className="whitespace-nowrap text-sm">{r.tokenRegion ? <Badge variant="outline" className="font-normal">{r.tokenRegion}</Badge> : <span className="text-muted-foreground">—</span>}</TableCell>
                       <TableCell className="whitespace-nowrap text-sm">{r.username ?? <span className="text-muted-foreground">—</span>}</TableCell>
                       <TableCell className="whitespace-nowrap text-sm tabular-nums">{fmtTime(r.firstActivity)}</TableCell>

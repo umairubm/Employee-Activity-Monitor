@@ -12,6 +12,8 @@ export interface ScreenshotErrorItem {
   /** @nullable */
   deviceName?: string | null;
   /** @nullable */
+  deviceTzOffsetMinutes: number | null;
+  /** @nullable */
   companyId?: string | null;
   status: string;
   attempts: number;

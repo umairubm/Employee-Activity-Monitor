@@ -2717,6 +2717,7 @@ export const GetDropboxSystemStatusResponse = zod.object({
       id: zod.string().uuid(),
       deviceId: zod.string().uuid(),
       deviceName: zod.string().nullish(),
+      deviceTzOffsetMinutes: zod.number().nullable(),
       companyId: zod.string().uuid().nullish(),
       status: zod.string(),
       attempts: zod.number(),

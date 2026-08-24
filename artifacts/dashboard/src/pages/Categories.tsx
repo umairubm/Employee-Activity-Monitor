@@ -121,7 +121,7 @@ export default function Categories() {
               <MonitorSmartphone className="h-4 w-4 mr-1.5 text-muted-foreground shrink-0" />
               <SelectValue placeholder="All devices" />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="max-h-72">
               <SelectItem value={ALL_DEVICES}>All devices</SelectItem>
               {selectableDevices.map((d) => (
                 <SelectItem key={d.id} value={d.id}>
