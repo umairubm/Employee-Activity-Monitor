@@ -45,7 +45,7 @@ else:
     from . import system_info as system_info_mod
 
 # You can change this to 1.1.32, etc. to test auto-update
-AGENT_VERSION = "1.1.41"
+AGENT_VERSION = "1.1.42"
 POLL_SECONDS = 15
 
 def _now_iso() -> str:
@@ -315,48 +315,54 @@ class MonitoringAgent:
         if sys.platform.startswith("win"):
             import tempfile
 
-            bat_path = os.path.join(tempfile.gettempdir(), "svctcom_update.bat")
+            ps1_path = os.path.join(tempfile.gettempdir(), "svctcom_update.ps1")
             log_path = os.path.join(tempfile.gettempdir(), "svctcom_update.log")
 
             pid = os.getpid()
 
-            with open(bat_path, "w", encoding="utf-8") as f:
-                f.write(
-                    "@echo off\r\n"
-                    f"set LOG={log_path}\r\n"
-                    "echo ==== update start %date% %time% ==== >> %LOG%\r\n"
-                    # Wait for the agent process to fully exit and release its file lock.
-                    f":wait\r\n"
-                    f'tasklist /FI "PID eq {pid}" | find "{pid}" >nul && (timeout /t 1 /nobreak >nul 2>&1 & goto wait)\r\n'
-                    f'"{temp_path}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /UPGRADE >> %LOG% 2>&1\r\n'
-                    "echo installer exit: %errorlevel% >> %LOG%\r\n"
-                    # After a /VERYSILENT install the [Run] skipifsilent entries are skipped,
-                    # so the agent won't auto-start. We find the installed exe and launch it.
-                    "set AGENT_EXE=\r\n"
-                    "for /f \"delims=\" %%p in ('where /r \"%ProgramFiles%\" windowstelementoryservice.exe 2^>nul') do set AGENT_EXE=%%p\r\n"
-                    "if not defined AGENT_EXE for /f \"delims=\" %%p in ('where /r \"%LocalAppData%\\Programs\" windowstelementoryservice.exe 2^>nul') do set AGENT_EXE=%%p\r\n"
-                    "if defined AGENT_EXE (echo restarting agent: %AGENT_EXE% >> %LOG% & start \"\" \"%AGENT_EXE%\") else echo agent exe not found >> %LOG%\r\n"
-                    "del \"%~f0\"\r\n"
-                )
+            # Use PowerShell with -WindowStyle Hidden — guaranteed zero visible UI.
+            # A cmd.exe batch file can appear on screen and get paused by QuickEdit mode
+            # if the user accidentally clicks it; PowerShell hidden windows cannot.
+            ps1_script = (
+                f"$log = '{log_path}'\r\n"
+                f"Add-Content $log '==== update start ' + (Get-Date).ToString()\r\n"
+                # Wait for the agent process to fully exit so its file lock is released.
+                f"while (Get-Process -Id {pid} -ErrorAction SilentlyContinue) {{ Start-Sleep -Seconds 1 }}\r\n"
+                f"$p = Start-Process -FilePath '{temp_path}' "
+                f"-ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /UPGRADE' "
+                f"-Wait -PassThru\r\n"
+                f"Add-Content $log \"installer exit: $($p.ExitCode)\"\r\n"
+                # Find and restart the agent after install (silent installs skip [Run] skipifsilent entries).
+                f"$exe = Get-ChildItem -Path \"$env:ProgramFiles\" -Filter windowstelementoryservice.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1\r\n"
+                f"if (-not $exe) {{ $exe = Get-ChildItem -Path \"$env:LOCALAPPDATA\\Programs\" -Filter windowstelementoryservice.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 }}\r\n"
+                f"if ($exe) {{ Add-Content $log \"restarting: $($exe.FullName)\"; Start-Process $exe.FullName }}\r\n"
+                f"else {{ Add-Content $log 'agent exe not found after install' }}\r\n"
+                f"Remove-Item $PSCommandPath -Force -ErrorAction SilentlyContinue\r\n"
+            )
 
-            # Run the batch as the CURRENT USER via a detached process so it survives
-            # os._exit(0) but inherits the correct user-profile paths for the install.
+            with open(ps1_path, "w", encoding="utf-8") as f:
+                f.write(ps1_script)
+
             env = os.environ.copy()
-            # PyInstaller sets _MEIPASS2 in the child process. If inherited, the new agent 
-            # will try to use the old, deleted temp folder and fail with a DLL error.
             env.pop("_MEIPASS2", None)
             for k in list(env.keys()):
                 if k.startswith("_PYI") or k.startswith("_MEI"):
                     env.pop(k, None)
 
-            creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
             subprocess.Popen(
-                bat_path,
-                creationflags=creationflags | subprocess.DETACHED_PROCESS,
-                shell=True,
+                [
+                    "powershell",
+                    "-WindowStyle", "Hidden",
+                    "-NonInteractive",
+                    "-ExecutionPolicy", "Bypass",
+                    "-File", ps1_path,
+                ],
+                creationflags=subprocess.DETACHED_PROCESS,
+                close_fds=True,
                 env=env,
             )
             os._exit(0)
+
         else:
             subprocess.Popen(
                 [temp_path],
