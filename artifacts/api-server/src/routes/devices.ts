@@ -20,7 +20,7 @@ const groupNameSchema = z
 
 const router: IRouter = Router();
 
-const ONLINE_WINDOW_MS = 5 * 60 * 1000;
+const ONLINE_WINDOW_MS = 2 * 60 * 1000;
 
 function withOnline<T extends { lastSeenAt: Date | null }>(d: T) {
   return {

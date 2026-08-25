@@ -44,6 +44,13 @@ export async function deviceAuth(
     return;
   }
 
+  // Asynchronously update lastSeenAt to maintain highly accurate online presence 
+  // without blocking the critical path of the API request.
+  db.update(devicesTable)
+    .set({ lastSeenAt: new Date() })
+    .where(eq(devicesTable.id, device.id))
+    .catch((err) => console.error("Failed to update lastSeenAt", err));
+
   (req as DeviceRequest).device = device;
   next();
 }

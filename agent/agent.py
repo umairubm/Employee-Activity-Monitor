@@ -45,7 +45,7 @@ else:
     from . import system_info as system_info_mod
 
 # You can change this to 1.1.32, etc. to test auto-update
-AGENT_VERSION = "1.1.51"
+AGENT_VERSION = "1.1.52"
 POLL_SECONDS = 15
 
 def _now_iso() -> str:
@@ -205,6 +205,23 @@ class MonitoringAgent:
 
     # --- screenshots ---------------------------------------------------------
 
+    def _offline_screenshots_dir(self) -> Path:
+        d = config_mod.config_dir() / "screenshots"
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    def _sync_screenshots(self) -> None:
+        d = self._offline_screenshots_dir()
+        for path in d.glob("*.jpg"):
+            try:
+                ts_epoch = float(path.stem)
+                captured_at = datetime.fromtimestamp(ts_epoch, timezone.utc).isoformat()
+                img = path.read_bytes()
+                self.api.upload_screenshot(img, captured_at, content_type="image/jpeg")
+                path.unlink()
+            except Exception as exc:
+                print(f"[agent] offline screenshot sync failed for {path.name}: {exc}", file=sys.stderr)
+
     def _maybe_screenshot(self) -> None:
         if time.time() - self._last_screenshot < self._next_screenshot_gap:
             return
@@ -213,9 +230,16 @@ class MonitoringAgent:
         # Visible notice BEFORE capture — transparency requirement.
         try:
             img = screenshot_mod.capture_png_bytes()
-            self.api.upload_screenshot(img, _now_iso(), content_type="image/jpeg")
+            ts = _now_iso()
+            try:
+                self.api.upload_screenshot(img, ts, content_type="image/jpeg")
+            except Exception as exc:
+                print(f"[agent] screenshot direct upload failed, saving offline: {exc}", file=sys.stderr)
+                ts_epoch = str(time.time())
+                path = self._offline_screenshots_dir() / f"{ts_epoch}.jpg"
+                path.write_bytes(img)
         except Exception as exc:  # noqa: BLE001 — best-effort, never crash agent
-            print(f"[agent] screenshot failed: {exc}", file=sys.stderr)
+            print(f"[agent] screenshot capture failed: {exc}", file=sys.stderr)
 
     # --- commands ------------------------------------------------------------
 
@@ -585,26 +609,35 @@ class MonitoringAgent:
         last_sync = 0.0
         last_heartbeat = 0.0
         while not self._stop.is_set():
-            try:
-                if self.is_active():
+            if self.is_active():
+                try:
                     self._observe()
                     self._maybe_screenshot()
+                except Exception as exc:
+                    print(f"[agent] observe/screenshot error: {exc}", file=sys.stderr)
 
-                now = time.time()
-                if now - last_heartbeat >= self.cfg.heartbeat_interval_seconds:
-                    last_heartbeat = now
+            now = time.time()
+            if now - last_heartbeat >= self.cfg.heartbeat_interval_seconds:
+                last_heartbeat = now
+                try:
                     self._heartbeat()
+                except Exception as exc:
+                    print(f"[agent] heartbeat error: {exc}", file=sys.stderr)
 
-                if now - last_sync >= self.cfg.sync_interval_seconds:
-                    last_sync = now
+            if now - last_sync >= self.cfg.sync_interval_seconds:
+                last_sync = now
+                try:
                     self._sync_activity()
-            except Exception as exc:  # noqa: BLE001
-                print(f"[agent] worker error: {exc}", file=sys.stderr)
+                    self._sync_screenshots()
+                except Exception as exc:
+                    print(f"[agent] sync error: {exc}", file=sys.stderr)
+
             self._stop.wait(POLL_SECONDS)
         # Final flush on shutdown.
         self._flush_segment()
         try:
             self._sync_activity()
+            self._sync_screenshots()
         except Exception:
             pass
 
@@ -654,15 +687,16 @@ class MonitoringAgent:
                             if diff_old or diff_new:
                                 hardware_changes = {"old": diff_old, "new": diff_new}
                                 
-                        # Always update the baseline to the latest state
-                        self.cfg.hardware_baseline = system_hardware_details
-                        self.cfg.save()
-                        
                 except Exception:
                     system_hardware_details = None
                     hardware_changes = None
 
                 self.api.send_activity(batch, system_info=system_hardware_details, hardware_changes=hardware_changes)
+                
+                # Always update the baseline to the latest state ONLY on successful send
+                if system_hardware_details and isinstance(system_hardware_details, dict):
+                    self.cfg.hardware_baseline = system_hardware_details
+                    self.cfg.save()
             except Exception as exc:  # noqa: BLE001
                 with self._lock:  # requeue on failure
                     self._pending_logs[0:0] = batch
