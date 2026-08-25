@@ -26,7 +26,7 @@ class AgentAPI:
         self.base = server_url.rstrip("/")
         self.device_id = device_id
         self.device_secret = device_secret
-        self.timeout = timeout
+        self.timeout = 30
 
     def _auth_headers(self) -> dict:
         if not self.device_id or not self.device_secret:
