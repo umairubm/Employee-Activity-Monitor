@@ -57,9 +57,10 @@ export default function Categories() {
     }
   };
 
-  const filteredCategories = categories?.filter(c => 
-    c.pattern.toLowerCase().includes(search.toLowerCase()) || 
-    c.displayName.toLowerCase().includes(search.toLowerCase())
+  const searchTerm = search.trim().toLocaleLowerCase();
+  const filteredCategories = categories?.filter((c) =>
+    c.pattern.toLocaleLowerCase().includes(searchTerm) ||
+    c.displayName.toLocaleLowerCase().includes(searchTerm),
   );
 
   const handleClassificationChange = (id: string, value: string) => {

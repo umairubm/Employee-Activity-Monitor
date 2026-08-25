@@ -711,11 +711,22 @@ export default function ActivityLogs() {
 
   const filteredDevices = useMemo(() => {
     return devices?.filter((d) => {
-      const q = search.toLowerCase();
+      const q = search.trim().toLocaleLowerCase();
+      const searchableValues = [
+        d.systemName,
+        d.hardwareHash,
+        d.assignedUsername,
+        d.tokenEmployeeId,
+        d.tokenLabel,
+        d.deviceGroup,
+        d.tokenRegion,
+        d.osType,
+      ];
       const matchesSearch =
-        (d.tokenLabel ?? "").toLowerCase().includes(q) ||
-        d.systemName.toLowerCase().includes(q) ||
-        d.hardwareHash.toLowerCase().includes(q);
+        q === "" ||
+        searchableValues.some((value) =>
+          value?.toLocaleLowerCase().includes(q),
+        );
       const matchesGroup = groupFilter === ALL || d.deviceGroup === groupFilter;
       return matchesSearch && matchesGroup;
     });
@@ -757,7 +768,7 @@ export default function ActivityLogs() {
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               type="search"
-              placeholder="Search users..."
+              placeholder="Search user, device, label..."
               className="pl-9"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
