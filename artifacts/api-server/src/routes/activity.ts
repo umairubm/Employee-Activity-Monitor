@@ -57,8 +57,8 @@ router.get("/", async (req, res) => {
 });
 
 // GET /api/activity/range - all logs within [from, to) for daily aggregation.
-// Not capped at 200 (the dashboard aggregates a full day client-side), but
-// bounded by a generous safety limit.
+// This must not truncate the result: the dashboard aggregates the returned
+// records per device, and dropping later rows makes active devices show 0m.
 router.get("/range", async (req, res) => {
   try {
     const companyId = getCompanyId(req);
@@ -104,7 +104,6 @@ router.get("/range", async (req, res) => {
 
     const logs = await db.query.activityLogsTable.findMany({
       where: and(...conditions),
-      limit: 10000,
       orderBy: [asc(activityLogsTable.startedAt)],
     });
     res.json(logs);
