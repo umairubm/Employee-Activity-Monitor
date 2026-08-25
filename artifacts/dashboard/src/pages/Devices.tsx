@@ -24,7 +24,7 @@ import {
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { MonitorSmartphone, Search, CheckCircle2, XCircle, Clock, ShieldCheck, FolderPen, FolderSync, AlertTriangle } from "lucide-react";
+import { MonitorSmartphone, Search, CheckCircle2, XCircle, Clock, ShieldCheck, FolderPen, FolderSync, AlertTriangle, LayoutGrid, Table2 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { ALL_GROUPS as ALL } from "@/hooks/use-group-filter";
@@ -45,6 +45,7 @@ export default function Devices() {
   const setGroup = useSetDeviceGroup();
   const renameGroup = useRenameDeviceGroup();
   const [search, setSearch] = useState("");
+  const [viewMode, setViewMode] = useState<"table" | "cards">("table");
   // The Devices page always starts on "All groups" (local state, not the
   // shared persisted filter) so the full fleet is visible by default.
   const [groupFilter, setGroupFilter] = useState<string>(ALL);
@@ -183,13 +184,38 @@ export default function Devices() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
+          <div className="flex items-center rounded-md border bg-background p-1" aria-label="Device view">
+            <Button
+              type="button"
+              size="sm"
+              variant={viewMode === "table" ? "secondary" : "ghost"}
+              className="h-8 gap-1.5 px-2.5"
+              aria-pressed={viewMode === "table"}
+              onClick={() => setViewMode("table")}
+            >
+              <Table2 className="h-4 w-4" />
+              <span className="sr-only sm:not-sr-only">Table</span>
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={viewMode === "cards" ? "secondary" : "ghost"}
+              className="h-8 gap-1.5 px-2.5"
+              aria-pressed={viewMode === "cards"}
+              onClick={() => setViewMode("cards")}
+            >
+              <LayoutGrid className="h-4 w-4" />
+              <span className="sr-only sm:not-sr-only">Cards</span>
+            </Button>
+          </div>
         </div>
       </div>
 
       <Card>
         <CardContent className="p-0">
-          <div className="overflow-x-auto pb-2">
-          <Table className="min-w-[1180px]">
+          {viewMode === "table" ? (
+            <div className="overflow-x-auto pb-2">
+            <Table className="min-w-[1180px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="sticky left-0 z-20 w-[240px] min-w-[240px] bg-card">System Name</TableHead>
@@ -311,8 +337,92 @@ export default function Devices() {
                 ))
               )}
             </TableBody>
-          </Table>
-          </div>
+            </Table>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2 xl:grid-cols-3">
+              {filteredDevices?.length === 0 ? (
+                <div className="col-span-full flex min-h-32 items-center justify-center text-center text-muted-foreground">
+                  No devices found.
+                </div>
+              ) : (
+                filteredDevices?.map((device) => (
+                  <div key={device.id} className="rounded-lg border bg-card p-4 shadow-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <MonitorSmartphone className="h-4 w-4 shrink-0 text-muted-foreground" />
+                          <h3 className="truncate font-semibold" title={device.systemName}>
+                            {device.systemName}
+                          </h3>
+                        </div>
+                        <p className="mt-1 truncate font-mono text-xs text-muted-foreground" title={device.hardwareHash}>
+                          {device.hardwareHash}
+                        </p>
+                      </div>
+                      <Badge variant={device.online ? "default" : "secondary"} className={device.online ? "bg-emerald-600 hover:bg-emerald-600" : ""}>
+                        {device.online ? "Online" : "Offline"}
+                      </Badge>
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Employee</p>
+                        <p className="truncate font-medium" title={device.assignedUsername || device.tokenEmployeeId || undefined}>
+                          {device.assignedUsername || device.tokenEmployeeId || "—"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">OS</p>
+                        <p className="capitalize">{device.osType}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Group</p>
+                        <button
+                          type="button"
+                          onClick={() => openEdit(device.id, device.deviceGroup)}
+                          className="inline-flex max-w-full items-center gap-1.5 text-left hover:text-primary"
+                          title="Change group"
+                        >
+                          <Badge variant="secondary" className="max-w-full truncate font-normal">{device.deviceGroup}</Badge>
+                          <FolderPen className="h-3.5 w-3.5 shrink-0 opacity-60" />
+                        </button>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Region</p>
+                        <p className="truncate">{device.tokenRegion || "—"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Label</p>
+                        <p className="truncate" title={device.tokenLabel || undefined}>{device.tokenLabel || "—"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Agent version</p>
+                        <p>{device.agentVersion ? `v${device.agentVersion}` : "Unknown"}</p>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 flex items-center justify-between border-t pt-3 text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1.5" title={device.consentName ? `Acknowledged by ${device.consentName}` : undefined}>
+                        <ShieldCheck className="h-3.5 w-3.5 text-primary" />
+                        {device.consentAcknowledgedAt ? "Acknowledged" : "Consent pending"}
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <Clock className="h-3.5 w-3.5" />
+                        {device.lastSeenAt ? formatDistanceToNow(new Date(device.lastSeenAt), { addSuffix: true }) : "Never seen"}
+                      </span>
+                    </div>
+                    <Link
+                      href={`/devices/${device.id}`}
+                      className="mt-3 inline-flex h-9 w-full items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground"
+                    >
+                      View Details
+                    </Link>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 
