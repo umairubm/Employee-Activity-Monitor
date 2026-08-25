@@ -72,10 +72,23 @@ export default function Devices() {
     );
   }
 
+  const searchTerm = search.trim().toLocaleLowerCase();
   const filteredDevices = devices?.filter((d) => {
+    const searchableValues = [
+      d.systemName,
+      d.hardwareHash,
+      d.assignedUsername,
+      d.tokenEmployeeId,
+      d.tokenLabel,
+      d.deviceGroup,
+      d.tokenRegion,
+      d.osType,
+    ];
     const matchesSearch =
-      d.systemName.toLowerCase().includes(search.toLowerCase()) ||
-      d.hardwareHash.toLowerCase().includes(search.toLowerCase());
+      searchTerm === "" ||
+      searchableValues.some((value) =>
+        value?.toLocaleLowerCase().includes(searchTerm),
+      );
     const matchesGroup = groupFilter === ALL || d.deviceGroup === groupFilter;
     return matchesSearch && matchesGroup;
   });
@@ -164,7 +177,7 @@ export default function Devices() {
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               type="search"
-              placeholder="Search devices..."
+              placeholder="Search name, device, label..."
               className="pl-9"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
