@@ -521,7 +521,8 @@ export default function Tokens() {
               {[1, 2, 3].map(i => <div key={i} className="h-12 bg-muted rounded-md"></div>)}
             </div>
           ) : (
-            <Table>
+            <div className="overflow-x-auto pb-2">
+            <Table className="min-w-[1100px]">
               <TableHeader>
                 <TableRow>
                   <TableHead className="sticky left-0 z-20 w-[220px] min-w-[220px] bg-card">Token / Label</TableHead>
@@ -634,6 +635,7 @@ export default function Tokens() {
                 )}
               </TableBody>
             </Table>
+            </div>
           )}
         </CardContent>
       </Card>

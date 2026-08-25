@@ -188,7 +188,8 @@ export default function Devices() {
 
       <Card>
         <CardContent className="p-0">
-          <Table>
+          <div className="overflow-x-auto pb-2">
+          <Table className="min-w-[1180px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="sticky left-0 z-20 w-[240px] min-w-[240px] bg-card">System Name</TableHead>
@@ -311,6 +312,7 @@ export default function Devices() {
               )}
             </TableBody>
           </Table>
+          </div>
         </CardContent>
       </Card>
 
