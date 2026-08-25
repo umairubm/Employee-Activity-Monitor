@@ -19,7 +19,7 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Clock, Download, CalendarClock, LogOut, Columns3, Sigma } from "lucide-react";
+import { Clock, Download, CalendarClock, LogOut, Columns3, Sigma, Search } from "lucide-react";
 import { useGroupFilter, ALL_GROUPS as ALL } from "@/hooks/use-group-filter";
 import { useDateRange, daysAgoStr } from "@/hooks/use-date-filter";
 
@@ -197,7 +197,9 @@ export default function Timesheets() {
   const [filterOp, setFilterOp] = useState<"lt" | "gt">("gt");
   const [filterHours, setFilterHours] = useState<string>("");
   const [filterMinutes, setFilterMinutes] = useState<string>("");
+  const [search, setSearch] = useState("");
 
+  const searchTerm = search.trim().toLocaleLowerCase();
   const hoursNum = filterHours.trim() === "" ? 0 : Number(filterHours);
   const minsNum = filterMinutes.trim() === "" ? 0 : Number(filterMinutes);
   const durationProvided = filterHours.trim() !== "" || filterMinutes.trim() !== "";
@@ -206,19 +208,35 @@ export default function Timesheets() {
   const filterActive = filterField !== "none" && durationProvided && durationValid;
 
   const filteredRows = useMemo(() => {
-    if (!filterActive) return rows;
     const threshold = hoursNum * 3600 + minsNum * 60;
     return rows.filter((r) => {
+      const searchableValues = [
+        r.date,
+        r.systemName,
+        r.tokenLabel,
+        r.tokenRegion,
+        r.username,
+        r.deviceGroup,
+      ];
+      const matchesSearch =
+        searchTerm === "" ||
+        searchableValues.some((value) =>
+          value?.toLocaleLowerCase().includes(searchTerm),
+        );
+      if (!matchesSearch) return false;
+      if (!filterActive) return true;
       const v = filterField === "activeSeconds" ? r.activeSeconds : r.totalSeconds;
       return filterOp === "lt" ? v < threshold : v > threshold;
     });
-  }, [rows, filterActive, filterField, filterOp, hoursNum, minsNum]);
+  }, [rows, searchTerm, filterActive, filterField, filterOp, hoursNum, minsNum]);
 
-  // Summary totals follow the duration filter: when a filter is active, the
-  // Total/Active time cards sum only the rows actually displayed; clearing the
-  // filter restores the server-computed unfiltered report totals.
+  const tableFilterActive = filterActive || searchTerm !== "";
+
+  // Summary totals follow the visible table: when a search or duration filter
+  // is active, the Total/Active cards sum only displayed rows; clearing both
+  // restores the server-computed unfiltered report totals.
   const displayedTotals = useMemo(() => {
-    if (!filterActive) {
+    if (!tableFilterActive) {
       return {
         workedSeconds: totals?.workedSeconds ?? 0,
         activeSeconds: totals?.activeSeconds ?? 0,
@@ -232,7 +250,7 @@ export default function Timesheets() {
       },
       { workedSeconds: 0, activeSeconds: 0 },
     );
-  }, [filterActive, filteredRows, totals]);
+  }, [tableFilterActive, filteredRows, totals]);
 
   const clearFilter = () => {
     setFilterField("none");
@@ -287,6 +305,18 @@ export default function Timesheets() {
 
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-wrap items-end gap-2">
+          <div className="relative">
+            <Label htmlFor="ts-search" className="text-xs text-muted-foreground mb-1 block">Search</Label>
+            <Search className="absolute left-2.5 top-8 h-4 w-4 text-muted-foreground" />
+            <Input
+              id="ts-search"
+              type="search"
+              placeholder="Computer, user, label..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-9 sm:w-56"
+            />
+          </div>
           <div>
             <Label htmlFor="ts-group" className="text-xs text-muted-foreground mb-1 block">Team</Label>
             <Select value={groupFilter} onValueChange={setGroupFilter}>
@@ -442,11 +472,11 @@ export default function Timesheets() {
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <Card><CardContent className="p-4">
-          <p className="text-xs text-muted-foreground">Total time{filterActive && <span className="ml-1 text-[10px] uppercase tracking-wide text-primary">(filtered)</span>}</p>
+          <p className="text-xs text-muted-foreground">Total time{tableFilterActive && <span className="ml-1 text-[10px] uppercase tracking-wide text-primary">(filtered)</span>}</p>
           <p className="text-2xl font-bold">{fmtHours(displayedTotals.workedSeconds)}</p>
         </CardContent></Card>
         <Card><CardContent className="p-4">
-          <p className="text-xs text-muted-foreground">Active time{filterActive && <span className="ml-1 text-[10px] uppercase tracking-wide text-primary">(filtered)</span>}</p>
+          <p className="text-xs text-muted-foreground">Active time{tableFilterActive && <span className="ml-1 text-[10px] uppercase tracking-wide text-primary">(filtered)</span>}</p>
           <p className="text-2xl font-bold text-emerald-600">{fmtHours(displayedTotals.activeSeconds)}</p>
         </CardContent></Card>
         <Card><CardContent className="p-4">
@@ -495,7 +525,7 @@ export default function Timesheets() {
                 {isLoading ? (
                   <TableRow><TableCell colSpan={14} className="h-32 text-center text-muted-foreground">Loading...</TableCell></TableRow>
                 ) : filteredRows.length === 0 ? (
-                  <TableRow><TableCell colSpan={14} className="h-32 text-center text-muted-foreground">{filterActive ? "No rows match the filter." : "No activity in this range."}</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={14} className="h-32 text-center text-muted-foreground">{tableFilterActive ? "No rows match the active filters." : "No activity in this range."}</TableCell></TableRow>
                 ) : (
                   filteredRows.map((r) => (
                     <TableRow key={`${r.deviceId}-${r.date}`} className="group">
