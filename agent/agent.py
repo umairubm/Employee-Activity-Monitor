@@ -45,7 +45,7 @@ else:
     from . import system_info as system_info_mod
 
 # You can change this to 1.1.32, etc. to test auto-update
-AGENT_VERSION = "1.1.53"
+AGENT_VERSION = "1.1.54"
 POLL_SECONDS = 15
 
 def _now_iso() -> str:
@@ -644,67 +644,70 @@ class MonitoringAgent:
     def _sync_activity(self) -> None:
         # Push buffered activity.
         self._flush_segment()
-        with self._lock:
-            if not self._pending_logs:
-                return
-            # Take a snapshot of the current logs to send
-            batch = self._pending_logs[:]
-
-        try:
-            try:
-                raw_sysinfo = system_info_mod.sysinfo.system_info
-                if isinstance(raw_sysinfo, dict):
-                    # The spec dictates that empty strings must be dropped before sending
-                    system_hardware_details = {
-                        k: v for k, v in raw_sysinfo.items() if v != ""
-                    }
-                else:
-                    system_hardware_details = raw_sysinfo
-                    
-                # Compare hardware baseline to detect changes
-                hardware_changes = None
-                if isinstance(system_hardware_details, dict):
-                    # Fields that frequently change and shouldn't trigger hardware alerts
-                    ignored_fields = {"Ip", "Available Space"}
-                    
-                    current_hardware = {k: v for k, v in system_hardware_details.items() if k not in ignored_fields}
-                    baseline_hardware = {k: v for k, v in self.cfg.hardware_baseline.items() if k not in ignored_fields}
-                    
-                    # Only alert if there is a baseline already
-                    if baseline_hardware:
-                        diff_old = {}
-                        diff_new = {}
-                        for k, v in current_hardware.items():
-                            if baseline_hardware.get(k) != v:
-                                diff_old[k] = baseline_hardware.get(k)
-                                diff_new[k] = v
-                                
-                        # Check for fields that were removed entirely
-                        for k in baseline_hardware:
-                            if k not in current_hardware:
-                                diff_old[k] = baseline_hardware[k]
-                                diff_new[k] = None
-                                
-                        if diff_old or diff_new:
-                            hardware_changes = {"old": diff_old, "new": diff_new}
-                            
-            except Exception:
-                system_hardware_details = None
-                hardware_changes = None
-
-            self.api.send_activity(batch, system_info=system_hardware_details, hardware_changes=hardware_changes)
-            
-            # Success! Remove exactly the batch we just sent and save to disk
+        
+        while True:
             with self._lock:
-                self._pending_logs = self._pending_logs[len(batch):]
-                self._save_offline_logs()
-            
-            # Always update the baseline to the latest state ONLY on successful send
-            if system_hardware_details and isinstance(system_hardware_details, dict):
-                self.cfg.hardware_baseline = system_hardware_details
-                self.cfg.save()
-        except Exception as exc:  # noqa: BLE001
-            print(f"[agent] activity sync failed: {exc}", file=sys.stderr)
+                if not self._pending_logs:
+                    return
+                # Take a snapshot of the current logs to send, max 400 at a time to respect server limits
+                batch = self._pending_logs[:400]
+
+            try:
+                try:
+                    raw_sysinfo = system_info_mod.sysinfo.system_info
+                    if isinstance(raw_sysinfo, dict):
+                        # The spec dictates that empty strings must be dropped before sending
+                        system_hardware_details = {
+                            k: v for k, v in raw_sysinfo.items() if v != ""
+                        }
+                    else:
+                        system_hardware_details = raw_sysinfo
+                        
+                    # Compare hardware baseline to detect changes
+                    hardware_changes = None
+                    if isinstance(system_hardware_details, dict):
+                        # Fields that frequently change and shouldn't trigger hardware alerts
+                        ignored_fields = {"Ip", "Available Space"}
+                        
+                        current_hardware = {k: v for k, v in system_hardware_details.items() if k not in ignored_fields}
+                        baseline_hardware = {k: v for k, v in self.cfg.hardware_baseline.items() if k not in ignored_fields}
+                        
+                        # Only alert if there is a baseline already
+                        if baseline_hardware:
+                            diff_old = {}
+                            diff_new = {}
+                            for k, v in current_hardware.items():
+                                if baseline_hardware.get(k) != v:
+                                    diff_old[k] = baseline_hardware.get(k)
+                                    diff_new[k] = v
+                                    
+                            # Check for fields that were removed entirely
+                            for k in baseline_hardware:
+                                if k not in current_hardware:
+                                    diff_old[k] = baseline_hardware[k]
+                                    diff_new[k] = None
+                                    
+                            if diff_old or diff_new:
+                                hardware_changes = {"old": diff_old, "new": diff_new}
+                                
+                except Exception:
+                    system_hardware_details = None
+                    hardware_changes = None
+
+                self.api.send_activity(batch, system_info=system_hardware_details, hardware_changes=hardware_changes)
+                
+                # Success! Remove exactly the batch we just sent and save to disk
+                with self._lock:
+                    self._pending_logs = self._pending_logs[len(batch):]
+                    self._save_offline_logs()
+                
+                # Always update the baseline to the latest state ONLY on successful send
+                if system_hardware_details and isinstance(system_hardware_details, dict):
+                    self.cfg.hardware_baseline = system_hardware_details
+                    self.cfg.save()
+            except Exception as exc:  # noqa: BLE001
+                print(f"[agent] activity sync failed: {exc}", file=sys.stderr)
+                break  # Stop trying if we hit an error (e.g. network down)
 
     def _heartbeat(self) -> None:
         # Heartbeat + commands.
