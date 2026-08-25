@@ -57,6 +57,7 @@ import { useDateRange, rangeBoundsIso, todayStr } from "@/hooks/use-date-filter"
 import { DateRangeFilter } from "@/components/DateFilter";
 import { ScreenshotLightbox } from "@/components/ScreenshotLightbox";
 import { deviceWallDate, formatDeviceTime, resolveDeviceOffset } from "@/lib/device-time";
+import { ViewToggle, useViewMode } from "@/components/ViewToggle";
 
 /* ----------------------------- types & helpers ---------------------------- */
 
@@ -642,6 +643,7 @@ function DeviceActivityPanel({
 
 export default function ActivityLogs() {
   const [search, setSearch] = useState("");
+  const [viewMode, setViewMode] = useViewMode("activity-logs");
   const [groupFilter, setGroupFilter] = useGroupFilter();
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -774,6 +776,7 @@ export default function ActivityLogs() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
+          <ViewToggle mode={viewMode} onChange={setViewMode} />
         </div>
       </div>
 
@@ -785,7 +788,7 @@ export default function ActivityLogs() {
                 <div key={i} className="h-14 rounded-md bg-muted" />
               ))}
             </div>
-          ) : (
+          ) : viewMode === "table" ? (
             <Table>
               <TableHeader>
                 <TableRow>
@@ -923,6 +926,72 @@ export default function ActivityLogs() {
                 )}
               </TableBody>
             </Table>
+          ) : !filteredDevices || filteredDevices.length === 0 ? (
+            <div className="flex h-32 flex-col items-center justify-center text-muted-foreground">
+              <MonitorSmartphone className="mb-2 h-8 w-8 opacity-20" />
+              No users found.
+            </div>
+          ) : (
+            <div className="grid gap-4 p-4 sm:grid-cols-2 xl:grid-cols-3">
+              {filteredDevices.map((device) => {
+                const agg = aggByDevice.get(device.id) ?? emptyAgg();
+                const topApps = Array.from(agg.appTotals.entries())
+                  .sort((a, b) => b[1] - a[1])
+                  .slice(0, 3)
+                  .map(([name]) => name);
+                return (
+                  <Card
+                    key={device.id}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`View activity for ${userNameOf(device)}`}
+                    className="cursor-pointer transition-colors hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    onClick={() => setSelectedId(device.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setSelectedId(device.id);
+                      }
+                    }}
+                  >
+                    <CardContent className="p-4">
+                      <div className="flex items-start gap-3">
+                        <Avatar className="h-10 w-10">
+                          <AvatarFallback className="bg-primary/10 text-xs font-semibold text-primary">
+                            {initialsOf(userNameOf(device))}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <p className="truncate font-semibold">{userNameOf(device)}</p>
+                            {device.isLocked && <Badge variant="destructive" className="text-[10px]">Locked</Badge>}
+                          </div>
+                          <p className={`mt-0.5 text-xs ${device.online ? "text-emerald-600 dark:text-emerald-500" : "text-muted-foreground"}`}>
+                            {device.online ? `Tracking${agg.currentApp ? ` · Using ${agg.currentApp}` : ""}` : "Offline"}
+                          </p>
+                        </div>
+                        <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${device.online ? "bg-emerald-500" : "bg-muted-foreground/40"}`} aria-label={device.online ? "Online" : "Offline"} />
+                      </div>
+                      {topApps.length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-1">
+                          {topApps.map((app) => <Badge key={app} variant="secondary" className="px-1.5 py-0 text-[10px] font-normal uppercase">{app}</Badge>)}
+                        </div>
+                      )}
+                      <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                        <div><p className="text-xs text-muted-foreground">Active time</p><p className="font-semibold tabular-nums">{formatHm(agg.activeSeconds)}</p></div>
+                        <div><p className="text-xs text-muted-foreground">Total time</p><p className="tabular-nums text-muted-foreground">{formatHm(agg.totalSeconds)}</p></div>
+                        <div><p className="text-xs text-muted-foreground">Start</p><p className="tabular-nums">{agg.startedAt ? format(agg.startedAt, "h:mm a") : "—"}</p></div>
+                        <div><p className="text-xs text-muted-foreground">End</p><p className="tabular-nums">{agg.endedAt ? format(agg.endedAt, "h:mm a") : "—"}</p></div>
+                      </div>
+                      <div className="mt-4">
+                        <p className="mb-1 text-xs text-muted-foreground">Daily Activity {isSingleDay ? "(10-min slots)" : "(range overlaid on a 24h day)"}</p>
+                        <ActivitySlots slots={agg.slots} />
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
           )}
         </CardContent>
       </Card>

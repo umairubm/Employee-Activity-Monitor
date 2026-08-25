@@ -55,6 +55,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { ViewToggle, useViewMode } from "@/components/ViewToggle";
 
 const PROJECT_STATUS = [
   { value: "active", label: "Active" },
@@ -110,6 +111,7 @@ export default function Projects() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [viewMode, setViewMode] = useViewMode("projects");
   const { data: projects, isLoading } = useListProjects(
     statusFilter === "all" ? undefined : { status: statusFilter as never },
   );
@@ -157,6 +159,7 @@ export default function Projects() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          <ViewToggle mode={viewMode} onChange={setViewMode} />
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="w-40">
               <SelectValue />
@@ -237,7 +240,7 @@ export default function Projects() {
                 <div key={i} className="h-12 bg-muted rounded-md"></div>
               ))}
             </div>
-          ) : (
+          ) : viewMode === "table" ? (
             <Table>
               <TableHeader>
                 <TableRow>
@@ -278,10 +281,94 @@ export default function Projects() {
                 )}
               </TableBody>
             </Table>
+          ) : projects?.length === 0 ? (
+            <div className="flex h-32 flex-col items-center justify-center text-muted-foreground">
+              <FolderKanban className="mb-2 h-8 w-8 opacity-20" />
+              No projects yet. Create one to get started.
+            </div>
+          ) : (
+            <div className="grid gap-4 p-4 sm:grid-cols-2 xl:grid-cols-3">
+              {projects?.map((project) => (
+                <ProjectCard
+                  key={project.id}
+                  project={project}
+                  expanded={expanded === project.id}
+                  onToggle={() => setExpanded(expanded === project.id ? null : project.id)}
+                  onChanged={refetchProjects}
+                />
+              ))}
+            </div>
           )}
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function ProjectCard({
+  project,
+  expanded,
+  onToggle,
+  onChanged,
+}: {
+  project: ProjectItem;
+  expanded: boolean;
+  onToggle: () => void;
+  onChanged: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const updateProject = useUpdateProject();
+  const deleteProject = useDeleteProject();
+  const { toast } = useToast();
+  const handleDelete = () => {
+    if (!confirm(`Delete "${project.name}" and all of its tasks? This cannot be undone.`)) return;
+    deleteProject.mutate({ id: project.id }, {
+      onSuccess: () => {
+        onChanged();
+        toast({ title: "Project deleted" });
+      },
+    });
+  };
+  return (
+    <Card className={expanded ? "sm:col-span-2 xl:col-span-3" : undefined}>
+      <CardContent className="p-4">
+        <div className="flex items-start justify-between gap-3">
+          <button type="button" className="min-w-0 text-left" onClick={onToggle}>
+            <span className="flex items-center gap-2 font-semibold">
+              {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+              {project.name}
+            </span>
+            {project.client && <span className="ml-6 text-xs text-muted-foreground">{project.client}</span>}
+          </button>
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={handleDelete} disabled={deleteProject.isPending} title="Delete project">
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+          <div>
+            <p className="mb-1 text-xs text-muted-foreground">Status</p>
+            <Select value={project.status} onValueChange={(status) => updateProject.mutate({ id: project.id, data: { status: status as never } }, { onSuccess: onChanged })}>
+              <SelectTrigger className={`h-8 w-32 ${statusBadge(project.status)}`}><SelectValue /></SelectTrigger>
+              <SelectContent>{PROJECT_STATUS.map((s) => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div><p className="text-xs text-muted-foreground">Tasks</p><p>{project.doneCount}/{project.taskCount}</p></div>
+          <div className="col-span-2">
+            <div className="flex justify-between text-xs text-muted-foreground"><span>Progress</span><span>{project.completionPct}%</span></div>
+            <Progress value={project.completionPct} className="mt-1 h-2" />
+          </div>
+          <div className="col-span-2"><p className="text-xs text-muted-foreground">Logged / Estimated</p><p>{fmtHours(project.loggedMinutes)} / {fmtHours(project.estimatedMinutes)}</p></div>
+        </div>
+        {expanded && (
+          <div className="mt-4 border-t">
+            <TaskPanel projectId={project.id} onChanged={() => {
+              queryClient.invalidateQueries({ queryKey: getListProjectTasksQueryKey(project.id) });
+              onChanged();
+            }} />
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -422,6 +509,7 @@ function TaskPanel({
   const createTask = useCreateTask();
   const updateTask = useUpdateTask();
   const deleteTask = useDeleteTask();
+  const [viewMode, setViewMode] = useViewMode("project-tasks");
 
   const [title, setTitle] = useState("");
   const [priority, setPriority] = useState("medium");
@@ -519,6 +607,7 @@ function TaskPanel({
           <Plus className="h-4 w-4" />
           Add
         </Button>
+        <ViewToggle mode={viewMode} onChange={setViewMode} />
       </div>
 
       {isLoading ? (
@@ -527,7 +616,7 @@ function TaskPanel({
         </div>
       ) : tasks?.length === 0 ? (
         <p className="text-sm text-muted-foreground py-4">No tasks yet.</p>
-      ) : (
+      ) : viewMode === "table" ? (
         <div className="rounded-md border border-border bg-background">
           <Table>
             <TableHeader>
@@ -626,6 +715,30 @@ function TaskPanel({
               ))}
             </TableBody>
           </Table>
+        </div>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {tasks?.map((task) => (
+            <Card key={task.id}>
+              <CardContent className="p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="font-medium text-sm">{task.title}</p>
+                    <p className="text-xs text-muted-foreground">Estimated {task.estimatedMinutes > 0 ? fmtHours(task.estimatedMinutes) : "0h"}</p>
+                  </div>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => handleDelete(task)} disabled={deleteTask.isPending} title="Delete task">
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+                <div className="mt-3 grid gap-3">
+                  <div><Label className="text-xs">Status</Label><Select value={task.status} onValueChange={(v) => patch(task, { status: v })}><SelectTrigger className="mt-1 h-8"><SelectValue /></SelectTrigger><SelectContent>{TASK_STATUS.map((s) => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}</SelectContent></Select></div>
+                  <div><Label className="text-xs">Priority</Label><div className="mt-1"><Badge variant="outline" className={priorityBadge(task.priority)}>{task.priority}</Badge></div></div>
+                  <div><Label className="text-xs">Assignee</Label><Select value={task.assignedUserId ?? "none"} onValueChange={(v) => patch(task, { assignedUserId: v === "none" ? null : v })}><SelectTrigger className="mt-1 h-8"><SelectValue placeholder="Unassigned" /></SelectTrigger><SelectContent><SelectItem value="none">Unassigned</SelectItem>{users?.map((u) => <SelectItem key={u.id} value={u.id}>{u.username}</SelectItem>)}</SelectContent></Select></div>
+                  <div><Label className="text-xs">Logged (hrs)</Label><Input type="number" min="0" step="0.25" defaultValue={(task.loggedMinutes / 60).toString()} onBlur={(e) => { const hrs = parseFloat(e.target.value); const minutes = Number.isFinite(hrs) ? Math.max(0, Math.round(hrs * 60)) : 0; if (minutes !== task.loggedMinutes) patch(task, { loggedMinutes: minutes }); }} className="mt-1 h-8" /></div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
         </div>
       )}
     </div>

@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Tags, Search, Loader2, MonitorSmartphone, FolderOpen } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { ViewToggle, useViewMode } from "@/components/ViewToggle";
 
 const ALL_GROUPS = "__all__";
 const ALL_DEVICES = "__all__";
@@ -18,6 +19,7 @@ export default function Categories() {
 
   const [groupFilter, setGroupFilter] = useState<string>(ALL_GROUPS);
   const [deviceFilter, setDeviceFilter] = useState<string>(ALL_DEVICES);
+  const [viewMode, setViewMode] = useViewMode("categories");
 
   const { data: devices } = useListDevices();
 
@@ -141,6 +143,7 @@ export default function Categories() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
+          <ViewToggle mode={viewMode} onChange={setViewMode} label="Category view" />
         </div>
       </div>
 
@@ -150,7 +153,7 @@ export default function Categories() {
             <div className="p-8 space-y-4 animate-pulse">
               {[1, 2, 3, 4, 5].map(i => <div key={i} className="h-12 bg-muted rounded-md"></div>)}
             </div>
-          ) : (
+          ) : viewMode === "table" ? (
             <Table>
               <TableHeader>
                 <TableRow>
@@ -222,6 +225,68 @@ export default function Categories() {
                 )}
               </TableBody>
             </Table>
+          ) : (
+            <div className="grid gap-4 p-4 sm:grid-cols-2 xl:grid-cols-3">
+              {filteredCategories?.length === 0 ? (
+                <div className="col-span-full flex min-h-32 flex-col items-center justify-center text-center text-muted-foreground">
+                  <Tags className="mb-2 h-8 w-8 opacity-20" />
+                  No categories found. New apps are added automatically.
+                </div>
+              ) : (
+                filteredCategories?.map((category) => (
+                  <div key={category.id} className="rounded-lg border bg-card p-4 shadow-sm">
+                    <div>
+                      <p className="text-xs text-muted-foreground">Process Pattern</p>
+                      <p className="mt-1 break-all font-mono text-sm text-muted-foreground">{category.pattern}</p>
+                    </div>
+                    <div className="mt-4">
+                      <p className="mb-1 text-xs text-muted-foreground">Display Name</p>
+                      {editingId === category.id ? (
+                        <Input
+                          value={editName}
+                          onChange={(e) => setEditName(e.target.value)}
+                          onBlur={() => handleNameSave(category.id)}
+                          onKeyDown={(e) => e.key === "Enter" && handleNameSave(category.id)}
+                          autoFocus
+                          className="h-8 py-1"
+                          disabled={updateCategory.isPending && updateCategory.variables?.id === category.id}
+                        />
+                      ) : (
+                        <div
+                          className="cursor-pointer rounded-md p-1.5 -ml-1.5 transition-colors hover:bg-secondary/50"
+                          onClick={() => handleNameEdit(category.id, category.displayName)}
+                        >
+                          {category.displayName}
+                        </div>
+                      )}
+                    </div>
+                    <div className="mt-4">
+                      <p className="mb-1 text-xs text-muted-foreground">Classification</p>
+                      <Select
+                        value={category.classification}
+                        onValueChange={(value) => handleClassificationChange(category.id, value)}
+                        disabled={updateCategory.isPending && updateCategory.variables?.id === category.id}
+                      >
+                        <SelectTrigger className={`h-8 w-full ${
+                          category.classification === "productive" ? "bg-primary/10 text-primary border-primary/20" :
+                          category.classification === "unproductive" ? "bg-destructive/10 text-destructive border-destructive/20" :
+                          category.classification === "neutral" ? "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300" :
+                          ""
+                        }`}>
+                          <SelectValue placeholder="Select classification" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="productive">Productive</SelectItem>
+                          <SelectItem value="neutral">Neutral</SelectItem>
+                          <SelectItem value="unproductive">Unproductive</SelectItem>
+                          <SelectItem value="undefined">Undefined</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
           )}
         </CardContent>
       </Card>

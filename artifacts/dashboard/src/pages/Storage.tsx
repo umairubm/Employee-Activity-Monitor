@@ -35,6 +35,7 @@ import {
   KeyRound,
   Loader2,
 } from "lucide-react";
+import { ViewToggle, useViewMode } from "@/components/ViewToggle";
 
 const AUTH_MODE_LABEL: Record<string, string> = {
   database: "Saved credentials (entered on this page)",
@@ -88,6 +89,7 @@ export default function Storage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { data, isLoading, isFetching } = useGetDropboxSystemStatus();
+  const [viewMode, setViewMode] = useViewMode("storage-errors");
 
   const [appKey, setAppKey] = useState("");
   const [appSecret, setAppSecret] = useState("");
@@ -314,10 +316,13 @@ export default function Storage() {
       {/* Error log */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <AlertTriangle className="h-5 w-5" />
-            Recent upload errors
-          </CardTitle>
+          <div className="flex items-start justify-between gap-3">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <AlertTriangle className="h-5 w-5" />
+              Recent upload errors
+            </CardTitle>
+            <ViewToggle mode={viewMode} onChange={setViewMode} />
+          </div>
           <CardDescription>
             The most recent screenshots that failed to upload to Dropbox, across
             all companies.
@@ -331,7 +336,7 @@ export default function Storage() {
               <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
               No upload failures. Everything is syncing cleanly.
             </div>
-          ) : (
+          ) : viewMode === "table" ? (
             <div className="rounded-md border overflow-x-auto">
               <Table>
                 <TableHeader>
@@ -371,6 +376,24 @@ export default function Storage() {
                   ))}
                 </TableBody>
               </Table>
+            </div>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {errors.map((e) => (
+                <Card key={e.id}>
+                  <CardContent className="p-4">
+                    <div className="font-medium">
+                      {e.deviceName ?? <span className="text-muted-foreground">{e.deviceId.slice(0, 8)}…</span>}
+                    </div>
+                    <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                      <div className="col-span-2"><p className="text-xs text-muted-foreground">Captured</p><p>{formatDeviceTime(e.capturedAt, e.deviceTzOffsetMinutes, "MMM d, yyyy h:mm a")}</p></div>
+                      <div><p className="text-xs text-muted-foreground">Attempts</p><p className="tabular-nums">{e.attempts}</p></div>
+                      <div><p className="text-xs text-muted-foreground">Size</p><p className="tabular-nums">{fmtBytes(e.fileSizeBytes)}</p></div>
+                      <div className="col-span-2"><p className="text-xs text-muted-foreground">Last error</p><p className="break-words text-destructive">{e.lastError ?? "—"}</p></div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
             </div>
           )}
         </CardContent>

@@ -22,6 +22,7 @@ import {
 import { Clock, Download, CalendarClock, LogOut, Columns3, Sigma, Search } from "lucide-react";
 import { useGroupFilter, ALL_GROUPS as ALL } from "@/hooks/use-group-filter";
 import { useDateRange, daysAgoStr } from "@/hooks/use-date-filter";
+import { ViewToggle, useViewMode } from "@/components/ViewToggle";
 
 function fmtHours(seconds: number): string {
   const h = Math.floor(seconds / 3600);
@@ -84,6 +85,7 @@ function downloadCsv(filename: string, rows: (string | number)[][]) {
 
 export default function Timesheets() {
   const [{ from, to }, setRange] = useDateRange();
+  const [viewMode, setViewMode] = useViewMode("timesheets");
   const [groupFilter, setGroupFilter] = useGroupFilter();
   const { data: allDevices } = useListDevices();
 
@@ -458,6 +460,7 @@ export default function Timesheets() {
             <Download className="h-4 w-4 mr-2" />
             Export CSV
           </Button>
+          <ViewToggle mode={viewMode} onChange={setViewMode} />
         </div>
       </div>
 
@@ -501,6 +504,7 @@ export default function Timesheets() {
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
+          {viewMode === "table" ? (
           <div className="overflow-x-auto pb-2">
             <Table className="min-w-[1400px]">
               <TableHeader>
@@ -563,6 +567,61 @@ export default function Timesheets() {
               )}
             </Table>
           </div>
+          ) : isLoading ? (
+            <div className="flex h-32 items-center justify-center text-muted-foreground">Loading...</div>
+          ) : filteredRows.length === 0 ? (
+            <div className="flex h-32 items-center justify-center text-muted-foreground">
+              {tableFilterActive ? "No rows match the active filters." : "No activity in this range."}
+            </div>
+          ) : (
+            <div className="space-y-4 p-4">
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {filteredRows.map((r) => (
+                  <Card key={`${r.deviceId}-${r.date}`}>
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate font-semibold" title={r.systemName}>{r.systemName}</p>
+                          <p className="text-xs tabular-nums text-muted-foreground">{`${r.date}T00:00:00`}</p>
+                        </div>
+                        <Badge variant="secondary" className="font-normal">{r.deviceGroup}</Badge>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                        <span><span className="text-muted-foreground">Label: </span>{r.tokenLabel ?? "—"}</span>
+                        <span><span className="text-muted-foreground">Region: </span>{r.tokenRegion ? <Badge variant="outline" className="font-normal">{r.tokenRegion}</Badge> : "—"}</span>
+                        <span><span className="text-muted-foreground">User: </span>{r.username ?? "—"}</span>
+                      </div>
+                      <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                        <div><p className="text-xs text-muted-foreground">First Activity</p><p className="tabular-nums">{fmtTime(r.firstActivity)}</p></div>
+                        <div><p className="text-xs text-muted-foreground">Last Activity</p><p className="tabular-nums">{fmtTime(r.lastActivity)}</p></div>
+                        <div className="col-span-2"><p className="text-xs text-muted-foreground">Last Activity Log</p><p className="tabular-nums text-muted-foreground">{fmtDateTime(r.lastActivityLog)}</p></div>
+                        <div><p className="text-xs text-muted-foreground">Productive</p><p className="tabular-nums text-emerald-600">{fmtDuration(r.productiveSeconds)}</p></div>
+                        <div><p className="text-xs text-muted-foreground">Unproductive</p><p className="tabular-nums text-rose-600">{fmtDuration(r.unproductiveSeconds)}</p></div>
+                        <div><p className="text-xs text-muted-foreground">Undefined</p><p className="tabular-nums text-muted-foreground">{fmtDuration(r.undefinedSeconds)}</p></div>
+                        <div><p className="text-xs text-muted-foreground">Total Time</p><p className="font-medium tabular-nums">{fmtDuration(r.totalSeconds)}</p></div>
+                        <div><p className="text-xs text-muted-foreground">Active Time</p><p className="tabular-nums">{fmtDuration(r.activeSeconds)}</p></div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+              {sumIds.length > 0 && (
+                <Card>
+                  <CardContent className="p-4">
+                    <p className="mb-3 text-sm font-medium">Sum{filterActive ? " (filtered)" : ""}</p>
+                    <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 xl:grid-cols-5">
+                      {summableColumns.filter((c) => isSummed(c.id)).map((c) => (
+                        <div key={c.id}>
+                          <p className="text-xs text-muted-foreground">{c.header}</p>
+                          <p className="font-medium tabular-nums">{c.formatSum!(sumsById[c.id] ?? 0)}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

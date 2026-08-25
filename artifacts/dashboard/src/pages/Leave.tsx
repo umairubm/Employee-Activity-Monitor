@@ -53,6 +53,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { CalendarOff, Plus, Trash2, Check, X, Ban, Pencil } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { ViewToggle, useViewMode } from "@/components/ViewToggle";
 
 const LEAVE_TYPES = [
   { value: "annual", label: "Annual" },
@@ -109,6 +110,7 @@ function RequestsTab() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [viewMode, setViewMode] = useViewMode("leave-requests");
   const { data: requests, isLoading } = useListLeaveRequests(
     statusFilter === "all" ? undefined : { status: statusFilter as never },
   );
@@ -161,7 +163,8 @@ function RequestsTab() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
+        <div className="flex items-center gap-3">
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="w-44">
             <SelectValue />
           </SelectTrigger>
@@ -172,7 +175,9 @@ function RequestsTab() {
             <SelectItem value="rejected">Rejected</SelectItem>
             <SelectItem value="cancelled">Cancelled</SelectItem>
           </SelectContent>
-        </Select>
+          </Select>
+          <ViewToggle mode={viewMode} onChange={setViewMode} />
+        </div>
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogTrigger asChild>
             <Button className="gap-2">
@@ -272,7 +277,7 @@ function RequestsTab() {
                 <div key={i} className="h-12 bg-muted rounded-md"></div>
               ))}
             </div>
-          ) : (
+          ) : viewMode === "table" ? (
             <Table>
               <TableHeader>
                 <TableRow>
@@ -304,6 +309,17 @@ function RequestsTab() {
                 )}
               </TableBody>
             </Table>
+          ) : requests?.length === 0 ? (
+            <div className="flex h-32 flex-col items-center justify-center text-muted-foreground">
+              <CalendarOff className="mb-2 h-8 w-8 opacity-20" />
+              No leave requests.
+            </div>
+          ) : (
+            <div className="grid gap-4 p-4 sm:grid-cols-2 xl:grid-cols-3">
+              {requests?.map((req) => (
+                <RequestCard key={req.id} req={req} onChanged={refetch} />
+              ))}
+            </div>
           )}
         </CardContent>
       </Card>
@@ -311,12 +327,18 @@ function RequestsTab() {
   );
 }
 
+function RequestCard({ req, onChanged }: { req: LeaveRequestItem; onChanged: () => void }) {
+  return <RequestRow req={req} onChanged={onChanged} card />;
+}
+
 function RequestRow({
   req,
   onChanged,
+  card = false,
 }: {
   req: LeaveRequestItem;
   onChanged: () => void;
+  card?: boolean;
 }) {
   const { toast } = useToast();
   const review = useReviewLeaveRequest();
@@ -417,6 +439,174 @@ function RequestRow({
     );
   };
 
+  const actions = (
+    <div className="flex items-center justify-end gap-1">
+      {req.status === "pending" && (
+        <>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-muted-foreground hover:text-emerald-600"
+            onClick={() => handleReview("approved")}
+            disabled={review.isPending}
+            title="Approve"
+          >
+            <Check className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-muted-foreground hover:text-destructive"
+            onClick={() => handleReview("rejected")}
+            disabled={review.isPending}
+            title="Reject"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+            onClick={openEdit}
+            disabled={updateReq.isPending}
+            title="Edit"
+          >
+            <Pencil className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+            onClick={handleCancel}
+            disabled={cancelReq.isPending}
+            title="Cancel request"
+          >
+            <Ban className="h-4 w-4" />
+          </Button>
+        </>
+      )}
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+        onClick={handleDelete}
+        disabled={deleteReq.isPending}
+        title="Delete"
+      >
+        <Trash2 className="h-4 w-4" />
+      </Button>
+    </div>
+  );
+
+  const editDialog = (
+    <Dialog open={editOpen} onOpenChange={setEditOpen}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Edit Leave Request</DialogTitle>
+          <DialogDescription>
+            Only pending requests can be edited. Business days
+            (Mon&ndash;Fri) in the range are counted as leave days.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4 py-4 text-left">
+          <div className="grid gap-2">
+            <Label>Type</Label>
+            <Select value={editType} onValueChange={setEditType}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {LEAVE_TYPES.map((t) => (
+                  <SelectItem key={t.value} value={t.value}>
+                    {t.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="grid gap-2">
+              <Label htmlFor={`e-start-${req.id}`}>Start date</Label>
+              <Input
+                id={`e-start-${req.id}`}
+                type="date"
+                value={editStart}
+                onChange={(e) => setEditStart(e.target.value)}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor={`e-end-${req.id}`}>End date</Label>
+              <Input
+                id={`e-end-${req.id}`}
+                type="date"
+                value={editEnd}
+                onChange={(e) => setEditEnd(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor={`e-reason-${req.id}`}>Reason (optional)</Label>
+            <Textarea
+              id={`e-reason-${req.id}`}
+              value={editReason}
+              onChange={(e) => setEditReason(e.target.value)}
+              rows={2}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setEditOpen(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSaveEdit}
+            disabled={updateReq.isPending || editStart > editEnd}
+          >
+            {updateReq.isPending ? "Saving..." : "Save changes"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+
+  if (card) {
+    return (
+      <Card>
+        <CardContent className="p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs text-muted-foreground">User</p>
+              <p className="font-medium">{req.username ?? req.userId.slice(0, 8)}</p>
+            </div>
+            <Badge variant="outline" className={statusBadge(req.status)}>
+              {req.status}
+            </Badge>
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+            <div>
+              <p className="text-xs text-muted-foreground">Type</p>
+              <p className="capitalize">{req.leaveType}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Days</p>
+              <p>{req.days}</p>
+            </div>
+            <div className="col-span-2">
+              <p className="text-xs text-muted-foreground">Dates</p>
+              <p>{req.startDate} &rarr; {req.endDate}</p>
+            </div>
+            <div className="col-span-2">
+              <p className="text-xs text-muted-foreground">Reason</p>
+              <p className="break-words">{req.reason || "—"}</p>
+            </div>
+          </div>
+          <div className="mt-4 border-t pt-3">{actions}</div>
+          {editDialog}
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <TableRow>
       <TableCell className="font-medium">
@@ -433,131 +623,8 @@ function RequestRow({
         </Badge>
       </TableCell>
       <TableCell className="text-right">
-        <div className="flex items-center justify-end gap-1">
-          {req.status === "pending" && (
-            <>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 text-muted-foreground hover:text-emerald-600"
-                onClick={() => handleReview("approved")}
-                disabled={review.isPending}
-                title="Approve"
-              >
-                <Check className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                onClick={() => handleReview("rejected")}
-                disabled={review.isPending}
-                title="Reject"
-              >
-                <X className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                onClick={openEdit}
-                disabled={updateReq.isPending}
-                title="Edit"
-              >
-                <Pencil className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                onClick={handleCancel}
-                disabled={cancelReq.isPending}
-                title="Cancel request"
-              >
-                <Ban className="h-4 w-4" />
-              </Button>
-            </>
-          )}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 text-muted-foreground hover:text-destructive"
-            onClick={handleDelete}
-            disabled={deleteReq.isPending}
-            title="Delete"
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        </div>
-
-        <Dialog open={editOpen} onOpenChange={setEditOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Edit Leave Request</DialogTitle>
-              <DialogDescription>
-                Only pending requests can be edited. Business days
-                (Mon&ndash;Fri) in the range are counted as leave days.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-4 py-4 text-left">
-              <div className="grid gap-2">
-                <Label>Type</Label>
-                <Select value={editType} onValueChange={setEditType}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {LEAVE_TYPES.map((t) => (
-                      <SelectItem key={t.value} value={t.value}>
-                        {t.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label htmlFor={`e-start-${req.id}`}>Start date</Label>
-                  <Input
-                    id={`e-start-${req.id}`}
-                    type="date"
-                    value={editStart}
-                    onChange={(e) => setEditStart(e.target.value)}
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor={`e-end-${req.id}`}>End date</Label>
-                  <Input
-                    id={`e-end-${req.id}`}
-                    type="date"
-                    value={editEnd}
-                    onChange={(e) => setEditEnd(e.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor={`e-reason-${req.id}`}>Reason (optional)</Label>
-                <Textarea
-                  id={`e-reason-${req.id}`}
-                  value={editReason}
-                  onChange={(e) => setEditReason(e.target.value)}
-                  rows={2}
-                />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setEditOpen(false)}>
-                Cancel
-              </Button>
-              <Button
-                onClick={handleSaveEdit}
-                disabled={updateReq.isPending || editStart > editEnd}
-              >
-                {updateReq.isPending ? "Saving..." : "Save changes"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        {actions}
+        {editDialog}
       </TableCell>
     </TableRow>
   );
@@ -569,6 +636,7 @@ function BalancesTab() {
   const year = new Date().getFullYear();
   const { data: balances, isLoading } = useListLeaveBalances({ year });
   const { data: users } = useListUsers();
+  const [viewMode, setViewMode] = useViewMode("leave-balances");
 
   const upsert = useUpsertLeaveBalance();
   const [createOpen, setCreateOpen] = useState(false);
@@ -617,7 +685,9 @@ function BalancesTab() {
           Allocations for {year}. Saving an existing user/type updates the
           allocation and preserves used days.
         </p>
-        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <div className="flex items-center gap-3">
+          <ViewToggle mode={viewMode} onChange={setViewMode} />
+          <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogTrigger asChild>
             <Button className="gap-2">
               <Plus className="h-4 w-4" />
@@ -685,7 +755,8 @@ function BalancesTab() {
               </Button>
             </DialogFooter>
           </DialogContent>
-        </Dialog>
+          </Dialog>
+        </div>
       </div>
 
       <Card>
@@ -696,7 +767,7 @@ function BalancesTab() {
                 <div key={i} className="h-12 bg-muted rounded-md"></div>
               ))}
             </div>
-          ) : (
+          ) : viewMode === "table" ? (
             <Table>
               <TableHeader>
                 <TableRow>
@@ -745,6 +816,27 @@ function BalancesTab() {
                 )}
               </TableBody>
             </Table>
+          ) : balances?.length === 0 ? (
+            <div className="flex h-32 flex-col items-center justify-center text-muted-foreground">
+              <CalendarOff className="mb-2 h-8 w-8 opacity-20" />
+              No balances set for {year}.
+            </div>
+          ) : (
+            <div className="grid gap-4 p-4 sm:grid-cols-2 xl:grid-cols-3">
+              {balances?.map((bal: LeaveBalanceItem) => (
+                <Card key={bal.id}>
+                  <CardContent className="p-4">
+                    <div className="font-medium">{bal.username ?? bal.userId.slice(0, 8)}</div>
+                    <Badge variant="outline" className="mt-2 capitalize">{bal.leaveType}</Badge>
+                    <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
+                      <div><p className="text-xs text-muted-foreground">Allocated</p><p>{bal.allocatedDays}</p></div>
+                      <div><p className="text-xs text-muted-foreground">Used</p><p>{bal.usedDays}</p></div>
+                      <div><p className="text-xs text-muted-foreground">Remaining</p><p className={bal.remainingDays < 0 ? "font-medium text-destructive" : ""}>{bal.remainingDays}</p></div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
           )}
         </CardContent>
       </Card>

@@ -18,6 +18,7 @@ import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import EditTokenDialog from "@/components/EditTokenDialog";
 import { useGroupFilter, ALL_GROUPS } from "@/hooks/use-group-filter";
+import { ViewToggle, useViewMode } from "@/components/ViewToggle";
 
 // Sentinel value for the "＋ Create new group" option in the group dropdown.
 const CREATE_NEW_GROUP = "__create_new__";
@@ -61,6 +62,7 @@ export default function Tokens() {
   const revokeToken = useRevokeToken();
   const renameGroup = useRenameDeviceGroup();
   const [groupFilter, setGroupFilter] = useGroupFilter();
+  const [viewMode, setViewMode] = useViewMode("tokens");
 
   const [createOpen, setCreateOpen] = useState(false);
   const [newLabel, setNewLabel] = useState("");
@@ -208,6 +210,7 @@ export default function Tokens() {
         </div>
         
         <div className="flex items-center gap-2">
+          <ViewToggle mode={viewMode} onChange={setViewMode} label="Token view" />
           <Button
             variant="outline"
             className="gap-2"
@@ -520,7 +523,7 @@ export default function Tokens() {
             <div className="p-8 space-y-4 animate-pulse">
               {[1, 2, 3].map(i => <div key={i} className="h-12 bg-muted rounded-md"></div>)}
             </div>
-          ) : (
+          ) : viewMode === "table" ? (
             <div className="overflow-x-auto pb-2">
             <Table className="min-w-[1100px]">
               <TableHeader>
@@ -635,6 +638,114 @@ export default function Tokens() {
                 )}
               </TableBody>
             </Table>
+            </div>
+          ) : (
+            <div className="grid gap-4 p-4 sm:grid-cols-2 xl:grid-cols-3">
+              {tokens?.length === 0 ? (
+                <div className="col-span-full flex min-h-32 flex-col items-center justify-center text-center text-muted-foreground">
+                  <KeyRound className="mb-2 h-8 w-8 opacity-20" />
+                  No enrollment tokens exist.
+                </div>
+              ) : (
+                tokens?.map((token) => {
+                  const status = tokenStatus(token);
+                  const isRevoked = status === "revoked";
+                  const isActive = status === "active";
+
+                  return (
+                    <div key={token.id} className={`rounded-lg border bg-card p-4 shadow-sm ${!isActive ? "opacity-60" : ""}`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="truncate font-mono text-sm" title={token.token}>{token.token}</div>
+                          <div className="mt-1 truncate text-sm font-medium" title={token.label || undefined}>
+                            {token.label || "Unlabeled token"}
+                          </div>
+                        </div>
+                        <StatusBadge status={status} />
+                      </div>
+
+                      <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                        <div>
+                          <dt className="text-xs text-muted-foreground">Employee ID</dt>
+                          <dd className="truncate font-medium" title={token.employeeId || undefined}>{token.employeeId || "—"}</dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs text-muted-foreground">Uses</dt>
+                          <dd className="font-medium">{token.useCount} / {token.maxUses}</dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs text-muted-foreground">Group</dt>
+                          <dd>{token.deviceGroup ? <Badge variant="secondary" className="max-w-full truncate font-normal">{token.deviceGroup}</Badge> : "—"}</dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs text-muted-foreground">Region</dt>
+                          <dd>{token.region ? <Badge variant="outline" className="max-w-full truncate font-normal">{token.region}</Badge> : "—"}</dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs text-muted-foreground">Created by</dt>
+                          <dd className="truncate" title={token.createdByUsername || undefined}>{token.createdByUsername || "—"}</dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs text-muted-foreground">Created</dt>
+                          <dd>{format(new Date(token.createdAt), "MMM d, yyyy")}</dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs text-muted-foreground">Expires</dt>
+                          <dd>{token.expiresAt ? format(new Date(token.expiresAt), "MMM d, yyyy") : "Never"}</dd>
+                        </div>
+                      </dl>
+
+                      <div className="mt-4 border-t pt-3">
+                        <p className="mb-2 text-xs text-muted-foreground">Enrolled devices</p>
+                        {token.enrolledDevices.length === 0 ? (
+                          <span className="text-sm text-muted-foreground">—</span>
+                        ) : (
+                          <div className="flex flex-wrap gap-1">
+                            {token.enrolledDevices.map((device) => (
+                              <Badge key={device.id} variant="secondary" className="gap-1 font-normal">
+                                <Monitor className="h-3 w-3" />
+                                {device.systemName}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="mt-4 flex items-center justify-end gap-1 border-t pt-3">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-muted-foreground hover:text-foreground"
+                          onClick={() => setDetailsToken(token)}
+                          title="View details"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-muted-foreground hover:text-foreground"
+                          onClick={() => setEditToken(token)}
+                          disabled={isRevoked}
+                          title={isRevoked ? "Revoked tokens can't be edited" : "Edit token"}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-muted-foreground hover:text-destructive"
+                          onClick={() => handleRevoke(token.id)}
+                          disabled={isRevoked || revokeToken.isPending}
+                          title={isRevoked ? "Already revoked" : "Revoke token"}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
           )}
         </CardContent>

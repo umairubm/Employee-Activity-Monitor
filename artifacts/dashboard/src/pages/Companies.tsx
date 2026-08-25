@@ -27,6 +27,7 @@ import { format } from "date-fns";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { ViewToggle, useViewMode } from "@/components/ViewToggle";
 
 /** How a company's usage compares to its quota. */
 type UsageState = "ok" | "near" | "at" | "unlimited";
@@ -160,6 +161,7 @@ export default function Companies() {
   const [query, setQuery] = useState("");
   const [sortColumn, setSortColumn] = useState<SortColumn | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  const [viewMode, setViewMode] = useViewMode("companies");
 
   const toggleSort = (column: SortColumn) => {
     if (sortColumn === column) {
@@ -328,39 +330,42 @@ export default function Companies() {
           </div>
         </div>
 
-        {!isLoading && (
-          <div className="flex items-center gap-2 text-sm">
-            {nearOrAtLimitCount === 0 ? (
-              <span className="text-muted-foreground">All companies are within their quotas.</span>
-            ) : (
-              <>
-                <span className="text-muted-foreground">Needs attention:</span>
-                <button
-                  type="button"
-                  onClick={() => setUsageFilter("near")}
-                  className="focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-md"
-                  aria-label={`${nearOrAtLimitCount} companies near or at their limit`}
-                >
-                  <Badge variant="outline" className="bg-amber-500/15 text-amber-700 border-amber-500/30 tabular-nums">
-                    {nearOrAtLimitCount} near or at limit
-                  </Badge>
-                </button>
-                {atLimitCount > 0 && (
+        <div className="flex items-center gap-3">
+          {!isLoading && (
+            <div className="flex items-center gap-2 text-sm">
+              {nearOrAtLimitCount === 0 ? (
+                <span className="text-muted-foreground">All companies are within their quotas.</span>
+              ) : (
+                <>
+                  <span className="text-muted-foreground">Needs attention:</span>
                   <button
                     type="button"
-                    onClick={() => setUsageFilter("at")}
+                    onClick={() => setUsageFilter("near")}
                     className="focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-md"
-                    aria-label={`${atLimitCount} companies at their limit`}
+                    aria-label={`${nearOrAtLimitCount} companies near or at their limit`}
                   >
-                    <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/30 tabular-nums">
-                      {atLimitCount} at limit
+                    <Badge variant="outline" className="bg-amber-500/15 text-amber-700 border-amber-500/30 tabular-nums">
+                      {nearOrAtLimitCount} near or at limit
                     </Badge>
                   </button>
-                )}
-              </>
-            )}
-          </div>
-        )}
+                  {atLimitCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setUsageFilter("at")}
+                      className="focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-md"
+                      aria-label={`${atLimitCount} companies at their limit`}
+                    >
+                      <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/30 tabular-nums">
+                        {atLimitCount} at limit
+                      </Badge>
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+          <ViewToggle mode={viewMode} onChange={setViewMode} />
+        </div>
       </div>
 
       <Card>
@@ -369,7 +374,7 @@ export default function Companies() {
             <div className="p-8 space-y-4 animate-pulse">
               {[1, 2, 3].map((i) => <div key={i} className="h-12 bg-muted rounded-md" />)}
             </div>
-          ) : (
+          ) : viewMode === "table" ? (
             <Table>
               <TableHeader>
                 <TableRow>
@@ -471,6 +476,102 @@ export default function Companies() {
                 )}
               </TableBody>
             </Table>
+          ) : sortedCompanies?.length === 0 ? (
+            <div className="flex h-32 flex-col items-center justify-center p-4 text-center text-muted-foreground">
+              <Building2 className="mb-2 h-8 w-8 opacity-20" />
+              {companies?.length === 0
+                ? "No companies yet."
+                : trimmedQuery
+                  ? usageFilter === "at"
+                    ? `No companies at their limit match “${query.trim()}”.`
+                    : usageFilter === "near"
+                      ? `No companies near or at their limit match “${query.trim()}”.`
+                      : `No companies match “${query.trim()}”.`
+                  : usageFilter === "at"
+                    ? "No companies are at their limit."
+                    : usageFilter === "near"
+                      ? "No companies are near or at their limit."
+                      : "No companies match this filter."}
+            </div>
+          ) : (
+            <div className="grid gap-4 p-4 sm:grid-cols-2 xl:grid-cols-3">
+              {sortedCompanies?.map((c) => {
+                const suspended = c.status === "suspended";
+                const flagged =
+                  usageState(c.managerCount, c.maxManagers) === "at" ||
+                  usageState(c.managerCount, c.maxManagers) === "near" ||
+                  usageState(c.deviceCount, c.maxDevices) === "at" ||
+                  usageState(c.deviceCount, c.maxDevices) === "near";
+                return (
+                  <Card key={c.id} className={cn("shadow-sm", suspended && "opacity-60")}>
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+                          <h3 className="truncate font-semibold" title={c.name}>{c.name}</h3>
+                        </div>
+                        {suspended ? (
+                          <Badge variant="destructive">Suspended</Badge>
+                        ) : (
+                          <Badge className="bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/25 border-emerald-500/20">Active</Badge>
+                        )}
+                      </div>
+                      <div className="mt-4 grid gap-3">
+                        <div>
+                          <p className="mb-1 text-xs text-muted-foreground">Manager usage</p>
+                          <UsageCell used={c.managerCount} max={c.maxManagers} noun="managers" />
+                        </div>
+                        <div>
+                          <p className="mb-1 text-xs text-muted-foreground">Device usage</p>
+                          <UsageCell used={c.deviceCount} max={c.maxDevices} noun="devices" />
+                        </div>
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          <div>
+                            <p className="text-xs text-muted-foreground">Expires</p>
+                            {c.expiresAt == null ? (
+                              <span className="text-muted-foreground">Never</span>
+                            ) : new Date(c.expiresAt).getTime() <= Date.now() ? (
+                              <Badge variant="destructive">Expired {format(new Date(c.expiresAt), "MMM d, yyyy")}</Badge>
+                            ) : (
+                              <span>{format(new Date(c.expiresAt), "MMM d, yyyy")}</span>
+                            )}
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">Created</p>
+                            <span className="text-muted-foreground">{format(new Date(c.createdAt), "MMM d, yyyy")}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-4 flex flex-wrap justify-end gap-1 border-t pt-3">
+                        <Button variant="ghost" size="sm" className="gap-1" onClick={() => setEditingCompany(c)}>
+                          <Pencil className="h-4 w-4" /> Edit
+                        </Button>
+                        <Button variant="ghost" size="sm" className="gap-1" onClick={() => setDetailId(c.id)}>
+                          <Users className="h-4 w-4" /> Admins
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className={cn("gap-1", flagged && "text-amber-700")}
+                          onClick={() => navigate(`/company-limits?company=${c.id}`)}
+                        >
+                          <SlidersHorizontal className="h-4 w-4" /> Adjust limits
+                        </Button>
+                        {suspended ? (
+                          <Button variant="ghost" size="sm" className="gap-1 text-emerald-600" onClick={() => setStatus(c.id, "reactivate")}>
+                            <Play className="h-4 w-4" /> Reactivate
+                          </Button>
+                        ) : (
+                          <Button variant="ghost" size="sm" className="gap-1 text-destructive" onClick={() => setStatus(c.id, "suspend")}>
+                            <Ban className="h-4 w-4" /> Suspend
+                          </Button>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
           )}
         </CardContent>
       </Card>

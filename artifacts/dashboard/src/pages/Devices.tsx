@@ -24,11 +24,12 @@ import {
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { MonitorSmartphone, Search, CheckCircle2, XCircle, Clock, ShieldCheck, FolderPen, FolderSync, AlertTriangle, LayoutGrid, Table2 } from "lucide-react";
+import { MonitorSmartphone, Search, CheckCircle2, XCircle, Clock, ShieldCheck, FolderPen, FolderSync, AlertTriangle } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { ALL_GROUPS as ALL } from "@/hooks/use-group-filter";
 import { AgentUpdateDialog } from "@/components/AgentUpdateDialog";
+import { ViewToggle, useViewMode } from "@/components/ViewToggle";
 
 export default function Devices() {
   const queryClient = useQueryClient();
@@ -45,7 +46,7 @@ export default function Devices() {
   const setGroup = useSetDeviceGroup();
   const renameGroup = useRenameDeviceGroup();
   const [search, setSearch] = useState("");
-  const [viewMode, setViewMode] = useState<"table" | "cards">("table");
+  const [viewMode, setViewMode] = useViewMode("devices");
   // The Devices page always starts on "All groups" (local state, not the
   // shared persisted filter) so the full fleet is visible by default.
   const [groupFilter, setGroupFilter] = useState<string>(ALL);
@@ -184,30 +185,7 @@ export default function Devices() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <div className="flex items-center rounded-md border bg-background p-1" aria-label="Device view">
-            <Button
-              type="button"
-              size="sm"
-              variant={viewMode === "table" ? "secondary" : "ghost"}
-              className="h-8 gap-1.5 px-2.5"
-              aria-pressed={viewMode === "table"}
-              onClick={() => setViewMode("table")}
-            >
-              <Table2 className="h-4 w-4" />
-              <span className="sr-only sm:not-sr-only">Table</span>
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={viewMode === "cards" ? "secondary" : "ghost"}
-              className="h-8 gap-1.5 px-2.5"
-              aria-pressed={viewMode === "cards"}
-              onClick={() => setViewMode("cards")}
-            >
-              <LayoutGrid className="h-4 w-4" />
-              <span className="sr-only sm:not-sr-only">Cards</span>
-            </Button>
-          </div>
+          <ViewToggle mode={viewMode} onChange={setViewMode} label="Device view" />
         </div>
       </div>
 
@@ -360,16 +338,31 @@ export default function Devices() {
                           {device.hardwareHash}
                         </p>
                       </div>
-                      <Badge variant={device.online ? "default" : "secondary"} className={device.online ? "bg-emerald-600 hover:bg-emerald-600" : ""}>
-                        {device.online ? "Online" : "Offline"}
-                      </Badge>
+                      <div className="flex flex-wrap items-center justify-end gap-1">
+                        {device.isLocked && <Badge variant="destructive">Locked</Badge>}
+                        {(device.alertCount ?? 0) > 0 && (
+                          <Badge variant="destructive" className="gap-1" title="Unacknowledged hardware changes">
+                            <AlertTriangle className="h-3 w-3" />
+                            {device.alertCount}
+                          </Badge>
+                        )}
+                        <Badge variant={device.online ? "default" : "secondary"} className={device.online ? "bg-emerald-600 hover:bg-emerald-600" : ""}>
+                          {device.online ? "Online" : "Offline"}
+                        </Badge>
+                      </div>
                     </div>
 
                     <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
                       <div>
-                        <p className="text-xs text-muted-foreground">Employee</p>
-                        <p className="truncate font-medium" title={device.assignedUsername || device.tokenEmployeeId || undefined}>
-                          {device.assignedUsername || device.tokenEmployeeId || "—"}
+                        <p className="text-xs text-muted-foreground">Username</p>
+                        <p className="truncate font-medium" title={device.assignedUsername || undefined}>
+                          {device.assignedUsername || "—"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Employee ID</p>
+                        <p className="truncate font-medium" title={device.tokenEmployeeId || undefined}>
+                          {device.tokenEmployeeId || "—"}
                         </p>
                       </div>
                       <div>

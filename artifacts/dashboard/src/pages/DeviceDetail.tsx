@@ -32,6 +32,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { AgentUpdateDialog } from "@/components/AgentUpdateDialog";
+import { ViewToggle, useViewMode } from "@/components/ViewToggle";
 
 const SYSTEM_INFO_GROUPS: { label: string; icon: typeof Server; fields: string[] }[] = [
   { label: "System", icon: Server, fields: ["Host Name", "Operating System", "OS Version", "Manufacturer", "Model", "Serial_Number"] },
@@ -177,6 +178,9 @@ export default function DeviceDetail({ id }: { id: string }) {
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [cancelCommandId, setCancelCommandId] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState("");
+  const [commandsView, setCommandsView] = useViewMode("device-commands");
+  const [alertsView, setAlertsView] = useViewMode("hardware-alerts");
+  const [historyView, setHistoryView] = useViewMode("hardware-history");
 
   if (isDeviceLoading || isCommandsLoading) {
     return (
@@ -743,14 +747,17 @@ export default function DeviceDetail({ id }: { id: string }) {
 
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Clock className="h-5 w-5 text-muted-foreground" />
-              Command History
-            </CardTitle>
+            <div className="flex items-start justify-between gap-3">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Clock className="h-5 w-5 text-muted-foreground" />
+                Command History
+              </CardTitle>
+              <ViewToggle mode={commandsView} onChange={setCommandsView} />
+            </div>
             <CardDescription>Recent IT commands issued to this device.</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
-            <Table>
+            {commandsView === "table" ? <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Type</TableHead>
@@ -839,7 +846,34 @@ export default function DeviceDetail({ id }: { id: string }) {
                   ))
                 )}
               </TableBody>
-            </Table>
+            </Table> : commands?.length === 0 ? (
+              <div className="flex h-32 items-center justify-center text-muted-foreground">No commands have been issued.</div>
+            ) : (
+              <div className="grid gap-4 p-4 sm:grid-cols-2 xl:grid-cols-3">
+                {commands?.map((cmd) => (
+                  <Card key={cmd.id}>
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between gap-2">
+                        <div><p className="font-medium">{COMMAND_LABELS[cmd.commandType] ?? cmd.commandType}</p>{cmd.commandType === "update_agent" && cmd.targetVersion && <p className="text-xs text-muted-foreground">Target v{cmd.targetVersion}</p>}</div>
+                        <Badge variant={cmd.status === "completed" ? "default" : cmd.status === "failed" ? "destructive" : cmd.status === "pending" ? "secondary" : "outline"} className={cmd.status === "completed" ? "bg-emerald-500/15 text-emerald-700 border-emerald-500/20" : ""}>
+                          {cmd.commandType === "update_agent" && cmd.status === "completed" && cmd.targetVersion ? `Successfully Updated to v${cmd.targetVersion}` : cmd.status}
+                        </Badge>
+                      </div>
+                      <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                        <div><p className="text-xs text-muted-foreground">Issued by</p><p>{cmd.issuedByUsername || "Unknown"}</p></div>
+                        <div><p className="text-xs text-muted-foreground">Issued</p><p>{format(new Date(cmd.issuedAt), "MMM d, HH:mm")}</p></div>
+                        <div className="col-span-2"><p className="text-xs text-muted-foreground">Reason</p><p>{cmd.reason || "-"}</p></div>
+                        <div><p className="text-xs text-muted-foreground">Completed</p><p>{cmd.completedAt ? format(new Date(cmd.completedAt), "MMM d, HH:mm") : "-"}</p></div>
+                        {cmd.status === "cancelled" && <div><p className="text-xs text-muted-foreground">Cancelled by</p><p className="text-destructive">{cmd.cancelledByUsername || "Unknown"}{cmd.cancelledAt ? ` · ${format(new Date(cmd.cancelledAt), "MMM d, HH:mm")}` : ""}</p></div>}
+                        {cmd.status === "cancelled" && cmd.cancelReason && <div className="col-span-2"><p className="text-xs text-muted-foreground">Cancellation reason</p><p className="text-destructive">{cmd.cancelReason}</p></div>}
+                        {cmd.status === "failed" && cmd.cancelReason && <div className="col-span-2"><p className="text-xs text-muted-foreground">Failure</p><p className="text-destructive">{cmd.cancelReason}</p></div>}
+                      </div>
+                      {cmd.status === "pending" && <Button variant="ghost" size="sm" className="mt-3 gap-1.5 text-muted-foreground hover:text-destructive" onClick={() => openCancelDialog(cmd.id)} disabled={cancelCommand.isPending}><Ban className="h-3.5 w-3.5" />Cancel</Button>}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -921,8 +955,11 @@ export default function DeviceDetail({ id }: { id: string }) {
           <CardContent className="space-y-6">
             {unackAlerts.length > 0 && (
               <div>
-                <p className="text-sm font-medium mb-3">New changes</p>
-                <div className="rounded-md border">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <p className="text-sm font-medium">New changes</p>
+                  <ViewToggle mode={alertsView} onChange={setAlertsView} />
+                </div>
+                {alertsView === "table" ? <div className="rounded-md border">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -962,13 +999,28 @@ export default function DeviceDetail({ id }: { id: string }) {
                       })}
                     </TableBody>
                   </Table>
-                </div>
+                </div> : (
+                  <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                    {unackAlerts.map((a) => {
+                      const Icon = fieldIcon(a.field);
+                      return <Card key={a.id}><CardContent className="p-4">
+                        <p className="flex items-center gap-2 font-medium"><Icon className="h-3.5 w-3.5 text-muted-foreground" />{a.field}</p>
+                        <div className="mt-3 text-sm"><span className="text-muted-foreground line-through">{a.oldValue ?? "—"}</span><span className="mx-1.5">→</span><span className="font-medium">{a.newValue ?? "—"}</span></div>
+                        <p className="mt-2 text-xs text-muted-foreground">Detected {format(new Date(a.detectedAt), "MMM d, HH:mm")}</p>
+                        <Button variant="ghost" size="sm" className="mt-3 gap-1.5" onClick={() => handleAcknowledge(a.id)} disabled={acknowledgeAlert.isPending}><Check className="h-3.5 w-3.5" />Acknowledge</Button>
+                      </CardContent></Card>;
+                    })}
+                  </div>
+                )}
               </div>
             )}
 
             {ackGroups.length > 0 && (
               <div>
-                <p className="text-sm font-medium mb-3 text-muted-foreground">Acknowledged history</p>
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <p className="text-sm font-medium text-muted-foreground">Acknowledged history</p>
+                  <ViewToggle mode={historyView} onChange={setHistoryView} />
+                </div>
                 <Accordion type="multiple" className="space-y-2">
                   {ackGroups.map((group) => (
                     <AccordionItem key={group.key} value={group.key} className="border rounded-md px-3">
@@ -993,7 +1045,7 @@ export default function DeviceDetail({ id }: { id: string }) {
                         </div>
                       </AccordionTrigger>
                       <AccordionContent>
-                        <Table>
+                        {historyView === "table" ? <Table>
                           <TableBody>
                             {group.items.map((a) => {
                               const Icon = fieldIcon(a.field);
@@ -1017,7 +1069,19 @@ export default function DeviceDetail({ id }: { id: string }) {
                               );
                             })}
                           </TableBody>
-                        </Table>
+                        </Table> : (
+                          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                            {group.items.map((a) => {
+                              const Icon = fieldIcon(a.field);
+                              return <Card key={a.id}><CardContent className="p-3">
+                                <p className="flex items-center gap-2 font-medium"><Icon className="h-3.5 w-3.5 text-muted-foreground" />{a.field}</p>
+                                <div className="mt-2 text-sm"><span className="text-muted-foreground line-through">{a.oldValue ?? "—"}</span><span className="mx-1.5">→</span><span className="font-medium">{a.newValue ?? "—"}</span></div>
+                                <p className="mt-2 text-xs text-muted-foreground">Detected {format(new Date(a.detectedAt), "MMM d, HH:mm")}</p>
+                                <p className="mt-1 text-xs text-muted-foreground">Acknowledged{a.acknowledgedByUsername ? ` by ${a.acknowledgedByUsername}` : ""}{a.acknowledgedAt ? ` · ${format(new Date(a.acknowledgedAt), "MMM d, HH:mm")}` : ""}</p>
+                              </CardContent></Card>;
+                            })}
+                          </div>
+                        )}
                       </AccordionContent>
                     </AccordionItem>
                   ))}

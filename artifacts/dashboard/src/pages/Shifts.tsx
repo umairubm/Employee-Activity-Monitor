@@ -39,6 +39,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Clock4, Plus, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { ViewToggle, useViewMode } from "@/components/ViewToggle";
 
 const SHIFT_TYPES = [
   { value: "morning", label: "Morning" },
@@ -70,6 +71,7 @@ export default function Shifts() {
   const [shiftType, setShiftType] = useState("morning");
   const [startTime, setStartTime] = useState("09:00");
   const [endTime, setEndTime] = useState("17:00");
+  const [viewMode, setViewMode] = useViewMode("shifts");
 
   const refetch = () =>
     queryClient.invalidateQueries({ queryKey: getListShiftsQueryKey() });
@@ -109,14 +111,16 @@ export default function Shifts() {
             default work-start time when computing attendance.
           </p>
         </div>
-        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-          <DialogTrigger asChild>
-            <Button className="gap-2">
-              <Plus className="h-4 w-4" />
-              New Shift
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
+        <div className="flex items-center gap-2">
+          <ViewToggle mode={viewMode} onChange={setViewMode} />
+          <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+            <DialogTrigger asChild>
+              <Button className="gap-2">
+                <Plus className="h-4 w-4" />
+                New Shift
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
             <DialogHeader>
               <DialogTitle>Create Shift</DialogTitle>
               <DialogDescription>
@@ -180,8 +184,9 @@ export default function Shifts() {
                 {createShift.isPending ? "Creating..." : "Create"}
               </Button>
             </DialogFooter>
-          </DialogContent>
-        </Dialog>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       <Card>
@@ -192,7 +197,7 @@ export default function Shifts() {
                 <div key={i} className="h-12 bg-muted rounded-md"></div>
               ))}
             </div>
-          ) : (
+          ) : viewMode === "table" ? (
             <Table>
               <TableHeader>
                 <TableRow>
@@ -223,10 +228,119 @@ export default function Shifts() {
                 )}
               </TableBody>
             </Table>
+          ) : shifts?.length === 0 ? (
+            <div className="flex h-32 flex-col items-center justify-center p-4 text-center text-muted-foreground">
+              <Clock4 className="mb-2 h-8 w-8 opacity-20" />
+              No shifts yet. Create one to get started.
+            </div>
+          ) : (
+            <div className="grid gap-4 p-4 sm:grid-cols-2 xl:grid-cols-3">
+              {shifts?.map((shift) => (
+                <ShiftCard key={shift.id} shift={shift} onChanged={refetch} />
+              ))}
+            </div>
           )}
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function ShiftCard({
+  shift,
+  onChanged,
+}: {
+  shift: ShiftItem;
+  onChanged: () => void;
+}) {
+  const { toast } = useToast();
+  const updateShift = useUpdateShift();
+  const deleteShift = useDeleteShift();
+
+  const handleType = (shiftType: string) => {
+    updateShift.mutate(
+      { id: shift.id, data: { shiftType: shiftType as never } },
+      { onSuccess: onChanged },
+    );
+  };
+
+  const handleTime = (field: "startTime" | "endTime", value: string) => {
+    if (!value || value === shift[field]) return;
+    updateShift.mutate(
+      { id: shift.id, data: { [field]: value } as never },
+      { onSuccess: onChanged },
+    );
+  };
+
+  const handleDelete = () => {
+    if (!confirm(`Delete shift "${shift.name}"? This cannot be undone.`)) return;
+    deleteShift.mutate(
+      { id: shift.id },
+      {
+        onSuccess: () => {
+          onChanged();
+          toast({ title: "Shift deleted" });
+        },
+      },
+    );
+  };
+
+  return (
+    <Card className="shadow-sm">
+      <CardContent className="p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <Clock4 className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <h3 className="truncate font-semibold" title={shift.name}>{shift.name}</h3>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="text-muted-foreground hover:text-destructive"
+            onClick={handleDelete}
+            disabled={deleteShift.isPending}
+            title="Delete shift"
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
+        <div className="mt-4 grid gap-4">
+          <div>
+            <Label className="text-xs text-muted-foreground">Type</Label>
+            <Select value={shift.shiftType} onValueChange={handleType}>
+              <SelectTrigger className={`mt-1 h-8 w-full ${shiftBadge(shift.shiftType)}`}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SHIFT_TYPES.map((s) => (
+                  <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label className="text-xs text-muted-foreground">Start</Label>
+              <Input
+                type="time"
+                defaultValue={shift.startTime}
+                onBlur={(e) => handleTime("startTime", e.target.value)}
+                className="mt-1 h-8 w-full"
+              />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">End</Label>
+              <Input
+                type="time"
+                defaultValue={shift.endTime}
+                onBlur={(e) => handleTime("endTime", e.target.value)}
+                className="mt-1 h-8 w-full"
+              />
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

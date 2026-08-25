@@ -26,6 +26,7 @@ import {
   type PagePermissions,
   type PagePermissionLevel,
 } from "@/lib/navigation";
+import { ViewToggle, useViewMode } from "@/components/ViewToggle";
 
 type Role = "manager" | "team_member";
 
@@ -202,6 +203,7 @@ export default function Managers() {
   const [editPerms, setEditPerms] = useState<PagePermissions | null>(null);
   const [editGroups, setEditGroups] = useState<string[] | null>(null);
   const [editRegions, setEditRegions] = useState<string[] | null>(null);
+  const [viewMode, setViewMode] = useViewMode("managers");
 
   const { data: knownGroups } = useListTokenGroups();
   const { data: knownRegions } = useListTokenRegions();
@@ -386,13 +388,17 @@ export default function Managers() {
         </Dialog>
       </div>
 
+      <div className="flex justify-end">
+        <ViewToggle mode={viewMode} onChange={setViewMode} />
+      </div>
+
       <Card>
         <CardContent className="p-0">
           {isLoading ? (
             <div className="p-8 space-y-4 animate-pulse">
               {[1, 2, 3].map((i) => <div key={i} className="h-12 bg-muted rounded-md" />)}
             </div>
-          ) : (
+          ) : viewMode === "table" ? (
             <Table>
               <TableHeader>
                 <TableRow>
@@ -448,6 +454,82 @@ export default function Managers() {
                 )}
               </TableBody>
             </Table>
+          ) : users?.length === 0 ? (
+            <div className="flex h-32 flex-col items-center justify-center p-4 text-center text-muted-foreground">
+              <UsersRound className="mb-2 h-8 w-8 opacity-20" />
+              No managers or team members yet.
+            </div>
+          ) : (
+            <div className="grid gap-4 p-4 sm:grid-cols-2 xl:grid-cols-3">
+              {users?.map((u) => {
+                const userPerms = (u.pagePermissions as PagePermissions | null | undefined) ?? null;
+                const permittedPages = PAGE_PERMISSION_KEYS.filter(({ key }) => userPerms?.[key]);
+                return (
+                  <Card key={u.id} className="shadow-sm">
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <h3 className="truncate font-semibold" title={u.username}>{u.username}</h3>
+                          <p className="truncate text-sm text-muted-foreground" title={u.email}>{u.email}</p>
+                        </div>
+                        <Badge variant="secondary" className="capitalize">{u.role.replace("_", " ")}</Badge>
+                      </div>
+                      <div className="mt-4 space-y-3 text-sm">
+                        <div>
+                          <p className="text-xs text-muted-foreground">Page access</p>
+                          {userPerms === null ? (
+                            <p>Full access</p>
+                          ) : permittedPages.length === 0 ? (
+                            <p className="text-muted-foreground">No pages</p>
+                          ) : (
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {permittedPages.map(({ key, label }) => (
+                                <Badge key={key} variant="outline" className="font-normal">
+                                  {label}: {userPerms[key] === "edit" ? "Edit" : "View"}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        {u.role === "manager" && (
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <p className="text-xs text-muted-foreground">Device groups</p>
+                              <p>{u.allowedGroups === null || u.allowedGroups === undefined ? "All" : u.allowedGroups.length ? u.allowedGroups.join(", ") : "None"}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-muted-foreground">Regions</p>
+                              <p>{u.allowedRegions === null || u.allowedRegions === undefined ? "All" : u.allowedRegions.length ? u.allowedRegions.join(", ") : "None"}</p>
+                            </div>
+                          </div>
+                        )}
+                        <div>
+                          <p className="text-xs text-muted-foreground">Created</p>
+                          <p className="text-muted-foreground">{u.createdAt ? format(new Date(u.createdAt), "MMM d, yyyy") : "—"}</p>
+                        </div>
+                      </div>
+                      <div className="mt-4 flex items-center justify-end gap-1 border-t pt-3">
+                        <Button variant="ghost" size="icon" onClick={() => openEdit(u)} title="Edit">
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleResetCode(u)}
+                          disabled={generateResetCode.isPending}
+                          title="Generate password reset code"
+                        >
+                          <KeyRound className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive" onClick={() => handleDelete(u.id)} title="Remove">
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
           )}
         </CardContent>
       </Card>

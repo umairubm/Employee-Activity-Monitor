@@ -31,6 +31,7 @@ import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { useGroupFilter, ALL_GROUPS as ALL } from "@/hooks/use-group-filter";
 import { useDateRange } from "@/hooks/use-date-filter";
+import { ViewToggle, useViewMode } from "@/components/ViewToggle";
 
 function todayStr(): string {
   const d = new Date();
@@ -124,6 +125,7 @@ function downloadCsv(filename: string, rows: (string | number)[][]) {
 
 function DayView() {
   const [date, setDate] = useState(todayStr());
+  const [viewMode, setViewMode] = useViewMode("attendance-day");
   const [groupFilter, setGroupFilter] = useGroupFilter();
   const { data: devices } = useListDevices();
   const groups = useMemo(() => {
@@ -175,6 +177,7 @@ function DayView() {
             className="w-44"
           />
         </div>
+        <ViewToggle mode={viewMode} onChange={setViewMode} />
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -217,6 +220,7 @@ function DayView() {
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
+          {viewMode === "table" ? (
           <Table>
             <TableHeader>
               <TableRow>
@@ -259,6 +263,39 @@ function DayView() {
               )}
             </TableBody>
           </Table>
+          ) : isLoading ? (
+            <div className="flex h-32 items-center justify-center text-muted-foreground">Loading...</div>
+          ) : report?.devices.length === 0 ? (
+            <div className="flex h-32 items-center justify-center text-muted-foreground">No devices enrolled.</div>
+          ) : (
+            <div className="grid gap-4 p-4 sm:grid-cols-2 xl:grid-cols-3">
+              {report?.devices.map((row) => (
+                <Card key={row.deviceId}>
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold" title={row.systemName}>{row.systemName}</p>
+                        <div className="mt-1 flex flex-wrap items-center gap-2">
+                          <Badge variant="secondary" className="font-normal">{row.deviceGroup}</Badge>
+                          <span className="text-xs text-muted-foreground">{row.tokenLabel ?? "—"}</span>
+                        </div>
+                      </div>
+                      <Badge variant="outline" className={STATUS_STYLE[row.status]}>
+                        {STATUS_LABEL[row.status] ?? row.status}
+                      </Badge>
+                    </div>
+                    <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                      <div><p className="text-xs text-muted-foreground">Check-in</p><p className="tabular-nums">{row.checkIn ? format(new Date(row.checkIn), "HH:mm") : "-"}</p></div>
+                      <div><p className="text-xs text-muted-foreground">Worked</p><p className="tabular-nums">{fmtHours(row.workedSeconds)}</p></div>
+                      <div><p className="text-xs text-muted-foreground">Active time</p><p className="tabular-nums">{fmtHours(row.activeSeconds)}</p></div>
+                      <div><p className="text-xs text-muted-foreground">Productive</p><p className="tabular-nums text-emerald-700">{fmtHours(row.productiveSeconds)}</p></div>
+                      <div><p className="text-xs text-muted-foreground">Unproductive</p><p className="tabular-nums text-rose-700">{fmtHours(row.unproductiveSeconds)}</p></div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
@@ -267,6 +304,7 @@ function DayView() {
 
 function RangeView() {
   const { toast } = useToast();
+  const [viewMode, setViewMode] = useViewMode("attendance-range");
   const [{ from, to }, setRange] = useDateRange();
   const [selectedDeviceId, setSelectedDeviceId] = useState("all");
   const [groupFilter, setGroupFilter] = useGroupFilter();
@@ -411,6 +449,7 @@ function RangeView() {
         <Button variant="outline" className="gap-2" onClick={exportCsv} disabled={!report || report.devices.length === 0}>
           <Download className="h-4 w-4" /> Export CSV
         </Button>
+        <ViewToggle mode={viewMode} onChange={setViewMode} />
       </div>
 
       {!valid && (
@@ -530,6 +569,7 @@ function RangeView() {
           <CardDescription>Per-device totals across the selected range. Weekends and holidays are excluded; only working days are classified present / half-day / absent, and the daily average is over working days.</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
+          {viewMode === "table" ? (
           <Table>
             <TableHeader>
               <TableRow>
@@ -570,6 +610,39 @@ function RangeView() {
               )}
             </TableBody>
           </Table>
+          ) : !valid ? (
+            <div className="flex h-32 items-center justify-center text-muted-foreground">Choose a valid date range.</div>
+          ) : isLoading ? (
+            <div className="flex h-32 items-center justify-center text-muted-foreground">Loading...</div>
+          ) : isError ? (
+            <div className="flex h-32 items-center justify-center text-destructive">{(error as Error)?.message ?? "Failed to load report."}</div>
+          ) : report?.devices.length === 0 ? (
+            <div className="flex h-32 items-center justify-center text-muted-foreground">No devices enrolled.</div>
+          ) : (
+            <div className="grid gap-4 p-4 sm:grid-cols-2 xl:grid-cols-3">
+              {report?.devices.map((row) => (
+                <Card key={row.deviceId}>
+                  <CardContent className="p-4">
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold" title={row.systemName}>{row.systemName}</p>
+                      <div className="mt-1 flex flex-wrap items-center gap-2">
+                        <Badge variant="secondary" className="font-normal">{row.deviceGroup}</Badge>
+                        <span className="text-xs text-muted-foreground">{row.tokenLabel ?? "—"}</span>
+                      </div>
+                    </div>
+                    <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                      <div><p className="text-xs text-muted-foreground">Present</p><p className="tabular-nums text-emerald-700">{row.presentDays}</p></div>
+                      <div><p className="text-xs text-muted-foreground">Half-day</p><p className="tabular-nums text-amber-700">{row.halfDays}</p></div>
+                      <div><p className="text-xs text-muted-foreground">Absent</p><p className="tabular-nums text-muted-foreground">{row.absentDays}</p></div>
+                      <div><p className="text-xs text-muted-foreground">On leave</p><p className="tabular-nums text-violet-700">{row.onLeaveDays}</p></div>
+                      <div><p className="text-xs text-muted-foreground">Total worked</p><p className="tabular-nums">{fmtHours(row.totalWorkedSeconds)}</p></div>
+                      <div><p className="text-xs text-muted-foreground">Avg / day</p><p className="tabular-nums">{fmtHours(row.avgWorkedSeconds)}</p></div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
