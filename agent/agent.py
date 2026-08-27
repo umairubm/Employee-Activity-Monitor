@@ -45,7 +45,7 @@ else:
     from . import system_info as system_info_mod
 
 # You can change this to 1.1.32, etc. to test auto-update
-AGENT_VERSION = "1.1.53"
+AGENT_VERSION = "1.1.55"
 POLL_SECONDS = 15
 
 def _now_iso() -> str:
@@ -191,7 +191,15 @@ class MonitoringAgent:
         process, title = monitor_mod.get_active_window()
         idle = monitor_mod.get_idle_seconds()
         key = (process, title)
-        if self._current is None or (self._current["process"], self._current["title"]) != key:
+        is_break_entry = False
+        is_break_exit = False
+        if self._current is not None:
+            curr_idle = self._current["idle"]
+            threshold = self.cfg.idle_threshold_seconds
+            is_break_entry = (idle >= threshold) and (curr_idle < threshold)
+            is_break_exit = (idle < threshold) and (curr_idle >= threshold)
+
+        if self._current is None or (self._current["process"], self._current["title"]) != key or is_break_entry or is_break_exit:
             self._flush_segment()
             self._current = {
                 "process": process,
@@ -200,8 +208,7 @@ class MonitoringAgent:
                 "start_iso": _now_iso(),
                 "idle": 0,
             }
-        if idle >= self.cfg.idle_threshold_seconds:
-            self._current["idle"] += POLL_SECONDS
+        self._current["idle"] = max(self._current["idle"], idle)
 
     # --- screenshots ---------------------------------------------------------
 
@@ -647,8 +654,8 @@ class MonitoringAgent:
         with self._lock:
             if not self._pending_logs:
                 return
-            # Take a snapshot of the current logs to send
-            batch = self._pending_logs[:]
+            # Take a snapshot of the current logs to send (capped at 500 per API limit)
+            batch = self._pending_logs[:500]
 
         try:
             try:

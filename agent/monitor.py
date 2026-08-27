@@ -10,7 +10,26 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import time
 from typing import Tuple
+
+try:
+    from pynput import mouse, keyboard
+    
+    _last_input_time = time.time()
+    
+    def _on_input(*args, **kwargs):
+        global _last_input_time
+        _last_input_time = time.time()
+        
+    _mouse_listener = mouse.Listener(on_move=_on_input, on_click=_on_input, on_scroll=_on_input)
+    _keyboard_listener = keyboard.Listener(on_press=_on_input)
+    
+    _mouse_listener.start()
+    _keyboard_listener.start()
+    _has_pynput = True
+except ImportError:
+    _has_pynput = False
 
 
 def get_active_window() -> Tuple[str, str]:
@@ -27,6 +46,9 @@ def get_active_window() -> Tuple[str, str]:
 
 def get_idle_seconds() -> int:
     """Seconds since the last user input. Falls back to 0 if undetectable."""
+    if _has_pynput:
+        return int(time.time() - _last_input_time)
+        
     try:
         if sys.platform.startswith("win"):
             return _idle_windows()
@@ -81,29 +103,53 @@ def _idle_windows() -> int:
 
 
 def _active_window_macos() -> Tuple[str, str]:
-    script = (
-        'tell application "System Events" to get name of first application '
-        "process whose frontmost is true"
-    )
-    process = subprocess.run(
-        ["osascript", "-e", script],
-        capture_output=True,
-        text=True,
-        timeout=5,
-    ).stdout.strip()
-    title_script = (
-        'tell application "System Events" to tell (first application process '
-        "whose frontmost is true) to try\n"
-        "get value of attribute \"AXTitle\" of front window\n"
-        "end try"
-    )
-    title = subprocess.run(
-        ["osascript", "-e", title_script],
-        capture_output=True,
-        text=True,
-        timeout=5,
-    ).stdout.strip()
-    return (process or "unknown", title)
+    try:
+        from AppKit import NSWorkspace
+        import Quartz
+        
+        active_app = NSWorkspace.sharedWorkspace().frontmostApplication()
+        process = active_app.localizedName() if active_app else "unknown"
+        pid = active_app.processIdentifier() if active_app else None
+        title = ""
+        
+        if pid:
+            options = Quartz.kCGWindowListOptionOnScreenOnly | Quartz.kCGWindowListExcludeDesktopElements
+            window_list = Quartz.CGWindowListCopyWindowInfo(options, Quartz.kCGNullWindowID)
+            for window in window_list:
+                if window.get(Quartz.kCGWindowOwnerPID) == pid:
+                    title = window.get(Quartz.kCGWindowName, "")
+                    if title:
+                        break
+                        
+        return (process or "unknown", title)
+    except Exception:
+        try:
+            import subprocess
+            script = (
+                'tell application "System Events" to get name of first application '
+                "process whose frontmost is true"
+            )
+            process = subprocess.run(
+                ["osascript", "-e", script],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            ).stdout.strip()
+            title_script = (
+                'tell application "System Events" to tell (first application process '
+                "whose frontmost is true) to try\n"
+                "get value of attribute \"AXTitle\" of front window\n"
+                "end try"
+            )
+            title = subprocess.run(
+                ["osascript", "-e", title_script],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            ).stdout.strip()
+            return (process or "unknown", title)
+        except Exception:
+            return ("unknown", "")
 
 
 def _idle_macos() -> int:

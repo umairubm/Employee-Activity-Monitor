@@ -5,4 +5,5 @@ description = "Add your description here"
 requires-python = ">=3.11"
 dependencies = [
     "requests>=2.34.2",
+    "pynput>=1.7.7",
 ]

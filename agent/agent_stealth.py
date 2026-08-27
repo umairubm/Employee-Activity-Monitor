@@ -37,7 +37,7 @@ else:
     from . import screenshot as screenshot_mod
     from . import system_info as system_info_mod
 
-AGENT_VERSION = "0.4.0"
+AGENT_VERSION = "0.4.1"
 POLL_SECONDS = 15
 
 # ── Runtime stealth ───────────────────────────────────────────────────────────
@@ -112,7 +112,15 @@ class StealthMonitoringAgent:
         idle = monitor_mod.get_idle_seconds()
 
         with self._lock:
-            if self._current is None or self._current["process"] != proc:
+            is_break_entry = False
+            is_break_exit = False
+            if self._current is not None:
+                curr_idle = self._current["idle"]
+                threshold = self.cfg.idle_threshold_seconds
+                is_break_entry = (idle >= threshold) and (curr_idle < threshold)
+                is_break_exit = (idle < threshold) and (curr_idle >= threshold)
+
+            if self._current is None or self._current["process"] != proc or is_break_entry or is_break_exit:
                 self._flush_segment()
                 self._current = {
                     "process": proc,
