@@ -86,6 +86,13 @@ export default function Tokens() {
 
   const creatingNewGroup = groupChoice === CREATE_NEW_GROUP;
   const creatingNewRegion = regionChoice === CREATE_NEW_REGION;
+  const selectedRegions =
+    regionChoice && !creatingNewRegion && regionChoice !== UNDEFINED_REGION
+      ? regionChoice.split("/").map((region) => region.trim()).filter(Boolean)
+      : [];
+  const regionOptions = Array.from(
+    new Set((regions ?? []).flatMap((region) => region.split("/").map((part) => part.trim()).filter(Boolean))),
+  ).sort((a, b) => a.localeCompare(b));
   // Employee ID is optional: blank is fine, but a non-empty value must still
   // match the expected format.
   const employeeIdValid = employeeId.trim() === "" || EMPLOYEE_ID_RE.test(employeeId.trim());
@@ -107,7 +114,16 @@ export default function Tokens() {
     ? "New region…"
     : regionChoice === UNDEFINED_REGION
       ? "Undefined"
-      : regionChoice || "Select a region";
+      : selectedRegions.length > 0
+        ? selectedRegions.join(" / ")
+        : "Select regions";
+
+  const toggleRegion = (region: string) => {
+    const next = selectedRegions.includes(region)
+      ? selectedRegions.filter((selected) => selected !== region)
+      : [...selectedRegions, region];
+    setRegionChoice(next.join("/"));
+  };
 
   const resetForm = () => {
     setNewLabel("");
@@ -346,7 +362,7 @@ export default function Tokens() {
                             aria-expanded={regionOpen}
                             className="justify-between font-normal"
                           >
-                            <span className={regionChoice && !creatingNewRegion && regionChoice !== UNDEFINED_REGION ? "" : "text-muted-foreground"}>
+                            <span className={`truncate ${regionChoice && !creatingNewRegion && regionChoice !== UNDEFINED_REGION ? "" : "text-muted-foreground"}`}>
                               {regionTriggerLabel}
                             </span>
                             <ChevronsUpDown className="h-4 w-4 opacity-50 shrink-0" />
@@ -370,19 +386,24 @@ export default function Tokens() {
                                   Undefined
                                 </CommandItem>
                               </CommandGroup>
-                              {(regions ?? []).length > 0 && (
+                              {regionOptions.length > 0 && (
                                 <CommandGroup>
-                                  {(regions ?? []).map(r => (
+                                  {regionOptions.map(r => (
                                     <CommandItem
                                       key={r}
                                       value={r}
-                                      onSelect={() => {
-                                        setRegionChoice(r);
-                                        setNewRegionName("");
-                                        setRegionOpen(false);
-                                      }}
+                                      onSelect={() => toggleRegion(r)}
                                     >
-                                      <Check className={`mr-2 h-4 w-4 ${regionChoice === r ? "opacity-100" : "opacity-0"}`} />
+                                      <span
+                                        className={`mr-2 flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                                          selectedRegions.includes(r)
+                                            ? "border-primary bg-primary text-primary-foreground"
+                                            : "border-input"
+                                        }`}
+                                        aria-hidden="true"
+                                      >
+                                        {selectedRegions.includes(r) && <Check className="h-3 w-3" />}
+                                      </span>
                                       {r}
                                     </CommandItem>
                                   ))}
