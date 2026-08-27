@@ -9,6 +9,7 @@ import {
   useCancelDeviceCommand,
   useSetDeviceGroup,
   useSetDeviceRegion,
+  useListTokenRegions,
   useGetDeviceAlerts,
   getGetDeviceAlertsQueryKey,
   useAcknowledgeDeviceAlert,
@@ -33,6 +34,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { AgentUpdateDialog } from "@/components/AgentUpdateDialog";
+import { RegionMultiSelect } from "@/components/RegionMultiSelect";
 import { ViewToggle, useViewMode } from "@/components/ViewToggle";
 
 const SYSTEM_INFO_GROUPS: { label: string; icon: typeof Server; fields: string[] }[] = [
@@ -138,6 +140,7 @@ export default function DeviceDetail({ id }: { id: string }) {
   const cancelCommand = useCancelDeviceCommand();
   const setDeviceGroup = useSetDeviceGroup();
   const setDeviceRegion = useSetDeviceRegion();
+  const { data: tokenRegions } = useListTokenRegions();
   const { data: alertsData } = useGetDeviceAlerts(id, { query: { enabled: !!id, queryKey: getGetDeviceAlertsQueryKey(id), refetchInterval: 30_000 } });
   const acknowledgeAlert = useAcknowledgeDeviceAlert();
   const acknowledgeAllAlerts = useAcknowledgeAllDeviceAlerts();
@@ -432,12 +435,12 @@ export default function DeviceDetail({ id }: { id: string }) {
             </div>
             <div>
               <Label htmlFor="device-region" className="mb-2 block">Region</Label>
-              <Input
+              <RegionMultiSelect
                 id="device-region"
-                placeholder="e.g. DE/NL/IT/UK"
                 value={regionValue}
-                onChange={(e) => setRegionValue(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSaveGroup()}
+                options={tokenRegions}
+                onChange={setRegionValue}
+                placeholder="Inherit token region"
               />
               <p className="mt-1.5 text-xs text-muted-foreground">
                 Applies to this device only — the enrollment token and other

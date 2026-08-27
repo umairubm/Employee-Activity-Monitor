@@ -32,6 +32,7 @@ import { useToast } from "@/hooks/use-toast";
 import { ALL_GROUPS as ALL } from "@/hooks/use-group-filter";
 import { AgentUpdateDialog } from "@/components/AgentUpdateDialog";
 import { ViewToggle, useViewMode } from "@/components/ViewToggle";
+import { RegionMultiSelect } from "@/components/RegionMultiSelect";
 
 export default function Devices() {
   const queryClient = useQueryClient();
@@ -511,19 +512,13 @@ export default function Devices() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="region">Region</Label>
-              <Input
+              <RegionMultiSelect
                 id="region"
                 value={editRegion}
-                onChange={(e) => setEditRegion(e.target.value)}
-                placeholder="e.g. DE/NL/IT/UK"
-                list="device-regions"
-                onKeyDown={(e) => e.key === "Enter" && saveEdit()}
+                options={tokenRegions}
+                onChange={setEditRegion}
+                placeholder="Inherit token region"
               />
-              <datalist id="device-regions">
-                {tokenRegions?.map((r) => (
-                  <option key={r} value={r} />
-                ))}
-              </datalist>
               <p className="text-xs text-muted-foreground">
                 Applies to this device only — the enrollment token and other devices
                 keep their region. Leave empty to inherit the token's region.
