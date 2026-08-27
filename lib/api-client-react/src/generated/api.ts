@@ -49,6 +49,7 @@ import type {
   DeviceConfigInput,
   DeviceGroupInput,
   DeviceItem,
+  DeviceRegionInput,
   DownloadList,
   DropboxCredentialsResult,
   DropboxCredentialsUpdate,
@@ -1213,6 +1214,93 @@ export const useSetDeviceGroup = <
   TContext
 > => {
   return useMutation(getSetDeviceGroupMutationOptions(options));
+};
+
+/**
+ * @summary Set or clear a device's region override
+ */
+export const getSetDeviceRegionUrl = (id: string) => {
+  return `/api/devices/${id}/region`;
+};
+
+export const setDeviceRegion = async (
+  id: string,
+  deviceRegionInput: DeviceRegionInput,
+  options?: RequestInit,
+): Promise<DeviceItem> => {
+  return customFetch<DeviceItem>(getSetDeviceRegionUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(deviceRegionInput),
+  });
+};
+
+export const getSetDeviceRegionMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setDeviceRegion>>,
+    TError,
+    { id: string; data: BodyType<DeviceRegionInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof setDeviceRegion>>,
+  TError,
+  { id: string; data: BodyType<DeviceRegionInput> },
+  TContext
+> => {
+  const mutationKey = ["setDeviceRegion"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof setDeviceRegion>>,
+    { id: string; data: BodyType<DeviceRegionInput> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return setDeviceRegion(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SetDeviceRegionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof setDeviceRegion>>
+>;
+export type SetDeviceRegionMutationBody = BodyType<DeviceRegionInput>;
+export type SetDeviceRegionMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Set or clear a device's region override
+ */
+export const useSetDeviceRegion = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setDeviceRegion>>,
+    TError,
+    { id: string; data: BodyType<DeviceRegionInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof setDeviceRegion>>,
+  TError,
+  { id: string; data: BodyType<DeviceRegionInput> },
+  TContext
+> => {
+  return useMutation(getSetDeviceRegionMutationOptions(options));
 };
 
 /**

@@ -72,7 +72,13 @@ export async function ensureCompany(
  * the full session/cookie stack.
  */
 export function makeApp(
-  opts: { role?: UserRole; userId?: string; companyId?: string | null } = {},
+  opts: {
+    role?: UserRole;
+    userId?: string;
+    companyId?: string | null;
+    allowedGroups?: string[] | null;
+    allowedRegions?: string[] | null;
+  } = {},
 ): Express {
   const role = opts.role ?? "company_admin";
   const companyId =
@@ -89,6 +95,8 @@ export function makeApp(
       id: opts.userId ?? randomUUID(),
       role,
       companyId: companyId ?? undefined,
+      allowedGroups: opts.allowedGroups ?? undefined,
+      allowedRegions: opts.allowedRegions ?? undefined,
     };
     next();
   });

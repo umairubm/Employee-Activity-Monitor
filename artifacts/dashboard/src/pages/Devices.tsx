@@ -5,8 +5,10 @@ import {
   getListTokensQueryKey,
   getListTokenGroupsQueryKey,
   useSetDeviceGroup,
+  useSetDeviceRegion,
   useRenameDeviceGroup,
   useListTokenGroups,
+  useListTokenRegions,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
@@ -43,7 +45,9 @@ export default function Devices() {
   // so the filter/rename/assign controls list every group that exists — not
   // only groups that already have a device.
   const { data: tokenGroups } = useListTokenGroups();
+  const { data: tokenRegions } = useListTokenRegions();
   const setGroup = useSetDeviceGroup();
+  const setRegion = useSetDeviceRegion();
   const renameGroup = useRenameDeviceGroup();
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useViewMode("devices");
@@ -53,6 +57,10 @@ export default function Devices() {
 
   const [editId, setEditId] = useState<string | null>(null);
   const [editGroup, setEditGroup] = useState("");
+  const [editRegion, setEditRegion] = useState("");
+  // What the region field held when the dialog opened, so we only issue the
+  // region mutation when the admin actually changed it.
+  const [initialRegion, setInitialRegion] = useState("");
 
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameFrom, setRenameFrom] = useState("");
@@ -83,7 +91,7 @@ export default function Devices() {
       d.tokenEmployeeId,
       d.tokenLabel,
       d.deviceGroup,
-      d.tokenRegion,
+      d.region ?? d.tokenRegion,
       d.osType,
     ];
     const matchesSearch =
@@ -95,28 +103,31 @@ export default function Devices() {
     return matchesSearch && matchesGroup;
   });
 
-  const openEdit = (id: string, current: string) => {
+  const openEdit = (id: string, currentGroup: string, currentRegion: string) => {
     setEditId(id);
-    setEditGroup(current);
+    setEditGroup(currentGroup);
+    setEditRegion(currentRegion);
+    setInitialRegion(currentRegion);
   };
 
-  const saveGroup = () => {
+  const saveEdit = async () => {
     if (!editId) return;
-    const value = editGroup.trim();
-    if (!value) return;
-    setGroup.mutate(
-      { id: editId, data: { deviceGroup: value } },
-      {
-        onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: getListDevicesQueryKey() });
-          toast({ title: "Group updated" });
-          setEditId(null);
-        },
-        onError: (error: any) => {
-          toast({ title: "Failed to update group", description: error.message, variant: "destructive" });
-        },
-      },
-    );
+    const group = editGroup.trim();
+    if (!group) return;
+    const region = editRegion.trim();
+    try {
+      await setGroup.mutateAsync({ id: editId, data: { deviceGroup: group } });
+      if (region !== initialRegion.trim()) {
+        // Empty input clears the override so the device inherits its token's region.
+        await setRegion.mutateAsync({ id: editId, data: { region: region || null } });
+      }
+      queryClient.invalidateQueries({ queryKey: getListDevicesQueryKey() });
+      toast({ title: "Device updated" });
+      setEditId(null);
+    } catch (error: any) {
+      queryClient.invalidateQueries({ queryKey: getListDevicesQueryKey() });
+      toast({ title: "Failed to update device", description: error.message, variant: "destructive" });
+    }
   };
 
   const openRename = () => {
@@ -247,7 +258,7 @@ export default function Devices() {
                     </TableCell>
                     <TableCell>
                       <button
-                        onClick={() => openEdit(device.id, device.deviceGroup)}
+                        onClick={() => openEdit(device.id, device.deviceGroup, device.region ?? device.tokenRegion ?? "")}
                         className="inline-flex items-center gap-1.5 text-sm hover:text-primary transition-colors"
                         title="Change group"
                       >
@@ -256,11 +267,18 @@ export default function Devices() {
                       </button>
                     </TableCell>
                     <TableCell className="text-sm">
-                      {device.tokenRegion ? (
-                        <Badge variant="outline" className="font-normal">{device.tokenRegion}</Badge>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
+                      <button
+                        onClick={() => openEdit(device.id, device.deviceGroup, device.region ?? device.tokenRegion ?? "")}
+                        className="inline-flex items-center gap-1.5 text-sm hover:text-primary transition-colors"
+                        title="Change region"
+                      >
+                        {device.region ?? device.tokenRegion ? (
+                          <Badge variant="outline" className="font-normal">{device.region ?? device.tokenRegion}</Badge>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                        <FolderPen className="h-3.5 w-3.5 opacity-0 group-hover:opacity-60" />
+                      </button>
                     </TableCell>
                     <TableCell className="text-sm">
                       {device.tokenLabel ? (
@@ -373,7 +391,7 @@ export default function Devices() {
                         <p className="text-xs text-muted-foreground">Group</p>
                         <button
                           type="button"
-                          onClick={() => openEdit(device.id, device.deviceGroup)}
+                          onClick={() => openEdit(device.id, device.deviceGroup, device.region ?? device.tokenRegion ?? "")}
                           className="inline-flex max-w-full items-center gap-1.5 text-left hover:text-primary"
                           title="Change group"
                         >
@@ -383,7 +401,15 @@ export default function Devices() {
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground">Region</p>
-                        <p className="truncate">{device.tokenRegion || "—"}</p>
+                        <button
+                          type="button"
+                          onClick={() => openEdit(device.id, device.deviceGroup, device.region ?? device.tokenRegion ?? "")}
+                          className="inline-flex max-w-full items-center gap-1.5 text-left hover:text-primary"
+                          title="Change region"
+                        >
+                          <span className="truncate">{device.region ?? device.tokenRegion ?? "—"}</span>
+                          <FolderPen className="h-3.5 w-3.5 shrink-0 opacity-60" />
+                        </button>
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground">Label</p>
@@ -464,28 +490,50 @@ export default function Devices() {
       <Dialog open={!!editId} onOpenChange={(open) => !open && setEditId(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Assign Group</DialogTitle>
+            <DialogTitle>Edit Device</DialogTitle>
           </DialogHeader>
-          <div className="py-2 space-y-2">
-            <Label htmlFor="group">Group name</Label>
-            <Input
-              id="group"
-              value={editGroup}
-              onChange={(e) => setEditGroup(e.target.value)}
-              placeholder="e.g. Engineering"
-              list="device-groups"
-              onKeyDown={(e) => e.key === "Enter" && saveGroup()}
-            />
-            <datalist id="device-groups">
-              {groups.map((g) => (
-                <option key={g} value={g} />
-              ))}
-            </datalist>
+          <div className="py-2 space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="group">Group name</Label>
+              <Input
+                id="group"
+                value={editGroup}
+                onChange={(e) => setEditGroup(e.target.value)}
+                placeholder="e.g. Engineering"
+                list="device-groups"
+                onKeyDown={(e) => e.key === "Enter" && saveEdit()}
+              />
+              <datalist id="device-groups">
+                {groups.map((g) => (
+                  <option key={g} value={g} />
+                ))}
+              </datalist>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="region">Region</Label>
+              <Input
+                id="region"
+                value={editRegion}
+                onChange={(e) => setEditRegion(e.target.value)}
+                placeholder="e.g. DE/NL/IT/UK"
+                list="device-regions"
+                onKeyDown={(e) => e.key === "Enter" && saveEdit()}
+              />
+              <datalist id="device-regions">
+                {tokenRegions?.map((r) => (
+                  <option key={r} value={r} />
+                ))}
+              </datalist>
+              <p className="text-xs text-muted-foreground">
+                Applies to this device only — the enrollment token and other devices
+                keep their region. Leave empty to inherit the token's region.
+              </p>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditId(null)}>Cancel</Button>
-            <Button onClick={saveGroup} disabled={setGroup.isPending || !editGroup.trim()}>
-              {setGroup.isPending ? "Saving..." : "Save"}
+            <Button onClick={saveEdit} disabled={setGroup.isPending || setRegion.isPending || !editGroup.trim()}>
+              {setGroup.isPending || setRegion.isPending ? "Saving..." : "Save"}
             </Button>
           </DialogFooter>
         </DialogContent>

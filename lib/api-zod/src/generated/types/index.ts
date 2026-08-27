@@ -62,6 +62,7 @@ export * from "./deviceItem";
 export * from "./deviceItemMetrics";
 export * from "./deviceItemOsType";
 export * from "./deviceItemSystemInfo";
+export * from "./deviceRegionInput";
 export * from "./downloadItem";
 export * from "./downloadItemPlatform";
 export * from "./downloadList";

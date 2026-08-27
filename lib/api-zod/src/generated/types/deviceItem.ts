@@ -47,6 +47,11 @@ export interface DeviceItem {
   monitoringEnabled: boolean;
   deviceGroup: string;
   /**
+   * Per-device region override. Null means the device inherits its enrollment token's region (see tokenRegion).
+   * @nullable
+   */
+  region?: string | null;
+  /**
    * Device wall-clock offset in minutes from the stored UTC instants, reported by the agent on heartbeat. Used to display activity and screenshot times in the device's local time. Null until reported.
    * @nullable
    */

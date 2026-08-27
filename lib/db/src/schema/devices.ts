@@ -53,6 +53,12 @@ export const devicesTable = pgTable("devices", {
   syncIntervalSeconds: integer("sync_interval_seconds").notNull().default(300),
   monitoringEnabled: boolean("monitoring_enabled").notNull().default(true),
   deviceGroup: text("device_group").notNull().default("Unassigned"),
+  // Per-device region override (free-form, same taxonomy as token regions;
+  // slash-separated multi-region strings like "DE/NL" are allowed). NULL means
+  // "inherit the enrollment token's region". Only ever written by an admin's
+  // explicit edit — enrollment never sets it, so token-region changes keep
+  // flowing through to devices without an override.
+  region: text("region"),
   // Device wall-clock offset from the timestamps we store (minutes), reported
   // by the agent on each heartbeat. Used by the dashboard to display activity
   // and screenshot times as the device user saw them on their own clock,
@@ -78,6 +84,7 @@ export const devicesTable = pgTable("devices", {
 }, (t) => [
   // Manager group/region scoping filters every device query by these columns.
   index("devices_company_group_idx").on(t.companyId, t.deviceGroup),
+  index("devices_company_region_idx").on(t.companyId, t.region),
   index("devices_enrolled_via_token_idx").on(t.enrolledViaTokenId),
 ]);
 
@@ -121,6 +128,7 @@ export const publicDeviceColumns = {
   syncIntervalSeconds: devicesTable.syncIntervalSeconds,
   monitoringEnabled: devicesTable.monitoringEnabled,
   deviceGroup: devicesTable.deviceGroup,
+  region: devicesTable.region,
   tzOffsetMinutes: devicesTable.tzOffsetMinutes,
   systemInfo: devicesTable.systemInfo,
   createdAt: devicesTable.createdAt,

@@ -277,6 +277,9 @@ router.post("/enroll", async (req: Request, res: Response): Promise<void> => {
           // Adopt the token's group preset if it carries one; otherwise keep
           // whatever group the device already had.
           deviceGroup: token.deviceGroup ?? existing.deviceGroup,
+          // devices.region is an admin-set override only — enrollment never
+          // writes it, so token-region changes keep flowing through to
+          // devices without an explicit override.
           updatedAt: now,
         })
         .where(eq(devicesTable.id, existing.id))
@@ -332,6 +335,8 @@ router.post("/enroll", async (req: Request, res: Response): Promise<void> => {
         // Apply the token's group preset; falls back to the column default
         // ("Unassigned") when the token carries none.
         ...(token.deviceGroup ? { deviceGroup: token.deviceGroup } : {}),
+        // devices.region stays null: the device inherits the token's region
+        // until an admin explicitly sets a per-device override.
       })
       .returning();
     return created;

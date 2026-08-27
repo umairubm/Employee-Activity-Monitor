@@ -265,6 +265,26 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DeviceItem"
+  /devices/{id}/region:
+    patch:
+      operationId: setDeviceRegion
+      tags: [devices]
+      summary: Set or clear a device's region override
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceRegionInput"
+      responses:
+        "200":
+          description: Updated device
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceItem"
   /devices/config:
     patch:
       operationId: applyDeviceConfigToAll
@@ -2379,6 +2399,11 @@ components:
           type: boolean
         deviceGroup:
           type: string
+        region:
+          type: [string, "null"]
+          description: >-
+            Per-device region override. Null means the device inherits its
+            enrollment token's region (see tokenRegion).
         tzOffsetMinutes:
           type: [integer, "null"]
           description: >-
@@ -2434,6 +2459,18 @@ components:
           type: string
           minLength: 1
       required: [deviceGroup]
+    DeviceRegionInput:
+      type: object
+      properties:
+        region:
+          type: [string, "null"]
+          minLength: 1
+          maxLength: 120
+          description: >-
+            New region for this device (slash-separated multi-region strings
+            allowed). Null clears the override so the device falls back to its
+            enrollment token's region.
+      required: [region]
     DeviceConfigInput:
       type: object
       properties:

@@ -8,6 +8,7 @@ import {
   useListShifts,
   useCancelDeviceCommand,
   useSetDeviceGroup,
+  useSetDeviceRegion,
   useGetDeviceAlerts,
   getGetDeviceAlertsQueryKey,
   useAcknowledgeDeviceAlert,
@@ -20,7 +21,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
-import { MonitorSmartphone, ShieldAlert, LogOut, Clock, ShieldCheck, Cpu, Ban, Users, Pencil, AlertTriangle, HardDrive, Check, MemoryStick, Network, Server, LockOpen, KeyRound, RotateCcw, Power, Usb, Gauge } from "lucide-react";
+import { MonitorSmartphone, ShieldAlert, LogOut, Clock, ShieldCheck, Cpu, Ban, Users, Globe, Pencil, AlertTriangle, HardDrive, Check, MemoryStick, Network, Server, LockOpen, KeyRound, RotateCcw, Power, Usb, Gauge } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Progress } from "@/components/ui/progress";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
@@ -136,6 +137,7 @@ export default function DeviceDetail({ id }: { id: string }) {
   const issueCommand = useIssueDeviceCommand();
   const cancelCommand = useCancelDeviceCommand();
   const setDeviceGroup = useSetDeviceGroup();
+  const setDeviceRegion = useSetDeviceRegion();
   const { data: alertsData } = useGetDeviceAlerts(id, { query: { enabled: !!id, queryKey: getGetDeviceAlertsQueryKey(id), refetchInterval: 30_000 } });
   const acknowledgeAlert = useAcknowledgeDeviceAlert();
   const acknowledgeAllAlerts = useAcknowledgeAllDeviceAlerts();
@@ -156,6 +158,8 @@ export default function DeviceDetail({ id }: { id: string }) {
 
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
   const [groupValue, setGroupValue] = useState("");
+  const [regionValue, setRegionValue] = useState("");
+  const [initialRegionValue, setInitialRegionValue] = useState("");
 
   const [commandDialogOpen, setCommandDialogOpen] = useState(false);
   const [commandType, setCommandType] = useState<IssuableCommand | null>(null);
@@ -262,22 +266,29 @@ export default function DeviceDetail({ id }: { id: string }) {
 
   const openGroupDialog = () => {
     setGroupValue(device?.deviceGroup ?? "");
+    const currentRegion = device?.region ?? device?.tokenRegion ?? "";
+    setRegionValue(currentRegion);
+    setInitialRegionValue(currentRegion);
     setGroupDialogOpen(true);
   };
 
-  const handleSaveGroup = () => {
+  const handleSaveGroup = async () => {
     const value = groupValue.trim();
     if (!value) return;
-    setDeviceGroup.mutate({ id, data: { deviceGroup: value } }, {
-      onSuccess: () => {
-        setGroupDialogOpen(false);
-        queryClient.invalidateQueries({ queryKey: getGetDeviceQueryKey(id) });
-        toast({ title: "Group updated" });
-      },
-      onError: (error: any) => {
-        toast({ title: "Failed to update group", description: error.message, variant: "destructive" });
-      },
-    });
+    const region = regionValue.trim();
+    try {
+      await setDeviceGroup.mutateAsync({ id, data: { deviceGroup: value } });
+      if (region !== initialRegionValue.trim()) {
+        // Empty input clears the override so the device inherits its token's region.
+        await setDeviceRegion.mutateAsync({ id, data: { region: region || null } });
+      }
+      setGroupDialogOpen(false);
+      queryClient.invalidateQueries({ queryKey: getGetDeviceQueryKey(id) });
+      toast({ title: "Device updated" });
+    } catch (error: any) {
+      queryClient.invalidateQueries({ queryKey: getGetDeviceQueryKey(id) });
+      toast({ title: "Failed to update device", description: error.message, variant: "destructive" });
+    }
   };
 
   const openDialog = (type: IssuableCommand) => {
@@ -402,26 +413,42 @@ export default function DeviceDetail({ id }: { id: string }) {
       <Dialog open={groupDialogOpen} onOpenChange={setGroupDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Assign Group</DialogTitle>
+            <DialogTitle>Edit Device</DialogTitle>
             <DialogDescription>
-              Move this device into a team or group. Devices in the same group are
-              filtered and compared together across the dashboard.
+              Move this device into a team or group and set its region. Changes
+              apply to this device only.
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4">
-            <Label htmlFor="device-group" className="mb-2 block">Group name</Label>
-            <Input
-              id="device-group"
-              placeholder="e.g. Engineering"
-              value={groupValue}
-              onChange={(e) => setGroupValue(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSaveGroup()}
-            />
+          <div className="py-4 space-y-4">
+            <div>
+              <Label htmlFor="device-group" className="mb-2 block">Group name</Label>
+              <Input
+                id="device-group"
+                placeholder="e.g. Engineering"
+                value={groupValue}
+                onChange={(e) => setGroupValue(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSaveGroup()}
+              />
+            </div>
+            <div>
+              <Label htmlFor="device-region" className="mb-2 block">Region</Label>
+              <Input
+                id="device-region"
+                placeholder="e.g. DE/NL/IT/UK"
+                value={regionValue}
+                onChange={(e) => setRegionValue(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSaveGroup()}
+              />
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                Applies to this device only — the enrollment token and other
+                devices keep their region. Leave empty to inherit the token's region.
+              </p>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setGroupDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleSaveGroup} disabled={setDeviceGroup.isPending || !groupValue.trim()}>
-              {setDeviceGroup.isPending ? "Saving..." : "Save"}
+            <Button onClick={handleSaveGroup} disabled={setDeviceGroup.isPending || setDeviceRegion.isPending || !groupValue.trim()}>
+              {setDeviceGroup.isPending || setDeviceRegion.isPending ? "Saving..." : "Save"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -674,11 +701,25 @@ export default function DeviceDetail({ id }: { id: string }) {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center justify-between gap-2 rounded-md bg-muted/40 border border-border p-3">
-              <div className="min-w-0">
-                <p className="text-muted-foreground text-xs mb-1 flex items-center gap-1.5">
-                  <Users className="h-3.5 w-3.5" /> Group
-                </p>
-                <Badge variant="secondary" className="font-normal">{device.deviceGroup}</Badge>
+              <div className="min-w-0 grid grid-cols-2 gap-x-4">
+                <div>
+                  <p className="text-muted-foreground text-xs mb-1 flex items-center gap-1.5">
+                    <Users className="h-3.5 w-3.5" /> Group
+                  </p>
+                  <Badge variant="secondary" className="font-normal">{device.deviceGroup}</Badge>
+                </div>
+                <div className="min-w-0">
+                  <p className="text-muted-foreground text-xs mb-1 flex items-center gap-1.5">
+                    <Globe className="h-3.5 w-3.5" /> Region
+                  </p>
+                  {device.region ?? device.tokenRegion ? (
+                    <Badge variant="outline" className="max-w-full truncate font-normal">
+                      {device.region ?? device.tokenRegion}
+                    </Badge>
+                  ) : (
+                    <span className="text-sm text-muted-foreground">—</span>
+                  )}
+                </div>
               </div>
               <Button variant="outline" size="sm" className="gap-1.5 shrink-0" onClick={openGroupDialog}>
                 <Pencil className="h-3.5 w-3.5" />

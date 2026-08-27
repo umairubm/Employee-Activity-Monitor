@@ -103,7 +103,9 @@ router.get("/", async (req, res) => {
         deviceGroup: devicesTable.deviceGroup,
         username: usersTable.username,
         tokenLabel: enrollmentTokensTable.label,
-        tokenRegion: enrollmentTokensTable.region,
+        // Effective region: the device's own override wins; fall back to the
+        // enrollment token's region for devices without one.
+        tokenRegion: sql<string | null>`coalesce(${devicesTable.region}, ${enrollmentTokensTable.region})`,
       })
       .from(devicesTable)
       .leftJoin(usersTable, eq(devicesTable.assignedUserId, usersTable.id))

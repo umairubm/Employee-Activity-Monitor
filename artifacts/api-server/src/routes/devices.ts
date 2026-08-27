@@ -844,6 +844,53 @@ router.patch(
 
 const setGroupSchema = z.object({ deviceGroup: groupNameSchema });
 
+// Region is free-form like the token taxonomy; slash-separated multi-region
+// strings ("DE/NL/IT") are allowed. Null clears the override so the device
+// falls back to its enrollment token's region.
+const setRegionSchema = z.object({
+  region: z
+    .string()
+    .trim()
+    .min(1)
+    .max(120)
+    .transform((s) => s.replace(/\s+/g, " "))
+    .nullable(),
+});
+
+// PATCH /api/devices/:id/region - set or clear a device's region override
+router.patch(
+  "/:id/region",
+  requireRole("company_admin", "manager"),
+  async (req, res) => {
+    try {
+      const parsed = setRegionSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: "Invalid region" });
+        return;
+      }
+      const companyId = getCompanyId(req);
+      const [updated] = await db
+        .update(devicesTable)
+        .set({ region: parsed.data.region, updatedAt: new Date() })
+        .where(
+          and(
+            eq(devicesTable.id, String(req.params.id)),
+            eq(devicesTable.companyId, companyId),
+            deviceScopeCondition(req),
+          ),
+        )
+        .returning(publicDeviceColumns);
+      if (!updated) {
+        res.status(404).json({ error: "Device not found" });
+        return;
+      }
+      res.json(withOnline(updated));
+    } catch (error) {
+      res.status(500).json({ error: (error as Error).message });
+    }
+  },
+);
+
 // PATCH /api/devices/:id/group - assign a device to a group
 router.patch(
   "/:id/group",

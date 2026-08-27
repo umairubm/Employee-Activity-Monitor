@@ -1,6 +1,6 @@
 import type { Request } from "express";
 import { db, devicesTable, enrollmentTokensTable } from "@workspace/db";
-import { and, eq, inArray, or, sql, type SQL } from "drizzle-orm";
+import { and, eq, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import type { AuthedRequest } from "../middlewares/userAuth";
 
 /**
@@ -68,7 +68,17 @@ export function deviceScopeCondition(req: Request): SQL | undefined {
           inArray(enrollmentTokensTable.region, regions),
         ),
       );
-    parts.push(inArray(devicesTable.enrolledViaTokenId, tokenIds));
+    // Effective region: a device's own region override wins; only a device
+    // with no override falls back to its enrollment token's region.
+    parts.push(
+      or(
+        inArray(devicesTable.region, regions),
+        and(
+          isNull(devicesTable.region),
+          inArray(devicesTable.enrolledViaTokenId, tokenIds),
+        ),
+      )!,
+    );
   }
   // parts has 1-2 entries; or() with one entry is just that entry.
   return or(...parts);
