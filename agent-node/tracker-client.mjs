@@ -42,13 +42,14 @@ import crypto from "crypto";
 import { createWriteStream } from "fs";
 import { Readable } from "stream";
 import { fileURLToPath } from "url";
+import { createCommandRunner } from "./command-runner.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const IS_WIN = process.platform === "win32";
 const IS_MAC = process.platform === "darwin";
 
-const AGENT_VERSION = "2.0.0-node";
+const AGENT_VERSION = "2.0.1-node";
 
 // ── Where we persist credentials + offline data (per-user, stable across runs) ─
 const CONFIG_DIR = path.join(os.homedir(), ".active-tracker");
@@ -822,16 +823,10 @@ async function enforceLock() {
 }
 
 // ── Authorized IT commands (with visible notice before execution) ─────────────
-// Commands that show the user a visible notice (with the admin's reason) before
-// they run, matching the existing lock/logout pattern.
-const COMMAND_ACTION_LABELS = {
-  lock_screen: "lock your screen",
-  logout_user: "sign you out",
-  restart: "restart this computer",
-  shutdown: "shut down this computer",
-  reset_password: "reset your account password",
-  update_agent: "update this agent",
-};
+// The lifecycle contract (validate delivery → ack "acknowledged" BEFORE any OS
+// action → redelivery dedup → truthful completed/failed with a safe reason)
+// lives in command-runner.mjs so it can be unit-tested with mocked HTTP and
+// OS calls (see agent-node/test/command-runner.test.mjs).
 
 async function ackCommand(commandId, status, message) {
   const body = { commandId, status };
@@ -841,257 +836,143 @@ async function ackCommand(commandId, status, message) {
   await apiPost("/commands/ack", body);
 }
 
-async function executeCommand(cmd) {
-  // unlock_screen and set_usb_block are silent (no user-facing notice).
-  const showsNotice =
-    cmd.commandType in COMMAND_ACTION_LABELS &&
-    cmd.commandType !== "unlock_screen" &&
-    cmd.commandType !== "set_usb_block";
-  if (showsNotice) {
-    const actionLabel = COMMAND_ACTION_LABELS[cmd.commandType];
-    const reasonText = cmd.reason ? ` Reason: ${cmd.reason}` : "";
-    await showNotice(
-      "Administrator action",
-      `IT is about to ${actionLabel}.${reasonText}`
-    );
-  }
-
-  try {
-    await ackCommand(cmd.id, "acknowledged");
-  } catch (e) {
-    console.error("⚠️ Could not acknowledge command:", e.message);
-  }
-
-  if (cmd.commandType === "update_agent") {
-    let payload = null;
-    let installerPath = null;
-    let downloadStarted = false;
-    try {
-      payload = parsePayload(cmd.payload);
-      const version = payload && payload.version;
-      let fileName = payload && payload.fileName;
-      if (!version || !fileName) {
-        throw new Error("Missing update payload fields");
-      }
-      const release = await apiPost("/commands/download-url", {
-        commandId: cmd.id,
-      });
-      const downloadUrl = String(release.downloadUrl || "");
-      fileName = String(release.fileName || fileName);
-      const url = new URL(downloadUrl);
-      if (!["http:", "https:"].includes(url.protocol)) {
-        throw new Error("Unsupported download URL");
-      }
-      if (!IS_WIN || path.extname(fileName).toLowerCase() !== ".exe") {
-        throw new Error("unsupported update installer");
-      }
-
-      await ackCommand(cmd.id, "downloading");
-      downloadStarted = true;
-
-      const tmpBase = path.join(
-        os.tmpdir(),
-        `tracker-update-${process.pid}-${Date.now()}-${crypto.randomBytes(6).toString("hex")}`
-      );
-      installerPath = `${tmpBase}${path.extname(fileName) || ".exe"}`;
-      const res = await fetch(url, { redirect: "follow" });
-      if (!res.ok || !res.body) {
-        throw new Error(`Download failed with status ${res.status}`);
-      }
-
-      await new Promise((resolve, reject) => {
-        const out = createWriteStream(installerPath, { mode: 0o700 });
-        const cleanup = (err) => {
-          out.destroy();
-          reject(err);
-        };
-        out.on("error", cleanup);
-        out.on("finish", resolve);
-        Readable.fromWeb(res.body).on("error", cleanup).pipe(out);
-      });
-
-      await ackCommand(cmd.id, "installing");
-      const child = await new Promise((resolve, reject) => {
-        const spawned = spawn(installerPath, ["/S"], {
-          detached: true,
-          windowsHide: true,
-          stdio: "ignore",
-        });
-        spawned.once("error", reject);
-        spawned.once("spawn", () => resolve(spawned));
-      });
-      child.unref();
-      process.exit(0);
-    } catch (e) {
-      if (installerPath) {
-        try {
-          fs.unlinkSync(installerPath);
-        } catch {
-          /* ignore */
-        }
-      }
-      if (!downloadStarted) {
-        try {
-          await ackCommand(
-            cmd.id,
-            "failed",
-            e.message ? e.message.slice(0, 200) : "update_agent failed"
-          );
-        } catch {
-          /* ignore */
-        }
-      } else {
-        try {
-          await ackCommand(
-            cmd.id,
-            "failed",
-            e.message ? e.message.slice(0, 200) : "update_agent failed"
-          );
-        } catch {
-          /* ignore */
-        }
-      }
-      return;
-    }
-  }
-
-  // restart/shutdown take the machine down before we could report completion, so
-  // ack "completed" first, then execute.
-  if (cmd.commandType === "restart" || cmd.commandType === "shutdown") {
-    try {
-      await ackCommand(cmd.id, "completed");
-    } catch (e) {
-      console.error("⚠️ Could not report command result:", e.message);
-    }
-    // Give the user a few seconds to see the notice before the machine goes down.
-    await new Promise((r) => setTimeout(r, 4000));
-    try {
-      if (cmd.commandType === "restart") {
-        if (IS_WIN) await runCmd("shutdown", ["/r", "/t", "5"]);
-        else if (IS_MAC)
-          await runCmd("osascript", [
-            "-e",
-            'tell application "System Events" to restart',
-          ]);
-        else {
-          const out = await runCmd("systemctl", ["reboot"]);
-          if (!out && !(await pathHasSystemctl()))
-            await runCmd("shutdown", ["-r", "now"]);
-        }
-      } else {
-        if (IS_WIN) await runCmd("shutdown", ["/s", "/t", "5"]);
-        else if (IS_MAC)
-          await runCmd("osascript", [
-            "-e",
-            'tell application "System Events" to shut down',
-          ]);
-        else {
-          const out = await runCmd("systemctl", ["poweroff"]);
-          if (!out && !(await pathHasSystemctl()))
-            await runCmd("shutdown", ["-h", "now"]);
-        }
-      }
-    } catch (e) {
-      console.error(`❌ Command ${cmd.commandType} failed:`, e.message);
-    }
-    return;
-  }
-
-  let ok = true;
-  let failMessage = null;
-  try {
-    if (cmd.commandType === "lock_screen") {
-      const locked = await lockScreenOs();
-      if (!locked) {
-        ok = false;
-        failMessage = "lock_screen is not supported on this OS";
-      }
-    } else if (cmd.commandType === "logout_user") {
-      // Give the user a few seconds to see the notice before signing out.
-      await new Promise((r) => setTimeout(r, 4000));
-      if (IS_WIN) await runCmd("shutdown", ["/l"]);
-      else if (IS_MAC)
-        await runCmd("osascript", [
-          "-e",
-          'tell application "System Events" to log out',
-        ]);
-      else ok = false;
-    } else if (cmd.commandType === "unlock_screen") {
-      // No OS action — just clear any local lock-enforcement state so
-      // screenshots/monitoring resume immediately.
-      clientState.isLocked = false;
-      clientState.lockedUntil = null;
-    } else if (cmd.commandType === "reset_password") {
-      // NEVER log the password, and never place it in argv (which is world-
-      // readable via tasklist/WMI). Windows-only: change the current logged-in
-      // user's password by handing the value to PowerShell through an
-      // ENVIRONMENT VARIABLE scoped to the child process only.
-      if (IS_WIN) {
-        const payload = parsePayload(cmd.payload);
-        const newPassword = payload && payload.newPassword;
-        if (!newPassword) {
-          ok = false;
-          failMessage = "No newPassword provided in payload";
-        } else {
-          const username = os.userInfo().username;
-          const r = await resetWindowsPassword(username, newPassword);
-          if (!r.ok) {
-            ok = false;
-            failMessage = r.message;
-          }
-        }
-      } else {
-        ok = false;
-        failMessage = `reset_password is unsupported on ${IS_MAC ? "macOS" : "Linux"}`;
-      }
-    } else if (cmd.commandType === "set_usb_block") {
-      if (IS_WIN) {
-        const payload = parsePayload(cmd.payload);
-        const enabled = payload && payload.enabled === true;
-        configState.usbBlockEnabled = enabled;
-        const applied = await setUsbBlock(enabled);
-        if (!applied) {
-          ok = false;
-          failMessage = "Failed to apply USB policy (admin rights required)";
-        }
-      } else {
-        ok = false;
-        failMessage = `set_usb_block is unsupported on ${IS_MAC ? "macOS" : "Linux"}`;
-      }
-    } else {
-      ok = false;
-      failMessage = `Unknown command type: ${cmd.commandType}`;
-    }
-  } catch (e) {
-    console.error(`❌ Command ${cmd.commandType} failed:`, e.message);
-    ok = false;
-    failMessage = e.message;
-  }
-
-  try {
-    await ackCommand(cmd.id, ok ? "completed" : "failed", ok ? null : failMessage);
-  } catch (e) {
-    console.error("⚠️ Could not report command result:", e.message);
-  }
+// Like runCmd, but resolves whether the OS actually accepted the command.
+function runCmdStatus(cmd, args, opts = {}) {
+  return new Promise((resolve) => {
+    const p = spawn(cmd, args, { windowsHide: true, ...opts });
+    p.on("error", () => resolve(false));
+    p.on("close", (code) => resolve(code === 0));
+  });
 }
 
-// Command payloads arrive as a JSON *string* (or null). Parse defensively.
-function parsePayload(payload) {
-  if (payload == null) return null;
-  if (typeof payload === "object") return payload;
+// Schedule restart/shutdown with an OS-side grace delay (15s on Windows) so
+// the truthful completion ack can reach the server before the machine goes
+// down. Resolves true only when the OS accepted the scheduling command.
+async function schedulePowerCommand(type) {
+  if (type === "restart") {
+    if (IS_WIN) return runCmdStatus("shutdown", ["/r", "/t", "15"]);
+    if (IS_MAC)
+      return runCmdStatus("osascript", [
+        "-e",
+        'tell application "System Events" to restart',
+      ]);
+    if (await runCmdStatus("systemctl", ["reboot"])) return true;
+    return runCmdStatus("shutdown", ["-r", "now"]);
+  }
+  if (IS_WIN) return runCmdStatus("shutdown", ["/s", "/t", "15"]);
+  if (IS_MAC)
+    return runCmdStatus("osascript", [
+      "-e",
+      'tell application "System Events" to shut down',
+    ]);
+  if (await runCmdStatus("systemctl", ["poweroff"])) return true;
+  return runCmdStatus("shutdown", ["-h", "now"]);
+}
+
+async function logoutUserOs() {
+  if (IS_WIN) return runCmdStatus("shutdown", ["/l"]);
+  if (IS_MAC)
+    return runCmdStatus("osascript", [
+      "-e",
+      'tell application "System Events" to log out',
+    ]);
+  return false;
+}
+
+// Download an update installer to a private temp file; resolves its path.
+async function downloadInstaller(downloadUrl, fileName) {
+  const tmpBase = path.join(
+    os.tmpdir(),
+    `tracker-update-${process.pid}-${Date.now()}-${crypto.randomBytes(6).toString("hex")}`
+  );
+  const installerPath = `${tmpBase}${path.extname(fileName) || ".exe"}`;
+  const res = await fetch(downloadUrl, { redirect: "follow" });
+  if (!res.ok || !res.body) {
+    throw new Error(`Download failed with status ${res.status}`);
+  }
+  await new Promise((resolve, reject) => {
+    const out = createWriteStream(installerPath, { mode: 0o700 });
+    const cleanup = (err) => {
+      out.destroy();
+      reject(err);
+    };
+    out.on("error", cleanup);
+    out.on("finish", resolve);
+    Readable.fromWeb(res.body).on("error", cleanup).pipe(out);
+  });
+  return installerPath;
+}
+
+// Launch the silent installer detached; the installer replaces this agent and
+// the first heartbeat from the new build completes the update server-side.
+async function launchInstaller(installerPath) {
+  const child = await new Promise((resolve, reject) => {
+    const spawned = spawn(installerPath, ["/S"], {
+      detached: true,
+      windowsHide: true,
+      stdio: "ignore",
+    });
+    spawned.once("error", reject);
+    spawned.once("spawn", () => resolve(spawned));
+  });
+  child.unref();
+}
+
+// Durable command-result journal: written BEFORE each final ack so a lost
+// ack response (even one racing a shutdown) can never re-run a destructive
+// command after the agent restarts — the recorded result is re-acked instead.
+const COMMAND_RESULTS_FILE = path.join(CONFIG_DIR, "command-results.json");
+function loadCommandResults() {
   try {
-    return JSON.parse(payload);
+    const data = JSON.parse(fs.readFileSync(COMMAND_RESULTS_FILE, "utf8"));
+    return data && typeof data === "object" ? data : {};
   } catch {
-    return null;
+    return {};
   }
 }
+const commandResults = loadCommandResults();
+const commandResultStore = {
+  get: (id) => commandResults[id] ?? null,
+  set: (id, result) => {
+    commandResults[id] = result;
+    // Keep the journal bounded.
+    const ids = Object.keys(commandResults);
+    for (const old of ids.slice(0, Math.max(0, ids.length - 200))) {
+      delete commandResults[old];
+    }
+    fs.writeFileSync(COMMAND_RESULTS_FILE, JSON.stringify(commandResults));
+  },
+};
 
-// Best-effort check for systemctl on the PATH, so we know whether to fall back
-// to the classic `shutdown` command on Linux.
-async function pathHasSystemctl() {
-  const out = await runCmd("sh", ["-c", "command -v systemctl"]);
-  return Boolean(out);
-}
+const commandRunner = createCommandRunner({
+  ackCommand,
+  fetchDownloadUrl: (commandId) =>
+    apiPost("/commands/download-url", { commandId }),
+  showNotice,
+  sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+  powerCommand: schedulePowerCommand,
+  logoutUser: logoutUserOs,
+  lockScreenOs,
+  // NEVER log the password, and never place it in argv (world-readable via
+  // tasklist/WMI) — resetWindowsPassword hands it to PowerShell through an
+  // environment variable scoped to the child process only.
+  resetPassword: (newPassword) =>
+    resetWindowsPassword(os.userInfo().username, newPassword),
+  setUsbBlock,
+  downloadInstaller,
+  launchInstaller,
+  removeFile: (p) => fs.unlinkSync(p),
+  exitProcess: () => process.exit(0),
+  isWin: IS_WIN,
+  isMac: IS_MAC,
+  clientState,
+  configState,
+  resultStore: commandResultStore,
+  warn: (...args) => console.error("⚠️", ...args),
+});
+
+const executeCommand = (cmd) => commandRunner.executeCommand(cmd);
+
 
 // ── Telemetry stream: foreground app + mouse/idle (cross-platform) ────────────
 let psProcess = null;

@@ -44,7 +44,7 @@ else:
     from . import system_info as system_info_mod
     from . import tray as tray_mod
 
-AGENT_VERSION = "1.2.0"
+AGENT_VERSION = "1.2.1"
 POLL_SECONDS = 15
 
 
@@ -70,6 +70,16 @@ class MonitoringAgent:
         # is the server-reported ISO expiry (informational).
         self._enforced_lock = False
         self._locked_until: str | None = None
+        # Command ids already handled this session. A heartbeat can redeliver a
+        # command whose acknowledgement was lost in transit; destructive
+        # actions (shutdown/restart/password reset) must never run twice.
+        self._handled_command_ids: set = set()
+        # Durable journal of executed command RESULTS, persisted to disk. If
+        # the final completed/failed ack is lost (e.g. the machine shuts down
+        # before the response arrives) and the server later redelivers the
+        # command — possibly to a freshly restarted agent — we re-send the
+        # recorded result instead of executing the action a second time.
+        self._command_results: dict = self._load_command_results()
         self.tray: tray_mod.AgentTray | None = None
 
     # --- helpers -------------------------------------------------------------
@@ -148,12 +158,46 @@ class MonitoringAgent:
     def _handle_command(self, command: dict) -> None:
         ctype = command.get("commandType")
         cid = command.get("id")
+        # Validate the delivered command before acting on it.
+        if not isinstance(cid, str) or not cid or not isinstance(ctype, str) or not ctype:
+            print("[agent] ignoring malformed command delivery", file=sys.stderr)
+            return
+        # Redelivery guard: never execute the same command twice in one
+        # session, even if the server re-sends it after a lost ack.
+        if cid in self._handled_command_ids:
+            return
+        self._handled_command_ids.add(cid)
+
+        # Cross-restart guard: if this command already EXECUTED in a previous
+        # session but its final ack was lost, re-send the recorded result —
+        # never run the action again.
+        prior = self._command_results.get(cid)
+        if isinstance(prior, dict):
+            try:
+                self.api.ack_command(
+                    cid, prior.get("status") or "completed", prior.get("message")
+                )
+            except Exception as exc:  # noqa: BLE001
+                self._handled_command_ids.discard(cid)
+                print(f"[agent] could not re-ack command result: {exc}", file=sys.stderr)
+            return
+
         reason = command.get("reason") or "Authorized IT action"
         # payload is delivered as a JSON *string* (or null); parse best-effort.
         payload = self._parse_payload(command.get("payload"))
+
+        # The acknowledgement must succeed BEFORE any OS action. If it fails
+        # (e.g. network blip, or the admin cancelled the command server-side)
+        # we must NOT act: leave the command pending for redelivery on a later
+        # heartbeat and allow this id to be retried.
         try:
             self.api.ack_command(cid, "acknowledged")
+        except Exception as exc:  # noqa: BLE001
+            self._handled_command_ids.discard(cid)
+            print(f"[agent] could not acknowledge command {ctype}: {exc}", file=sys.stderr)
+            return
 
+        try:
             if ctype in ("lock_screen", "logout_user"):
                 if self.tray:
                     label = "lock your screen" if ctype == "lock_screen" else "sign you out"
@@ -163,17 +207,18 @@ class MonitoringAgent:
                     )
                 time.sleep(3.0)
                 self._execute_os_command(ctype)
-                self.api.ack_command(cid, "completed")
+                self._finish_command(cid, "completed")
 
             elif ctype == "unlock_screen":
                 # Stop re-locking immediately; no OS action needed. The next
                 # heartbeat should also report isLocked=false.
                 self._enforced_lock = False
                 self._locked_until = None
-                self.api.ack_command(cid, "completed")
+                self._finish_command(cid, "completed")
 
             elif ctype == "reset_password":
-                self._reset_password(cid, payload, reason)
+                ok, message = self._reset_password(payload, reason)
+                self._finish_command(cid, "completed" if ok else "failed", message)
 
             elif ctype in ("restart", "shutdown"):
                 verb = "restart" if ctype == "restart" else "shut down"
@@ -182,27 +227,87 @@ class MonitoringAgent:
                         f"IT is about to {verb} this computer. Reason: {reason}",
                         "Workforce Analytics",
                     )
-                # Ack completed BEFORE executing — the device goes down and the
-                # follow-up ack would never reach the server.
-                self.api.ack_command(cid, "completed")
                 time.sleep(3.0)
-                self._execute_power_command(ctype)
+                # Schedule the power action with a grace delay, verify it was
+                # accepted by the OS, then report the truthful outcome while
+                # the machine is still up. The result is journaled to disk
+                # BEFORE the ack, so if the ack is lost and the server later
+                # redelivers (even to a restarted agent after the reboot), we
+                # re-send the result instead of power-cycling again.
+                if self._execute_power_command(ctype):
+                    self._finish_command(cid, "completed")
+                else:
+                    self._finish_command(
+                        cid, "failed", f"could not schedule {verb} on this OS"
+                    )
 
             elif ctype == "set_usb_block":
-                self._set_usb_block(cid, payload)
+                ok, message = self._set_usb_block(payload)
+                self._finish_command(cid, "completed" if ok else "failed", message)
 
             elif ctype == "update_agent":
                 self._update_agent(cid, payload, reason)
 
             else:
-                # Unknown command type — mark it done so it isn't redelivered.
-                self.api.ack_command(cid, "completed")
+                # Unsupported command type — report an explicit failure with a
+                # readable reason instead of pretending it ran.
+                self._finish_command(
+                    cid, "failed", f"unsupported command type: {ctype}"
+                )
         except Exception as exc:  # noqa: BLE001
-            print(f"[agent] command {ctype} failed: {exc}", file=sys.stderr)
+            # Never leak sensitive payload data (e.g. a password) through the
+            # failure message OR the local log for credential commands.
+            detail = (
+                "password reset failed"
+                if ctype == "reset_password"
+                else str(exc)[:200]
+            )
+            print(f"[agent] command {ctype} failed: {detail}", file=sys.stderr)
             try:
-                self.api.ack_command(cid, "failed", str(exc))
+                self._finish_command(cid, "failed", detail)
             except Exception:
                 pass
+
+    # Durable command-result journal ------------------------------------------
+
+    def _results_path(self):
+        return config_mod.config_path().parent / "command-results.json"
+
+    def _load_command_results(self) -> dict:
+        try:
+            with open(self._results_path(), encoding="utf-8") as fh:
+                data = json.load(fh)
+            return data if isinstance(data, dict) else {}
+        except Exception:  # noqa: BLE001 — missing/corrupt journal = empty
+            return {}
+
+    def _record_command_result(self, cid: str, status: str, message) -> None:
+        self._command_results[cid] = {"status": status, "message": message}
+        # Keep the journal bounded (dicts preserve insertion order).
+        while len(self._command_results) > 200:
+            self._command_results.pop(next(iter(self._command_results)))
+        try:
+            path = self._results_path()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(self._command_results, fh)
+        except Exception as exc:  # noqa: BLE001 — never block the ack on disk IO
+            print(f"[agent] could not persist command result: {exc}", file=sys.stderr)
+
+    def _finish_command(self, cid: str, status: str, message=None) -> None:
+        """Journal the terminal result to disk FIRST, then ack it.
+
+        Journal-before-ack means an ack lost in transit (or a shutdown racing
+        the response) can never cause a re-execution: the redelivered command
+        short-circuits to a re-ack of the recorded result. Ack transport
+        failures are swallowed here — the journaled result must never be
+        misreported as a command failure by an outer handler.
+        """
+        self._record_command_result(cid, status, message)
+        try:
+            self.api.ack_command(cid, status, message)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[agent] could not report command result: {exc}", file=sys.stderr)
 
     @staticmethod
     def _parse_payload(raw: object) -> dict:
@@ -217,21 +322,20 @@ class MonitoringAgent:
                 return {}
         return {}
 
-    def _reset_password(self, cid, payload: dict, reason: str) -> None:
+    def _reset_password(self, payload: dict, reason: str):
         """Change the current logged-in user's password (Windows only).
 
-        The new password is passed to the PowerShell child via an ENVIRONMENT
+        Returns (ok, message) — the caller journals + acks the result. The new
+        password is passed to the PowerShell child via an ENVIRONMENT
         VARIABLE, never as a command-line argument, so it can't leak to other
         local users through argv (tasklist/WMI). The env var is scoped to just
         this child process. The password is NEVER logged.
         """
         if not sys.platform.startswith("win"):
-            self.api.ack_command(cid, "failed", "unsupported on this OS")
-            return
+            return False, "unsupported on this OS"
         new_password = payload.get("newPassword")
         if not new_password:
-            self.api.ack_command(cid, "failed", "missing newPassword")
-            return
+            return False, "missing newPassword"
         if self.tray:
             self.tray.notify(
                 f"IT is about to reset your Windows password. Reason: {reason}",
@@ -257,42 +361,69 @@ class MonitoringAgent:
             env=child_env,
         )
         if result.returncode == 0:
-            self.api.ack_command(cid, "completed")
-        else:
-            # Do not include stdout/stderr — keep the password out of the ack.
-            self.api.ack_command(cid, "failed", "requires admin")
+            return True, None
+        # Do not include stdout/stderr — keep the password out of the ack.
+        return False, "requires admin"
 
-    def _execute_power_command(self, ctype: str) -> None:
+    def _execute_power_command(self, ctype: str) -> bool:
+        """Schedule a restart/shutdown; return True only if the OS accepted it.
+
+        On Windows the action is scheduled with a 15s delay so the truthful
+        completion ack can reach the server before the machine goes down.
+        """
         if ctype == "restart":
             if sys.platform.startswith("win"):
-                subprocess.run(["shutdown", "/r", "/t", "5"], check=False)
-            elif sys.platform == "darwin":
-                subprocess.run(
-                    ["osascript", "-e",
-                     'tell application "System Events" to restart'],
-                    check=False,
+                return (
+                    subprocess.run(
+                        ["shutdown", "/r", "/t", "15"], check=False
+                    ).returncode
+                    == 0
                 )
-            else:
-                if subprocess.run(["systemctl", "reboot"], check=False).returncode != 0:
-                    subprocess.run(["shutdown", "-r", "now"], check=False)
-        elif ctype == "shutdown":
+            if sys.platform == "darwin":
+                return (
+                    subprocess.run(
+                        ["osascript", "-e",
+                         'tell application "System Events" to restart'],
+                        check=False,
+                    ).returncode
+                    == 0
+                )
+            if subprocess.run(["systemctl", "reboot"], check=False).returncode == 0:
+                return True
+            return (
+                subprocess.run(["shutdown", "-r", "now"], check=False).returncode == 0
+            )
+        if ctype == "shutdown":
             if sys.platform.startswith("win"):
-                subprocess.run(["shutdown", "/s", "/t", "5"], check=False)
-            elif sys.platform == "darwin":
-                subprocess.run(
-                    ["osascript", "-e",
-                     'tell application "System Events" to shut down'],
-                    check=False,
+                return (
+                    subprocess.run(
+                        ["shutdown", "/s", "/t", "15"], check=False
+                    ).returncode
+                    == 0
                 )
-            else:
-                if subprocess.run(["systemctl", "poweroff"], check=False).returncode != 0:
-                    subprocess.run(["shutdown", "-h", "now"], check=False)
+            if sys.platform == "darwin":
+                return (
+                    subprocess.run(
+                        ["osascript", "-e",
+                         'tell application "System Events" to shut down'],
+                        check=False,
+                    ).returncode
+                    == 0
+                )
+            if subprocess.run(["systemctl", "poweroff"], check=False).returncode == 0:
+                return True
+            return (
+                subprocess.run(["shutdown", "-h", "now"], check=False).returncode == 0
+            )
+        return False
 
-    def _set_usb_block(self, cid, payload: dict) -> None:
-        """Enable/disable USB mass-storage via the USBSTOR registry key."""
+    def _set_usb_block(self, payload: dict):
+        """Enable/disable USB mass-storage via the USBSTOR registry key.
+
+        Returns (ok, message) — the caller journals + acks the result.
+        """
         if not sys.platform.startswith("win"):
-            self.api.ack_command(cid, "failed", "unsupported on this OS")
-            return
+            return False, "unsupported on this OS"
         enabled = bool(payload.get("enabled"))
         if self._apply_usb_block(enabled):
             # Persist so we converge on subsequent heartbeats too.
@@ -301,9 +432,8 @@ class MonitoringAgent:
                 self.cfg.save()
             except Exception:  # noqa: BLE001
                 pass
-            self.api.ack_command(cid, "completed")
-        else:
-            self.api.ack_command(cid, "failed", "requires admin")
+            return True, None
+        return False, "requires admin"
 
     def _update_agent(self, cid, payload: dict, reason: str) -> None:
         version = str(payload.get("version") or "").strip()
@@ -316,10 +446,7 @@ class MonitoringAgent:
                 "An authorized agent update is about to install silently in the background.",
                 "Workforce Analytics",
             )
-        try:
-            self.api.ack_command(cid, "acknowledged")
-        except Exception:
-            return
+        # Already acknowledged by _handle_command before dispatch.
         release = self.api.command_download_url(cid)
         download_url = str(release.get("downloadUrl") or "").strip()
         file_name = str(release.get("fileName") or file_name).strip()
@@ -331,10 +458,11 @@ class MonitoringAgent:
                 f"Authorized update for version {version} is downloading silently.",
                 "Workforce Analytics",
             )
-        try:
-            self.api.ack_command(cid, "downloading")
-        except Exception:
-            return
+        # Let an ack failure propagate: _handle_command's outer handler acks
+        # "failed" (a legal transition even if the server already committed
+        # "downloading" and only the response was lost), so the command never
+        # strands in a non-terminal state.
+        self.api.ack_command(cid, "downloading")
         temp_path = None
         try:
             suffix = ".exe" if file_name.lower().endswith(".exe") else ""
@@ -352,10 +480,9 @@ class MonitoringAgent:
                     except OSError:
                         pass
                 return
-            try:
-                self.api.ack_command(cid, "installing")
-            except Exception:
-                return
+            # Same as "downloading" above: propagate ack failures so the outer
+            # handler resolves the command to "failed" instead of stranding it.
+            self.api.ack_command(cid, "installing")
             creationflags = 0
             startupinfo = None
             if sys.platform.startswith("win"):

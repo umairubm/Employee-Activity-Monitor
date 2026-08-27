@@ -791,8 +791,12 @@ describe("IT command dispatch via heartbeat", () => {
     trackDevice(device.id);
 
     const pending = await createDeviceCommand(device.id);
-    // Already-acknowledged / completed / failed work must not be re-dispatched.
-    await createDeviceCommand(device.id, { status: "acknowledged" });
+    // Freshly-acknowledged / completed / failed work must not be re-dispatched.
+    // (STALE acknowledged commands ARE redelivered — see commandRedelivery.test.ts.)
+    await createDeviceCommand(device.id, {
+      status: "acknowledged",
+      acknowledgedAt: new Date(),
+    });
     await createDeviceCommand(device.id, { status: "completed" });
     await createDeviceCommand(device.id, { status: "failed" });
 

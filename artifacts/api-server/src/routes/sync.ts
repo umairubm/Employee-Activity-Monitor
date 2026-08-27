@@ -394,10 +394,13 @@ router.post(
       device.lockedUntil.getTime() <= now.getTime();
 
     const m = parsed.data.metrics;
-    const reportedVersion = parsed.data.agentVersion;
-    // Numeric dotted versions only (e.g. "1.1.11") — the array cast in the
-    // superseded-update comparison below would throw on anything else.
-    if (reportedVersion && /^\d+(\.\d+)*$/.test(reportedVersion)) {
+    // Compare on the leading numeric dotted prefix so suffixed versions (e.g.
+    // the Node agent's "2.0.1-node") still complete installing updates — the
+    // array cast in the superseded-update comparison below would throw on a
+    // non-numeric string.
+    const reportedVersion =
+      parsed.data.agentVersion?.match(/^\d+(\.\d+)*/)?.[0] ?? null;
+    if (reportedVersion) {
       // A self-updating agent may be terminated by its installer before it can
       // send a final "completed" ack. The first heartbeat from the new build is
       // the authoritative success signal. Also complete SUPERSEDED updates: if
@@ -441,13 +444,40 @@ router.post(
       .where(eq(devicesTable.id, device.id))
       .returning();
 
+    // Deliver pending commands, plus STALE acknowledged ones. If the agent's
+    // "acknowledged" ack committed but its HTTP response was lost (or the
+    // agent crashed right after acking), the command would otherwise be
+    // stranded forever: heartbeat used to deliver only `pending`, and the ack
+    // endpoint treats a repeat same-status ack as an idempotent no-op success.
+    // Redelivering after a grace window lets the agent retry; its in-session
+    // dedup set prevents double execution when the first attempt is still in
+    // flight, and the window comfortably exceeds normal execution time.
+    const redeliverBefore = new Date(now.getTime() - 2 * 60 * 1000);
     const pending = await db
       .select()
       .from(deviceCommandsTable)
       .where(
         and(
           eq(deviceCommandsTable.deviceId, device.id),
-          eq(deviceCommandsTable.status, "pending"),
+          or(
+            eq(deviceCommandsTable.status, "pending"),
+            // downloading/installing (update commands) are included so a lost
+            // progress-ack response cannot strand an update: each progress ack
+            // bumps acknowledgedAt, so an actively-progressing update is never
+            // considered stale, and the ack endpoint treats a repeated phase
+            // ack as an idempotent no-op when the retrying agent replays it.
+            and(
+              inArray(deviceCommandsTable.status, [
+                "acknowledged",
+                "downloading",
+                "installing",
+              ]),
+              or(
+                isNull(deviceCommandsTable.acknowledgedAt),
+                lt(deviceCommandsTable.acknowledgedAt, redeliverBefore),
+              ),
+            ),
+          ),
         ),
       )
       .orderBy(
