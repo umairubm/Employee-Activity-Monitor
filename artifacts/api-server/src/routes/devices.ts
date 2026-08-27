@@ -66,7 +66,10 @@ router.get("/", async (req, res) => {
       )
       .leftJoin(usersTable, eq(devicesTable.assignedUserId, usersTable.id))
       .where(and(eq(devicesTable.companyId, companyId), deviceScopeCondition(req)))
-      .orderBy(desc(devicesTable.lastSeenAt));
+      // Keep the fleet in a stable order. `lastSeenAt` changes on every
+      // heartbeat, so sorting by it makes rows visibly jump around whenever
+      // the 30-second dashboard poll refreshes the list.
+      .orderBy(asc(devicesTable.createdAt), asc(devicesTable.id));
 
     const counts = await db
       .select({

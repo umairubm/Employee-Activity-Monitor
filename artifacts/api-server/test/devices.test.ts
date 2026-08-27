@@ -198,6 +198,39 @@ describe("PATCH /devices/config (apply to all)", () => {
 });
 
 describe("GET /devices (enrolling-token metadata)", () => {
+  it("keeps device order stable when heartbeat timestamps change", async () => {
+    const first = await newDevice({ systemName: "Stable First" });
+    const second = await newDevice({ systemName: "Stable Second" });
+
+    await db
+      .update(devicesTable)
+      .set({
+        lastSeenAt: new Date("2026-08-27T10:00:00.000Z"),
+      })
+      .where(inArray(devicesTable.id, [first.id, second.id]));
+
+    const before = await request(app).get("/devices");
+    expect(before.status).toBe(200);
+    const beforeIds = (before.body as Array<{ id: string }>).map((d) => d.id);
+    const firstBefore = beforeIds.indexOf(first.id);
+    const secondBefore = beforeIds.indexOf(second.id);
+    expect(firstBefore).toBeGreaterThanOrEqual(0);
+    expect(secondBefore).toBeGreaterThan(firstBefore);
+
+    // A later heartbeat for the second device must update its freshness
+    // without changing its position in the fleet list.
+    await db
+      .update(devicesTable)
+      .set({ lastSeenAt: new Date("2026-08-27T12:00:00.000Z") })
+      .where(inArray(devicesTable.id, [first.id, second.id]));
+
+    const after = await request(app).get("/devices");
+    expect(after.status).toBe(200);
+    const afterIds = (after.body as Array<{ id: string }>).map((d) => d.id);
+    expect(afterIds.indexOf(first.id)).toBe(firstBefore);
+    expect(afterIds.indexOf(second.id)).toBe(secondBefore);
+  });
+
   it("surfaces the enrolling token's employeeId, region, and label", async () => {
     const token = await createEnrollmentToken({
       label: "Batch 9",

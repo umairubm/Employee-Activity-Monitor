@@ -11,6 +11,7 @@
 - [Device-local time display](device-local-time-display.md) — Screenshots/Activity Logs render in the device's tzOffsetMinutes (heartbeat-reported, nullable→browser fallback); fetch bounds + attendance stay as before.
 - [Duration = span per device+day](duration-span-semantics.md) — total worked time = first→last span keyed per device+DAY, range totals SUM daily spans; gaps→idle, categories scale to covered union; realtime via 30s poll.
 - [Dashboard shared filters](dashboard-shared-filters.md) — no global header; group + a shared date RANGE (useDateRange/DateRangeFilter) share state via localStorage+window-event hooks across all date-aware pages (Attendance DayView stays single-day).
+- [Stable device list ordering](stable-device-list-ordering.md) — never sort the Devices fleet by heartbeat/last-seen timestamps; those fields change during polling and make rows jump.
 - [Drizzle wraps driver errors](drizzle-error-wrapping.md) — pg error code (e.g. FK 23503) is under error.cause, not error.code; check both when mapping DB errors to HTTP 4xx.
 - [Screenshot lightbox viewer](screenshot-lightbox.md) — one shared controlled arrow-key viewer for both screenshot surfaces (gallery + Activity Logs sessions); self-reconciles index; don't re-add bespoke per-thumbnail dialogs.
 - [React Fast Refresh + context/hook split](react-fast-refresh-context.md) — never export a Provider component AND its hook/Context from one file; intermittent dev-only "useAuth must be used within Provider" crashes; keep hook+Context in a plain .ts.
