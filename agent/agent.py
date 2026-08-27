@@ -439,7 +439,7 @@ class MonitoringAgent:
         version = str(payload.get("version") or "").strip()
         file_name = str(payload.get("fileName") or "").strip()
         if not version or not file_name:
-            self.api.ack_command(cid, "failed", "missing update payload")
+            self._finish_command(cid, "failed", "missing update payload")
             return
         if self.tray:
             self.tray.notify(
@@ -451,7 +451,7 @@ class MonitoringAgent:
         download_url = str(release.get("downloadUrl") or "").strip()
         file_name = str(release.get("fileName") or file_name).strip()
         if not download_url.startswith(("http://", "https://")):
-            self.api.ack_command(cid, "failed", "unsupported update source")
+            self._finish_command(cid, "failed", "unsupported update source")
             return
         if self.tray:
             self.tray.notify(
@@ -473,7 +473,7 @@ class MonitoringAgent:
                         if chunk:
                             tmp.write(chunk)
             if not sys.platform.startswith("win") or not file_name.lower().endswith(".exe"):
-                self.api.ack_command(cid, "failed", "unsupported on this OS")
+                self._finish_command(cid, "failed", "unsupported on this OS")
                 if temp_path:
                     try:
                         os.unlink(temp_path)

@@ -226,6 +226,98 @@ class DurableResultJournal(unittest.TestCase):
         agent._handle_command(command())
         agent.api.ack_command.assert_called_with(CMD_ID, "failed", "requires admin")
 
+    def test_invalid_update_payload_is_journaled_and_not_reprocessed_after_restart(self):
+        journal_dir = tempfile.mkdtemp()
+        agent1 = make_agent(journal_dir)
+        agent1._handle_command(command(commandType="update_agent", payload=None))
+        self.assertEqual(
+            agent1._command_results[CMD_ID],
+            {"status": "failed", "message": "missing update payload"},
+        )
+
+        agent2 = make_agent(journal_dir)
+        agent2._handle_command(command(commandType="update_agent", payload=None))
+        agent2.api.command_download_url.assert_not_called()
+        agent2.api.ack_command.assert_called_once_with(
+            CMD_ID, "failed", "missing update payload"
+        )
+
+    def test_invalid_update_source_is_journaled_and_not_reprocessed_after_restart(self):
+        journal_dir = tempfile.mkdtemp()
+        update = command(
+            commandType="update_agent",
+            payload='{"version":"1.2.1","fileName":"agent.exe"}',
+        )
+        agent1 = make_agent(journal_dir)
+        agent1.api.command_download_url.return_value = {
+            "downloadUrl": "file:///not-supported",
+            "fileName": "agent.exe",
+        }
+        agent1._handle_command(update)
+        self.assertEqual(
+            agent1._command_results[CMD_ID],
+            {"status": "failed", "message": "unsupported update source"},
+        )
+
+        agent2 = make_agent(journal_dir)
+        agent2._handle_command(update)
+        agent2.api.command_download_url.assert_not_called()
+        agent2.api.ack_command.assert_called_once_with(
+            CMD_ID, "failed", "unsupported update source"
+        )
+
+    def test_update_failure_after_download_is_journaled_before_restart_redelivery(self):
+        journal_dir = tempfile.mkdtemp()
+        update = command(
+            commandType="update_agent",
+            payload='{"version":"1.2.1","fileName":"agent.exe"}',
+        )
+        agent1 = make_agent(journal_dir)
+        agent1.api.command_download_url.return_value = {
+            "downloadUrl": "https://example.test/agent.exe",
+            "fileName": "agent.exe",
+        }
+
+        class DownloadResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def iter_content(self, chunk_size):
+                yield b"installer-bytes"
+
+        agent1.api.download_file.return_value = DownloadResponse()
+        with mock.patch.object(sys, "platform", "win32"), \
+             mock.patch.object(
+                 MonitoringAgent,
+                 "_finish_command",
+                 wraps=agent1._finish_command,
+             ), \
+             mock.patch.object(
+                 __import__("agent.agent", fromlist=["subprocess"]).subprocess,
+                 "STARTUPINFO",
+                 return_value=types.SimpleNamespace(
+                     dwFlags=0, wShowWindow=0
+                 ),
+                 create=True,
+             ), \
+             mock.patch(
+                 "agent.agent.subprocess.Popen",
+                 side_effect=RuntimeError("installer launch failed"),
+             ):
+            agent1._handle_command(update)
+
+        self.assertEqual(agent1._command_results[CMD_ID]["status"], "failed")
+        self.assertEqual(agent1.api.download_file.call_count, 1)
+
+        agent2 = make_agent(journal_dir)
+        agent2._handle_command(update)
+        agent2.api.command_download_url.assert_not_called()
+        agent2.api.download_file.assert_not_called()
+        self.assertEqual(agent2.api.ack_command.call_args.args[1], "failed")
+
 
 class ParsePayload(unittest.TestCase):
     def test_defensive_parsing(self):
