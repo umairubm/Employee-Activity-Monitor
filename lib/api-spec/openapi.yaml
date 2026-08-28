@@ -131,6 +131,20 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/DeviceItem"
+  /devices/notifications:
+    get:
+      operationId: getDeviceNotifications
+      tags: [devices]
+      summary: Active offline and hardware-change notifications for the header bell
+      responses:
+        "200":
+          description: Notifications
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DeviceNotificationItem"
   /devices/{id}:
     get:
       operationId: getDevice
@@ -2329,6 +2343,41 @@ components:
         - deviceId
         - field
         - detectedAt
+    DeviceNotificationItem:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Stable notification id (e.g. "offline:<deviceId>" or "hardware:<deviceId>")
+        type:
+          type: string
+          enum: [offline, hardware]
+        severity:
+          type: string
+          enum: [warning, critical]
+        deviceId:
+          type: string
+          format: uuid
+        label:
+          type: string
+          description: Best available device label (token label, assigned username, or system name)
+        message:
+          type: string
+        occurredAt:
+          type: string
+          format: date-time
+          description: When the device went offline or the latest hardware change was detected
+        alertCount:
+          type: integer
+          description: Number of unacknowledged hardware alerts (hardware notifications only)
+      required:
+        - id
+        - type
+        - severity
+        - deviceId
+        - label
+        - message
+        - occurredAt
     AcknowledgeAllResult:
       type: object
       properties:

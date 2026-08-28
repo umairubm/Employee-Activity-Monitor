@@ -12,6 +12,7 @@ import {
   useListTokenRegions,
   useGetDeviceAlerts,
   getGetDeviceAlertsQueryKey,
+  getGetDeviceNotificationsQueryKey,
   useAcknowledgeDeviceAlert,
   useAcknowledgeAllDeviceAlerts,
   type DeviceAlertItem
@@ -329,6 +330,8 @@ export default function DeviceDetail({ id }: { id: string }) {
   const refetchAlerts = () => {
     queryClient.invalidateQueries({ queryKey: getGetDeviceAlertsQueryKey(id) });
     queryClient.invalidateQueries({ queryKey: getGetDeviceQueryKey(id) });
+    // Keep the header notification bell in sync with acknowledged alerts.
+    queryClient.invalidateQueries({ queryKey: getGetDeviceNotificationsQueryKey() });
   };
 
   const handleAcknowledge = (alertId: string) => {

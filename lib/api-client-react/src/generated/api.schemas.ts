@@ -342,6 +342,37 @@ export interface DeviceAlertItem {
   acknowledgedByUsername?: string | null;
 }
 
+export type DeviceNotificationItemType =
+  (typeof DeviceNotificationItemType)[keyof typeof DeviceNotificationItemType];
+
+export const DeviceNotificationItemType = {
+  offline: "offline",
+  hardware: "hardware",
+} as const;
+
+export type DeviceNotificationItemSeverity =
+  (typeof DeviceNotificationItemSeverity)[keyof typeof DeviceNotificationItemSeverity];
+
+export const DeviceNotificationItemSeverity = {
+  warning: "warning",
+  critical: "critical",
+} as const;
+
+export interface DeviceNotificationItem {
+  /** Stable notification id (e.g. "offline:<deviceId>" or "hardware:<deviceId>") */
+  id: string;
+  type: DeviceNotificationItemType;
+  severity: DeviceNotificationItemSeverity;
+  deviceId: string;
+  /** Best available device label (token label, assigned username, or system name) */
+  label: string;
+  message: string;
+  /** When the device went offline or the latest hardware change was detected */
+  occurredAt: string;
+  /** Number of unacknowledged hardware alerts (hardware notifications only) */
+  alertCount?: number;
+}
+
 export interface AcknowledgeAllResult {
   acknowledged: number;
 }

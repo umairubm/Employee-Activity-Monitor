@@ -5,6 +5,7 @@ import { LogOut, ShieldCheck, Eye } from "lucide-react";
 import { useLogout, getGetCurrentUserQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { APP_ROUTES, canAccess, pageAccessLevel } from "@/lib/navigation";
+import { NotificationBell } from "./NotificationBell";
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
@@ -93,6 +94,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             <span className="font-semibold text-foreground">{user?.username ?? "User"}</span>
           </div>
           <div className="flex items-center gap-3 ml-auto">
+            <NotificationBell />
             <div className="flex flex-col items-end leading-tight">
               {user?.companyName && (
                 <span className="text-xs font-semibold text-foreground truncate max-w-[14rem]">

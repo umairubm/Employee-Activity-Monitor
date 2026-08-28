@@ -98,6 +98,136 @@ router.get("/", async (req, res) => {
   }
 });
 
+// GET /api/devices/notifications - active offline + hardware notifications for
+// the header bell. One offline notification per device at the highest reached
+// threshold (2h warning, 2d critical), plus one grouped notification per device
+// with unacknowledged hardware-change alerts. Tenant + manager scoped.
+const OFFLINE_WARNING_MS = 2 * 60 * 60 * 1000; // 2 hours
+const OFFLINE_CRITICAL_MS = 2 * 24 * 60 * 60 * 1000; // 2 days
+const NOTIFICATIONS_CAP = 100;
+
+function deviceLabel(r: {
+  tokenLabel: string | null;
+  assignedUsername: string | null;
+  systemName: string;
+}) {
+  return r.tokenLabel || r.assignedUsername || r.systemName;
+}
+
+function formatOfflineDuration(ms: number) {
+  const hours = Math.floor(ms / (60 * 60 * 1000));
+  if (hours < 48) return hours === 1 ? "1 hour" : `${hours} hours`;
+  const days = Math.floor(hours / 24);
+  return days === 1 ? "1 day" : `${days} days`;
+}
+
+router.get("/notifications", async (req, res) => {
+  try {
+    const companyId = getCompanyId(req);
+    const now = Date.now();
+
+    const deviceRows = await db
+      .select({
+        id: devicesTable.id,
+        systemName: devicesTable.systemName,
+        lastSeenAt: devicesTable.lastSeenAt,
+        tokenLabel: enrollmentTokensTable.label,
+        assignedUsername: usersTable.username,
+      })
+      .from(devicesTable)
+      .leftJoin(
+        enrollmentTokensTable,
+        and(
+          eq(devicesTable.enrolledViaTokenId, enrollmentTokensTable.id),
+          eq(enrollmentTokensTable.companyId, companyId),
+        ),
+      )
+      .leftJoin(usersTable, eq(devicesTable.assignedUserId, usersTable.id))
+      .where(
+        and(eq(devicesTable.companyId, companyId), deviceScopeCondition(req)),
+      );
+
+    const alertRows = await db
+      .select({
+        deviceId: deviceAlertsTable.deviceId,
+        count: sql<number>`count(*)::int`,
+        latestDetectedAt: sql<string>`max(${deviceAlertsTable.detectedAt})`,
+      })
+      .from(deviceAlertsTable)
+      .where(
+        and(
+          eq(deviceAlertsTable.companyId, companyId),
+          isNull(deviceAlertsTable.acknowledgedAt),
+          inArray(
+            deviceAlertsTable.deviceId,
+            visibleDeviceIdsSubquery(req, companyId),
+          ),
+        ),
+      )
+      .groupBy(deviceAlertsTable.deviceId);
+    const alertMap = new Map(alertRows.map((a) => [a.deviceId, a]));
+
+    type Notification = {
+      id: string;
+      type: "offline" | "hardware";
+      severity: "warning" | "critical";
+      deviceId: string;
+      label: string;
+      message: string;
+      occurredAt: string;
+      alertCount?: number;
+    };
+    const notifications: Notification[] = [];
+
+    for (const d of deviceRows) {
+      const label = deviceLabel(d);
+
+      if (d.lastSeenAt) {
+        const offlineMs = now - new Date(d.lastSeenAt).getTime();
+        if (offlineMs >= OFFLINE_WARNING_MS) {
+          const critical = offlineMs >= OFFLINE_CRITICAL_MS;
+          notifications.push({
+            id: `offline:${d.id}`,
+            type: "offline",
+            severity: critical ? "critical" : "warning",
+            deviceId: d.id,
+            label,
+            message: `${label} has been offline for ${formatOfflineDuration(offlineMs)}`,
+            occurredAt: new Date(d.lastSeenAt).toISOString(),
+          });
+        }
+      }
+
+      const alerts = alertMap.get(d.id);
+      if (alerts && alerts.count > 0) {
+        notifications.push({
+          id: `hardware:${d.id}`,
+          type: "hardware",
+          severity: "warning",
+          deviceId: d.id,
+          label,
+          message:
+            alerts.count === 1
+              ? `${label} has 1 unacknowledged hardware change`
+              : `${label} has ${alerts.count} unacknowledged hardware changes`,
+          occurredAt: new Date(alerts.latestDetectedAt).toISOString(),
+          alertCount: alerts.count,
+        });
+      }
+    }
+
+    // Critical first, then most recent events.
+    notifications.sort((a, b) => {
+      if (a.severity !== b.severity) return a.severity === "critical" ? -1 : 1;
+      return b.occurredAt.localeCompare(a.occurredAt);
+    });
+
+    res.json(notifications.slice(0, NOTIFICATIONS_CAP));
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
 // GET /api/devices/:id - device detail
 router.get("/:id", async (req, res) => {
   try {

@@ -180,6 +180,40 @@ export const ListDevicesResponseItem = zod.object({
 export const ListDevicesResponse = zod.array(ListDevicesResponseItem);
 
 /**
+ * @summary Active offline and hardware-change notifications for the header bell
+ */
+export const GetDeviceNotificationsResponseItem = zod.object({
+  id: zod
+    .string()
+    .describe(
+      'Stable notification id (e.g. \"offline:<deviceId>\" or \"hardware:<deviceId>\")',
+    ),
+  type: zod.enum(["offline", "hardware"]),
+  severity: zod.enum(["warning", "critical"]),
+  deviceId: zod.string().uuid(),
+  label: zod
+    .string()
+    .describe(
+      "Best available device label (token label, assigned username, or system name)",
+    ),
+  message: zod.string(),
+  occurredAt: zod.coerce
+    .date()
+    .describe(
+      "When the device went offline or the latest hardware change was detected",
+    ),
+  alertCount: zod
+    .number()
+    .optional()
+    .describe(
+      "Number of unacknowledged hardware alerts (hardware notifications only)",
+    ),
+});
+export const GetDeviceNotificationsResponse = zod.array(
+  GetDeviceNotificationsResponseItem,
+);
+
+/**
  * @summary Get a device
  */
 export const GetDeviceParams = zod.object({

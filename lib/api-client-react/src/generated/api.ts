@@ -49,6 +49,7 @@ import type {
   DeviceConfigInput,
   DeviceGroupInput,
   DeviceItem,
+  DeviceNotificationItem,
   DeviceRegionInput,
   DownloadList,
   DropboxCredentialsResult,
@@ -595,6 +596,82 @@ export function useListDevices<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getListDevicesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Active offline and hardware-change notifications for the header bell
+ */
+export const getGetDeviceNotificationsUrl = () => {
+  return `/api/devices/notifications`;
+};
+
+export const getDeviceNotifications = async (
+  options?: RequestInit,
+): Promise<DeviceNotificationItem[]> => {
+  return customFetch<DeviceNotificationItem[]>(getGetDeviceNotificationsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetDeviceNotificationsQueryKey = () => {
+  return [`/api/devices/notifications`] as const;
+};
+
+export const getGetDeviceNotificationsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getDeviceNotifications>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getDeviceNotifications>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetDeviceNotificationsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getDeviceNotifications>>
+  > = ({ signal }) => getDeviceNotifications({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getDeviceNotifications>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetDeviceNotificationsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getDeviceNotifications>>
+>;
+export type GetDeviceNotificationsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Active offline and hardware-change notifications for the header bell
+ */
+
+export function useGetDeviceNotifications<
+  TData = Awaited<ReturnType<typeof getDeviceNotifications>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getDeviceNotifications>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetDeviceNotificationsQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
