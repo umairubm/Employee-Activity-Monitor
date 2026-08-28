@@ -261,6 +261,7 @@ router.post(
         userId: device.assignedUserId,
         processName: log.processName,
         windowTitle: log.windowTitle ?? null,
+        url: log.url ?? null,
         categoryId: category?.id ?? null,
         startedAt: log.startedAt,
         endedAt: log.endedAt,

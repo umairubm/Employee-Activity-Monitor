@@ -108,7 +108,7 @@ class StealthMonitoringAgent:
 
     def _observe(self) -> None:
         """Record foreground window and idle time."""
-        proc, title = monitor_mod.get_active_window()
+        proc, title, url = monitor_mod.get_active_window()
         idle = monitor_mod.get_idle_seconds()
 
         with self._lock:
@@ -120,11 +120,12 @@ class StealthMonitoringAgent:
                 is_break_entry = (idle >= threshold) and (curr_idle < threshold)
                 is_break_exit = (idle < threshold) and (curr_idle >= threshold)
 
-            if self._current is None or self._current["process"] != proc or is_break_entry or is_break_exit:
+            if self._current is None or self._current["process"] != proc or self._current.get("url", "") != url or is_break_entry or is_break_exit:
                 self._flush_segment()
                 self._current = {
                     "process": proc,
                     "title": title,
+                    "url": url,
                     "idle": idle,
                     "duration": POLL_SECONDS,
                     "start": _now_iso(),
@@ -156,6 +157,7 @@ class StealthMonitoringAgent:
                 batch.append({
                     "processName": log["process"],
                     "windowTitle": log["title"],
+                    "url": log.get("url", ""),
                     "startedAt": log["start"],
                     "endedAt": _now_iso(),
                     "durationSeconds": log["duration"],

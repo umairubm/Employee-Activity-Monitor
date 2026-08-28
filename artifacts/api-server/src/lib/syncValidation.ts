@@ -21,6 +21,7 @@ export type HeartbeatBody = z.infer<typeof HeartbeatBody>;
 export const ActivityLogItem = z.object({
   processName: z.string().min(1),
   windowTitle: z.string().nullable().optional(),
+  url: z.string().nullable().optional(),
   startedAt: z.coerce.date(),
   endedAt: z.coerce.date(),
   durationSeconds: z.number().int().nonnegative(),
@@ -29,7 +30,7 @@ export const ActivityLogItem = z.object({
 
 export const ActivityBody = z.object({
   logs: z.array(ActivityLogItem).min(1).max(500),
-  hardwareChanges: z.record(z.any()).optional(),
+  hardwareChanges: z.record(z.string(), z.any()).optional(),
 });
 export type ActivityBody = z.infer<typeof ActivityBody>;
 

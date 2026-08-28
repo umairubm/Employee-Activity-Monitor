@@ -907,6 +907,8 @@ components:
           type: string
         windowTitle:
           type: [string, "null"]
+        url:
+          type: [string, "null"]
         categoryId:
           type: [string, "null"]
           format: uuid

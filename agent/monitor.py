@@ -32,8 +32,8 @@ except ImportError:
     _has_pynput = False
 
 
-def get_active_window() -> Tuple[str, str]:
-    """Return (process_name, window_title). Falls back to ("unknown", "")."""
+def get_active_window() -> Tuple[str, str, str]:
+    """Return (process_name, window_title, url). Falls back to ("unknown", "", "")."""
     try:
         if sys.platform.startswith("win"):
             return _active_window_windows()
@@ -41,7 +41,7 @@ def get_active_window() -> Tuple[str, str]:
             return _active_window_macos()
         return _active_window_linux()
     except Exception:
-        return ("unknown", "")
+        return ("unknown", "", "")
 
 
 def get_idle_seconds() -> int:
@@ -62,7 +62,42 @@ def get_idle_seconds() -> int:
 # --- Windows -----------------------------------------------------------------
 
 
-def _active_window_windows() -> Tuple[str, str]:
+def _get_browser_url_windows(process: str, title: str) -> str:
+    try:
+        import uiautomation as auto
+        proc_lower = process.lower()
+        if proc_lower not in ["chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe", "vivaldi.exe"]:
+            return ""
+        
+        auto.SetGlobalSearchTimeout(0.5)
+        window = auto.GetForegroundControl()
+        if not window:
+            return ""
+            
+        while window and window.ControlType != auto.ControlType.WindowControl:
+            window = window.GetParentControl()
+            
+        if not window:
+            return ""
+            
+        if proc_lower == "firefox.exe":
+            edit = window.EditControl(Name="Search with Google or enter address")
+            if not edit.Exists(0, 0):
+                edit = window.EditControl(Name="Search or enter address")
+        else:
+            edit = window.EditControl(Name="Address and search bar")
+            
+        if edit.Exists(0, 0):
+            val = edit.GetValuePattern().Value
+            if val and not val.startswith("http") and not val.startswith("file://"):
+                val = "https://" + val
+            return val
+    except Exception:
+        pass
+    return ""
+
+
+def _active_window_windows() -> Tuple[str, str, str]:
     import ctypes
     from ctypes import wintypes
 
@@ -82,7 +117,9 @@ def _active_window_windows() -> Tuple[str, str]:
         process = psutil.Process(pid.value).name()
     except Exception:
         pass
-    return (process or "unknown", title)
+    
+    url = _get_browser_url_windows(process, title)
+    return (process or "unknown", title, url)
 
 
 def _idle_windows() -> int:
@@ -121,7 +158,7 @@ def _active_window_macos() -> Tuple[str, str]:
                     if title:
                         break
                         
-        return (process or "unknown", title)
+        return (process or "unknown", title, "")
     except Exception:
         try:
             import subprocess
@@ -147,9 +184,9 @@ def _active_window_macos() -> Tuple[str, str]:
                 text=True,
                 timeout=5,
             ).stdout.strip()
-            return (process or "unknown", title)
+            return (process or "unknown", title, "")
         except Exception:
-            return ("unknown", "")
+            return ("unknown", "", "")
 
 
 def _idle_macos() -> int:
@@ -190,7 +227,7 @@ def _active_window_linux() -> Tuple[str, str]:
             process = psutil.Process(int(pid_out)).name()
         except Exception:
             pass
-    return (process, title)
+    return (process, title, "")
 
 
 def _idle_linux() -> int:

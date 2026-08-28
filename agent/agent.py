@@ -45,7 +45,7 @@ else:
     from . import system_info as system_info_mod
 
 # You can change this to 1.1.32, etc. to test auto-update
-AGENT_VERSION = "1.1.55"
+AGENT_VERSION = "1.1.56"
 POLL_SECONDS = 15
 
 def _now_iso() -> str:
@@ -178,6 +178,7 @@ class MonitoringAgent:
                     {
                         "processName": seg["process"],
                         "windowTitle": seg["title"],
+                        "url": seg.get("url", ""),
                         "startedAt": seg["start_iso"],
                         "endedAt": _now_iso(),
                         "durationSeconds": elapsed,
@@ -188,9 +189,9 @@ class MonitoringAgent:
         self._current = None
 
     def _observe(self) -> None:
-        process, title = monitor_mod.get_active_window()
+        process, title, url = monitor_mod.get_active_window()
         idle = monitor_mod.get_idle_seconds()
-        key = (process, title)
+        key = (process, title, url)
         is_break_entry = False
         is_break_exit = False
         if self._current is not None:
@@ -199,15 +200,17 @@ class MonitoringAgent:
             is_break_entry = (idle >= threshold) and (curr_idle < threshold)
             is_break_exit = (idle < threshold) and (curr_idle >= threshold)
 
-        if self._current is None or (self._current["process"], self._current["title"]) != key or is_break_entry or is_break_exit:
+        if self._current is None or (self._current["process"], self._current["title"], self._current.get("url", "")) != key or is_break_entry or is_break_exit:
             self._flush_segment()
             self._current = {
                 "process": process,
                 "title": title,
+                "url": url,
                 "start_ts": time.time(),
                 "start_iso": _now_iso(),
                 "idle": 0,
             }
+        
         self._current["idle"] = max(self._current["idle"], idle)
 
     # --- screenshots ---------------------------------------------------------
