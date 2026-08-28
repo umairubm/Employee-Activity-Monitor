@@ -12,8 +12,10 @@ import {
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { MonitorSmartphone, Image as ImageIcon, Terminal, Users, Activity, Trophy, LayoutGrid, Download, FileSpreadsheet, FileText } from "lucide-react";
+import { MonitorSmartphone, Image as ImageIcon, Terminal, Users, Activity, Trophy, LayoutGrid, Download, FileSpreadsheet, FileText, AlertTriangle, Clock } from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
 import {
   Select,
   SelectContent,
@@ -66,6 +68,20 @@ export default function Overview() {
     devices?.forEach((d) => set.add(d.deviceGroup));
     return Array.from(set).sort();
   }, [devices]);
+  const inactiveDevices = useMemo(() => {
+    const cutoff = Date.now() - 2 * 24 * 60 * 60 * 1000;
+    return (devices ?? [])
+      .filter((device) => groupFilter === ALL || device.deviceGroup === groupFilter)
+      .filter((device) => {
+        const lastActive = device.lastSeenAt ?? device.enrolledAt;
+        return lastActive ? new Date(lastActive).getTime() <= cutoff : false;
+      })
+      .sort((a, b) => {
+        const aTime = new Date(a.lastSeenAt ?? a.enrolledAt ?? 0).getTime();
+        const bTime = new Date(b.lastSeenAt ?? b.enrolledAt ?? 0).getTime();
+        return aTime - bTime;
+      });
+  }, [devices, groupFilter]);
 
   const rangeParams = { from: rangeFrom, to: rangeTo };
   const params = {
@@ -330,6 +346,70 @@ export default function Overview() {
           </CardContent>
         </Card>
       </div>
+
+      {inactiveDevices.length > 0 && (
+        <Card className="border-amber-300 bg-amber-50/60">
+          <CardHeader>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2 text-amber-900">
+                  <AlertTriangle className="h-5 w-5" />
+                  Inactive for 2+ days
+                </CardTitle>
+                <CardDescription className="text-amber-800/80">
+                  {inactiveDevices.length} {inactiveDevices.length === 1 ? "device has" : "devices have"} not checked in recently.
+                </CardDescription>
+              </div>
+              <Badge className="w-fit border-amber-300 bg-amber-100 text-amber-900 hover:bg-amber-100">
+                {inactiveDevices.length} inactive
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {inactiveDevices.slice(0, 6).map((device) => {
+                const lastActive = device.lastSeenAt ?? device.enrolledAt;
+                const inactiveForThreeDays =
+                  lastActive &&
+                  new Date(lastActive).getTime() <=
+                    Date.now() - 3 * 24 * 60 * 60 * 1000;
+                return (
+                  <Link
+                    key={device.id}
+                    href={`/devices/${device.id}`}
+                    className="rounded-lg border border-amber-200 bg-background p-3 transition-colors hover:border-amber-400 hover:bg-amber-50"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium" title={device.systemName}>
+                          {device.systemName}
+                        </p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {device.deviceGroup}
+                        </p>
+                      </div>
+                      <Badge variant={inactiveForThreeDays ? "destructive" : "outline"}>
+                        {inactiveForThreeDays ? "3+ days" : "2+ days"}
+                      </Badge>
+                    </div>
+                    <p className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <Clock className="h-3.5 w-3.5" />
+                      Last active {lastActive ? formatDistanceToNow(new Date(lastActive), { addSuffix: true }) : "unknown"}
+                    </p>
+                  </Link>
+                );
+              })}
+            </div>
+            {inactiveDevices.length > 6 && (
+              <Button asChild variant="link" className="mt-3 h-auto px-0 text-amber-900">
+                <Link href="/devices">
+                  View all {inactiveDevices.length} inactive devices
+                </Link>
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {groupComparison && groupComparison.length > 0 && (
         <Card>
