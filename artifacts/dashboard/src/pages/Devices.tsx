@@ -10,6 +10,7 @@ import {
   useListTokenGroups,
   useListTokenRegions,
 } from "@workspace/api-client-react";
+import type { DeviceItem } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
@@ -72,6 +73,53 @@ const SORT_FIELD_LABELS: Record<DeviceSortField, string> = {
   lastSeen: "Last Seen",
 };
 
+function getDeviceSortValue(device: DeviceItem, field: DeviceSortField): string | number {
+  switch (field) {
+    case "systemName":
+      return device.systemName;
+    case "employee":
+      return device.assignedUsername || device.tokenEmployeeId || "";
+    case "group":
+      return device.deviceGroup;
+    case "region":
+      return device.region ?? device.tokenRegion ?? "";
+    case "label":
+      return device.tokenLabel || "";
+    case "os":
+      return device.osType;
+    case "status":
+      return device.online ? "Online" : "Offline";
+    case "agentVersion":
+      return device.agentVersion || "";
+    case "lastSeen":
+      return device.lastSeenAt ? new Date(device.lastSeenAt).getTime() : 0;
+  }
+}
+
+function compareDevices(
+  a: DeviceItem,
+  b: DeviceItem,
+  field: DeviceSortField,
+  direction: SortDirection,
+) {
+  const aValue = getDeviceSortValue(a, field);
+  const bValue = getDeviceSortValue(b, field);
+  const result =
+    typeof aValue === "number" && typeof bValue === "number"
+      ? aValue - bValue
+      : String(aValue).localeCompare(String(bValue), undefined, {
+          numeric: true,
+          sensitivity: "base",
+        });
+
+  if (result !== 0) {
+    return direction === "asc" ? result : -result;
+  }
+
+  // Keep ties deterministic even when two devices share the same displayed value.
+  return a.id.localeCompare(b.id);
+}
+
 function SortableHeader({
   field,
   sortField,
@@ -130,6 +178,7 @@ export default function Devices() {
   const [viewMode, setViewMode] = useViewMode("devices");
   const [sortField, setSortField] = useState<DeviceSortField | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  const [sortOrder, setSortOrder] = useState<string[]>([]);
   // The Devices page always starts on "All groups" (local state, not the
   // shared persisted filter) so the full fleet is visible by default.
   const [groupFilter, setGroupFilter] = useState<string>(ALL);
@@ -183,55 +232,28 @@ export default function Devices() {
   });
 
   const handleSort = (field: DeviceSortField) => {
-    if (sortField === field) {
-      setSortDirection((direction) => (direction === "asc" ? "desc" : "asc"));
-      return;
-    }
+    const nextDirection =
+      sortField === field && sortDirection === "asc" ? "desc" : "asc";
+    const nextOrder = [...(filteredDevices ?? [])]
+      .sort((a, b) => compareDevices(a, b, field, nextDirection))
+      .map((device) => device.id);
+
     setSortField(field);
-    setSortDirection("asc");
+    setSortDirection(nextDirection);
+    setSortOrder(nextOrder);
   };
 
+  const sortPositions = new Map(sortOrder.map((id, index) => [id, index]));
   const sortedDevices = [...(filteredDevices ?? [])].sort((a, b) => {
     if (!sortField) return 0;
 
-    const getValue = (device: NonNullable<typeof filteredDevices>[number]) => {
-      switch (sortField) {
-        case "systemName":
-          return device.systemName;
-        case "employee":
-          return device.assignedUsername || device.tokenEmployeeId || "";
-        case "group":
-          return device.deviceGroup;
-        case "region":
-          return device.region ?? device.tokenRegion ?? "";
-        case "label":
-          return device.tokenLabel || "";
-        case "os":
-          return device.osType;
-        case "status":
-          return device.online ? "Online" : "Offline";
-        case "agentVersion":
-          return device.agentVersion || "";
-        case "lastSeen":
-          return device.lastSeenAt ? new Date(device.lastSeenAt).getTime() : 0;
-      }
-    };
-
-    const aValue = getValue(a);
-    const bValue = getValue(b);
-    const result =
-      typeof aValue === "number" && typeof bValue === "number"
-        ? aValue - bValue
-        : String(aValue).localeCompare(String(bValue), undefined, {
-            numeric: true,
-            sensitivity: "base",
-          });
-
-    if (result !== 0) {
-      return sortDirection === "asc" ? result : -result;
+    const aPosition = sortPositions.get(a.id);
+    const bPosition = sortPositions.get(b.id);
+    if (aPosition !== undefined && bPosition !== undefined) {
+      return aPosition - bPosition;
     }
-
-    // Keep ties deterministic even when two devices share the same displayed value.
+    if (aPosition !== undefined) return -1;
+    if (bPosition !== undefined) return 1;
     return a.id.localeCompare(b.id);
   });
 
