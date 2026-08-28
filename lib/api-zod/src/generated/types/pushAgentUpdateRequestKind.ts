@@ -7,7 +7,7 @@
  */
 
 /**
- * installer = full Windows .exe the agent runs; patch = a .zip bundle of updated files the agent extracts over its install dir and restarts.
+ * installer = full Windows .exe the agent runs; patch = a .zip bundle of updated files the agent extracts over its install dir and restarts. macOS releases always use kind=installer with a .zip app archive.
  */
 export type PushAgentUpdateRequestKind =
   (typeof PushAgentUpdateRequestKind)[keyof typeof PushAgentUpdateRequestKind];

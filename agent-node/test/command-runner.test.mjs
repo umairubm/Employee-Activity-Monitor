@@ -438,6 +438,70 @@ test("update failure is journaled so a restarted agent re-acks instead of re-dow
   assert.equal(s2.calls.acks.at(-1).status, "failed");
 });
 
+test("macOS app-archive update fails truthfully on the unpackaged Node agent", async () => {
+  const { deps, calls } = makeDeps({
+    isWin: false,
+    isMac: true,
+    fetchDownloadUrl: async () => ({
+      downloadUrl: "https://example.com/WorkforceAgent-macos-update.zip",
+      fileName: "WorkforceAgent-macos-update.zip",
+      platform: "macos",
+    }),
+  });
+  const runner = createCommandRunner(deps);
+  await runner.executeCommand(
+    cmd({
+      commandType: "update_agent",
+      payload: JSON.stringify({
+        version: "5.1.0",
+        platform: "macos",
+        fileName: "WorkforceAgent-macos-update.zip",
+      }),
+    }),
+  );
+  assert.deepEqual(
+    calls.acks.map((a) => a.status),
+    ["acknowledged", "failed"],
+  );
+  assert.match(calls.acks.at(-1).message, /packaged WorkforceAgent app/);
+  assert.notEqual(calls.exited, true);
+});
+
+test("macOS app-archive update uses the injected safe replacement path", async () => {
+  const applied = [];
+  const { deps, calls } = makeDeps({
+    isWin: false,
+    isMac: true,
+    fetchDownloadUrl: async () => ({
+      downloadUrl: "https://example.com/WorkforceAgent-macos-5.1.0.app.zip",
+      fileName: "WorkforceAgent-macos-5.1.0.app.zip",
+      platform: "macos",
+    }),
+    downloadInstaller: async () => "/tmp/macos-update.zip",
+    applyMacUpdate: async (archive, version) => {
+      applied.push({ archive, version });
+    },
+  });
+  await createCommandRunner(deps).executeCommand(
+    cmd({
+      commandType: "update_agent",
+      payload: JSON.stringify({
+        version: "5.1.0",
+        platform: "macos",
+        fileName: "WorkforceAgent-macos-5.1.0.app.zip",
+      }),
+    }),
+  );
+  assert.deepEqual(
+    calls.acks.map((a) => a.status),
+    ["acknowledged", "downloading", "installing"],
+  );
+  assert.deepEqual(applied, [
+    { archive: "/tmp/macos-update.zip", version: "5.1.0" },
+  ]);
+  assert.equal(calls.exited, true);
+});
+
 test("parseCommandPayload is defensive about malformed JSON", () => {
   assert.equal(parseCommandPayload(null), null);
   assert.equal(parseCommandPayload("not json"), null);

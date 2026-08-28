@@ -78,19 +78,51 @@ jobs:
       - name: Generate icons
         run: python agent/packaging/make_icons.py
 
+      - name: Import Apple Developer ID certificate
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+        run: |
+          test -n "$MACOS_CERTIFICATE"
+          test -n "$MACOS_CERTIFICATE_PASSWORD"
+          test -n "$KEYCHAIN_PASSWORD"
+          CERTIFICATE_PATH="$RUNNER_TEMP/developer-id.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/workforce-signing.keychain-db"
+          echo "$MACOS_CERTIFICATE" | base64 -D > "$CERTIFICATE_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" \
+            -P "$MACOS_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+
       - name: Build .app and .dmg
+        env:
+          CODESIGN_IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: bash agent/packaging/macos/build_dmg.sh
 
       - uses: actions/upload-artifact@v4
         with:
           name: macos-installer
-          path: agent/packaging/dist/WorkforceAgent-macos.dmg
+          path: |
+            agent/packaging/dist/WorkforceAgent-macos.dmg
+            agent/packaging/dist/WorkforceAgent-macos-*.app.zip
 
       - name: Publish to release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.version || github.ref_name }}
-          files: agent/packaging/dist/WorkforceAgent-macos.dmg
+          files: |
+            agent/packaging/dist/WorkforceAgent-macos.dmg
+            agent/packaging/dist/WorkforceAgent-macos-*.app.zip
 
   linux:
     runs-on: ubuntu-latest

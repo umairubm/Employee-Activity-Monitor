@@ -402,9 +402,10 @@ router.post(
     // the Node agent's "2.0.1-node") still complete installing updates — the
     // array cast in the superseded-update comparison below would throw on a
     // non-numeric string.
+    const fullReportedVersion = parsed.data.agentVersion?.trim() || null;
     const reportedVersion =
-      parsed.data.agentVersion?.match(/^\d+(\.\d+)*/)?.[0] ?? null;
-    if (reportedVersion) {
+      fullReportedVersion?.match(/^\d+(\.\d+)*/)?.[0] ?? null;
+    if (fullReportedVersion) {
       // A self-updating agent may be terminated by its installer before it can
       // send a final "completed" ack. The first heartbeat from the new build is
       // the authoritative success signal. Also complete SUPERSEDED updates: if
@@ -419,8 +420,21 @@ router.post(
             eq(deviceCommandsTable.deviceId, device.id),
             eq(deviceCommandsTable.commandType, "update_agent"),
             eq(deviceCommandsTable.status, "installing"),
-            sql`payload::jsonb ->> 'version' ~ '^\\d+(\\.\\d+)*$'`,
-            sql`string_to_array(payload::jsonb ->> 'version', '.')::int[] <= string_to_array(${reportedVersion}, '.')::int[]`,
+            or(
+              // Prerelease/build-suffixed targets complete on an exact
+              // heartbeat match.
+              sql`payload::jsonb ->> 'version' = ${fullReportedVersion}`,
+              // Numeric releases also complete if the device skipped ahead to
+              // a newer version.
+              ...(reportedVersion
+                ? [
+                    and(
+                      sql`payload::jsonb ->> 'version' ~ '^\\d+(\\.\\d+)*$'`,
+                      sql`string_to_array(payload::jsonb ->> 'version', '.')::int[] <= string_to_array(${reportedVersion}, '.')::int[]`,
+                    ),
+                  ]
+                : []),
+            ),
           ),
         );
     }
@@ -479,25 +493,28 @@ router.post(
         ),
       );
 
-    // A power action is different from a recoverable command: if the agent
-    // accepted the command, scheduled the OS action, and then went offline
-    // before its final ack reached the server, redelivering it after reboot
-    // can power-cycle the same machine repeatedly. Treat an old acknowledged
-    // power command as an unknown/failed attempt instead of ever executing it
-    // again. Admins can issue a new command deliberately if needed.
-    const stalePowerMessage =
-      "Power action did not report completion; automatic retry was blocked to prevent repeated shutdowns or restarts.";
+    // Session-ending actions are different from recoverable commands. Logout
+    // commonly tears down the agent process/network session before its final
+    // completion ack reaches the server. Redelivering that acknowledged
+    // command after the user signs back in creates an endless logout loop.
+    // Shutdown/restart have the same one-shot safety requirement.
+    const staleOneShotMessage =
+      "Session-ending action did not report completion; automatic retry was blocked to prevent repeated logout, shutdown, or restart.";
     await db
       .update(deviceCommandsTable)
       .set({
         status: "failed",
         completedAt: now,
-        cancelReason: stalePowerMessage,
+        cancelReason: staleOneShotMessage,
       })
       .where(
         and(
           eq(deviceCommandsTable.deviceId, device.id),
-          inArray(deviceCommandsTable.commandType, ["restart", "shutdown"]),
+          inArray(deviceCommandsTable.commandType, [
+            "logout_user",
+            "restart",
+            "shutdown",
+          ]),
           eq(deviceCommandsTable.status, "acknowledged"),
           or(
             isNull(deviceCommandsTable.acknowledgedAt),
@@ -804,6 +821,7 @@ router.post(
       releaseId?: string;
       version?: string;
       kind?: "installer" | "patch";
+      platform?: "windows" | "macos";
       downloadUrl?: string | null;
       fileName?: string;
     } = {};
@@ -820,6 +838,7 @@ router.post(
         .select({
           version: agentReleasesTable.version,
           kind: agentReleasesTable.kind,
+          platform: agentReleasesTable.platform,
           downloadUrl: agentReleasesTable.downloadUrl,
           objectPath: agentReleasesTable.objectPath,
           fileName: agentReleasesTable.fileName,
@@ -843,6 +862,7 @@ router.post(
       res.json({
         version: release.version,
         kind: release.kind,
+        platform: release.platform,
         fileName: release.fileName ?? payload.fileName ?? null,
         downloadUrl,
       });
@@ -856,6 +876,7 @@ router.post(
     res.json({
       version: payload.version,
       kind: payload.kind ?? "installer",
+      platform: payload.platform ?? "windows",
       fileName: payload.fileName,
       downloadUrl,
     });

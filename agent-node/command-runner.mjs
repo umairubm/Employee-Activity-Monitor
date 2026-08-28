@@ -64,6 +64,7 @@ const safeMessage = (value, fallback) => {
  * @param {(enabled: boolean) => Promise<boolean>} deps.setUsbBlock
  * @param {(url: string, fileName: string) => Promise<string>} deps.downloadInstaller
  * @param {(installerPath: string) => Promise<void>} deps.launchInstaller
+ * @param {(archivePath: string, targetVersion: string) => Promise<void>} [deps.applyMacUpdate]
  * @param {(path: string) => void} deps.removeFile
  * @param {() => void} deps.exitProcess
  * @param {boolean} deps.isWin
@@ -113,6 +114,22 @@ export function createCommandRunner(deps) {
       const url = new URL(downloadUrl);
       if (!["http:", "https:"].includes(url.protocol)) {
         throw new Error("unsupported download URL");
+      }
+      const isMacRelease =
+        release.platform === "macos" &&
+        fileName.toLowerCase().endsWith(".zip");
+      if (deps.isMac && isMacRelease) {
+        if (typeof deps.applyMacUpdate !== "function") {
+          throw new Error(
+            "macOS updates require the packaged WorkforceAgent app; this agent installation cannot self-update",
+          );
+        }
+        await deps.ackCommand(cmd.id, "downloading");
+        installerPath = await deps.downloadInstaller(downloadUrl, fileName);
+        await deps.ackCommand(cmd.id, "installing");
+        await deps.applyMacUpdate(installerPath, version);
+        deps.exitProcess();
+        return;
       }
       if (!deps.isWin || !fileName.toLowerCase().endsWith(".exe")) {
         throw new Error("unsupported update installer for this OS");

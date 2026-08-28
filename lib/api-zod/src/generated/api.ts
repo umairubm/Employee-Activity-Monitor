@@ -333,6 +333,7 @@ export const issueDeviceCommandBodyNewPasswordMax = 128;
 export const issueDeviceCommandBodyVersionRegExp = new RegExp(
   "^\\d+\\.\\d+\\.\\d+(?:[-+][0-9A-Za-z.-]+)?$",
 );
+export const issueDeviceCommandBodyPlatformDefault = `windows`;
 
 export const IssueDeviceCommandBody = zod.object({
   commandType: zod.enum([
@@ -375,6 +376,12 @@ export const IssueDeviceCommandBody = zod.object({
     .string()
     .optional()
     .describe("Optional installer file name for update_agent."),
+  platform: zod
+    .enum(["windows", "macos"])
+    .default(issueDeviceCommandBodyPlatformDefault)
+    .describe(
+      "For update_agent only. Which OS the release artifact targets; must match the device's osType.",
+    ),
 });
 
 /**
@@ -453,6 +460,7 @@ export const pushAgentUpdateBodyVersionRegExp = new RegExp(
   "^\\d+\\.\\d+\\.\\d+(?:[-+][0-9A-Za-z.-]+)?$",
 );
 export const pushAgentUpdateBodyKindDefault = `installer`;
+export const pushAgentUpdateBodyPlatformDefault = `windows`;
 
 export const PushAgentUpdateBody = zod.object({
   version: zod.string().regex(pushAgentUpdateBodyVersionRegExp),
@@ -460,7 +468,13 @@ export const PushAgentUpdateBody = zod.object({
     .enum(["installer", "patch"])
     .default(pushAgentUpdateBodyKindDefault)
     .describe(
-      "installer = full Windows .exe the agent runs; patch = a .zip bundle of updated files the agent extracts over its install dir and restarts.",
+      "installer = full Windows .exe the agent runs; patch = a .zip bundle of updated files the agent extracts over its install dir and restarts. macOS releases always use kind=installer with a .zip app archive.",
+    ),
+  platform: zod
+    .enum(["windows", "macos"])
+    .default(pushAgentUpdateBodyPlatformDefault)
+    .describe(
+      "Which OS the release targets. windows = silent .exe installer or .zip patch; macos = .zip archive containing the replacement WorkforceAgent.app bundle. Only devices with a matching osType are targeted.",
     ),
   downloadUrl: zod.string().url().nullish(),
   objectPath: zod.string().nullish(),
@@ -2773,6 +2787,7 @@ export const ResolveCommandDownloadUrlBody = zod.object({
 export const ResolveCommandDownloadUrlResponse = zod.object({
   version: zod.string(),
   kind: zod.enum(["installer", "patch"]),
+  platform: zod.enum(["windows", "macos"]),
   fileName: zod.string().nullable(),
   downloadUrl: zod.string().url(),
 });

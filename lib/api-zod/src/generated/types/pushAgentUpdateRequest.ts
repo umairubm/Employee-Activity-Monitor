@@ -6,13 +6,16 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { PushAgentUpdateRequestKind } from "./pushAgentUpdateRequestKind";
+import type { PushAgentUpdateRequestPlatform } from "./pushAgentUpdateRequestPlatform";
 import type { PushAgentUpdateRequestTargetMode } from "./pushAgentUpdateRequestTargetMode";
 
 export interface PushAgentUpdateRequest {
   /** @pattern ^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$ */
   version: string;
-  /** installer = full Windows .exe the agent runs; patch = a .zip bundle of updated files the agent extracts over its install dir and restarts. */
+  /** installer = full Windows .exe the agent runs; patch = a .zip bundle of updated files the agent extracts over its install dir and restarts. macOS releases always use kind=installer with a .zip app archive. */
   kind?: PushAgentUpdateRequestKind;
+  /** Which OS the release targets. windows = silent .exe installer or .zip patch; macos = .zip archive containing the replacement WorkforceAgent.app bundle. Only devices with a matching osType are targeted. */
+  platform?: PushAgentUpdateRequestPlatform;
   /** @nullable */
   downloadUrl?: string | null;
   /** @nullable */

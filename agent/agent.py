@@ -15,12 +15,15 @@ from __future__ import annotations
 import getpass
 import json
 import os
+import plistlib
 import random
+import shutil
 import tempfile
 import subprocess
 import sys
 import threading
 import time
+from pathlib import Path
 from datetime import datetime, timezone
 
 # Allow running both as a module (python -m agent.agent) and as a script.
@@ -492,6 +495,7 @@ class MonitoringAgent:
         self.api.ack_command(cid, "downloading")
         temp_path = None
         try:
+            lowered = file_name.lower()
             suffix = ".exe" if file_name.lower().endswith(".exe") else ""
             with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
                 temp_path = tmp.name
@@ -499,6 +503,15 @@ class MonitoringAgent:
                     for chunk in resp.iter_content(chunk_size=1024 * 1024):
                         if chunk:
                             tmp.write(chunk)
+            # macOS path: a .zip archive containing the replacement
+            # WorkforceAgent.app. Handled entirely by _update_agent_macos —
+            # the Windows branch below stays exactly as it always was.
+            platform = str(
+                release.get("platform") or payload.get("platform") or "windows"
+            ).strip().lower()
+            if sys.platform == "darwin" and platform == "macos" and lowered.endswith(".zip"):
+                self._update_agent_macos(cid, temp_path, version)
+                return
             if not sys.platform.startswith("win") or not file_name.lower().endswith(".exe"):
                 self._finish_command(cid, "failed", "unsupported on this OS")
                 if temp_path:
@@ -542,6 +555,238 @@ class MonitoringAgent:
             except Exception:
                 pass
             raise exc
+
+    # macOS remote update ------------------------------------------------
+    #
+    # A macOS release is a .zip archive containing the replacement
+    # WorkforceAgent.app. The agent validates the archive (bundle identity +
+    # code signature), confirms it can actually replace its own install
+    # location, and only then hands over to a small detached shell helper
+    # that waits for this process to exit, swaps the bundles atomically
+    # (keeping a backup for rollback), and relaunches the app. The first
+    # heartbeat from the relaunched build reporting the target version is the
+    # authoritative completion signal — same contract as Windows.
+
+    MACOS_BUNDLE_ID = "com.workforceanalytics.agent"
+
+    @staticmethod
+    def _macos_app_bundle_path(executable: str) -> Path | None:
+        """Return the .app bundle root containing `executable`, or None."""
+        path = Path(executable).resolve()
+        for parent in path.parents:
+            if parent.name.endswith(".app"):
+                return parent
+        return None
+
+    @classmethod
+    def _macos_signature_team_id(cls, app: Path) -> str:
+        details = subprocess.run(
+            ["codesign", "-dv", "--verbose=4", str(app)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        output = f"{details.stdout}\n{details.stderr}"
+        for line in output.splitlines():
+            if line.startswith("TeamIdentifier="):
+                return line.split("=", 1)[1].strip()
+        raise ValueError("app code signature has no Team ID")
+
+    @classmethod
+    def _macos_extract_app(
+        cls,
+        archive_path: str,
+        dest_dir: str,
+        target_version: str,
+        expected_team_id: str,
+    ) -> Path:
+        """Extract the update archive and return the validated .app inside.
+
+        Uses `ditto -x -k` (not zipfile) so code signatures, symlinks, and
+        permissions survive extraction. Raises ValueError with a readable
+        reason when the archive is not a valid signed WorkforceAgent app.
+        """
+        result = subprocess.run(
+            ["ditto", "-x", "-k", archive_path, dest_dir],
+            capture_output=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise ValueError("update archive could not be extracted")
+        destination = Path(dest_dir).resolve()
+        entries = list(destination.iterdir())
+        if len(entries) != 1 or entries[0].name != "WorkforceAgent.app":
+            raise ValueError(
+                "update archive must contain only WorkforceAgent.app at its root"
+            )
+        app = entries[0]
+        if app.is_symlink() or not app.is_dir() or app.resolve().parent != destination:
+            raise ValueError("update app bundle has an unsafe archive path")
+        plist_path = app / "Contents" / "Info.plist"
+        if (
+            plist_path.is_symlink()
+            or not plist_path.is_file()
+            or app.resolve() not in plist_path.resolve().parents
+        ):
+            raise ValueError("update app bundle has an unsafe Info.plist path")
+        try:
+            with open(plist_path, "rb") as fh:
+                info = plistlib.load(fh)
+        except Exception as exc:  # noqa: BLE001
+            raise ValueError("update app bundle has no readable Info.plist") from exc
+        bundle_id = str(info.get("CFBundleIdentifier") or "")
+        if bundle_id != cls.MACOS_BUNDLE_ID:
+            raise ValueError(
+                f"update app has unexpected bundle identifier: {bundle_id or 'missing'}"
+            )
+        bundle_version = str(info.get("CFBundleShortVersionString") or "").strip()
+        if bundle_version != target_version:
+            raise ValueError(
+                f"update app version {bundle_version or 'missing'} "
+                f"does not match target {target_version}"
+            )
+        executable_name = str(info.get("CFBundleExecutable") or "").strip()
+        executable = app / "Contents" / "MacOS" / executable_name
+        if (
+            executable_name != "WorkforceAgent"
+            or executable.is_symlink()
+            or not executable.is_file()
+            or app.resolve() not in executable.resolve().parents
+        ):
+            raise ValueError("update app bundle has an unsafe executable path")
+        verify = subprocess.run(
+            ["codesign", "--verify", "--deep", "--strict", str(app)],
+            capture_output=True,
+            check=False,
+        )
+        if verify.returncode != 0:
+            raise ValueError("update app failed code signature verification")
+        team_id = cls._macos_signature_team_id(app)
+        if team_id != expected_team_id:
+            raise ValueError("update app was signed by an unexpected developer team")
+        gatekeeper = subprocess.run(
+            ["spctl", "--assess", "--type", "execute", str(app)],
+            capture_output=True,
+            check=False,
+        )
+        if gatekeeper.returncode != 0:
+            raise ValueError("update app failed macOS notarization assessment")
+        return app
+
+    # Replacement helper. Runs detached after the agent quits: waits for the
+    # old process to exit, swaps bundles with a rollback backup, relaunches,
+    # and cleans up after itself. `mv` keeps the swap atomic on the same
+    # volume; `ditto` is the cross-volume fallback.
+    _MACOS_REPLACER_SCRIPT = """#!/bin/bash
+PID="$1"; NEW="$2"; APP="$3"
+BACKUP="${APP}.updating-backup"
+is_new_running() {
+  ps -axo command= | grep -F -- "$APP/Contents/MacOS/WorkforceAgent" >/dev/null
+}
+for _ in $(seq 1 240); do kill -0 "$PID" 2>/dev/null || break; sleep 0.5; done
+if kill -0 "$PID" 2>/dev/null; then
+  rm -rf "$(dirname "$NEW")" "$0"; exit 1
+fi
+rm -rf "$BACKUP"
+if ! mv "$APP" "$BACKUP"; then
+  open "$APP"; exit 1
+fi
+if mv "$NEW" "$APP" 2>/dev/null || ditto "$NEW" "$APP"; then
+  if ! open "$APP"; then
+    rm -rf "$APP"; mv "$BACKUP" "$APP"; open "$APP"
+  else
+    # The replacement removes BACKUP after its first successful heartbeat.
+    # If it exits before then, restore the known-good app automatically.
+    sleep 5
+    for _ in $(seq 1 110); do
+      [ ! -d "$BACKUP" ] && break
+      is_new_running || break
+      sleep 0.5
+    done
+    if [ -d "$BACKUP" ] && ! is_new_running; then
+      rm -rf "$APP"; mv "$BACKUP" "$APP"; open "$APP"
+    fi
+  fi
+else
+  rm -rf "$APP"; mv "$BACKUP" "$APP"; open "$APP"
+fi
+rm -rf "$(dirname "$NEW")" "$0"
+"""
+
+    def _update_agent_macos(
+        self, cid: str, archive_path: str, target_version: str
+    ) -> None:
+        extract_dir = tempfile.mkdtemp(prefix="wfa-update-")
+
+        def _cleanup() -> None:
+            shutil.rmtree(extract_dir, ignore_errors=True)
+            try:
+                os.unlink(archive_path)
+            except OSError:
+                pass
+
+        try:
+            current_app = self._macos_app_bundle_path(sys.executable)
+            if current_app is None:
+                raise ValueError(
+                    "agent is not running from an installed app bundle; "
+                    "update this Mac manually"
+                )
+            if not (
+                os.access(current_app.parent, os.W_OK)
+                and os.access(current_app, os.W_OK)
+            ):
+                raise ValueError(
+                    f"no permission to replace {current_app}; "
+                    "an administrator must update this Mac manually"
+                )
+            expected_team_id = self._macos_signature_team_id(current_app)
+            new_app = self._macos_extract_app(
+                archive_path,
+                extract_dir,
+                target_version,
+                expected_team_id,
+            )
+        except ValueError as exc:
+            _cleanup()
+            self._finish_command(cid, "failed", str(exc)[:200])
+            return
+        except Exception:
+            _cleanup()
+            raise
+
+        # Same contract as Windows: let an ack failure propagate so the outer
+        # handler resolves the command to "failed" instead of stranding it.
+        self.api.ack_command(cid, "installing")
+        script_path = os.path.join(extract_dir, "replace-agent.sh")
+        with open(script_path, "w", encoding="utf-8") as fh:
+            fh.write(self._MACOS_REPLACER_SCRIPT)
+        os.chmod(script_path, 0o700)
+        subprocess.Popen(
+            ["/bin/bash", script_path, str(os.getpid()), str(new_app), str(current_app)],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+            start_new_session=True,
+        )
+        try:
+            os.unlink(archive_path)
+        except OSError:
+            pass
+        self.quit()
+
+    @classmethod
+    def _cleanup_macos_update_backup(cls) -> None:
+        """Drop rollback backup only after the replacement heartbeat succeeds."""
+        if sys.platform != "darwin":
+            return
+        current_app = cls._macos_app_bundle_path(sys.executable)
+        if current_app is None:
+            return
+        backup = current_app.with_name(f"{current_app.name}.updating-backup")
+        if backup.exists():
+            shutil.rmtree(backup, ignore_errors=True)
 
     @staticmethod
     def _apply_usb_block(enabled: bool) -> bool:
@@ -655,6 +900,10 @@ class MonitoringAgent:
         # Heartbeat + commands. Include best-effort live health metrics.
         metrics = system_info_mod.collect_metrics()
         hb = self.api.heartbeat(AGENT_VERSION, metrics)
+        # A successful heartbeat is the authoritative update-health signal.
+        # Until this point the detached macOS replacer leaves the prior app
+        # beside the new one as a rollback backup.
+        self._cleanup_macos_update_backup()
         self._locked_until = hb.get("lockedUntil")
         # Timed-lock enforcement: the server flips isLocked to false when the
         # admin-selected duration elapses. While it is true we RE-LOCK the
@@ -715,6 +964,8 @@ class MonitoringAgent:
 
     def quit(self) -> None:
         self._stop.set()
+        if self.tray:
+            self.tray.stop()
 
     def run(self) -> None:
         worker = threading.Thread(target=self._worker, daemon=True)

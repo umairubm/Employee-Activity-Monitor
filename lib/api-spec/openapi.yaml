@@ -1760,12 +1760,15 @@ paths:
                   kind:
                     type: string
                     enum: [installer, patch]
+                  platform:
+                    type: string
+                    enum: [windows, macos]
                   fileName:
                     type: [string, "null"]
                   downloadUrl:
                     type: string
                     format: uri
-                required: [version, kind, fileName, downloadUrl]
+                required: [version, kind, platform, fileName, downloadUrl]
   /sync/activity:
     post:
       operationId: syncActivity
@@ -2621,6 +2624,13 @@ components:
         fileName:
           type: string
           description: Optional installer file name for update_agent.
+        platform:
+          type: string
+          enum: [windows, macos]
+          default: windows
+          description: >-
+            For update_agent only. Which OS the release artifact targets; must
+            match the device's osType.
       required: [commandType]
     AgentReleaseUploadRequest:
       type: object
@@ -2658,6 +2668,16 @@ components:
           description: >-
             installer = full Windows .exe the agent runs; patch = a .zip bundle
             of updated files the agent extracts over its install dir and restarts.
+            macOS releases always use kind=installer with a .zip app archive.
+        platform:
+          type: string
+          enum: [windows, macos]
+          default: windows
+          description: >-
+            Which OS the release targets. windows = silent .exe installer or
+            .zip patch; macos = .zip archive containing the replacement
+            WorkforceAgent.app bundle. Only devices with a matching osType are
+            targeted.
         downloadUrl:
           type: [string, "null"]
           format: uri

@@ -111,7 +111,7 @@ describe("heartbeat command redelivery", () => {
     expect(ids).not.toContain(fresh.id);
   });
 
-  it("expires stale acknowledged power commands instead of redelivering them", async () => {
+  it("expires stale acknowledged session-ending commands instead of redelivering them", async () => {
     const { device, secret } = await createDeviceWithSecret({
       companyId: COMPANY_ID,
     });
@@ -127,6 +127,11 @@ describe("heartbeat command redelivery", () => {
       status: "acknowledged",
       acknowledgedAt: new Date(Date.now() - 10 * 60 * 1000),
     });
+    const staleLogout = await insertCommand(device.id, {
+      commandType: "logout_user",
+      status: "acknowledged",
+      acknowledgedAt: new Date(Date.now() - 10 * 60 * 1000),
+    });
 
     const res = await request(syncApp)
       .post("/sync/heartbeat")
@@ -138,6 +143,7 @@ describe("heartbeat command redelivery", () => {
     const ids = res.body.commands.map((c: { id: string }) => c.id);
     expect(ids).not.toContain(staleShutdown.id);
     expect(ids).not.toContain(staleRestart.id);
+    expect(ids).not.toContain(staleLogout.id);
 
     const rows = await db
       .select({
@@ -149,10 +155,14 @@ describe("heartbeat command redelivery", () => {
       .where(
         and(
           eq(deviceCommandsTable.deviceId, device.id),
-          inArray(deviceCommandsTable.id, [staleShutdown.id, staleRestart.id]),
+          inArray(deviceCommandsTable.id, [
+            staleShutdown.id,
+            staleRestart.id,
+            staleLogout.id,
+          ]),
         ),
       );
-    expect(rows).toHaveLength(2);
+    expect(rows).toHaveLength(3);
     for (const row of rows) {
       expect(row.status).toBe("failed");
       expect(row.cancelReason).toMatch(/automatic retry was blocked/i);

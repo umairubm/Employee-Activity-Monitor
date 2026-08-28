@@ -19,6 +19,15 @@ export const agentReleaseKindEnum = pgEnum("agent_release_kind", [
   "patch",
 ]);
 
+// Which OS the release artifact targets. Windows uses a silent .exe installer
+// (or a .zip code patch); macOS uses a .zip archive containing the replacement
+// WorkforceAgent.app bundle. Update commands are only ever queued for devices
+// whose osType matches the release platform.
+export const agentReleasePlatformEnum = pgEnum("agent_release_platform", [
+  "windows",
+  "macos",
+]);
+
 export const agentReleasesTable = pgTable("agent_releases", {
   id: uuid("id").primaryKey().defaultRandom(),
   companyId: uuid("company_id")
@@ -26,6 +35,7 @@ export const agentReleasesTable = pgTable("agent_releases", {
     .references(() => companiesTable.id, { onDelete: "cascade" }),
   version: text("version").notNull(),
   kind: agentReleaseKindEnum("kind").notNull().default("installer"),
+  platform: agentReleasePlatformEnum("platform").notNull().default("windows"),
   downloadUrl: text("download_url"),
   objectPath: text("object_path"),
   fileName: text("file_name"),

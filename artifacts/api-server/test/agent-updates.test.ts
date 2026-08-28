@@ -218,6 +218,169 @@ describe("Remote Agent Update Manager", () => {
     expect(commands).toHaveLength(0);
   });
 
+  it("targets only macOS devices for a macOS release and carries the platform", async () => {
+    const mac = await createDevice({
+      companyId: UPDATE_COMPANY_ID,
+      osType: "macos",
+      lastSeenAt: new Date(),
+    });
+    const win = await createDevice({
+      companyId: UPDATE_COMPANY_ID,
+      osType: "windows",
+      lastSeenAt: new Date(),
+    });
+    deviceIds.push(mac.id, win.id);
+
+    const response = await request(adminApp)
+      .post("/devices/agent-updates")
+      .send({
+        version: "5.1.0",
+        platform: "macos",
+        downloadUrl: "https://downloads.example.test/WorkforceAgent-macos-update.zip",
+        objectPath: null,
+        fileName: "WorkforceAgent-macos-update.zip",
+        targetMode: "all",
+        deviceId: null,
+        reason: null,
+      });
+    expect(response.status).toBe(201);
+    releaseIds.push(response.body.releaseId);
+
+    const macCommands = await db
+      .select()
+      .from(deviceCommandsTable)
+      .where(eq(deviceCommandsTable.deviceId, mac.id));
+    expect(macCommands).toHaveLength(1);
+    expect(JSON.parse(macCommands[0].payload ?? "{}")).toMatchObject({
+      platform: "macos",
+      version: "5.1.0",
+    });
+
+    const winCommands = await db
+      .select({ id: deviceCommandsTable.id })
+      .from(deviceCommandsTable)
+      .where(eq(deviceCommandsTable.deviceId, win.id));
+    expect(winCommands).toHaveLength(0);
+  });
+
+  it("rejects a macOS release that is not a .zip app archive or uses the patch kind", async () => {
+    const mac = await createDevice({
+      companyId: UPDATE_COMPANY_ID,
+      osType: "macos",
+    });
+    deviceIds.push(mac.id);
+
+    const wrongExt = await request(adminApp)
+      .post("/devices/agent-updates")
+      .send({
+        version: "5.1.1",
+        platform: "macos",
+        downloadUrl: "https://downloads.example.test/agent-5.1.1.exe",
+        objectPath: null,
+        fileName: "agent-5.1.1.exe",
+        targetMode: "device",
+        deviceId: mac.id,
+        reason: null,
+      });
+    expect(wrongExt.status).toBe(400);
+
+    const patchKind = await request(adminApp)
+      .post("/devices/agent-updates")
+      .send({
+        version: "5.1.2",
+        platform: "macos",
+        kind: "patch",
+        downloadUrl: "https://downloads.example.test/agent-5.1.2.zip",
+        objectPath: null,
+        fileName: "agent-5.1.2.zip",
+        targetMode: "device",
+        deviceId: mac.id,
+        reason: null,
+      });
+    expect(patchKind.status).toBe(400);
+  });
+
+  it("refuses to queue a macOS release for a non-macOS device", async () => {
+    const win = await createDevice({
+      companyId: UPDATE_COMPANY_ID,
+      osType: "windows",
+    });
+    deviceIds.push(win.id);
+
+    const push = await request(adminApp)
+      .post("/devices/agent-updates")
+      .send({
+        version: "5.1.3",
+        platform: "macos",
+        downloadUrl: "https://downloads.example.test/agent-macos.zip",
+        objectPath: null,
+        fileName: "agent-macos.zip",
+        targetMode: "device",
+        deviceId: win.id,
+        reason: null,
+      });
+    expect(push.status).toBe(404);
+
+    const direct = await request(adminApp)
+      .post(`/devices/${win.id}/commands`)
+      .send({
+        commandType: "update_agent",
+        platform: "macos",
+        version: "5.1.3",
+        downloadUrl: "https://downloads.example.test/agent-macos.zip",
+        fileName: "agent-macos.zip",
+      });
+    expect(direct.status).toBe(400);
+
+    const commands = await db
+      .select({ id: deviceCommandsTable.id })
+      .from(deviceCommandsTable)
+      .where(eq(deviceCommandsTable.deviceId, win.id));
+    expect(commands).toHaveLength(0);
+  });
+
+  it("resolves a macOS release at download time with its platform", async () => {
+    const { device, secret } = await createDeviceWithSecret({
+      companyId: UPDATE_COMPANY_ID,
+      osType: "macos",
+    });
+    deviceIds.push(device.id);
+
+    const pushed = await request(adminApp)
+      .post("/devices/agent-updates")
+      .send({
+        version: "5.2.0",
+        platform: "macos",
+        downloadUrl: "https://downloads.example.test/WorkforceAgent-macos-update.zip",
+        objectPath: null,
+        fileName: "WorkforceAgent-macos-update.zip",
+        targetMode: "device",
+        deviceId: device.id,
+        reason: null,
+      });
+    expect(pushed.status).toBe(201);
+    releaseIds.push(pushed.body.releaseId);
+
+    const [command] = await db
+      .select()
+      .from(deviceCommandsTable)
+      .where(
+        and(
+          eq(deviceCommandsTable.deviceId, device.id),
+          eq(deviceCommandsTable.commandType, "update_agent"),
+        ),
+      );
+    const resolved = await request(syncApp)
+      .post("/sync/commands/download-url")
+      .set("x-device-id", device.id)
+      .set("x-device-secret", secret)
+      .send({ commandId: command.id });
+    expect(resolved.status).toBe(200);
+    expect(resolved.body.platform).toBe("macos");
+    expect(resolved.body.kind).toBe("installer");
+    expect(resolved.body.fileName).toBe("WorkforceAgent-macos-update.zip");
+  });
+
   it("marks an update complete when the new version checks in", async () => {
     const { device, secret } = await createDeviceWithSecret({
       companyId: UPDATE_COMPANY_ID,
@@ -274,5 +437,55 @@ describe("Remote Agent Update Manager", () => {
       .from(devicesTable)
       .where(eq(devicesTable.id, device.id));
     expect(updated.agentVersion).toBe("4.8.3");
+  });
+
+  it("marks a prerelease update complete on an exact version heartbeat", async () => {
+    const { device, secret } = await createDeviceWithSecret({
+      companyId: UPDATE_COMPANY_ID,
+      agentVersion: "5.2.0",
+    });
+    deviceIds.push(device.id);
+
+    const pushed = await request(adminApp)
+      .post("/devices/agent-updates")
+      .send({
+        version: "5.3.0-beta.2",
+        downloadUrl: "https://downloads.example.test/agent-5.3.0-beta.2.exe",
+        objectPath: null,
+        fileName: "agent-5.3.0-beta.2.exe",
+        targetMode: "device",
+        deviceId: device.id,
+        reason: null,
+      });
+    expect(pushed.status).toBe(201);
+    releaseIds.push(pushed.body.releaseId);
+
+    await db
+      .update(deviceCommandsTable)
+      .set({ status: "installing" })
+      .where(
+        and(
+          eq(deviceCommandsTable.deviceId, device.id),
+          eq(deviceCommandsTable.commandType, "update_agent"),
+        ),
+      );
+
+    const heartbeat = await request(syncApp)
+      .post("/sync/heartbeat")
+      .set("x-device-id", device.id)
+      .set("x-device-secret", secret)
+      .send({ agentVersion: "5.3.0-beta.2" });
+    expect(heartbeat.status).toBe(200);
+
+    const [command] = await db
+      .select({ status: deviceCommandsTable.status })
+      .from(deviceCommandsTable)
+      .where(
+        and(
+          eq(deviceCommandsTable.deviceId, device.id),
+          eq(deviceCommandsTable.commandType, "update_agent"),
+        ),
+      );
+    expect(command.status).toBe("completed");
   });
 });

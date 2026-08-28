@@ -37,6 +37,7 @@ import { useToast } from "@/hooks/use-toast";
 type TargetMode = "all" | "device";
 type SourceMode = "url" | "file";
 type ReleaseKind = "installer" | "patch";
+type ReleasePlatform = "windows" | "macos";
 type SubmitState = "idle" | "submitting" | "success" | "error";
 
 interface AgentUpdateDialogProps {
@@ -69,8 +70,9 @@ function fileNameFromUrl(value: string, version: string) {
   }
 }
 
-function isValidArtifactFile(file: File, kind: ReleaseKind) {
+function isValidArtifactFile(file: File, kind: ReleaseKind, platform: ReleasePlatform) {
   const name = file.name.toLowerCase();
+  if (platform === "macos") return name.endsWith(".zip");
   return kind === "patch" ? name.endsWith(".zip") : name.endsWith(".exe");
 }
 
@@ -84,6 +86,9 @@ export function AgentUpdateDialog({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [version, setVersion] = useState("");
+  const [platform, setPlatform] = useState<ReleasePlatform>(
+    selectedDevice?.osType === "macos" ? "macos" : "windows",
+  );
   const [kind, setKind] = useState<ReleaseKind>("installer");
   const [sourceMode, setSourceMode] = useState<SourceMode>("url");
   const [downloadUrl, setDownloadUrl] = useState("");
@@ -113,10 +118,23 @@ export function AgentUpdateDialog({
     return Array.from(byId.values());
   }, [fleet, selectedDevice]);
 
+  // macOS app archives can only install on Macs, so macOS releases target
+  // macOS devices exclusively (the server enforces the same rule). Windows
+  // releases keep their long-standing targeting unchanged.
+  const compatibleOptions =
+    platform === "macos"
+      ? deviceOptions.filter((device) => device.osType === "macos")
+      : deviceOptions;
   const singleDevice =
-    deviceOptions.find((device) => device.id === targetDeviceId) ??
-    (selectedDevice?.id === targetDeviceId ? selectedDevice : null);
-  const targetDevices = targetMode === "all" ? fleet : singleDevice ? [singleDevice] : [];
+    compatibleOptions.find((device) => device.id === targetDeviceId) ?? null;
+  const targetDevices =
+    targetMode === "all"
+      ? platform === "macos"
+        ? fleet.filter((device) => device.osType === "macos")
+        : fleet
+      : singleDevice
+        ? [singleDevice]
+        : [];
   const onlineCount = targetDevices.filter((device) => device.online).length;
   const offlineCount = targetDevices.length - onlineCount;
   const versionError =
@@ -124,7 +142,7 @@ export function AgentUpdateDialog({
       ? "Use a version such as 4.8.1 or 4.8.1-beta.2."
       : "";
   const urlExtOk =
-    kind === "patch"
+    platform === "macos" || kind === "patch"
       ? /\.zip$/i.test(downloadUrl.trim())
       : /\.exe$/i.test(downloadUrl.trim());
   const urlError =
@@ -132,27 +150,33 @@ export function AgentUpdateDialog({
       ? !/^https:\/\//i.test(downloadUrl.trim())
         ? "The download URL must use HTTPS."
         : !urlExtOk
-          ? kind === "patch"
-            ? "The URL must point to a .zip patch bundle."
-            : "The URL must point to a Windows .exe installer."
+          ? platform === "macos"
+            ? "The URL must point to a .zip app archive for macOS."
+            : kind === "patch"
+              ? "The URL must point to a .zip patch bundle."
+              : "The URL must point to a Windows .exe installer."
           : ""
       : "";
   const fileError =
-    sourceMode === "file" && file && !isValidArtifactFile(file, kind)
-      ? kind === "patch"
-        ? "Choose a .zip patch bundle."
-        : "Choose a Windows .exe installer."
+    sourceMode === "file" && file && !isValidArtifactFile(file, kind, platform)
+      ? platform === "macos"
+        ? "Choose a .zip app archive for macOS."
+        : kind === "patch"
+          ? "Choose a .zip patch bundle."
+          : "Choose a Windows .exe installer."
       : "";
   const formInvalid =
     !VERSION_PATTERN.test(version.trim()) ||
     (sourceMode === "url"
       ? !/^https:\/\//i.test(downloadUrl.trim()) || !urlExtOk
       : !file || Boolean(fileError) || file.size > MAX_FILE_SIZE) ||
-    (targetMode === "device" && !singleDevice);
+    (targetMode === "device" && !singleDevice) ||
+    (targetMode === "all" && targetDevices.length === 0);
 
   useEffect(() => {
     if (!open) return;
     setVersion("");
+    setPlatform(selectedDevice?.osType === "macos" ? "macos" : "windows");
     setKind("installer");
     setSourceMode("url");
     setDownloadUrl("");
@@ -211,7 +235,8 @@ export function AgentUpdateDialog({
 
       const payload: PushAgentUpdateRequest = {
         version: trimmedVersion,
-        kind,
+        kind: platform === "macos" ? "installer" : kind,
+        platform,
         downloadUrl: resolvedDownloadUrl,
         objectPath,
         fileName: resolvedFileName,
@@ -331,41 +356,86 @@ export function AgentUpdateDialog({
             </section>
 
             <fieldset className="space-y-3">
-              <legend className="text-sm font-semibold">Release type</legend>
+              <legend className="text-sm font-semibold">Platform</legend>
               <div className="grid gap-2 sm:grid-cols-2">
-                <label className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${kind === "installer" ? "border-primary bg-primary/5" : "border-border"}`}>
+                <label className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${platform === "windows" ? "border-primary bg-primary/5" : "border-border"}`}>
                   <input
                     type="radio"
-                    name="agent-kind"
-                    value="installer"
-                    checked={kind === "installer"}
-                    onChange={() => { setKind("installer"); setFile(null); if (fileInputRef.current) fileInputRef.current.value = ""; }}
+                    name="agent-platform"
+                    value="windows"
+                    checked={platform === "windows"}
+                    onChange={() => { setPlatform("windows"); setFile(null); setTargetDeviceId(""); if (fileInputRef.current) fileInputRef.current.value = ""; }}
                     className="mt-1 accent-[hsl(var(--primary))]"
                   />
                   <span>
-                    <span className="block text-sm font-medium">Full installer (.exe)</span>
-                    <span className="mt-0.5 block text-xs text-muted-foreground">The agent runs it and reinstalls itself.</span>
+                    <span className="block text-sm font-medium">Windows</span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">Silent .exe installer or .zip code patch.</span>
                   </span>
                 </label>
-                <label className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${kind === "patch" ? "border-primary bg-primary/5" : "border-border"}`}>
+                <label className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${platform === "macos" ? "border-primary bg-primary/5" : "border-border"}`}>
                   <input
                     type="radio"
-                    name="agent-kind"
-                    value="patch"
-                    checked={kind === "patch"}
-                    onChange={() => { setKind("patch"); setFile(null); if (fileInputRef.current) fileInputRef.current.value = ""; }}
+                    name="agent-platform"
+                    value="macos"
+                    checked={platform === "macos"}
+                    onChange={() => { setPlatform("macos"); setKind("installer"); setFile(null); setTargetDeviceId(""); if (fileInputRef.current) fileInputRef.current.value = ""; }}
                     className="mt-1 accent-[hsl(var(--primary))]"
                   />
                   <span>
-                    <span className="block text-sm font-medium">Code patch (.zip)</span>
-                    <span className="mt-0.5 block text-xs text-muted-foreground">The agent extracts it over its files and restarts.</span>
+                    <span className="block text-sm font-medium">macOS</span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">.zip archive containing the WorkforceAgent app.</span>
                   </span>
                 </label>
               </div>
+              {platform === "macos" && (
+                <p className="text-xs text-muted-foreground">
+                  Only enrolled macOS devices are targeted — the archive can never be sent to a Windows device.
+                </p>
+              )}
             </fieldset>
 
+            {platform === "windows" ? (
+              <fieldset className="space-y-3">
+                <legend className="text-sm font-semibold">Release type</legend>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <label className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${kind === "installer" ? "border-primary bg-primary/5" : "border-border"}`}>
+                    <input
+                      type="radio"
+                      name="agent-kind"
+                      value="installer"
+                      checked={kind === "installer"}
+                      onChange={() => { setKind("installer"); setFile(null); if (fileInputRef.current) fileInputRef.current.value = ""; }}
+                      className="mt-1 accent-[hsl(var(--primary))]"
+                    />
+                    <span>
+                      <span className="block text-sm font-medium">Full installer (.exe)</span>
+                      <span className="mt-0.5 block text-xs text-muted-foreground">The agent runs it and reinstalls itself.</span>
+                    </span>
+                  </label>
+                  <label className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${kind === "patch" ? "border-primary bg-primary/5" : "border-border"}`}>
+                    <input
+                      type="radio"
+                      name="agent-kind"
+                      value="patch"
+                      checked={kind === "patch"}
+                      onChange={() => { setKind("patch"); setFile(null); if (fileInputRef.current) fileInputRef.current.value = ""; }}
+                      className="mt-1 accent-[hsl(var(--primary))]"
+                    />
+                    <span>
+                      <span className="block text-sm font-medium">Code patch (.zip)</span>
+                      <span className="mt-0.5 block text-xs text-muted-foreground">The agent extracts it over its files and restarts.</span>
+                    </span>
+                  </label>
+                </div>
+              </fieldset>
+            ) : (
+              <div className="rounded-lg border bg-muted/25 p-3 text-xs text-muted-foreground">
+                The Mac agent downloads the archive, verifies the app's identity and code signature, swaps it in atomically, and relaunches. If anything fails, the previous version is restored automatically.
+              </div>
+            )}
+
             <fieldset className="space-y-3">
-              <legend className="text-sm font-semibold">{kind === "patch" ? "Patch source" : "Installer source"}</legend>
+              <legend className="text-sm font-semibold">{platform === "macos" ? "App archive source" : kind === "patch" ? "Patch source" : "Installer source"}</legend>
               <div className="grid gap-2 sm:grid-cols-2">
                 <label className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${sourceMode === "url" ? "border-primary bg-primary/5" : "border-border"}`}>
                   <input
@@ -419,15 +489,15 @@ export function AgentUpdateDialog({
                   <label htmlFor="agent-installer" className="flex cursor-pointer items-center gap-3 rounded-lg border border-dashed border-input bg-muted/20 px-4 py-3 hover:bg-muted/40">
                     <FileArchive className="h-5 w-5 shrink-0 text-muted-foreground" />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium">{file?.name || (kind === "patch" ? "Choose a patch bundle" : "Choose an installer file")}</span>
-                       <span className="block text-xs text-muted-foreground">{file ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : kind === "patch" ? ".zip patch bundle" : "Windows .exe installer"}</span>
+                      <span className="block truncate text-sm font-medium">{file?.name || (platform === "macos" ? "Choose an app archive" : kind === "patch" ? "Choose a patch bundle" : "Choose an installer file")}</span>
+                       <span className="block text-xs text-muted-foreground">{file ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : platform === "macos" ? ".zip archive with WorkforceAgent.app" : kind === "patch" ? ".zip patch bundle" : "Windows .exe installer"}</span>
                     </span>
                     <Upload className="h-4 w-4 text-muted-foreground" />
                     <input
                       ref={fileInputRef}
                       id="agent-installer"
                       type="file"
-                       accept={kind === "patch" ? ".zip,application/zip,application/octet-stream" : ".exe,application/vnd.microsoft.portable-executable,application/octet-stream"}
+                       accept={platform === "macos" || kind === "patch" ? ".zip,application/zip,application/octet-stream" : ".exe,application/vnd.microsoft.portable-executable,application/octet-stream"}
                       onChange={handleFileChange}
                       className="sr-only"
                     />
@@ -452,8 +522,8 @@ export function AgentUpdateDialog({
                   />
                   <Users className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                   <span>
-                    <span className="block text-sm font-medium">All Enrolled Devices</span>
-                    <span className="mt-0.5 block text-xs text-muted-foreground">Queue this release for the full fleet.</span>
+                    <span className="block text-sm font-medium">{platform === "macos" ? "All macOS devices" : "All Enrolled Devices"}</span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">{platform === "macos" ? "Queue this release for every enrolled macOS device." : "Queue this release for the full fleet."}</span>
                   </span>
                 </label>
                 <label className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${targetMode === "device" ? "border-primary bg-primary/5" : "border-border"}`}>
@@ -482,8 +552,8 @@ export function AgentUpdateDialog({
                     onChange={(event) => setTargetDeviceId(event.target.value)}
                     className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   >
-                    <option value="" disabled>Select an enrolled device</option>
-                    {deviceOptions.map((device) => (
+                    <option value="" disabled>{compatibleOptions.length === 0 ? (platform === "macos" ? "No enrolled macOS devices" : "No enrolled devices") : "Select an enrolled device"}</option>
+                    {compatibleOptions.map((device) => (
                       <option key={device.id} value={device.id}>
                         {device.systemName}{device.assignedUsername ? ` · ${device.assignedUsername}` : ""}
                       </option>

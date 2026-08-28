@@ -926,6 +926,173 @@ async function launchInstaller(installerPath) {
   child.unref();
 }
 
+function execFileResult(command, args) {
+  return new Promise((resolve, reject) => {
+    execFile(
+      command,
+      args,
+      { timeout: 120000, maxBuffer: 1024 * 1024 },
+      (error, stdout, stderr) => {
+        if (error) {
+          reject(new Error(`${command} validation failed`));
+          return;
+        }
+        resolve({ stdout: String(stdout), stderr: String(stderr) });
+      },
+    );
+  });
+}
+
+function containingMacApp(startPath) {
+  let current = path.resolve(startPath);
+  while (current !== path.dirname(current)) {
+    if (current.endsWith(".app")) return current;
+    current = path.dirname(current);
+  }
+  return null;
+}
+
+function cleanupMacUpdateBackup() {
+  if (!IS_MAC) return;
+  const currentApp = containingMacApp(process.execPath);
+  if (!currentApp) return;
+  const backup = `${currentApp}.updating-backup`;
+  if (fs.existsSync(backup)) {
+    fs.rmSync(backup, { recursive: true, force: true });
+  }
+}
+
+async function signatureTeamId(appPath) {
+  const result = await execFileResult("codesign", [
+    "-dv",
+    "--verbose=4",
+    appPath,
+  ]);
+  const match = `${result.stdout}\n${result.stderr}`.match(
+    /^TeamIdentifier=(.+)$/m,
+  );
+  if (!match) throw new Error("app code signature has no Team ID");
+  return match[1].trim();
+}
+
+const MAC_REPLACER = `#!/bin/bash
+PID="$1"; NEW="$2"; APP="$3"
+BACKUP="\${APP}.updating-backup"
+is_new_running() {
+  ps -axo command= | grep -F -- "$APP/Contents/MacOS/WorkforceAgent" >/dev/null
+}
+for _ in $(seq 1 240); do kill -0 "$PID" 2>/dev/null || break; sleep 0.5; done
+if kill -0 "$PID" 2>/dev/null; then rm -rf "$(dirname "$NEW")" "$0"; exit 1; fi
+rm -rf "$BACKUP"
+if ! mv "$APP" "$BACKUP"; then open "$APP"; exit 1; fi
+if mv "$NEW" "$APP" 2>/dev/null || ditto "$NEW" "$APP"; then
+  if ! open "$APP"; then
+    rm -rf "$APP"; mv "$BACKUP" "$APP"; open "$APP"
+  else
+    sleep 5
+    for _ in $(seq 1 110); do
+      [ ! -d "$BACKUP" ] && break
+      is_new_running || break
+      sleep 0.5
+    done
+    if [ -d "$BACKUP" ] && ! is_new_running; then
+      rm -rf "$APP"; mv "$BACKUP" "$APP"; open "$APP"
+    fi
+  fi
+else
+  rm -rf "$APP"; mv "$BACKUP" "$APP"; open "$APP"
+fi
+rm -rf "$(dirname "$NEW")" "$0"
+`;
+
+async function applyMacUpdate(archivePath, targetVersion) {
+  const currentApp = containingMacApp(process.execPath);
+  if (!currentApp) {
+    throw new Error(
+      "agent is not running from an installed app bundle; update this Mac manually",
+    );
+  }
+  fs.accessSync(currentApp, fs.constants.W_OK);
+  fs.accessSync(path.dirname(currentApp), fs.constants.W_OK);
+
+  const extractDir = fs.mkdtempSync(path.join(os.tmpdir(), "wfa-update-"));
+  try {
+    await execFileResult("ditto", ["-x", "-k", archivePath, extractDir]);
+    const entries = fs.readdirSync(extractDir);
+    if (
+      entries.length !== 1 ||
+      entries[0] !== "WorkforceAgent.app" ||
+      fs.lstatSync(path.join(extractDir, entries[0])).isSymbolicLink()
+    ) {
+      throw new Error(
+        "update archive must contain only WorkforceAgent.app at its root",
+      );
+    }
+    const newApp = path.join(extractDir, "WorkforceAgent.app");
+    const plist = path.join(newApp, "Contents", "Info.plist");
+    const readPlist = async (key) =>
+      (
+        await execFileResult("plutil", [
+          "-extract",
+          key,
+          "raw",
+          "-o",
+          "-",
+          plist,
+        ])
+      ).stdout.trim();
+    if ((await readPlist("CFBundleIdentifier")) !== "com.workforceanalytics.agent") {
+      throw new Error("update app has an unexpected bundle identifier");
+    }
+    if ((await readPlist("CFBundleShortVersionString")) !== targetVersion) {
+      throw new Error("update app version does not match the requested target");
+    }
+    const executableName = await readPlist("CFBundleExecutable");
+    const executable = path.join(
+      newApp,
+      "Contents",
+      "MacOS",
+      executableName,
+    );
+    if (
+      executableName !== "WorkforceAgent" ||
+      fs.lstatSync(plist).isSymbolicLink() ||
+      fs.lstatSync(executable).isSymbolicLink() ||
+      !path.resolve(executable).startsWith(`${path.resolve(newApp)}${path.sep}`)
+    ) {
+      throw new Error("update app bundle contains an unsafe path");
+    }
+    await execFileResult("codesign", [
+      "--verify",
+      "--deep",
+      "--strict",
+      newApp,
+    ]);
+    if ((await signatureTeamId(newApp)) !== (await signatureTeamId(currentApp))) {
+      throw new Error("update app was signed by an unexpected developer team");
+    }
+    await execFileResult("spctl", [
+      "--assess",
+      "--type",
+      "execute",
+      newApp,
+    ]);
+
+    const scriptPath = path.join(extractDir, "replace-agent.sh");
+    fs.writeFileSync(scriptPath, MAC_REPLACER, { mode: 0o700 });
+    const child = spawn(
+      "/bin/bash",
+      [scriptPath, String(process.pid), newApp, currentApp],
+      { detached: true, stdio: "ignore" },
+    );
+    child.unref();
+    fs.unlinkSync(archivePath);
+  } catch (error) {
+    fs.rmSync(extractDir, { recursive: true, force: true });
+    throw error;
+  }
+}
+
 // Durable command-result journal: written BEFORE each final ack so a lost
 // ack response (even one racing a shutdown) can never re-run a destructive
 // command after the agent restarts — the recorded result is re-acked instead.
@@ -970,6 +1137,7 @@ const commandRunner = createCommandRunner({
   setUsbBlock,
   downloadInstaller,
   launchInstaller,
+  applyMacUpdate,
   removeFile: (p) => fs.unlinkSync(p),
   exitProcess: () => process.exit(0),
   isWin: IS_WIN,
@@ -1314,6 +1482,9 @@ async function syncTelemetry() {
       tzOffsetMinutes,
       metrics: collectMetrics(),
     });
+    // The prior app is retained beside a macOS replacement until the new
+    // build successfully heartbeats. That is the authoritative health signal.
+    cleanupMacUpdateBackup();
     if (res?.serverTime) {
       clientState.serverClockOffset = new Date(res.serverTime).getTime() - Date.now();
     }

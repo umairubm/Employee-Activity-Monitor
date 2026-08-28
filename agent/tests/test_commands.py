@@ -327,6 +327,157 @@ class DurableResultJournal(unittest.TestCase):
         self.assertEqual(agent2.api.ack_command.call_args.args[1], "failed")
 
 
+class MacOsUpdateContract(unittest.TestCase):
+    """macOS app-archive self-update: validation, safety, and the swap handoff."""
+
+    def test_app_bundle_path_resolves_the_app_root(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            exe = Path(tmp) / "WorkforceAgent.app" / "Contents" / "MacOS" / "WorkforceAgent"
+            exe.parent.mkdir(parents=True)
+            exe.write_text("")
+            found = MonitoringAgent._macos_app_bundle_path(str(exe))
+            self.assertIsNotNone(found)
+            self.assertEqual(found.name, "WorkforceAgent.app")
+        self.assertIsNone(MonitoringAgent._macos_app_bundle_path("/usr/bin/python3"))
+
+    @staticmethod
+    def _make_app(root: Path, name="WorkforceAgent.app",
+                  bundle_id="com.workforceanalytics.agent") -> Path:
+        import plistlib
+        app = root / name
+        executable = app / "Contents" / "MacOS" / "WorkforceAgent"
+        executable.parent.mkdir(parents=True)
+        executable.write_text("")
+        with open(app / "Contents" / "Info.plist", "wb") as fh:
+            plistlib.dump(
+                {
+                    "CFBundleIdentifier": bundle_id,
+                    "CFBundleShortVersionString": "5.1.0",
+                    "CFBundleExecutable": "WorkforceAgent",
+                },
+                fh,
+            )
+        return app
+
+    def _extract(self, dest_dir, ditto_rc=0, codesign_rc=0):
+        def fake_run(argv, **_kwargs):
+            if argv[0] == "ditto":
+                return types.SimpleNamespace(
+                    returncode=ditto_rc, stdout=b"", stderr=b""
+                )
+            if argv[:2] == ["codesign", "-dv"]:
+                return types.SimpleNamespace(
+                    returncode=0, stdout="", stderr="TeamIdentifier=TESTTEAM\n"
+                )
+            return types.SimpleNamespace(
+                returncode=codesign_rc, stdout=b"", stderr=b""
+            )
+
+        with mock.patch("agent.agent.subprocess.run", side_effect=fake_run):
+            return MonitoringAgent._macos_extract_app(
+                "/tmp/archive.zip", dest_dir, "5.1.0", "TESTTEAM"
+            )
+
+    def test_extract_validates_bundle_identity_and_signature(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._make_app(Path(tmp))
+            app = self._extract(tmp)
+            self.assertEqual(app.name, "WorkforceAgent.app")
+
+        # Wrong bundle identifier is refused.
+        with tempfile.TemporaryDirectory() as tmp:
+            self._make_app(Path(tmp), bundle_id="com.evil.other")
+            with self.assertRaisesRegex(ValueError, "bundle identifier"):
+                self._extract(tmp)
+
+        # A failed signature check is refused.
+        with tempfile.TemporaryDirectory() as tmp:
+            self._make_app(Path(tmp))
+            with self.assertRaisesRegex(ValueError, "code signature"):
+                self._extract(tmp, codesign_rc=1)
+
+        # Zero or multiple apps in the archive are refused.
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(ValueError, "only WorkforceAgent.app"):
+                self._extract(tmp)
+        with tempfile.TemporaryDirectory() as tmp:
+            self._make_app(Path(tmp))
+            self._make_app(Path(tmp), name="Other.app")
+            with self.assertRaisesRegex(ValueError, "only WorkforceAgent.app"):
+                self._extract(tmp)
+
+    def test_not_running_from_app_bundle_fails_truthfully(self):
+        agent = make_agent()
+        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
+            archive = tmp.name
+        with mock.patch.object(
+            MonitoringAgent, "_macos_extract_app", return_value=Path("/tmp/x.app")
+        ), mock.patch.object(
+            MonitoringAgent, "_macos_app_bundle_path", return_value=None
+        ):
+            agent._update_agent_macos(CMD_ID, archive, "5.1.0")
+        status, message = (
+            agent._command_results[CMD_ID]["status"],
+            agent._command_results[CMD_ID]["message"],
+        )
+        self.assertEqual(status, "failed")
+        self.assertIn("app bundle", message)
+
+    def test_unwritable_install_location_fails_with_readable_reason(self):
+        agent = make_agent()
+        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
+            archive = tmp.name
+        with mock.patch.object(
+            MonitoringAgent, "_macos_extract_app", return_value=Path("/tmp/x.app")
+        ), mock.patch.object(
+            MonitoringAgent,
+            "_macos_app_bundle_path",
+            return_value=Path("/Applications/WorkforceAgent.app"),
+        ), mock.patch("agent.agent.os.access", return_value=False):
+            agent._update_agent_macos(CMD_ID, archive, "5.1.0")
+        self.assertEqual(agent._command_results[CMD_ID]["status"], "failed")
+        self.assertIn("permission", agent._command_results[CMD_ID]["message"])
+
+    def test_happy_path_acks_installing_launches_replacer_and_quits(self):
+        agent = make_agent()
+        agent.quit = mock.Mock()
+        popen_calls = []
+        with tempfile.TemporaryDirectory() as tmp:
+            current_app = Path(tmp) / "WorkforceAgent.app"
+            current_app.mkdir()
+            with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as f:
+                archive = f.name
+            with mock.patch.object(
+                MonitoringAgent, "_macos_extract_app", return_value=Path("/tmp/new.app")
+            ), mock.patch.object(
+                MonitoringAgent, "_macos_app_bundle_path", return_value=current_app
+            ), mock.patch.object(
+                MonitoringAgent,
+                "_macos_signature_team_id",
+                return_value="TESTTEAM",
+            ), mock.patch(
+                "agent.agent.subprocess.Popen",
+                side_effect=lambda argv, **kw: popen_calls.append(argv) or mock.Mock(),
+            ):
+                agent._update_agent_macos(CMD_ID, archive, "5.1.0")
+
+        agent.api.ack_command.assert_called_once_with(CMD_ID, "installing")
+        agent.quit.assert_called_once()
+        self.assertEqual(len(popen_calls), 1)
+        argv = popen_calls[0]
+        self.assertEqual(argv[0], "/bin/bash")
+        self.assertIn("/tmp/new.app", argv)
+        self.assertIn(str(current_app), argv)
+
+    def test_remote_update_quit_stops_tray_loop_so_parent_can_exit(self):
+        agent = make_agent()
+        agent._stop = mock.Mock()
+        agent.tray = mock.Mock()
+        agent.quit()
+        agent._stop.set.assert_called_once()
+        agent.tray.stop.assert_called_once()
+
+
 class ParsePayload(unittest.TestCase):
     def test_defensive_parsing(self):
         parse = MonitoringAgent._parse_payload

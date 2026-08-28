@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { IssueCommandRequestCommandType } from "./issueCommandRequestCommandType";
+import type { IssueCommandRequestPlatform } from "./issueCommandRequestPlatform";
 
 export interface IssueCommandRequest {
   commandType: IssueCommandRequestCommandType;
@@ -33,4 +34,6 @@ export interface IssueCommandRequest {
   downloadUrl?: string;
   /** Optional installer file name for update_agent. */
   fileName?: string;
+  /** For update_agent only. Which OS the release artifact targets; must match the device's osType. */
+  platform?: IssueCommandRequestPlatform;
 }

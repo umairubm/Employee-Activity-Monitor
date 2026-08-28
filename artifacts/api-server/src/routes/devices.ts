@@ -372,6 +372,7 @@ const issueCommandSchema = z.discriminatedUnion("commandType", [
       commandType: z.literal("update_agent"),
       reason: z.string().max(500).optional(),
       kind: z.enum(["installer", "patch"]).default("installer"),
+      platform: z.enum(["windows", "macos"]).default("windows"),
       version: z.string().regex(/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/),
       downloadUrl: z
         .string()
@@ -380,16 +381,28 @@ const issueCommandSchema = z.discriminatedUnion("commandType", [
       fileName: z.string().max(200).optional(),
     })
     .superRefine((value, ctx) => {
+      if (value.platform === "macos" && value.kind !== "installer") {
+        ctx.addIssue({
+          code: "custom",
+          path: ["kind"],
+          message: "macOS updates only support the app archive (installer) kind",
+        });
+      }
       if (!value.fileName) return;
-      const expectedExt = value.kind === "patch" ? /\.zip$/i : /\.exe$/i;
+      const expectedExt =
+        value.platform === "macos" || value.kind === "patch"
+          ? /\.zip$/i
+          : /\.exe$/i;
       if (!expectedExt.test(value.fileName)) {
         ctx.addIssue({
           code: "custom",
           path: ["fileName"],
           message:
-            value.kind === "patch"
-              ? "A patch must be a .zip bundle"
-              : "An installer must be a Windows .exe file",
+            value.platform === "macos"
+              ? "A macOS update must be a .zip archive containing the app bundle"
+              : value.kind === "patch"
+                ? "A patch must be a .zip bundle"
+                : "An installer must be a Windows .exe file",
         });
       }
     }),
@@ -413,6 +426,7 @@ function commandPayload(
       return JSON.stringify({
         version: data.version,
         kind: data.kind,
+        platform: data.platform,
         downloadUrl: data.downloadUrl,
         fileName: data.fileName ?? null,
       });
@@ -434,6 +448,7 @@ const agentUpdateSchema = z
       .trim()
       .regex(/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/),
     kind: z.enum(["installer", "patch"]).default("installer"),
+    platform: z.enum(["windows", "macos"]).default("windows"),
     downloadUrl: z
       .string()
       .url()
@@ -449,16 +464,35 @@ const agentUpdateSchema = z
     reason: z.string().max(500).nullish(),
   })
   .superRefine((value, ctx) => {
-    const expectedExt = value.kind === "patch" ? /\.zip$/i : /\.exe$/i;
-    if (!expectedExt.test(value.fileName)) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["fileName"],
-        message:
-          value.kind === "patch"
-            ? "A patch must be a .zip bundle"
-            : "An installer must be a Windows .exe file",
-      });
+    if (value.platform === "macos") {
+      // macOS releases are always an app archive the agent swaps in atomically;
+      // there is no silent-installer or loose-file patch path on macOS.
+      if (value.kind !== "installer") {
+        ctx.addIssue({
+          code: "custom",
+          path: ["kind"],
+          message: "macOS updates only support the app archive (installer) kind",
+        });
+      }
+      if (!/\.zip$/i.test(value.fileName)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["fileName"],
+          message: "A macOS update must be a .zip archive containing the app bundle",
+        });
+      }
+    } else {
+      const expectedExt = value.kind === "patch" ? /\.zip$/i : /\.exe$/i;
+      if (!expectedExt.test(value.fileName)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["fileName"],
+          message:
+            value.kind === "patch"
+              ? "A patch must be a .zip bundle"
+              : "An installer must be a Windows .exe file",
+        });
+      }
     }
     if (!value.downloadUrl && !value.objectPath) {
       ctx.addIssue({
@@ -539,17 +573,32 @@ router.post(
             ? and(
                 eq(devicesTable.companyId, companyId),
                 eq(devicesTable.id, data.deviceId!),
+                // A macOS app archive can only install on a Mac, so macOS
+                // releases target macOS devices exclusively. Windows releases
+                // keep their long-standing targeting unchanged (non-Windows
+                // devices truthfully fail the command, as they always have).
+                ...(data.platform === "macos"
+                  ? [eq(devicesTable.osType, "macos" as const)]
+                  : []),
                 deviceScopeCondition(req),
               )
             : and(
                 eq(devicesTable.companyId, companyId),
+                ...(data.platform === "macos"
+                  ? [eq(devicesTable.osType, "macos" as const)]
+                  : []),
                 deviceScopeCondition(req),
               ),
         )
         .orderBy(asc(devicesTable.createdAt));
 
       if (targets.length === 0) {
-        res.status(404).json({ error: "No matching enrolled devices" });
+        res.status(404).json({
+          error:
+            data.platform === "macos"
+              ? "No matching enrolled macOS devices"
+              : "No matching enrolled devices",
+        });
         return;
       }
 
@@ -567,6 +616,7 @@ router.post(
             companyId,
             version: data.version,
             kind: data.kind,
+            platform: data.platform,
             downloadUrl: data.downloadUrl ?? null,
             objectPath: data.objectPath ?? null,
             fileName: data.fileName,
@@ -585,6 +635,7 @@ router.post(
                 releaseId: release.id,
                 version: data.version,
                 kind: data.kind,
+                platform: data.platform,
                 downloadUrl: data.downloadUrl ?? null,
                 fileName: data.fileName,
               }),
@@ -627,7 +678,7 @@ router.post(
 
       const companyId = getCompanyId(req);
       const [device] = await db
-        .select({ id: devicesTable.id })
+        .select({ id: devicesTable.id, osType: devicesTable.osType })
         .from(devicesTable)
         .where(
           and(
@@ -642,6 +693,19 @@ router.post(
       }
 
       const data = parsed.data;
+      // A macOS app archive can only install on a Mac — never queue one for a
+      // device running anything else. (Windows update targeting is unchanged;
+      // non-Windows devices truthfully fail it, as they always have.)
+      if (
+        data.commandType === "update_agent" &&
+        data.platform === "macos" &&
+        device.osType !== "macos"
+      ) {
+        res.status(400).json({
+          error: `This update targets macOS, but the device runs ${device.osType}`,
+        });
+        return;
+      }
       const [command] = await db
         .insert(deviceCommandsTable)
         .values({

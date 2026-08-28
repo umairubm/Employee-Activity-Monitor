@@ -6,10 +6,12 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ResolveCommandDownloadUrl200Kind } from "./resolveCommandDownloadUrl200Kind";
+import type { ResolveCommandDownloadUrl200Platform } from "./resolveCommandDownloadUrl200Platform";
 
 export type ResolveCommandDownloadUrl200 = {
   version: string;
   kind: ResolveCommandDownloadUrl200Kind;
+  platform: ResolveCommandDownloadUrl200Platform;
   /** @nullable */
   fileName: string | null;
   downloadUrl: string;

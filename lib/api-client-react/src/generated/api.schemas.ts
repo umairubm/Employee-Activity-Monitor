@@ -584,6 +584,17 @@ export const IssueCommandRequestCommandType = {
   update_agent: "update_agent",
 } as const;
 
+/**
+ * For update_agent only. Which OS the release artifact targets; must match the device's osType.
+ */
+export type IssueCommandRequestPlatform =
+  (typeof IssueCommandRequestPlatform)[keyof typeof IssueCommandRequestPlatform];
+
+export const IssueCommandRequestPlatform = {
+  windows: "windows",
+  macos: "macos",
+} as const;
+
 export interface IssueCommandRequest {
   commandType: IssueCommandRequestCommandType;
   reason?: string;
@@ -610,6 +621,8 @@ export interface IssueCommandRequest {
   downloadUrl?: string;
   /** Optional installer file name for update_agent. */
   fileName?: string;
+  /** For update_agent only. Which OS the release artifact targets; must match the device's osType. */
+  platform?: IssueCommandRequestPlatform;
 }
 
 export interface AgentReleaseUploadRequest {
@@ -630,7 +643,7 @@ export interface AgentReleaseUploadResponse {
 }
 
 /**
- * installer = full Windows .exe the agent runs; patch = a .zip bundle of updated files the agent extracts over its install dir and restarts.
+ * installer = full Windows .exe the agent runs; patch = a .zip bundle of updated files the agent extracts over its install dir and restarts. macOS releases always use kind=installer with a .zip app archive.
  */
 export type PushAgentUpdateRequestKind =
   (typeof PushAgentUpdateRequestKind)[keyof typeof PushAgentUpdateRequestKind];
@@ -638,6 +651,17 @@ export type PushAgentUpdateRequestKind =
 export const PushAgentUpdateRequestKind = {
   installer: "installer",
   patch: "patch",
+} as const;
+
+/**
+ * Which OS the release targets. windows = silent .exe installer or .zip patch; macos = .zip archive containing the replacement WorkforceAgent.app bundle. Only devices with a matching osType are targeted.
+ */
+export type PushAgentUpdateRequestPlatform =
+  (typeof PushAgentUpdateRequestPlatform)[keyof typeof PushAgentUpdateRequestPlatform];
+
+export const PushAgentUpdateRequestPlatform = {
+  windows: "windows",
+  macos: "macos",
 } as const;
 
 export type PushAgentUpdateRequestTargetMode =
@@ -651,8 +675,10 @@ export const PushAgentUpdateRequestTargetMode = {
 export interface PushAgentUpdateRequest {
   /** @pattern ^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$ */
   version: string;
-  /** installer = full Windows .exe the agent runs; patch = a .zip bundle of updated files the agent extracts over its install dir and restarts. */
+  /** installer = full Windows .exe the agent runs; patch = a .zip bundle of updated files the agent extracts over its install dir and restarts. macOS releases always use kind=installer with a .zip app archive. */
   kind?: PushAgentUpdateRequestKind;
+  /** Which OS the release targets. windows = silent .exe installer or .zip patch; macos = .zip archive containing the replacement WorkforceAgent.app bundle. Only devices with a matching osType are targeted. */
+  platform?: PushAgentUpdateRequestPlatform;
   /** @nullable */
   downloadUrl?: string | null;
   /** @nullable */
@@ -1823,9 +1849,18 @@ export const ResolveCommandDownloadUrl200Kind = {
   patch: "patch",
 } as const;
 
+export type ResolveCommandDownloadUrl200Platform =
+  (typeof ResolveCommandDownloadUrl200Platform)[keyof typeof ResolveCommandDownloadUrl200Platform];
+
+export const ResolveCommandDownloadUrl200Platform = {
+  windows: "windows",
+  macos: "macos",
+} as const;
+
 export type ResolveCommandDownloadUrl200 = {
   version: string;
   kind: ResolveCommandDownloadUrl200Kind;
+  platform: ResolveCommandDownloadUrl200Platform;
   /** @nullable */
   fileName: string | null;
   downloadUrl: string;

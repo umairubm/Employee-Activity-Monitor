@@ -97,3 +97,7 @@ class AgentTray:
 
     def run(self) -> None:
         self.icon.run()
+
+    def stop(self) -> None:
+        """Stop the tray event loop (safe for remote-update shutdown)."""
+        self.icon.stop()

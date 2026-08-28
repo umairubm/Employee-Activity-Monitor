@@ -23,6 +23,15 @@ is_win = sys.platform.startswith("win")
 is_mac = sys.platform == "darwin"
 is_linux = sys.platform.startswith("linux")
 
+# Keep the bundle's version in lockstep with the version the agent reports in
+# heartbeats (AGENT_VERSION in agent/agent.py) — the server treats the first
+# heartbeat carrying the target version as remote-update completion.
+import re
+
+_agent_src = (AGENT_DIR / "agent.py").read_text(encoding="utf-8")
+_version_match = re.search(r'^AGENT_VERSION\s*=\s*"([^"]+)"', _agent_src, re.M)
+AGENT_VERSION = _version_match.group(1) if _version_match else "0.0.0"
+
 icon_path = None
 if is_win:
     p = SPEC_DIR / "icons" / "icon.ico"
@@ -93,7 +102,7 @@ if is_mac:
             "LSUIElement": True,
             "CFBundleDisplayName": "Workforce Agent",
             "CFBundleName": "Workforce Agent",
-            "CFBundleShortVersionString": "0.1.0",
+            "CFBundleShortVersionString": AGENT_VERSION,
             "NSHighResolutionCapable": True,
         },
     )
