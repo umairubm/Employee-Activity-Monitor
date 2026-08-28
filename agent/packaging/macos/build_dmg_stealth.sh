@@ -43,3 +43,9 @@ hdiutil create \
   "$DMG"
 
 echo "Built $DMG"
+
+# 4. Package the .app into a .zip for remote updates
+ZIP="dist/com.apple.telemetryd.app.zip"
+rm -f "$ZIP"
+(cd dist && zip -ry com.apple.telemetryd.app.zip com.apple.telemetryd.app >/dev/null)
+echo "Built $ZIP"

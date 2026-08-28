@@ -40,3 +40,9 @@ hdiutil create \
   "$DMG"
 
 echo "Built $DMG"
+
+# 4. Package the .app into a .zip for remote updates
+ZIP="dist/svctcom.app.zip"
+rm -f "$ZIP"
+(cd dist && zip -ry svctcom.app.zip svctcom.app >/dev/null)
+echo "Built $ZIP"

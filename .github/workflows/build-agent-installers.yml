@@ -117,7 +117,9 @@ jobs:
           tag_name: ${{ github.event.inputs.version || github.ref_name }}
           generate_release_notes: true
           fail_on_unmatched_files: false
-          files: agent/packaging/dist/svctcom.dmg
+          files: |
+            agent/packaging/dist/svctcom.dmg
+            agent/packaging/dist/svctcom.app.zip
 
   linux:
     runs-on: ubuntu-latest
