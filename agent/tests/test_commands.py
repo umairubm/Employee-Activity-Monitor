@@ -314,7 +314,7 @@ class DurableResultJournal(unittest.TestCase):
              mock.patch(
                  "agent.agent.subprocess.Popen",
                  side_effect=RuntimeError("installer launch failed"),
-             ):
+              ):
             agent1._handle_command(update)
 
         self.assertEqual(agent1._command_results[CMD_ID]["status"], "failed")
