@@ -26,13 +26,89 @@ import {
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { MonitorSmartphone, Search, CheckCircle2, XCircle, Clock, ShieldCheck, FolderPen, FolderSync, AlertTriangle } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  MonitorSmartphone,
+  Search,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  ShieldCheck,
+  FolderPen,
+  FolderSync,
+  AlertTriangle,
+} from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { ALL_GROUPS as ALL } from "@/hooks/use-group-filter";
 import { AgentUpdateDialog } from "@/components/AgentUpdateDialog";
 import { ViewToggle, useViewMode } from "@/components/ViewToggle";
 import { RegionMultiSelect } from "@/components/RegionMultiSelect";
+
+type DeviceSortField =
+  | "systemName"
+  | "employee"
+  | "group"
+  | "region"
+  | "label"
+  | "os"
+  | "status"
+  | "agentVersion"
+  | "lastSeen";
+
+type SortDirection = "asc" | "desc";
+
+const SORT_FIELD_LABELS: Record<DeviceSortField, string> = {
+  systemName: "System Name",
+  employee: "Employee",
+  group: "Group",
+  region: "Region",
+  label: "Label",
+  os: "OS",
+  status: "Status",
+  agentVersion: "Agent Version",
+  lastSeen: "Last Seen",
+};
+
+function SortableHeader({
+  field,
+  sortField,
+  sortDirection,
+  onSort,
+  className = "",
+}: {
+  field: DeviceSortField;
+  sortField: DeviceSortField | null;
+  sortDirection: SortDirection;
+  onSort: (field: DeviceSortField) => void;
+  className?: string;
+}) {
+  const active = sortField === field;
+  const Icon = active
+    ? sortDirection === "asc"
+      ? ArrowUp
+      : ArrowDown
+    : ArrowUpDown;
+
+  return (
+    <TableHead
+      className={className}
+      aria-sort={active ? (sortDirection === "asc" ? "ascending" : "descending") : "none"}
+    >
+      <button
+        type="button"
+        onClick={() => onSort(field)}
+        className="inline-flex items-center gap-1.5 whitespace-nowrap font-medium hover:text-foreground"
+        aria-label={`Sort by ${SORT_FIELD_LABELS[field]}`}
+      >
+        {SORT_FIELD_LABELS[field]}
+        <Icon className={`h-3.5 w-3.5 ${active ? "text-foreground" : "text-muted-foreground/60"}`} />
+      </button>
+    </TableHead>
+  );
+}
 
 export default function Devices() {
   const queryClient = useQueryClient();
@@ -52,6 +128,8 @@ export default function Devices() {
   const renameGroup = useRenameDeviceGroup();
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useViewMode("devices");
+  const [sortField, setSortField] = useState<DeviceSortField | null>(null);
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   // The Devices page always starts on "All groups" (local state, not the
   // shared persisted filter) so the full fleet is visible by default.
   const [groupFilter, setGroupFilter] = useState<string>(ALL);
@@ -102,6 +180,59 @@ export default function Devices() {
       );
     const matchesGroup = groupFilter === ALL || d.deviceGroup === groupFilter;
     return matchesSearch && matchesGroup;
+  });
+
+  const handleSort = (field: DeviceSortField) => {
+    if (sortField === field) {
+      setSortDirection((direction) => (direction === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSortField(field);
+    setSortDirection("asc");
+  };
+
+  const sortedDevices = [...(filteredDevices ?? [])].sort((a, b) => {
+    if (!sortField) return 0;
+
+    const getValue = (device: NonNullable<typeof filteredDevices>[number]) => {
+      switch (sortField) {
+        case "systemName":
+          return device.systemName;
+        case "employee":
+          return device.assignedUsername || device.tokenEmployeeId || "";
+        case "group":
+          return device.deviceGroup;
+        case "region":
+          return device.region ?? device.tokenRegion ?? "";
+        case "label":
+          return device.tokenLabel || "";
+        case "os":
+          return device.osType;
+        case "status":
+          return device.online ? "Online" : "Offline";
+        case "agentVersion":
+          return device.agentVersion || "";
+        case "lastSeen":
+          return device.lastSeenAt ? new Date(device.lastSeenAt).getTime() : 0;
+      }
+    };
+
+    const aValue = getValue(a);
+    const bValue = getValue(b);
+    const result =
+      typeof aValue === "number" && typeof bValue === "number"
+        ? aValue - bValue
+        : String(aValue).localeCompare(String(bValue), undefined, {
+            numeric: true,
+            sensitivity: "base",
+          });
+
+    if (result !== 0) {
+      return sortDirection === "asc" ? result : -result;
+    }
+
+    // Keep ties deterministic even when two devices share the same displayed value.
+    return a.id.localeCompare(b.id);
   });
 
   const openEdit = (id: string, currentGroup: string, currentRegion: string) => {
@@ -208,16 +339,22 @@ export default function Devices() {
             <Table className="min-w-[1180px]">
             <TableHeader>
               <TableRow>
-                <TableHead className="sticky left-0 z-20 w-[240px] min-w-[240px] bg-card">System Name</TableHead>
-                <TableHead>Employee</TableHead>
-                <TableHead>Group</TableHead>
-                <TableHead>Region</TableHead>
-                <TableHead>Label</TableHead>
-                <TableHead>OS</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Agent Version</TableHead>
+                <SortableHeader
+                  field="systemName"
+                  sortField={sortField}
+                  sortDirection={sortDirection}
+                  onSort={handleSort}
+                  className="sticky left-0 z-20 w-[240px] min-w-[240px] bg-card"
+                />
+                <SortableHeader field="employee" sortField={sortField} sortDirection={sortDirection} onSort={handleSort} />
+                <SortableHeader field="group" sortField={sortField} sortDirection={sortDirection} onSort={handleSort} />
+                <SortableHeader field="region" sortField={sortField} sortDirection={sortDirection} onSort={handleSort} />
+                <SortableHeader field="label" sortField={sortField} sortDirection={sortDirection} onSort={handleSort} />
+                <SortableHeader field="os" sortField={sortField} sortDirection={sortDirection} onSort={handleSort} />
+                <SortableHeader field="status" sortField={sortField} sortDirection={sortDirection} onSort={handleSort} />
+                <SortableHeader field="agentVersion" sortField={sortField} sortDirection={sortDirection} onSort={handleSort} />
                 <TableHead>Consent</TableHead>
-                <TableHead>Last Seen</TableHead>
+                <SortableHeader field="lastSeen" sortField={sortField} sortDirection={sortDirection} onSort={handleSort} />
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -229,7 +366,7 @@ export default function Devices() {
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredDevices?.map((device) => (
+                sortedDevices.map((device) => (
                   <TableRow key={device.id} className="group">
                     <TableCell className="sticky left-0 z-10 w-[240px] min-w-[240px] max-w-[240px] bg-card font-medium transition-colors group-hover:bg-muted">
                       <div className="flex items-center gap-2">
@@ -343,7 +480,7 @@ export default function Devices() {
                   No devices found.
                 </div>
               ) : (
-                filteredDevices?.map((device) => (
+                sortedDevices.map((device) => (
                   <div key={device.id} className="rounded-lg border bg-card p-4 shadow-sm">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
