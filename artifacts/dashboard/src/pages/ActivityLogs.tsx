@@ -319,7 +319,7 @@ function tickLabel(hour: number): string {
 function ActivitySlots({ slots }: { slots: Uint8Array }) {
   return (
     <div className="min-w-[260px]">
-      <div className="flex h-7 items-stretch gap-px overflow-hidden rounded-md bg-muted/40 p-px">
+      <div className="flex h-7 items-stretch overflow-hidden rounded-md bg-muted/40 p-px">
         {Array.from(slots).map((code, i) => (
           <div
             key={i}
