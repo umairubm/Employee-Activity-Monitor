@@ -45,7 +45,7 @@ else:
     from . import system_info as system_info_mod
 
 # You can change this to 1.1.32, etc. to test auto-update
-AGENT_VERSION = "1.1.59"
+AGENT_VERSION = "1.1.60"
 POLL_SECONDS = 15
 
 def _now_iso() -> str:
@@ -317,7 +317,12 @@ class MonitoringAgent:
             import tempfile
             import requests
             
-            suffix = ".zip" if kind == "patch" else (".exe" if file_name.lower().endswith(".exe") else "")
+            if kind == "patch" or file_name.lower().endswith(".zip"):
+                suffix = ".zip"
+            elif file_name.lower().endswith(".exe"):
+                suffix = ".exe"
+            else:
+                suffix = ""
             temp_fd, temp_path = tempfile.mkstemp(suffix=suffix)
             try:
                 os.close(temp_fd)
@@ -442,11 +447,68 @@ class MonitoringAgent:
 
 
         else:
-            subprocess.Popen(
-                [temp_path],
-                close_fds=True,
-            )
-            os._exit(0)
+            if sys.platform == "darwin" and temp_path.endswith(".zip"):
+                import zipfile
+                import tempfile
+                
+                staging = tempfile.mkdtemp(prefix="agent-update-")
+                try:
+                    with zipfile.ZipFile(temp_path) as zf:
+                        zf.extractall(staging)
+                except Exception:
+                    try:
+                        shutil.rmtree(staging)
+                    except Exception:
+                        pass
+                    raise
+                    
+                app_name = None
+                for name in os.listdir(staging):
+                    if name.endswith(".app"):
+                        app_name = name
+                        break
+                        
+                if not app_name:
+                    raise Exception("No .app found in the update zip")
+                    
+                new_app_path = os.path.join(staging, app_name)
+                
+                # Infer the current .app path (e.g. /Applications/svctcom.app)
+                current_app_path = os.path.dirname(os.path.dirname(os.path.dirname(sys.executable)))
+                if not current_app_path.endswith(".app"):
+                    current_app_path = f"/Applications/{app_name}"
+                    
+                pid = os.getpid()
+                sh_path = os.path.join(tempfile.gettempdir(), f"agent-swap-{pid}.sh")
+                sh_script = (
+                    "#!/bin/bash\n"
+                    f"while kill -0 {pid} 2>/dev/null; do sleep 1; done\n"
+                    f"rm -rf \"{current_app_path}\"\n"
+                    f"cp -R \"{new_app_path}/\" \"{current_app_path}\"\n"
+                    f"rm -rf \"{staging}\"\n"
+                    f"rm \"$0\"\n"
+                )
+                
+                with open(sh_path, "w") as f:
+                    f.write(sh_script)
+                
+                os.chmod(sh_path, 0o755)
+                
+                subprocess.Popen(
+                    [sh_path],
+                    close_fds=True,
+                    start_new_session=True,
+                )
+                os._exit(0)
+            else:
+                import stat
+                st = os.stat(temp_path)
+                os.chmod(temp_path, st.st_mode | stat.S_IEXEC)
+                subprocess.Popen(
+                    [temp_path],
+                    close_fds=True,
+                )
+                os._exit(0)
 
     def _apply_patch(self, zip_path: str) -> None:
         import zipfile
