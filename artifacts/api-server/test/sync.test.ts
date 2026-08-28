@@ -601,6 +601,7 @@ describe("server-side consent enforcement", () => {
           {
             processName: "code",
             windowTitle: "editor",
+            url: "https://example.com/work-item/123",
             startedAt: new Date().toISOString(),
             endedAt: new Date().toISOString(),
             durationSeconds: 60,
@@ -609,6 +610,12 @@ describe("server-side consent enforcement", () => {
       });
     expect(res.status).toBe(201);
     expect(res.body.accepted).toBe(1);
+
+    const [stored] = await db
+      .select({ url: activityLogsTable.url })
+      .from(activityLogsTable)
+      .where(eq(activityLogsTable.deviceId, device.id));
+    expect(stored.url).toBe("https://example.com/work-item/123");
   });
 
   it("syncs devices.systemName with the reported Host Name (trimmed) and ignores blanks", async () => {

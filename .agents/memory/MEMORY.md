@@ -32,3 +32,4 @@
 - [Remote command lifecycle](remote-command-lifecycle.md) — ack-before-execute, stale-acknowledged redelivery, verified power scheduling, numeric-prefix version compare; keep both agents + sync routes in lockstep.
 - [Remote agent update delivery](remote-agent-update-delivery.md) — uploaded installers need tenant-owned paths, fresh per-device signed URLs, and monotonic progress before heartbeat completion.
 - [Agent release objectPath convention](agent-release-objectpath.md) — objectPath must be `/objects/agent-releases/...` (relative to PRIVATE_OBJECT_DIR); leaking the `.private` segment breaks upload validation + download resolution.
+- [Activity URL capture](activity-url-capture.md) — URLs are optional activity metadata captured from browser address bars via Windows UI Automation; old records remain URL-less.

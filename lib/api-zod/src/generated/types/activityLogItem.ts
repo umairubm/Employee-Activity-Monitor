@@ -9,6 +9,7 @@
 export interface ActivityLogItem {
   processName: string;
   windowTitle?: string;
+  url?: string;
   startedAt: Date;
   endedAt: Date;
   durationSeconds: number;

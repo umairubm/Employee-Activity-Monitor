@@ -10,11 +10,11 @@ from __future__ import annotations
 
 import subprocess
 import sys
-from typing import Tuple
+from typing import Optional, Tuple
 
 
-def get_active_window() -> Tuple[str, str]:
-    """Return (process_name, window_title). Falls back to ("unknown", "")."""
+def get_active_window() -> Tuple[str, str, Optional[str]]:
+    """Return (process_name, window_title, web_url)."""
     try:
         if sys.platform.startswith("win"):
             return _active_window_windows()
@@ -22,7 +22,7 @@ def get_active_window() -> Tuple[str, str]:
             return _active_window_macos()
         return _active_window_linux()
     except Exception:
-        return ("unknown", "")
+        return ("unknown", "", None)
 
 
 def get_idle_seconds() -> int:
@@ -40,7 +40,7 @@ def get_idle_seconds() -> int:
 # --- Windows -----------------------------------------------------------------
 
 
-def _active_window_windows() -> Tuple[str, str]:
+def _active_window_windows() -> Tuple[str, str, Optional[str]]:
     import ctypes
     from ctypes import wintypes
 
@@ -60,7 +60,51 @@ def _active_window_windows() -> Tuple[str, str]:
         process = psutil.Process(pid.value).name()
     except Exception:
         pass
-    return (process, title)
+    return (process, title, _browser_url_windows(hwnd, process))
+
+
+def _browser_url_windows(hwnd: int, process: str) -> Optional[str]:
+    """Read a browser's accessible address-bar value when Windows exposes it."""
+    browser_names = {"chrome", "msedge", "firefox", "brave", "opera", "vivaldi"}
+    process_name = process.lower().removesuffix(".exe")
+    if process_name not in browser_names:
+        return None
+
+    script = f"""
+$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName UIAutomationClient
+Add-Type -AssemblyName UIAutomationTypes
+$root = [System.Windows.Automation.AutomationElement]::FromHandle([IntPtr]::new({int(hwnd)}))
+$condition = New-Object System.Windows.Automation.PropertyCondition(
+  [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+  [System.Windows.Automation.ControlType]::Edit
+)
+$edits = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition)
+foreach ($edit in $edits) {{
+  try {{
+    $pattern = $edit.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
+    $value = [string]$pattern.Current.Value
+    if ($value -match '^https?://') {{
+      Write-Output $value
+      break
+    }}
+  }} catch {{ }}
+}}
+"""
+    try:
+        result = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+    except Exception:
+        return None
+    for line in result.stdout.splitlines():
+        value = line.strip()
+        if value.lower().startswith(("http://", "https://")) and len(value) <= 2048:
+            return value
+    return None
 
 
 def _idle_windows() -> int:
@@ -80,7 +124,7 @@ def _idle_windows() -> int:
 # --- macOS -------------------------------------------------------------------
 
 
-def _active_window_macos() -> Tuple[str, str]:
+def _active_window_macos() -> Tuple[str, str, Optional[str]]:
     script = (
         'tell application "System Events" to get name of first application '
         "process whose frontmost is true"
@@ -103,7 +147,7 @@ def _active_window_macos() -> Tuple[str, str]:
         text=True,
         timeout=5,
     ).stdout.strip()
-    return (process or "unknown", title)
+    return (process or "unknown", title, None)
 
 
 def _idle_macos() -> int:
@@ -123,7 +167,7 @@ def _idle_macos() -> int:
 # --- Linux -------------------------------------------------------------------
 
 
-def _active_window_linux() -> Tuple[str, str]:
+def _active_window_linux() -> Tuple[str, str, Optional[str]]:
     title = subprocess.run(
         ["xdotool", "getactivewindow", "getwindowname"],
         capture_output=True,
@@ -144,7 +188,7 @@ def _active_window_linux() -> Tuple[str, str]:
             process = psutil.Process(int(pid_out)).name()
         except Exception:
             pass
-    return (process, title)
+    return (process, title, None)
 
 
 def _idle_linux() -> int:

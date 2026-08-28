@@ -49,7 +49,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const IS_WIN = process.platform === "win32";
 const IS_MAC = process.platform === "darwin";
 
-const AGENT_VERSION = "2.0.1-node";
+const AGENT_VERSION = "2.0.2-node";
 
 // ── Where we persist credentials + offline data (per-user, stable across runs) ─
 const CONFIG_DIR = path.join(os.homedir(), ".active-tracker");
@@ -154,6 +154,7 @@ const clientState = {
   osType: IS_WIN ? "windows" : IS_MAC ? "macos" : "linux",
   activeApp: "System",
   windowTitle: "Desktop",
+  activeUrl: null,
   isCurrentlyIdle: false,
   idleSecondsCounter: 0,
   lastMouseX: null,
@@ -1005,6 +1006,30 @@ function startPersistentTelemetryStreamWin() {
         public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
     }';
     Add-Type -AssemblyName System.Windows.Forms;
+    Add-Type -AssemblyName UIAutomationClient;
+    Add-Type -AssemblyName UIAutomationTypes;
+
+    function Get-BrowserUrl($hwnd, $processName) {
+        $browserNames = @('chrome', 'msedge', 'firefox', 'brave', 'opera', 'vivaldi');
+        $baseName = $processName.ToLowerInvariant().Replace('.exe', '');
+        if ($browserNames -notcontains $baseName) { return $null; }
+        try {
+            $root = [System.Windows.Automation.AutomationElement]::FromHandle($hwnd);
+            $condition = New-Object System.Windows.Automation.PropertyCondition(
+                [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+                [System.Windows.Automation.ControlType]::Edit
+            );
+            $edits = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition);
+            foreach ($edit in $edits) {
+                try {
+                    $pattern = $edit.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern);
+                    $value = [string]$pattern.Current.Value;
+                    if ($value -match '^https?://') { return $value; }
+                } catch { }
+            }
+        } catch { }
+        return $null;
+    }
 
     while ($true) {
         try {
@@ -1017,10 +1042,11 @@ function startPersistentTelemetryStreamWin() {
             [Win32]::GetWindowThreadProcessId($hwnd, [ref]$wpid) > $null;
             $process = Get-Process -Id $wpid -ErrorAction SilentlyContinue;
             $processName = if ($process) { $process.ProcessName } else { 'System' };
+            $url = Get-BrowserUrl $hwnd $processName;
 
             $pos = [System.Windows.Forms.Cursor]::Position;
 
-            $out = @{ title = $title; process = $processName; x = $pos.X; y = $pos.Y; };
+            $out = @{ title = $title; process = $processName; url = $url; x = $pos.X; y = $pos.Y; };
             Write-Output ($out | ConvertTo-Json -Compress);
         } catch { }
         Start-Sleep -Seconds 2;
@@ -1040,6 +1066,7 @@ function startPersistentTelemetryStreamWin() {
       if (data && typeof data.x === "number" && typeof data.y === "number") {
         clientState.activeApp = data.process || "System";
         clientState.windowTitle = data.title || "Desktop";
+        clientState.activeUrl = typeof data.url === "string" ? data.url : null;
         const { x, y } = data;
         if (clientState.lastMouseX !== null && clientState.lastMouseY !== null) {
           const dx = x - clientState.lastMouseX;
@@ -1081,6 +1108,7 @@ function startPersistentTelemetryStreamMac() {
       const data = JSON.parse(line.trim());
       clientState.activeApp = data.process || "System";
       clientState.windowTitle = data.title || "Desktop";
+      clientState.activeUrl = null;
       if (typeof data.idle === "number") {
         clientState.idleSecondsCounter = data.idle;
         clientState.isCurrentlyIdle = data.idle >= configState.idleThresholdSeconds;
@@ -1275,6 +1303,7 @@ async function syncTelemetry() {
     const logItem = {
       processName: clientState.activeApp || "System",
       windowTitle: clientState.windowTitle || "",
+      url: clientState.activeUrl || undefined,
       startedAt: new Date(startMs + clientState.serverClockOffset).toISOString(),
       endedAt: new Date(now + clientState.serverClockOffset).toISOString(),
       durationSeconds: elapsed,

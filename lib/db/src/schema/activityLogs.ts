@@ -29,6 +29,7 @@ export const activityLogsTable = pgTable(
     }),
     processName: text("process_name").notNull(),
     windowTitle: text("window_title"),
+    url: text("url"),
     categoryId: uuid("category_id").references(() => appCategoriesTable.id, {
       onDelete: "set null",
     }),

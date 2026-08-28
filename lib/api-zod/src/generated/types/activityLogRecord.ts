@@ -15,6 +15,8 @@ export interface ActivityLogRecord {
   /** @nullable */
   windowTitle?: string | null;
   /** @nullable */
+  url?: string | null;
+  /** @nullable */
   categoryId?: string | null;
   startedAt: Date;
   endedAt: Date;

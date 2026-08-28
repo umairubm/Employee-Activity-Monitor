@@ -44,7 +44,7 @@ else:
     from . import system_info as system_info_mod
     from . import tray as tray_mod
 
-AGENT_VERSION = "1.2.1"
+AGENT_VERSION = "1.2.2"
 POLL_SECONDS = 15
 
 
@@ -107,28 +107,38 @@ class MonitoringAgent:
         seg = self._current
         elapsed = max(0, int(time.time() - seg["start_ts"]))
         if elapsed > 0:
+            log = {
+                "processName": seg["process"],
+                "windowTitle": seg["title"],
+                "startedAt": seg["start_iso"],
+                "endedAt": _now_iso(),
+                "durationSeconds": elapsed,
+                "idleSeconds": min(elapsed, seg["idle"]),
+            }
+            if seg.get("url"):
+                log["url"] = seg["url"]
             with self._lock:
-                self._pending_logs.append(
-                    {
-                        "processName": seg["process"],
-                        "windowTitle": seg["title"],
-                        "startedAt": seg["start_iso"],
-                        "endedAt": _now_iso(),
-                        "durationSeconds": elapsed,
-                        "idleSeconds": min(elapsed, seg["idle"]),
-                    }
-                )
+                self._pending_logs.append(log)
         self._current = None
 
     def _observe(self) -> None:
-        process, title = monitor_mod.get_active_window()
+        process, title, url = monitor_mod.get_active_window()
         idle = monitor_mod.get_idle_seconds()
-        key = (process, title)
-        if self._current is None or (self._current["process"], self._current["title"]) != key:
+        key = (process, title, url)
+        if (
+            self._current is None
+            or (
+                self._current["process"],
+                self._current["title"],
+                self._current.get("url"),
+            )
+            != key
+        ):
             self._flush_segment()
             self._current = {
                 "process": process,
                 "title": title,
+                "url": url,
                 "start_ts": time.time(),
                 "start_iso": _now_iso(),
                 "idle": 0,

@@ -2711,6 +2711,9 @@ components:
           type: string
         windowTitle:
           type: [string, "null"]
+        url:
+          type: [string, "null"]
+          format: uri
         categoryId:
           type: [string, "null"]
           format: uuid
@@ -3873,6 +3876,9 @@ components:
           type: string
         windowTitle:
           type: string
+        url:
+          type: string
+          format: uri
         startedAt:
           type: string
           format: date-time

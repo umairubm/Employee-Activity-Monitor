@@ -684,6 +684,8 @@ export interface ActivityLogRecord {
   /** @nullable */
   windowTitle?: string | null;
   /** @nullable */
+  url?: string | null;
+  /** @nullable */
   categoryId?: string | null;
   startedAt: string;
   endedAt: string;
@@ -1536,6 +1538,7 @@ export interface HeartbeatResponse {
 export interface ActivityLogItem {
   processName: string;
   windowTitle?: string;
+  url?: string;
   startedAt: string;
   endedAt: string;
   durationSeconds: number;

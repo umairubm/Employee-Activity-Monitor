@@ -36,6 +36,12 @@ export type HeartbeatBody = z.infer<typeof HeartbeatBody>;
 export const ActivityLogItem = z.object({
   processName: z.string().min(1),
   windowTitle: z.string().optional(),
+  url: z
+    .string()
+    .url()
+    .max(2048)
+    .refine((value) => /^https?:\/\//i.test(value), "Only web URLs are supported")
+    .optional(),
   startedAt: z.coerce.date(),
   endedAt: z.coerce.date(),
   durationSeconds: z.number().int().nonnegative(),

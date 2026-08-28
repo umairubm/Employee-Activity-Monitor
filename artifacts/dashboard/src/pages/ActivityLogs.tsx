@@ -50,6 +50,7 @@ import {
   LayoutGrid,
   Camera,
   ChevronRight,
+  ExternalLink,
 } from "lucide-react";
 import { useGroupFilter, ALL_GROUPS as ALL } from "@/hooks/use-group-filter";
 import { useOrgTimezone } from "@/hooks/use-org-timezone";
@@ -561,10 +562,11 @@ function DeviceActivityPanel({
                 const working = isWorking(log);
                 return (
                   <Dialog key={log.id}>
+                    <div className="overflow-hidden rounded-lg border bg-card transition-colors hover:bg-accent/40">
                     <DialogTrigger asChild>
                       <button
                         type="button"
-                        className="flex w-full items-center justify-between gap-2 rounded-lg border bg-card p-3 text-left transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        className="flex w-full items-center justify-between gap-2 p-3 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                       >
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5 text-sm">
@@ -606,6 +608,22 @@ function DeviceActivityPanel({
                         </div>
                       </button>
                     </DialogTrigger>
+                    {log.url && (
+                      <div className="flex min-w-0 items-center gap-1 px-3 pb-3 text-xs">
+                        <ExternalLink className="h-3 w-3 shrink-0 text-primary" />
+                        <a
+                          href={log.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          title={log.url}
+                          aria-label={`Open ${log.url}`}
+                          className="min-w-0 truncate text-primary hover:underline"
+                        >
+                          {log.url}
+                        </a>
+                      </div>
+                    )}
+                    </div>
                     <DialogContent className="max-w-4xl">
                       <DialogHeader>
                         <DialogTitle className="flex flex-wrap items-center gap-2 text-base">
