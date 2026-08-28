@@ -59,6 +59,9 @@ const router: IRouter = Router();
 /** Max accepted screenshot upload size (raw bytes). */
 const MAX_SCREENSHOT_BYTES = 8 * 1024 * 1024;
 
+/** Commands must not execute after a device has been offline for a day. */
+const COMMAND_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
 /** Content types the agent may upload, mapped to their magic-byte signatures. */
 const IMAGE_SIGNATURES: Array<{
   contentType: string;
@@ -446,6 +449,35 @@ router.post(
       .returning();
 
     const redeliverBefore = new Date(now.getTime() - 2 * 60 * 1000);
+
+    // A command that has been waiting for more than a day is no longer safe to
+    // execute just because a device finally reconnects. This is especially
+    // important for older agents that did not persist a completed result when
+    // an acknowledgement response was lost. Keep the short stale-ack
+    // redelivery window below for recent recoverable commands, but expire
+    // anything older before it can be included in `commands`.
+    const commandExpiryBefore = new Date(now.getTime() - COMMAND_MAX_AGE_MS);
+    const expiredCommandMessage =
+      "Command expired before the device completed it; no late automatic execution was allowed.";
+    await db
+      .update(deviceCommandsTable)
+      .set({
+        status: "failed",
+        completedAt: now,
+        cancelReason: expiredCommandMessage,
+      })
+      .where(
+        and(
+          eq(deviceCommandsTable.deviceId, device.id),
+          inArray(deviceCommandsTable.status, [
+            "pending",
+            "acknowledged",
+            "downloading",
+            "installing",
+          ]),
+          lt(deviceCommandsTable.issuedAt, commandExpiryBefore),
+        ),
+      );
 
     // A power action is different from a recoverable command: if the agent
     // accepted the command, scheduled the OS action, and then went offline

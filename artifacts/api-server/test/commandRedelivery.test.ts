@@ -159,6 +159,53 @@ describe("heartbeat command redelivery", () => {
     }
   });
 
+  it("expires commands that were issued more than a day ago", async () => {
+    const { device, secret } = await createDeviceWithSecret({
+      companyId: COMPANY_ID,
+    });
+    deviceIds.push(device.id);
+
+    const oldPending = await insertCommand(device.id, {
+      commandType: "shutdown",
+      status: "pending",
+      issuedAt: new Date(Date.now() - 25 * 60 * 60 * 1000),
+    });
+    const oldAcknowledged = await insertCommand(device.id, {
+      commandType: "logout_user",
+      status: "acknowledged",
+      issuedAt: new Date(Date.now() - 25 * 60 * 60 * 1000),
+      acknowledgedAt: new Date(Date.now() - 25 * 60 * 60 * 1000),
+    });
+
+    const res = await request(syncApp)
+      .post("/sync/heartbeat")
+      .set("x-device-id", device.id)
+      .set("x-device-secret", secret)
+      .send({});
+
+    expect(res.status).toBe(200);
+    expect(res.body.commands).toHaveLength(0);
+
+    const rows = await db
+      .select({
+        id: deviceCommandsTable.id,
+        status: deviceCommandsTable.status,
+        cancelReason: deviceCommandsTable.cancelReason,
+      })
+      .from(deviceCommandsTable)
+      .where(
+        and(
+          eq(deviceCommandsTable.deviceId, device.id),
+          inArray(deviceCommandsTable.id, [oldPending.id, oldAcknowledged.id]),
+        ),
+      );
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(row.status).toBe("failed");
+      expect(row.cancelReason).toMatch(/expired/i);
+    }
+  });
+
   it("delivers a recent acknowledged power cancellation separately", async () => {
     const { device, secret } = await createDeviceWithSecret({
       companyId: COMPANY_ID,
