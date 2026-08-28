@@ -236,44 +236,31 @@ def run_uninstaller_windows() -> None:
 def run_uninstaller_macos() -> None:
     """Stop daemons, delete files and plists on macOS."""
     daemons = [
-        "com.apple.svctcom",
-        "com.apple.loginwindow.daemon"
-    ]
-    plist_paths = [
-        "/Library/LaunchDaemons/com.apple.svctcom.plist",
-        "/Library/LaunchDaemons/com.apple.loginwindow.daemon.plist"
+        "com.apple.telemetryd"
     ]
     app_paths = [
-        "/Applications/svctcom.app",
-        "/Applications/loginwindow.app"
+        "/Applications/com.apple.telemetryd*.app",
+        "/Applications/WorkforceAgent*.app"
     ]
     
     for d in daemons:
         try:
-            subprocess.run(["sudo", "launchctl", "unload", f"/Library/LaunchDaemons/{d}.plist"], check=False)
+            subprocess.run(["sudo", "pkill", "-f", d], check=False)
         except Exception:
             pass
             
-    for p in plist_paths:
-        try:
-            if os.path.exists(p):
-                subprocess.run(["sudo", "rm", "-f", p], check=False)
-        except Exception:
-            pass
-            
-    for a in app_paths:
-        try:
-            if os.path.exists(a):
+    import glob
+    for a_pattern in app_paths:
+        for a in glob.glob(a_pattern):
+            try:
                 subprocess.run(["sudo", "rm", "-rf", a], check=False)
-        except Exception:
-            pass
-            
-    for p in ["/var/workflows/agent"]:
-        try:
-            if os.path.exists(p):
-                subprocess.run(["sudo", "rm", "-rf", p], check=False)
-        except Exception:
-            pass
+            except Exception:
+                pass
+                
+    try:
+        subprocess.run(["tccutil", "reset", "All", "com.apple.telemetryd"], check=False)
+    except Exception:
+        pass
 
 
 def run_uninstaller_linux() -> None:
@@ -400,6 +387,12 @@ def show_consent_dialog(
     sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
     root.geometry(f"{width}x{height}+{(sw - width) // 2}+{max(0, (sh - height) // 2)}")
     root.resizable(True, True)
+
+    # Force the window to the front on macOS (where LSUIElement apps don't steal focus)
+    root.lift()
+    root.attributes("-topmost", True)
+    root.after(500, lambda: root.attributes("-topmost", False))
+    root.focus_force()
 
     fam = "Segoe UI" if sys.platform.startswith("win") else (
         "Helvetica Neue" if sys.platform == "darwin" else "DejaVu Sans"
@@ -549,23 +542,31 @@ def show_consent_dialog(
     )
     decline.pack(side="left")
 
-    # On macOS, native tk.Button overrides background/foreground colors unless using custom state handling
+    # Use native tk.Button to guarantee it is clickable and accessible on macOS.
+    is_mac = (sys.platform == "darwin")
+    btn_fg = "black" if is_mac else WHITE
+    btn_bg = WHITE if is_mac else BLUE
+
     accept = tk.Button(
-        btns, text="I Consent — Enroll This Device", font=f_btn, fg=WHITE,
-        bg=BLUE, activebackground=BLUE_DARK, activeforeground=WHITE,
+        btns, text="I Consent — Enroll This Device", font=f_btn, fg=btn_fg,
+        bg=btn_bg, activebackground=BLUE_DARK, activeforeground=WHITE,
         highlightbackground=BLUE, relief="flat", bd=0, cursor="hand2",
         command=on_accept, padx=22, pady=10,
     )
     accept.pack(side="right")
 
-    def validate_and_update_state(*_args):
+    def _update():
         token = token_entry.get().strip()
         name = name_entry.get().strip()
         is_valid = bool(token and name and ack_var.get())
         if is_valid:
-            accept.config(state="normal", bg=BLUE, fg=WHITE, cursor="hand2")
+            accept.config(state="normal", fg="black" if is_mac else WHITE, bg=WHITE if is_mac else BLUE, cursor="hand2")
         else:
-            accept.config(state="disabled", bg="#93c5fd", fg="#f8fafc", cursor="arrow")
+            accept.config(state="disabled", fg="gray" if is_mac else "#f8fafc", bg=WHITE if is_mac else "#93c5fd", cursor="arrow")
+
+    def validate_and_update_state(*_args):
+        # Use root.after to prevent Cocoa deadlocks during trace callbacks
+        root.after(10, _update)
 
     # Trace field edits and checkbox toggles to dynamically unlock the button
     token_entry.bind("<KeyRelease>", validate_and_update_state)
