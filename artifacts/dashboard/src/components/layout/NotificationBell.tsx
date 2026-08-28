@@ -11,7 +11,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { ScrollArea } from "@/components/ui/scroll-area";
 
 function relativeTime(iso: string) {
   const ms = Date.now() - new Date(iso).getTime();
@@ -112,13 +111,13 @@ export function NotificationBell() {
             All devices are online and up to date.
           </div>
         ) : (
-          <ScrollArea className="max-h-[min(24rem,60vh)]">
+          <div className="max-h-[min(24rem,60vh)] overflow-y-auto overscroll-contain">
             <div className="divide-y divide-border">
               {notifications.map((n) => (
                 <NotificationRow key={n.id} n={n} onNavigate={handleNavigate} />
               ))}
             </div>
-          </ScrollArea>
+          </div>
         )}
       </PopoverContent>
     </Popover>
