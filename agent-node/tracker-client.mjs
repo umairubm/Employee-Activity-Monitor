@@ -31,7 +31,7 @@
  *   - Interactive prompts (native dialog where available, else terminal).
  */
 
-import { exec, spawn } from "child_process";
+import { exec, execFile, spawn } from "child_process";
 import http from "http";
 import https from "https";
 import os from "os";
@@ -49,7 +49,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const IS_WIN = process.platform === "win32";
 const IS_MAC = process.platform === "darwin";
 
-const AGENT_VERSION = "2.0.2-node";
+const AGENT_VERSION = "2.0.3-node";
 
 // ── Where we persist credentials + offline data (per-user, stable across runs) ─
 const CONFIG_DIR = path.join(os.homedir(), ".active-tracker");
@@ -985,6 +985,7 @@ const executeCommand = (cmd) => commandRunner.executeCommand(cmd);
 
 // ── Telemetry stream: foreground app + mouse/idle (cross-platform) ────────────
 let psProcess = null;
+let macTelemetryTimer = null;
 
 function startPersistentTelemetryStream() {
   if (IS_WIN) startPersistentTelemetryStreamWin();
@@ -1098,35 +1099,83 @@ function startPersistentTelemetryStreamWin() {
   });
 }
 
+function runMacCommand(command, args) {
+  return new Promise((resolve) => {
+    execFile(command, args, { timeout: 2000, maxBuffer: 1024 * 1024 }, (error, stdout) => {
+      resolve(error ? "" : String(stdout).trim());
+    });
+  });
+}
+
+function normalizeMacBrowserUrl(raw) {
+  const value = String(raw || "").trim();
+  if (!value) return null;
+  if (/^https?:\/\//i.test(value)) return value.length <= 2048 ? value : null;
+  if (!/^(?:www\.)?[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?::\d+)?(?:[/?#].*)?$/i.test(value)) {
+    return null;
+  }
+  const normalized = `https://${value}`;
+  return normalized.length <= 2048 ? normalized : null;
+}
+
+function macBrowserUrlScript(processName) {
+  const scripts = {
+    safari: 'tell application "Safari" to get URL of front document',
+    "google chrome": 'tell application "Google Chrome" to get URL of active tab of front window',
+    "microsoft edge": 'tell application "Microsoft Edge" to get URL of active tab of front window',
+    "brave browser": 'tell application "Brave Browser" to get URL of active tab of front window',
+    vivaldi: 'tell application "Vivaldi" to get URL of active tab of front window',
+    opera: 'tell application "Opera" to get URL of active tab of front window',
+  };
+  const normalizedProcess = String(processName || "").trim().toLowerCase();
+  if (scripts[normalizedProcess]) return scripts[normalizedProcess];
+  if (normalizedProcess === "firefox") {
+    return [
+      'tell application "System Events" to tell process "Firefox"',
+      "try",
+      "get value of text field 1 of toolbar 1 of front window",
+      "end try",
+      "end tell",
+    ].join("\n");
+  }
+  return null;
+}
+
+async function readMacBrowserUrl(processName) {
+  const script = macBrowserUrlScript(processName);
+  if (!script) return null;
+  return normalizeMacBrowserUrl(await runMacCommand("osascript", ["-e", script]));
+}
+
 function startPersistentTelemetryStreamMac() {
-  const macLoop = `
-    while true; do
-      TITLE=$(osascript -e 'tell application "System Events" to get name of first process whose frontmost is true' 2>/dev/null || echo "Unknown")
-      PROCESS=$(osascript -e 'tell application "System Events" to return name of (first process whose frontmost is true)' 2>/dev/null || echo "Unknown")
-      IDLE_NS=$(ioreg -c IOHIDSystem | awk '/HIDIdleTime/ {print $NF}' | head -n 1)
-      IDLE_SEC=$((IDLE_NS / 1000000000))
-      echo "{\\"title\\":\\"$TITLE\\",\\"process\\":\\"$PROCESS\\",\\"idle\\":$IDLE_SEC}"
-      sleep 2
-    done
-  `;
-  const macProcess = spawn("bash", ["-c", macLoop]);
-  const rl = readline.createInterface({ input: macProcess.stdout, terminal: false });
-  rl.on("line", (line) => {
-    try {
-      const data = JSON.parse(line.trim());
-      clientState.activeApp = data.process || "System";
-      clientState.windowTitle = data.title || "Desktop";
-      clientState.activeUrl = null;
-      if (typeof data.idle === "number") {
-        clientState.idleSecondsCounter = data.idle;
-        clientState.isCurrentlyIdle = data.idle >= configState.idleThresholdSeconds;
-      }
-    } catch { }
-  });
-  macProcess.on("close", () => {
-    console.log("⚠️ macOS telemetry stream closed. Restarting in 5s...");
-    setTimeout(startPersistentTelemetryStreamMac, 5000);
-  });
+  if (macTelemetryTimer) clearTimeout(macTelemetryTimer);
+
+  const poll = async () => {
+    const processName =
+      (await runMacCommand("osascript", [
+        "-e",
+        'tell application "System Events" to get name of first process whose frontmost is true',
+      ])) || "Unknown";
+    const title =
+      (await runMacCommand("osascript", [
+        "-e",
+        'tell application "System Events" to tell (first application process whose frontmost is true) to try\nget value of attribute "AXTitle" of front window\nend try',
+      ])) || "Desktop";
+    const idleOutput = await runMacCommand("ioreg", ["-c", "IOHIDSystem"]);
+    const idleMatch = idleOutput.match(/HIDIdleTime"\s*=\s*(\d+)/);
+    const idleSeconds = idleMatch ? Math.floor(Number(idleMatch[1]) / 1_000_000_000) : 0;
+    const url = await readMacBrowserUrl(processName);
+
+    clientState.activeApp = processName;
+    clientState.windowTitle = title;
+    clientState.activeUrl = url;
+    clientState.idleSecondsCounter = idleSeconds;
+    clientState.isCurrentlyIdle = idleSeconds >= configState.idleThresholdSeconds;
+
+    macTelemetryTimer = setTimeout(poll, 2000);
+  };
+
+  void poll();
 }
 
 // ── Screenshot capture → returns { buffer, contentType } or null ──────────────

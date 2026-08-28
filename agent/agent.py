@@ -44,7 +44,7 @@ else:
     from . import system_info as system_info_mod
     from . import tray as tray_mod
 
-AGENT_VERSION = "1.2.2"
+AGENT_VERSION = "1.2.3"
 POLL_SECONDS = 15
 
 

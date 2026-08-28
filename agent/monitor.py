@@ -2,8 +2,8 @@
 
 Every probe degrades gracefully: if a platform API is unavailable, the agent
 reports a generic process name and zero idle time rather than crashing. Nothing
-here reads keystrokes or content — only the active application/window title and
-how long the machine has been idle.
+here reads keystrokes or page content — only the active application/window title,
+an accessible browser address-bar URL, and how long the machine has been idle.
 """
 
 from __future__ import annotations
@@ -164,7 +164,44 @@ def _active_window_macos() -> Tuple[str, str, Optional[str]]:
         text=True,
         timeout=5,
     ).stdout.strip()
-    return (process or "unknown", title, None)
+    return (process or "unknown", title, _browser_url_macos(process))
+
+
+def _browser_url_macos(process: str) -> Optional[str]:
+    """Read the active browser tab URL through macOS automation permissions."""
+    scripts = {
+        "safari": 'tell application "Safari" to get URL of front document',
+        "google chrome": 'tell application "Google Chrome" to get URL of active tab of front window',
+        "microsoft edge": 'tell application "Microsoft Edge" to get URL of active tab of front window',
+        "brave browser": 'tell application "Brave Browser" to get URL of active tab of front window',
+        "vivaldi": 'tell application "Vivaldi" to get URL of active tab of front window',
+        "opera": 'tell application "Opera" to get URL of active tab of front window',
+    }
+    process_name = process.strip().lower()
+    script = scripts.get(process_name)
+    if script is None and process_name == "firefox":
+        # Firefox does not expose the active URL through a standard AppleScript
+        # dictionary. Its address bar is available through Accessibility instead.
+        script = (
+            'tell application "System Events" to tell process "Firefox"\n'
+            'try\n'
+            'get value of text field 1 of toolbar 1 of front window\n'
+            'end try\n'
+            'end tell'
+        )
+    if script is None:
+        return None
+
+    try:
+        result = subprocess.run(
+            ["osascript", "-e", script],
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+    except Exception:
+        return None
+    return _normalise_browser_url(result.stdout)
 
 
 def _idle_macos() -> int:

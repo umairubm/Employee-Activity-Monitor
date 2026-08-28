@@ -10,6 +10,8 @@ before any monitoring begins, and every screenshot fires a visible notification.
 While running and active, the agent:
 
 - Records the **foreground application + window title** and how long each was active.
+- Records the active browser URL when the operating system exposes it and the
+  required permission has been granted.
 - Records **idle time** (seconds since the last keyboard/mouse input).
 - Takes **periodic screenshots** of the primary monitor, with a visible
   notification before each capture.
@@ -69,8 +71,10 @@ python agent.py        # or: python -m agent.agent from the repo root
 ### Platform notes
 
 - **Windows**: works out of the box (uses `ctypes`/`psutil`).
-- **macOS**: active-window detection uses `osascript`; you may need to grant the
-  terminal/app **Accessibility** and **Screen Recording** permissions.
+- **macOS**: active-window detection uses `osascript`. Browser URLs are read
+  from Safari/Chromium-family active tabs, with Firefox using Accessibility UI.
+  Grant the agent/app **Automation** permission for the browser and **Accessibility**
+  permission for Firefox; **Screen Recording** is still needed for screenshots.
 - **Linux**: install `xdotool` and `xprintidle` for active-window and idle
   detection (`sudo apt install xdotool xprintidle`). The agent degrades
   gracefully if they are missing (reports `unknown` / `0` idle).
