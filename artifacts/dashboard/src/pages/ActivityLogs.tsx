@@ -1018,7 +1018,7 @@ export default function ActivityLogs() {
         open={!!selectedDevice}
         onOpenChange={(open) => !open && setSelectedId(null)}
       >
-        <SheetContent className="flex min-w-0 w-full flex-col gap-0 overflow-hidden sm:max-w-md">
+        <SheetContent className="flex min-w-0 w-[min(100vw,720px)] max-w-none flex-col gap-0 overflow-hidden">
           {selectedDevice && (
             <DeviceActivityPanel
               device={selectedDevice}
