@@ -195,22 +195,40 @@ describe("GET /devices/notifications", () => {
 
   it("respects manager group/region scope", async () => {
     const group = `grp-${randomUUID()}`;
+    const region = `region-${randomUUID()}`;
     const inScope = await newDevice({
       deviceGroup: group,
+      region,
       lastSeenAt: new Date(Date.now() - 3 * HOUR),
     });
-    const outScope = await newDevice({
+    const rightRegionWrongGroup = await newDevice({
       deviceGroup: `grp-${randomUUID()}`,
+      region,
+      lastSeenAt: new Date(Date.now() - 3 * HOUR),
+    });
+    const rightGroupWrongRegion = await newDevice({
+      deviceGroup: group,
+      region: `region-${randomUUID()}`,
       lastSeenAt: new Date(Date.now() - 3 * HOUR),
     });
     await newAlert(inScope.id);
-    await newAlert(outScope.id);
+    await newAlert(rightRegionWrongGroup.id);
+    await newAlert(rightGroupWrongRegion.id);
 
-    const managerApp = makeApp({ role: "manager", allowedGroups: [group] });
+    const managerApp = makeApp({
+      role: "manager",
+      allowedGroups: [group],
+      allowedRegions: [region],
+    });
     const res = await request(managerApp).get("/devices/notifications");
     expect(res.status).toBe(200);
     expect(findFor(res.body, inScope.id, "offline")).toBeDefined();
     expect(findFor(res.body, inScope.id, "hardware")).toBeDefined();
-    expect(res.body.some((n: any) => n.deviceId === outScope.id)).toBe(false);
+    expect(
+      res.body.some((n: any) => n.deviceId === rightRegionWrongGroup.id),
+    ).toBe(false);
+    expect(
+      res.body.some((n: any) => n.deviceId === rightGroupWrongRegion.id),
+    ).toBe(false);
   });
 });

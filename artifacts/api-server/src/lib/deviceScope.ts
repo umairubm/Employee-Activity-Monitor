@@ -10,9 +10,9 @@ import type { AuthedRequest } from "../middlewares/userAuth";
  * strings, the same taxonomy enrollment tokens use). NULL / empty = no
  * restriction. Admin roles are never scoped.
  *
- * A device is visible when it matches EITHER list:
- *   - its `deviceGroup` is in `allowedGroups`, OR
- *   - it enrolled via a token whose `region` is in `allowedRegions`.
+ * A device is visible when it satisfies every configured restriction:
+ *   - if groups are restricted, its `deviceGroup` is in `allowedGroups`, AND
+ *   - if regions are restricted, its effective region is in `allowedRegions`.
  *
  * Every route that serves tenant device data must AND the condition from
  * `deviceScopeCondition(req)` into its device WHERE clause (or filter via the
@@ -80,8 +80,10 @@ export function deviceScopeCondition(req: Request): SQL | undefined {
       )!,
     );
   }
-  // parts has 1-2 entries; or() with one entry is just that entry.
-  return or(...parts);
+  // When both restrictions are configured they must narrow one another.
+  // Using OR here would expose every device in any selected region even when
+  // the manager was also limited to a specific group.
+  return and(...parts);
 }
 
 /**
