@@ -84,6 +84,7 @@ describe("heartbeat command redelivery", () => {
     deviceIds.push(device.id);
 
     const stale = await insertCommand(device.id, {
+      commandType: "lock_screen",
       status: "acknowledged",
       acknowledgedAt: new Date(Date.now() - 10 * 60 * 1000),
     });
@@ -108,6 +109,54 @@ describe("heartbeat command redelivery", () => {
     expect(ids).toContain(stale.id);
     expect(ids).toContain(pending.id);
     expect(ids).not.toContain(fresh.id);
+  });
+
+  it("expires stale acknowledged power commands instead of redelivering them", async () => {
+    const { device, secret } = await createDeviceWithSecret({
+      companyId: COMPANY_ID,
+    });
+    deviceIds.push(device.id);
+
+    const staleShutdown = await insertCommand(device.id, {
+      commandType: "shutdown",
+      status: "acknowledged",
+      acknowledgedAt: new Date(Date.now() - 10 * 60 * 1000),
+    });
+    const staleRestart = await insertCommand(device.id, {
+      commandType: "restart",
+      status: "acknowledged",
+      acknowledgedAt: new Date(Date.now() - 10 * 60 * 1000),
+    });
+
+    const res = await request(syncApp)
+      .post("/sync/heartbeat")
+      .set("x-device-id", device.id)
+      .set("x-device-secret", secret)
+      .send({});
+
+    expect(res.status).toBe(200);
+    const ids = res.body.commands.map((c: { id: string }) => c.id);
+    expect(ids).not.toContain(staleShutdown.id);
+    expect(ids).not.toContain(staleRestart.id);
+
+    const rows = await db
+      .select({
+        id: deviceCommandsTable.id,
+        status: deviceCommandsTable.status,
+        cancelReason: deviceCommandsTable.cancelReason,
+      })
+      .from(deviceCommandsTable)
+      .where(
+        and(
+          eq(deviceCommandsTable.deviceId, device.id),
+          inArray(deviceCommandsTable.id, [staleShutdown.id, staleRestart.id]),
+        ),
+      );
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(row.status).toBe("failed");
+      expect(row.cancelReason).toMatch(/automatic retry was blocked/i);
+    }
   });
 
   it("lets a retrying agent re-ack acknowledged idempotently, then complete", async () => {

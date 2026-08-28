@@ -444,6 +444,35 @@ router.post(
       .where(eq(devicesTable.id, device.id))
       .returning();
 
+    const redeliverBefore = new Date(now.getTime() - 2 * 60 * 1000);
+
+    // A power action is different from a recoverable command: if the agent
+    // accepted the command, scheduled the OS action, and then went offline
+    // before its final ack reached the server, redelivering it after reboot
+    // can power-cycle the same machine repeatedly. Treat an old acknowledged
+    // power command as an unknown/failed attempt instead of ever executing it
+    // again. Admins can issue a new command deliberately if needed.
+    const stalePowerMessage =
+      "Power action did not report completion; automatic retry was blocked to prevent repeated shutdowns or restarts.";
+    await db
+      .update(deviceCommandsTable)
+      .set({
+        status: "failed",
+        completedAt: now,
+        cancelReason: stalePowerMessage,
+      })
+      .where(
+        and(
+          eq(deviceCommandsTable.deviceId, device.id),
+          inArray(deviceCommandsTable.commandType, ["restart", "shutdown"]),
+          eq(deviceCommandsTable.status, "acknowledged"),
+          or(
+            isNull(deviceCommandsTable.acknowledgedAt),
+            lt(deviceCommandsTable.acknowledgedAt, redeliverBefore),
+          ),
+        ),
+      );
+
     // Deliver pending commands, plus STALE acknowledged ones. If the agent's
     // "acknowledged" ack committed but its HTTP response was lost (or the
     // agent crashed right after acking), the command would otherwise be
@@ -452,7 +481,6 @@ router.post(
     // Redelivering after a grace window lets the agent retry; its in-session
     // dedup set prevents double execution when the first attempt is still in
     // flight, and the window comfortably exceeds normal execution time.
-    const redeliverBefore = new Date(now.getTime() - 2 * 60 * 1000);
     const pending = await db
       .select()
       .from(deviceCommandsTable)
