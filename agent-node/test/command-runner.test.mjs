@@ -137,6 +137,27 @@ test("shutdown that the OS rejects reports failed with a readable reason", async
   assert.match(last.message, /could not schedule shutdown/);
 });
 
+test("power cancellation aborts the scheduled action without acknowledging a new command", async () => {
+  const cancellations = [];
+  const { deps, calls } = makeDeps({
+    cancelPowerCommand: async (type) => {
+      cancellations.push(type);
+      return true;
+    },
+  });
+  const runner = createCommandRunner(deps);
+
+  const result = await runner.cancelPowerCommand({
+    id: "22222222-2222-4222-8222-222222222222",
+    commandType: "shutdown",
+  });
+
+  assert.equal(result, true);
+  assert.deepEqual(cancellations, ["shutdown"]);
+  assert.equal(calls.power.length, 0);
+  assert.equal(calls.acks.length, 0);
+});
+
 test("unsupported command type reports failed, not completed", async () => {
   const { deps, calls } = makeDeps();
   const runner = createCommandRunner(deps);

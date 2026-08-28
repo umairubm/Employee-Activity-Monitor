@@ -132,6 +132,14 @@ class HandleCommandContract(unittest.TestCase):
         self.assertEqual(last.args[1], "failed")
         self.assertIn("could not schedule shut down", last.args[2])
 
+    def test_cancel_power_command_requests_os_abort(self):
+        agent = make_agent()
+        completed = types.SimpleNamespace(returncode=0)
+        with mock.patch("agent.agent.sys.platform", "win32"), \
+             mock.patch("agent.agent.subprocess.run", return_value=completed) as run:
+            self.assertTrue(agent._cancel_power_command("shutdown"))
+        run.assert_called_once_with(["shutdown", "/a"], check=False)
+
     def test_unsupported_command_type_reports_failed(self):
         agent = make_agent()
         agent._handle_command(command(commandType="self_destruct"))

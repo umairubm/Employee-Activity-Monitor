@@ -10,7 +10,7 @@ import {
   publicDeviceColumns,
   agentReleasesTable,
 } from "@workspace/db";
-import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { requireRole, type AuthedRequest } from "../middlewares/userAuth";
 import { getCompanyId } from "../middlewares/tenant";
@@ -698,6 +698,7 @@ const cancelCommandSchema = z.object({
 });
 
 // PATCH /api/devices/:id/commands/:commandId/cancel - cancel a pending command
+// or abort a recently acknowledged/scheduled power command.
 router.patch(
   "/:id/commands/:commandId/cancel",
   requireRole("company_admin", "manager"),
@@ -713,8 +714,10 @@ router.patch(
       const deviceId = String(req.params.id);
       const commandId = String(req.params.commandId);
 
-      // Atomic guard: only a still-pending command for this device can be
-      // cancelled, so a device acknowledging concurrently can't be clobbered.
+      // Power commands use an OS-side grace timer. Keep the cancellation window
+      // short and allow only recent acknowledged/completed power actions so an
+      // old completed command cannot cancel an unrelated manual shutdown.
+      const recentPowerCutoff = new Date(Date.now() - 60_000);
       const [cancelled] = await db
         .update(deviceCommandsTable)
         .set({
@@ -728,10 +731,20 @@ router.patch(
             eq(deviceCommandsTable.id, commandId),
             eq(deviceCommandsTable.deviceId, deviceId),
             eq(deviceCommandsTable.companyId, companyId),
-            eq(deviceCommandsTable.status, "pending"),
             inArray(
               deviceCommandsTable.deviceId,
               visibleDeviceIdsSubquery(req, companyId),
+            ),
+            or(
+              eq(deviceCommandsTable.status, "pending"),
+              and(
+                inArray(deviceCommandsTable.commandType, ["restart", "shutdown"]),
+                inArray(deviceCommandsTable.status, [
+                  "acknowledged",
+                  "completed",
+                ]),
+                gt(deviceCommandsTable.issuedAt, recentPowerCutoff),
+              ),
             ),
           ),
         )

@@ -19,6 +19,7 @@ import {
   gt,
   lt,
   inArray,
+  isNotNull,
 } from "drizzle-orm";
 import {
   db,
@@ -513,6 +514,26 @@ router.post(
         asc(deviceCommandsTable.issuedAt),
       );
 
+    // Cancellation is delivered separately from `commands` so older agents
+    // that do not understand this field cannot mistake a cancelled shutdown
+    // for a fresh shutdown and execute it again.
+    const cancellationCutoff = new Date(now.getTime() - 2 * 60 * 1000);
+    const cancellations = await db
+      .select({
+        id: deviceCommandsTable.id,
+        commandType: deviceCommandsTable.commandType,
+      })
+      .from(deviceCommandsTable)
+      .where(
+        and(
+          eq(deviceCommandsTable.deviceId, device.id),
+          inArray(deviceCommandsTable.commandType, ["restart", "shutdown"]),
+          eq(deviceCommandsTable.status, "cancelled"),
+          isNotNull(deviceCommandsTable.acknowledgedAt),
+          gt(deviceCommandsTable.cancelledAt, cancellationCutoff),
+        ),
+      );
+
     res.json({
       serverTime: new Date().toISOString(),
       isLocked: updated.isLocked,
@@ -524,6 +545,7 @@ router.post(
         payload: c.payload,
         reason: c.reason,
       })),
+      cancellations,
     });
   },
 );

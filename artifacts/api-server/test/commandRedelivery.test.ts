@@ -159,6 +159,32 @@ describe("heartbeat command redelivery", () => {
     }
   });
 
+  it("delivers a recent acknowledged power cancellation separately", async () => {
+    const { device, secret } = await createDeviceWithSecret({
+      companyId: COMPANY_ID,
+    });
+    deviceIds.push(device.id);
+
+    const cancelled = await insertCommand(device.id, {
+      commandType: "shutdown",
+      status: "cancelled",
+      acknowledgedAt: new Date(),
+      cancelledAt: new Date(),
+    });
+
+    const res = await request(syncApp)
+      .post("/sync/heartbeat")
+      .set("x-device-id", device.id)
+      .set("x-device-secret", secret)
+      .send({});
+
+    expect(res.status).toBe(200);
+    expect(res.body.commands).toHaveLength(0);
+    expect(res.body.cancellations).toEqual([
+      { id: cancelled.id, commandType: "shutdown" },
+    ]);
+  });
+
   it("lets a retrying agent re-ack acknowledged idempotently, then complete", async () => {
     const { device, secret } = await createDeviceWithSecret({
       companyId: COMPANY_ID,

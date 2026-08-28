@@ -484,10 +484,11 @@ describe("PATCH /devices/:id/commands/:commandId/cancel", () => {
     expect(row.cancelledAt).toBeInstanceOf(Date);
   });
 
-  it("rejects cancelling an already-acknowledged command (409) and leaves it untouched", async () => {
+  it("rejects cancelling an already-acknowledged non-power command (409) and leaves it untouched", async () => {
     const device = await newDevice();
     const command = await createDeviceCommand(device.id, {
       issuedById: adminUserId,
+      commandType: "lock_screen",
       status: "acknowledged",
     });
 
@@ -504,10 +505,11 @@ describe("PATCH /devices/:id/commands/:commandId/cancel", () => {
     expect(row.status).toBe("acknowledged");
   });
 
-  it("rejects cancelling a completed command (409) and leaves it untouched", async () => {
+  it("rejects cancelling a completed non-power command (409) and leaves it untouched", async () => {
     const device = await newDevice();
     const command = await createDeviceCommand(device.id, {
       issuedById: adminUserId,
+      commandType: "lock_screen",
       status: "completed",
     });
 
@@ -522,6 +524,31 @@ describe("PATCH /devices/:id/commands/:commandId/cancel", () => {
       .from(deviceCommandsTable)
       .where(eq(deviceCommandsTable.id, command.id));
     expect(row.status).toBe("completed");
+  });
+
+  it("cancels a recent acknowledged shutdown so the agent can abort its OS timer", async () => {
+    const device = await newDevice();
+    const command = await createDeviceCommand(device.id, {
+      issuedById: adminUserId,
+      commandType: "shutdown",
+      status: "acknowledged",
+      acknowledgedAt: new Date(),
+    });
+
+    const res = await request(adminApp)
+      .patch(`/devices/${device.id}/commands/${command.id}/cancel`)
+      .send({ reason: "User requested the laptop remain on" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("cancelled");
+    expect(res.body.cancelReason).toBe("User requested the laptop remain on");
+
+    const [row] = await db
+      .select()
+      .from(deviceCommandsTable)
+      .where(eq(deviceCommandsTable.id, command.id));
+    expect(row.status).toBe("cancelled");
+    expect(row.cancelledAt).toBeInstanceOf(Date);
   });
 
   it("returns 404 for an unknown command id", async () => {

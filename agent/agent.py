@@ -365,17 +365,34 @@ class MonitoringAgent:
         # Do not include stdout/stderr — keep the password out of the ack.
         return False, "requires admin"
 
+    def _cancel_power_command(self, ctype: str) -> bool:
+        """Cancel a recently scheduled power action when the OS supports it."""
+        if ctype not in ("restart", "shutdown"):
+            return False
+        if sys.platform.startswith("win"):
+            return (
+                subprocess.run(["shutdown", "/a"], check=False).returncode == 0
+            )
+        # The Linux shutdown command supports cancelling a pending timer. The
+        # macOS AppleScript action is immediate and has no matching abort.
+        if sys.platform == "darwin":
+            return False
+        return (
+            subprocess.run(["shutdown", "-c"], check=False).returncode == 0
+        )
+
     def _execute_power_command(self, ctype: str) -> bool:
         """Schedule a restart/shutdown; return True only if the OS accepted it.
 
-        On Windows the action is scheduled with a 15s delay so the truthful
-        completion ack can reach the server before the machine goes down.
+        On Windows the action is scheduled with a 60s delay so the truthful
+        completion ack can reach the server and an administrator can cancel
+        the scheduled action during the grace window.
         """
         if ctype == "restart":
             if sys.platform.startswith("win"):
                 return (
                     subprocess.run(
-                        ["shutdown", "/r", "/t", "15"], check=False
+                        ["shutdown", "/r", "/t", "60"], check=False
                     ).returncode
                     == 0
                 )
@@ -397,7 +414,7 @@ class MonitoringAgent:
             if sys.platform.startswith("win"):
                 return (
                     subprocess.run(
-                        ["shutdown", "/s", "/t", "15"], check=False
+                        ["shutdown", "/s", "/t", "60"], check=False
                     ).returncode
                     == 0
                 )
@@ -643,6 +660,17 @@ class MonitoringAgent:
             pass
         for command in hb.get("commands", []):
             self._handle_command(command)
+        # Cancellation requests are a separate heartbeat field so older
+        # agents cannot mistake a cancelled shutdown for a new shutdown.
+        for cancellation in hb.get("cancellations", []):
+            if not isinstance(cancellation, dict):
+                continue
+            ctype = cancellation.get("commandType")
+            if ctype in ("restart", "shutdown"):
+                try:
+                    self._cancel_power_command(ctype)
+                except Exception as exc:  # noqa: BLE001
+                    print(f"[agent] power cancellation failed: {exc}", file=sys.stderr)
         if self.tray:
             self.tray.refresh()
 

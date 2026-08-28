@@ -845,12 +845,12 @@ function runCmdStatus(cmd, args, opts = {}) {
   });
 }
 
-// Schedule restart/shutdown with an OS-side grace delay (15s on Windows) so
-// the truthful completion ack can reach the server before the machine goes
-// down. Resolves true only when the OS accepted the scheduling command.
+// Schedule restart/shutdown with an OS-side grace delay (60s on Windows) so
+// the truthful completion ack can reach the server and an administrator can
+// cancel the scheduled action before the machine goes down.
 async function schedulePowerCommand(type) {
   if (type === "restart") {
-    if (IS_WIN) return runCmdStatus("shutdown", ["/r", "/t", "15"]);
+    if (IS_WIN) return runCmdStatus("shutdown", ["/r", "/t", "60"]);
     if (IS_MAC)
       return runCmdStatus("osascript", [
         "-e",
@@ -859,7 +859,7 @@ async function schedulePowerCommand(type) {
     if (await runCmdStatus("systemctl", ["reboot"])) return true;
     return runCmdStatus("shutdown", ["-r", "now"]);
   }
-  if (IS_WIN) return runCmdStatus("shutdown", ["/s", "/t", "15"]);
+  if (IS_WIN) return runCmdStatus("shutdown", ["/s", "/t", "60"]);
   if (IS_MAC)
     return runCmdStatus("osascript", [
       "-e",
@@ -867,6 +867,13 @@ async function schedulePowerCommand(type) {
     ]);
   if (await runCmdStatus("systemctl", ["poweroff"])) return true;
   return runCmdStatus("shutdown", ["-h", "now"]);
+}
+
+async function cancelScheduledPowerCommand(type) {
+  if (type !== "restart" && type !== "shutdown") return false;
+  if (IS_WIN) return runCmdStatus("shutdown", ["/a"]);
+  if (IS_MAC) return false;
+  return runCmdStatus("shutdown", ["-c"]);
 }
 
 async function logoutUserOs() {
@@ -951,6 +958,7 @@ const commandRunner = createCommandRunner({
   showNotice,
   sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
   powerCommand: schedulePowerCommand,
+  cancelPowerCommand: cancelScheduledPowerCommand,
   logoutUser: logoutUserOs,
   lockScreenOs,
   // NEVER log the password, and never place it in argv (world-readable via
@@ -1237,6 +1245,11 @@ async function syncTelemetry() {
     await applyUsbBlockFromConfig();
     if (Array.isArray(res?.commands)) {
       for (const cmd of res.commands) await executeCommand(cmd);
+    }
+    if (Array.isArray(res?.cancellations)) {
+      for (const cancellation of res.cancellations) {
+        await commandRunner.cancelPowerCommand(cancellation);
+      }
     }
   } catch (err) {
     if (!clientState.isOfflineSince) {

@@ -342,6 +342,18 @@ export default function DeviceDetail({ id }: { id: string }) {
     });
   };
 
+  const latestShutdown = commands?.find((cmd) => cmd.commandType === "shutdown");
+  const latestShutdownAge = latestShutdown
+    ? Date.now() - new Date(latestShutdown.issuedAt).getTime()
+    : Infinity;
+  const canCancelShutdown = Boolean(
+    latestShutdown &&
+    (latestShutdown.status === "pending" ||
+      latestShutdown.status === "acknowledged" ||
+      (latestShutdown.status === "completed" && latestShutdownAge <= 60_000)),
+  );
+  const cancelTarget = commands?.find((cmd) => cmd.id === cancelCommandId);
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
@@ -563,9 +575,15 @@ export default function DeviceDetail({ id }: { id: string }) {
       <Dialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Cancel Command</DialogTitle>
+            <DialogTitle>
+              {cancelTarget?.commandType === "shutdown"
+                ? "Cancel Shutdown"
+                : "Cancel Command"}
+            </DialogTitle>
             <DialogDescription>
-              This will cancel the still-pending command before the device picks it up. You can record why it was called off for the audit trail.
+              {cancelTarget?.commandType === "shutdown"
+                ? "This will ask the device to abort its scheduled shutdown. It works while the laptop is still online and the OS grace timer has not expired."
+                : "This will cancel the still-pending command before the device picks it up. You can record why it was called off for the audit trail."}
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
@@ -584,7 +602,11 @@ export default function DeviceDetail({ id }: { id: string }) {
               onClick={handleCancelCommand}
               disabled={cancelCommand.isPending}
             >
-              {cancelCommand.isPending ? "Cancelling..." : "Cancel Command"}
+              {cancelCommand.isPending
+                ? "Cancelling..."
+                : cancelTarget?.commandType === "shutdown"
+                ? "Cancel Shutdown"
+                : "Cancel Command"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -629,6 +651,22 @@ export default function DeviceDetail({ id }: { id: string }) {
                   </TooltipTrigger>
                   <TooltipContent>Power off the device (confirmation required)</TooltipContent>
                 </Tooltip>
+                {canCancelShutdown && latestShutdown && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className="gap-2 w-full min-w-0 whitespace-normal text-center leading-tight"
+                        onClick={() => openCancelDialog(latestShutdown.id)}
+                        disabled={cancelCommand.isPending}
+                      >
+                        <Ban className="h-4 w-4 shrink-0" />
+                        <span className="min-w-0">Cancel Shutdown</span>
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Abort the scheduled shutdown before the grace timer expires</TooltipContent>
+                  </Tooltip>
+                )}
               </div>
               <div className="flex items-center justify-between rounded-md border border-border bg-muted/40 p-3">
                 <div className="flex items-center gap-2.5">

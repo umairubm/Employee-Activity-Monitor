@@ -56,6 +56,8 @@ const safeMessage = (value, fallback) => {
  * @param {(ms: number) => Promise<void>} deps.sleep
  * @param {(type: "restart"|"shutdown") => Promise<boolean>} deps.powerCommand
  *   Schedules the OS action with a grace delay; resolves true only if the OS accepted it.
+ * @param {(type: "restart"|"shutdown") => Promise<boolean>} [deps.cancelPowerCommand]
+ *   Cancels a recently scheduled OS power action when supported.
  * @param {() => Promise<boolean>} deps.logoutUser
  * @param {() => Promise<boolean>} deps.lockScreenOs
  * @param {(newPassword: string) => Promise<{ok: boolean, message?: string|null}>} deps.resetPassword
@@ -142,6 +144,24 @@ export function createCommandRunner(deps) {
       } catch (ackErr) {
         warn("Could not report update failure:", ackErr.message);
       }
+    }
+  }
+
+  async function cancelPowerCommand(cancellation) {
+    const type = cancellation && cancellation.commandType;
+    if (
+      !cancellation ||
+      typeof cancellation.id !== "string" ||
+      (type !== "restart" && type !== "shutdown")
+    ) {
+      return false;
+    }
+    if (typeof deps.cancelPowerCommand !== "function") return false;
+    try {
+      return await deps.cancelPowerCommand(type);
+    } catch (e) {
+      warn("Could not cancel scheduled power action:", e.message);
+      return false;
     }
   }
 
@@ -276,5 +296,5 @@ export function createCommandRunner(deps) {
     await ackFinal(id, ok, failMessage);
   }
 
-  return { executeCommand, handledCommandIds };
+  return { executeCommand, cancelPowerCommand, handledCommandIds };
 }
