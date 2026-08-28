@@ -385,7 +385,7 @@ export const IssueDeviceCommandBody = zod.object({
 });
 
 /**
- * @summary Cancel a still-pending IT command
+ * @summary Cancel a pending command or stop an acknowledged logout retry
  */
 export const CancelDeviceCommandParams = zod.object({
   id: zod.coerce.string().uuid(),

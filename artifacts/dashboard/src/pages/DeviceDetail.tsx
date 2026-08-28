@@ -309,13 +309,16 @@ export default function DeviceDetail({ id }: { id: string }) {
 
   const handleCancelCommand = () => {
     if (!cancelCommandId) return;
+    const stoppingLogout =
+      cancelTarget?.commandType === "logout_user" &&
+      cancelTarget.status === "acknowledged";
     cancelCommand.mutate({ id, commandId: cancelCommandId, data: { reason: cancelReason || undefined } }, {
       onSuccess: () => {
         setCancelDialogOpen(false);
         setCancelCommandId(null);
         setCancelReason("");
         queryClient.invalidateQueries({ queryKey: getGetDeviceCommandsQueryKey(id) });
-        toast({ title: "Command cancelled" });
+        toast({ title: stoppingLogout ? "Logout command stopped" : "Command cancelled" });
       },
       onError: (error: any) => {
         toast({ title: "Failed to cancel command", description: error.message, variant: "destructive" });
@@ -353,6 +356,9 @@ export default function DeviceDetail({ id }: { id: string }) {
       (latestShutdown.status === "completed" && latestShutdownAge <= 60_000)),
   );
   const cancelTarget = commands?.find((cmd) => cmd.id === cancelCommandId);
+  const canCancelCommand = (cmd: NonNullable<typeof commands>[number]) =>
+    cmd.status === "pending" ||
+    (cmd.commandType === "logout_user" && cmd.status === "acknowledged");
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -578,11 +584,17 @@ export default function DeviceDetail({ id }: { id: string }) {
             <DialogTitle>
               {cancelTarget?.commandType === "shutdown"
                 ? "Cancel Shutdown"
+                : cancelTarget?.commandType === "logout_user" &&
+                    cancelTarget.status === "acknowledged"
+                  ? "Stop Logout Command"
                 : "Cancel Command"}
             </DialogTitle>
             <DialogDescription>
               {cancelTarget?.commandType === "shutdown"
                 ? "This will ask the device to abort its scheduled shutdown. It works while the laptop is still online and the OS grace timer has not expired."
+                : cancelTarget?.commandType === "logout_user" &&
+                    cancelTarget.status === "acknowledged"
+                  ? "This stops the acknowledged logout command from being sent to the device again. If a logout is already in progress, it cannot undo that logout, but the device will not be logged out repeatedly."
                 : "This will cancel the still-pending command before the device picks it up. You can record why it was called off for the audit trail."}
             </DialogDescription>
           </DialogHeader>
@@ -606,6 +618,9 @@ export default function DeviceDetail({ id }: { id: string }) {
                 ? "Cancelling..."
                 : cancelTarget?.commandType === "shutdown"
                 ? "Cancel Shutdown"
+                 : cancelTarget?.commandType === "logout_user" &&
+                     cancelTarget.status === "acknowledged"
+                 ? "Stop Logout"
                 : "Cancel Command"}
             </Button>
           </DialogFooter>
@@ -909,7 +924,7 @@ export default function DeviceDetail({ id }: { id: string }) {
                         {cmd.completedAt ? format(new Date(cmd.completedAt), "MMM d, HH:mm") : "-"}
                       </TableCell>
                       <TableCell className="text-right">
-                        {cmd.status === 'pending' ? (
+                        {canCancelCommand(cmd) ? (
                           <Button
                             variant="ghost"
                             size="sm"
@@ -918,7 +933,10 @@ export default function DeviceDetail({ id }: { id: string }) {
                             disabled={cancelCommand.isPending}
                           >
                             <Ban className="h-3.5 w-3.5" />
-                            Cancel
+                            {cmd.commandType === "logout_user" &&
+                            cmd.status === "acknowledged"
+                              ? "Stop Logout"
+                              : "Cancel"}
                           </Button>
                         ) : (
                           <span className="text-muted-foreground text-sm">-</span>
@@ -950,7 +968,7 @@ export default function DeviceDetail({ id }: { id: string }) {
                         {cmd.status === "cancelled" && cmd.cancelReason && <div className="col-span-2"><p className="text-xs text-muted-foreground">Cancellation reason</p><p className="text-destructive">{cmd.cancelReason}</p></div>}
                         {cmd.status === "failed" && cmd.cancelReason && <div className="col-span-2"><p className="text-xs text-muted-foreground">Failure</p><p className="text-destructive">{cmd.cancelReason}</p></div>}
                       </div>
-                      {cmd.status === "pending" && <Button variant="ghost" size="sm" className="mt-3 gap-1.5 text-muted-foreground hover:text-destructive" onClick={() => openCancelDialog(cmd.id)} disabled={cancelCommand.isPending}><Ban className="h-3.5 w-3.5" />Cancel</Button>}
+                      {canCancelCommand(cmd) && <Button variant="ghost" size="sm" className="mt-3 gap-1.5 text-muted-foreground hover:text-destructive" onClick={() => openCancelDialog(cmd.id)} disabled={cancelCommand.isPending}><Ban className="h-3.5 w-3.5" />{cmd.commandType === "logout_user" && cmd.status === "acknowledged" ? "Stop Logout" : "Cancel"}</Button>}
                     </CardContent>
                   </Card>
                 ))}

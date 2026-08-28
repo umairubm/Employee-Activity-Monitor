@@ -863,7 +863,7 @@ export const useIssueDeviceCommand = <
 };
 
 /**
- * @summary Cancel a still-pending IT command
+ * @summary Cancel a pending command or stop an acknowledged logout retry
  */
 export const getCancelDeviceCommandUrl = (id: string, commandId: string) => {
   return `/api/devices/${id}/commands/${commandId}/cancel`;
@@ -931,7 +931,7 @@ export type CancelDeviceCommandMutationBody = BodyType<CancelCommandRequest>;
 export type CancelDeviceCommandMutationError = ErrorType<unknown>;
 
 /**
- * @summary Cancel a still-pending IT command
+ * @summary Cancel a pending command or stop an acknowledged logout retry
  */
 export const useCancelDeviceCommand = <
   TError = ErrorType<unknown>,

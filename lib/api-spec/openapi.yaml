@@ -184,7 +184,7 @@ paths:
     patch:
       operationId: cancelDeviceCommand
       tags: [devices]
-      summary: Cancel a still-pending IT command
+      summary: Cancel a pending command or stop an acknowledged logout retry
       parameters:
         - $ref: "#/components/parameters/IdParam"
         - name: commandId

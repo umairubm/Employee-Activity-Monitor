@@ -393,9 +393,9 @@ describe("GET /devices/:id/commands", () => {
 
 /**
  * The cancel side of the pipeline: an admin can call off a command while it's
- * still pending (before the device picks it up). Once a command has been
- * acknowledged/completed/etc., cancelling it must be rejected so we never lie
- * about what actually ran on the device.
+ * still pending (before the device picks it up). An acknowledged logout is
+ * also cancellable because stopping it prevents repeated delivery after the
+ * user signs back in. Other acknowledged/completed commands remain immutable.
  */
 describe("PATCH /devices/:id/commands/:commandId/cancel", () => {
   it("cancels a still-pending command (status flips to cancelled)", async () => {
@@ -503,6 +503,31 @@ describe("PATCH /devices/:id/commands/:commandId/cancel", () => {
       .from(deviceCommandsTable)
       .where(eq(deviceCommandsTable.id, command.id));
     expect(row.status).toBe("acknowledged");
+  });
+
+  it("stops an acknowledged logout command so it cannot be delivered again", async () => {
+    const device = await newDevice();
+    const command = await createDeviceCommand(device.id, {
+      issuedById: adminUserId,
+      commandType: "logout_user",
+      status: "acknowledged",
+      acknowledgedAt: new Date(Date.now() - 10 * 60_000),
+    });
+
+    const res = await request(adminApp)
+      .patch(`/devices/${device.id}/commands/${command.id}/cancel`)
+      .send({ reason: "Stop repeated logout" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("cancelled");
+
+    const [row] = await db
+      .select()
+      .from(deviceCommandsTable)
+      .where(eq(deviceCommandsTable.id, command.id));
+    expect(row.status).toBe("cancelled");
+    expect(row.cancelReason).toBe("Stop repeated logout");
+    expect(row.cancelledById).toBe(adminUserId);
   });
 
   it("rejects cancelling a completed non-power command (409) and leaves it untouched", async () => {
