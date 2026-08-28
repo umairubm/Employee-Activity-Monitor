@@ -8,6 +8,7 @@ how long the machine has been idle.
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from typing import Optional, Tuple
@@ -101,10 +102,26 @@ foreach ($edit in $edits) {{
     except Exception:
         return None
     for line in result.stdout.splitlines():
-        value = line.strip()
-        if value.lower().startswith(("http://", "https://")) and len(value) <= 2048:
+        value = _normalise_browser_url(line)
+        if value is not None:
             return value
     return None
+
+
+def _normalise_browser_url(raw: str) -> Optional[str]:
+    """Normalize the browser's visible URL without deriving it from a title."""
+    value = raw.strip()
+    if not value:
+        return None
+    if not value.lower().startswith(("http://", "https://")):
+        if not re.match(
+            r"^(?:www\.)?[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?::\d+)?(?:[/?#].*)?$",
+            value,
+            re.IGNORECASE,
+        ):
+            return None
+        value = f"https://{value}"
+    return value if len(value) <= 2048 else None
 
 
 def _idle_windows() -> int:

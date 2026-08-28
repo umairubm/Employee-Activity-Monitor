@@ -1006,13 +1006,18 @@ function startPersistentTelemetryStreamWin() {
         public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
     }';
     Add-Type -AssemblyName System.Windows.Forms;
-    Add-Type -AssemblyName UIAutomationClient;
-    Add-Type -AssemblyName UIAutomationTypes;
+    $uiaAvailable = $true;
+    try {
+        Add-Type -AssemblyName UIAutomationClient;
+        Add-Type -AssemblyName UIAutomationTypes;
+    } catch {
+        $uiaAvailable = $false;
+    }
 
     function Get-BrowserUrl($hwnd, $processName) {
         $browserNames = @('chrome', 'msedge', 'firefox', 'brave', 'opera', 'vivaldi');
         $baseName = $processName.ToLowerInvariant().Replace('.exe', '');
-        if ($browserNames -notcontains $baseName) { return $null; }
+        if (-not $uiaAvailable -or $browserNames -notcontains $baseName) { return $null; }
         try {
             $root = [System.Windows.Automation.AutomationElement]::FromHandle($hwnd);
             $condition = New-Object System.Windows.Automation.PropertyCondition(
@@ -1024,7 +1029,10 @@ function startPersistentTelemetryStreamWin() {
                 try {
                     $pattern = $edit.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern);
                     $value = [string]$pattern.Current.Value;
-                    if ($value -match '^https?://') { return $value; }
+                    if ($value -match '^https?://') { return $value.Trim(); }
+                    if ($value -match '^(www\.)?[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?::\d+)?(?:[/?#].*)?$') {
+                        return ('https://' + $value.Trim());
+                    }
                 } catch { }
             }
         } catch { }

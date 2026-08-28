@@ -518,7 +518,7 @@ function DeviceActivityPanel({
         </div>
       </SheetHeader>
 
-      <ScrollArea className="-mx-6 flex-1 px-6">
+      <ScrollArea className="min-h-0 min-w-0 flex-1 overflow-x-hidden">
         <div className="py-4">
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             <LayoutGrid className="h-3.5 w-3.5" />
@@ -1018,7 +1018,7 @@ export default function ActivityLogs() {
         open={!!selectedDevice}
         onOpenChange={(open) => !open && setSelectedId(null)}
       >
-        <SheetContent className="flex w-full flex-col gap-0 sm:max-w-md">
+        <SheetContent className="flex min-w-0 w-full flex-col gap-0 overflow-hidden sm:max-w-md">
           {selectedDevice && (
             <DeviceActivityPanel
               device={selectedDevice}
