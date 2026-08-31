@@ -52,6 +52,8 @@ export * from "./createTaskRequestPriority";
 export * from "./createTaskRequestStatus";
 export * from "./createTokenRequest";
 export * from "./deleteAttendanceOverride200";
+export * from "./deleteDeviceRequest";
+export * from "./deleteDeviceRequestConfirmation";
 export * from "./deviceAlertItem";
 export * from "./deviceCommandItem";
 export * from "./deviceCommandItemCommandType";

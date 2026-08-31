@@ -303,6 +303,21 @@ export const GetDeviceResponse = zod.object({
 });
 
 /**
+ * @summary Permanently remove an enrolled device and its device-owned records
+ */
+export const DeleteDeviceParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
+
+export const DeleteDeviceBody = zod.object({
+  confirmation: zod.enum(["REMOVE DEVICE"]),
+});
+
+export const DeleteDeviceResponse = zod.object({
+  ok: zod.boolean(),
+});
+
+/**
  * @summary Get command history for a device
  */
 export const GetDeviceCommandsParams = zod.object({

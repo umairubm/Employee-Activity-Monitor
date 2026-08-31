@@ -1,9 +1,33 @@
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "crypto";
 import request from "supertest";
 import { inArray } from "drizzle-orm";
-import { db, devicesTable, enrollmentTokensTable, pool } from "@workspace/db";
-import { createDevice, createEnrollmentToken, makeApp } from "./helpers";
+import {
+  activityLogsTable,
+  db,
+  deviceAlertsTable,
+  deviceCommandsTable,
+  devicesTable,
+  enrollmentTokensTable,
+  pool,
+  screenshotsTable,
+} from "@workspace/db";
+import {
+  createDevice,
+  createDeviceCommand,
+  createEnrollmentToken,
+  createScreenshot,
+  makeApp,
+  seedActivity,
+} from "./helpers";
+import { deleteFile } from "../src/lib/dropbox";
+
+vi.mock("../src/lib/dropbox", async () => {
+  const actual = await vi.importActual<typeof import("../src/lib/dropbox")>(
+    "../src/lib/dropbox",
+  );
+  return { ...actual, deleteFile: vi.fn().mockResolvedValue(undefined) };
+});
 
 const app = makeApp();
 const createdDeviceIds: string[] = [];
@@ -66,6 +90,166 @@ describe("PATCH /devices/:id/group", () => {
       .send({ deviceGroup: "Team Beta" });
 
     expect(res.status).toBe(403);
+  });
+});
+
+describe("DELETE /devices/:id", () => {
+  it("requires the exact confirmation phrase without changing the device", async () => {
+    const device = await newDevice();
+
+    const missing = await request(app).delete(`/devices/${device.id}`).send({});
+    expect(missing.status).toBe(400);
+
+    const wrong = await request(app)
+      .delete(`/devices/${device.id}`)
+      .send({ confirmation: "remove device" });
+    expect(wrong.status).toBe(400);
+
+    const stillThere = await db
+      .select({ id: devicesTable.id })
+      .from(devicesTable)
+      .where(inArray(devicesTable.id, [device.id]));
+    expect(stillThere).toHaveLength(1);
+  });
+
+  it("does not allow a team member to remove a device", async () => {
+    const device = await newDevice();
+    const res = await request(makeApp({ role: "team_member" }))
+      .delete(`/devices/${device.id}`)
+      .send({ confirmation: "REMOVE DEVICE" });
+
+    expect(res.status).toBe(403);
+    const stillThere = await db
+      .select({ id: devicesTable.id })
+      .from(devicesTable)
+      .where(inArray(devicesTable.id, [device.id]));
+    expect(stillThere).toHaveLength(1);
+  });
+
+  it("enforces tenant and manager device scope", async () => {
+    const otherCompanyId = "00000000-0000-4000-8000-00000000c0df";
+    const otherTenantDevice = await newDevice({ companyId: otherCompanyId });
+    const crossTenant = await request(
+      makeApp({ companyId: "00000000-0000-4000-8000-00000000c0de" }),
+    )
+      .delete(`/devices/${otherTenantDevice.id}`)
+      .send({ confirmation: "REMOVE DEVICE" });
+    expect(crossTenant.status).toBe(404);
+
+    const managerDevice = await newDevice({
+      deviceGroup: "Visible",
+      region: "EU",
+    });
+    const hiddenDevice = await newDevice({
+      deviceGroup: "Hidden",
+      region: "US",
+    });
+    const managerApp = makeApp({
+      role: "manager",
+      allowedGroups: ["Visible"],
+      allowedRegions: ["EU"],
+    });
+
+    const hidden = await request(managerApp)
+      .delete(`/devices/${hiddenDevice.id}`)
+      .send({ confirmation: "REMOVE DEVICE" });
+    expect(hidden.status).toBe(404);
+
+    const visible = await request(managerApp)
+      .delete(`/devices/${managerDevice.id}`)
+      .send({ confirmation: "REMOVE DEVICE" });
+    expect(visible.status).toBe(200);
+    expect(visible.body).toEqual({ ok: true });
+  });
+
+  it("deletes the device and cascades device-owned records", async () => {
+    vi.mocked(deleteFile).mockClear();
+    const token = await createEnrollmentToken();
+    createdTokenIds.push(token.id);
+    const device = await newDevice({ enrolledViaTokenId: token.id });
+    await seedActivity(device.id, "2026-08-31", 120);
+    const screenshot = await createScreenshot(device.id);
+    await createDeviceCommand(device.id);
+    const [alert] = await db
+      .insert(deviceAlertsTable)
+      .values({
+        deviceId: device.id,
+        companyId: device.companyId,
+        field: "Serial_Number",
+        oldValue: "old",
+        newValue: "new",
+      })
+      .returning({ id: deviceAlertsTable.id });
+
+    const res = await request(app)
+      .delete(`/devices/${device.id}`)
+      .send({ confirmation: "REMOVE DEVICE" });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true });
+    expect(deleteFile).toHaveBeenCalledWith(screenshot.dropboxPath);
+
+    expect(
+      await db
+        .select({ id: devicesTable.id })
+        .from(devicesTable)
+        .where(inArray(devicesTable.id, [device.id])),
+    ).toHaveLength(0);
+    expect(
+      await db
+        .select({ id: deviceAlertsTable.id })
+        .from(deviceAlertsTable)
+        .where(inArray(deviceAlertsTable.id, [alert.id])),
+    ).toHaveLength(0);
+    // The device FK cascades activity, screenshots, and command history too.
+    expect(
+      await db
+        .select({ id: activityLogsTable.id })
+        .from(activityLogsTable)
+        .where(inArray(activityLogsTable.deviceId, [device.id])),
+    ).toHaveLength(0);
+    expect(
+      await db
+        .select({ id: screenshotsTable.id })
+        .from(screenshotsTable)
+        .where(inArray(screenshotsTable.deviceId, [device.id])),
+    ).toHaveLength(0);
+    expect(
+      await db
+        .select({ id: deviceCommandsTable.id })
+        .from(deviceCommandsTable)
+        .where(inArray(deviceCommandsTable.deviceId, [device.id])),
+    ).toHaveLength(0);
+
+    const [retainedToken] = await db
+      .select({ id: enrollmentTokensTable.id })
+      .from(enrollmentTokensTable)
+      .where(inArray(enrollmentTokensTable.id, [token.id]));
+    expect(retainedToken.id).toBe(token.id);
+  });
+
+  it("keeps the device and database records when remote screenshot cleanup fails", async () => {
+    const device = await newDevice();
+    const screenshot = await createScreenshot(device.id);
+    vi.mocked(deleteFile).mockRejectedValueOnce(new Error("Dropbox unavailable"));
+
+    const res = await request(app)
+      .delete(`/devices/${device.id}`)
+      .send({ confirmation: "REMOVE DEVICE" });
+
+    expect(res.status).toBe(502);
+    expect(res.body.error).toMatch(/screenshots could not be deleted/i);
+    expect(
+      await db
+        .select({ id: devicesTable.id })
+        .from(devicesTable)
+        .where(inArray(devicesTable.id, [device.id])),
+    ).toHaveLength(1);
+    expect(
+      await db
+        .select({ id: screenshotsTable.id })
+        .from(screenshotsTable)
+        .where(inArray(screenshotsTable.id, [screenshot.id])),
+    ).toHaveLength(1);
   });
 });
 

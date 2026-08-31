@@ -13,8 +13,10 @@ import {
   useGetDeviceAlerts,
   getGetDeviceAlertsQueryKey,
   getGetDeviceNotificationsQueryKey,
+  getListDevicesQueryKey,
   useAcknowledgeDeviceAlert,
   useAcknowledgeAllDeviceAlerts,
+  useDeleteDevice,
   type DeviceAlertItem
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -23,7 +25,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
-import { MonitorSmartphone, ShieldAlert, LogOut, Clock, ShieldCheck, Cpu, Ban, Users, Globe, Pencil, AlertTriangle, HardDrive, Check, MemoryStick, Network, Server, LockOpen, KeyRound, RotateCcw, Power, Usb, Gauge } from "lucide-react";
+import { MonitorSmartphone, ShieldAlert, LogOut, Clock, ShieldCheck, Cpu, Ban, Users, Globe, Pencil, AlertTriangle, HardDrive, Check, MemoryStick, Network, Server, LockOpen, KeyRound, RotateCcw, Power, Usb, Gauge, Trash2 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Progress } from "@/components/ui/progress";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
@@ -37,6 +39,7 @@ import { useToast } from "@/hooks/use-toast";
 import { AgentUpdateDialog } from "@/components/AgentUpdateDialog";
 import { RegionMultiSelect } from "@/components/RegionMultiSelect";
 import { ViewToggle, useViewMode } from "@/components/ViewToggle";
+import { useLocation } from "wouter";
 
 const SYSTEM_INFO_GROUPS: { label: string; icon: typeof Server; fields: string[] }[] = [
   { label: "System", icon: Server, fields: ["Host Name", "Operating System", "OS Version", "Manufacturer", "Model", "Serial_Number"] },
@@ -135,6 +138,7 @@ function devMockAlerts(deviceId: string): DeviceAlertItem[] {
 export default function DeviceDetail({ id }: { id: string }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
   const { data: device, isLoading: isDeviceLoading } = useGetDevice(id, { query: { enabled: !!id, queryKey: getGetDeviceQueryKey(id), refetchInterval: 30_000 } });
   const { data: commands, isLoading: isCommandsLoading } = useGetDeviceCommands(id, { query: { enabled: !!id, queryKey: getGetDeviceCommandsQueryKey(id), refetchInterval: 30_000 } });
   const issueCommand = useIssueDeviceCommand();
@@ -145,6 +149,7 @@ export default function DeviceDetail({ id }: { id: string }) {
   const { data: alertsData } = useGetDeviceAlerts(id, { query: { enabled: !!id, queryKey: getGetDeviceAlertsQueryKey(id), refetchInterval: 30_000 } });
   const acknowledgeAlert = useAcknowledgeDeviceAlert();
   const acknowledgeAllAlerts = useAcknowledgeAllDeviceAlerts();
+  const deleteDevice = useDeleteDevice();
   // Preview the alerts UI with sample data in dev; production uses real data only.
   const alerts = import.meta.env.DEV ? devMockAlerts(id) : alertsData;
   const unackAlerts = (alerts ?? []).filter((a) => !a.acknowledgedAt);
@@ -173,6 +178,8 @@ export default function DeviceDetail({ id }: { id: string }) {
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
+  const [removeConfirmation, setRemoveConfirmation] = useState("");
 
   // Ticks every 30s so the "Locked (34m remaining)" badge counts down live.
   const [now, setNow] = useState(() => Date.now());
@@ -259,6 +266,36 @@ export default function DeviceDetail({ id }: { id: string }) {
       },
       onError: (error: any) => toast({ title: "Failed to send password reset", description: error.message, variant: "destructive" }),
     });
+  };
+
+  const handleRemoveDevice = () => {
+    if (removeConfirmation !== "REMOVE DEVICE") return;
+    deleteDevice.mutate(
+      { id, data: { confirmation: removeConfirmation } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getListDevicesQueryKey() });
+          queryClient.invalidateQueries({ queryKey: getGetDeviceNotificationsQueryKey() });
+          queryClient.removeQueries({ queryKey: getGetDeviceQueryKey(id) });
+          queryClient.removeQueries({ queryKey: getGetDeviceCommandsQueryKey(id) });
+          queryClient.removeQueries({ queryKey: getGetDeviceAlertsQueryKey(id) });
+          setRemoveDialogOpen(false);
+          setRemoveConfirmation("");
+          toast({
+            title: "Device removed",
+            description: `${device.systemName} and its device history were permanently removed.`,
+          });
+          setLocation("/devices");
+        },
+        onError: (error: any) => {
+          toast({
+            title: "Failed to remove device",
+            description: error.message,
+            variant: "destructive",
+          });
+        },
+      },
+    );
   };
 
   const handleUsbToggle = (enabled: boolean) => {
@@ -406,6 +443,14 @@ export default function DeviceDetail({ id }: { id: string }) {
             <ShieldAlert className="h-4 w-4" />
             Lock Screen
           </Button>
+          <Button
+            variant="outline"
+            className="gap-2 border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive"
+            onClick={() => setRemoveDialogOpen(true)}
+          >
+            <Trash2 className="h-4 w-4" />
+            Remove device
+          </Button>
         </div>
       </div>
 
@@ -473,6 +518,66 @@ export default function DeviceDetail({ id }: { id: string }) {
             <Button variant="outline" onClick={() => setGroupDialogOpen(false)}>Cancel</Button>
             <Button onClick={handleSaveGroup} disabled={setDeviceGroup.isPending || setDeviceRegion.isPending || !groupValue.trim()}>
               {setDeviceGroup.isPending || setDeviceRegion.isPending ? "Saving..." : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={removeDialogOpen}
+        onOpenChange={(open) => {
+          setRemoveDialogOpen(open);
+          if (!open) setRemoveConfirmation("");
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="h-5 w-5" />
+              Permanently remove {device.systemName}?
+            </DialogTitle>
+            <DialogDescription>
+              This cannot be undone. Removing this device permanently deletes
+              its activity, screenshots, command history, alerts, and enrollment
+              association. The enrollment token itself will be retained.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-4">
+            <Label htmlFor="remove-device-confirmation">
+              Type <span className="font-mono font-semibold">REMOVE DEVICE</span> to confirm
+            </Label>
+            <Input
+              id="remove-device-confirmation"
+              value={removeConfirmation}
+              onChange={(event) => setRemoveConfirmation(event.target.value)}
+              placeholder="REMOVE DEVICE"
+              autoComplete="off"
+              autoFocus
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && removeConfirmation === "REMOVE DEVICE") {
+                  handleRemoveDevice();
+                }
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setRemoveDialogOpen(false)}
+              disabled={deleteDevice.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleRemoveDevice}
+              disabled={
+                deleteDevice.isPending ||
+                removeConfirmation !== "REMOVE DEVICE"
+              }
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              {deleteDevice.isPending ? "Removing..." : "Permanently remove"}
             </Button>
           </DialogFooter>
         </DialogContent>

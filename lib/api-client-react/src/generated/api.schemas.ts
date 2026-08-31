@@ -150,6 +150,17 @@ export interface OkResult {
   ok: boolean;
 }
 
+export type DeleteDeviceRequestConfirmation =
+  (typeof DeleteDeviceRequestConfirmation)[keyof typeof DeleteDeviceRequestConfirmation];
+
+export const DeleteDeviceRequestConfirmation = {
+  REMOVE_DEVICE: "REMOVE DEVICE",
+} as const;
+
+export interface DeleteDeviceRequest {
+  confirmation: DeleteDeviceRequestConfirmation;
+}
+
 export type CompanyStatus = (typeof CompanyStatus)[keyof typeof CompanyStatus];
 
 export const CompanyStatus = {

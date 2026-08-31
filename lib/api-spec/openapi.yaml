@@ -159,6 +159,37 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DeviceItem"
+    delete:
+      operationId: deleteDevice
+      tags: [devices]
+      summary: Permanently remove an enrolled device and its device-owned records
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeleteDeviceRequest"
+      responses:
+        "200":
+          description: Device removed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResult"
+        "400":
+          description: Exact confirmation phrase is required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Device not found or not visible to the caller
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /devices/{id}/commands:
     get:
       operationId: getDeviceCommands
@@ -2097,6 +2128,13 @@ components:
         ok:
           type: boolean
       required: [ok]
+    DeleteDeviceRequest:
+      type: object
+      properties:
+        confirmation:
+          type: string
+          enum: ["REMOVE DEVICE"]
+      required: [confirmation]
     Company:
       type: object
       properties:

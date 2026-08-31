@@ -44,6 +44,7 @@ import type {
   CreateTaskRequest,
   CreateTokenRequest,
   DeleteAttendanceOverride200,
+  DeleteDeviceRequest,
   DeviceAlertItem,
   DeviceCommandItem,
   DeviceConfigInput,
@@ -766,6 +767,93 @@ export function useGetDevice<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary Permanently remove an enrolled device and its device-owned records
+ */
+export const getDeleteDeviceUrl = (id: string) => {
+  return `/api/devices/${id}`;
+};
+
+export const deleteDevice = async (
+  id: string,
+  deleteDeviceRequest: DeleteDeviceRequest,
+  options?: RequestInit,
+): Promise<OkResult> => {
+  return customFetch<OkResult>(getDeleteDeviceUrl(id), {
+    ...options,
+    method: "DELETE",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(deleteDeviceRequest),
+  });
+};
+
+export const getDeleteDeviceMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteDevice>>,
+    TError,
+    { id: string; data: BodyType<DeleteDeviceRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteDevice>>,
+  TError,
+  { id: string; data: BodyType<DeleteDeviceRequest> },
+  TContext
+> => {
+  const mutationKey = ["deleteDevice"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteDevice>>,
+    { id: string; data: BodyType<DeleteDeviceRequest> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return deleteDevice(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteDeviceMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteDevice>>
+>;
+export type DeleteDeviceMutationBody = BodyType<DeleteDeviceRequest>;
+export type DeleteDeviceMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Permanently remove an enrolled device and its device-owned records
+ */
+export const useDeleteDevice = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteDevice>>,
+    TError,
+    { id: string; data: BodyType<DeleteDeviceRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteDevice>>,
+  TError,
+  { id: string; data: BodyType<DeleteDeviceRequest> },
+  TContext
+> => {
+  return useMutation(getDeleteDeviceMutationOptions(options));
+};
 
 /**
  * @summary Get command history for a device

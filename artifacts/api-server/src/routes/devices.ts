@@ -5,6 +5,7 @@ import {
   devicesTable,
   deviceCommandsTable,
   deviceAlertsTable,
+  screenshotsTable,
   enrollmentTokensTable,
   usersTable,
   publicDeviceColumns,
@@ -23,6 +24,7 @@ import {
   visibleDeviceIdsSubquery,
   getUserScope,
 } from "../lib/deviceScope";
+import { deleteFile } from "../lib/dropbox";
 
 const groupNameSchema = z
   .string()
@@ -34,6 +36,14 @@ const groupNameSchema = z
 const router: IRouter = Router();
 
 const ONLINE_WINDOW_MS = 5 * 60 * 1000;
+const DEVICE_REMOVAL_CONFIRMATION = "REMOVE DEVICE";
+
+class DeviceScreenshotCleanupError extends Error {
+  constructor(cause: unknown) {
+    super("Unable to remove device screenshots from remote storage", { cause });
+    this.name = "DeviceScreenshotCleanupError";
+  }
+}
 
 function withOnline<T extends { lastSeenAt: Date | null }>(d: T) {
   return {
@@ -275,6 +285,94 @@ router.get("/:id", async (req, res) => {
     res.status(500).json({ error: (error as Error).message });
   }
 });
+
+// DELETE /api/devices/:id - permanently remove an enrolled device and its
+// device-owned records. The enrollment token itself is intentionally retained
+// for audit/reuse, but its association is cleared by the database FK.
+const removeDeviceSchema = z.object({
+  confirmation: z.literal(DEVICE_REMOVAL_CONFIRMATION),
+});
+
+router.delete(
+  "/:id",
+  requireRole("company_admin", "manager"),
+  async (req, res) => {
+    const parsed = removeDeviceSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: `Type "${DEVICE_REMOVAL_CONFIRMATION}" to permanently remove this device`,
+      });
+      return;
+    }
+
+    try {
+      const companyId = getCompanyId(req);
+      const result = await db.transaction(async (tx) => {
+        // Lock the device for the duration of remote cleanup. This prevents a
+        // concurrent screenshot insert from racing between the path lookup and
+        // the final device delete.
+        const [target] = await tx
+          .select({ id: devicesTable.id })
+          .from(devicesTable)
+          .where(
+            and(
+              eq(devicesTable.id, String(req.params.id)),
+              eq(devicesTable.companyId, companyId),
+              deviceScopeCondition(req),
+            ),
+          )
+          .for("update");
+
+        if (!target) return { deleted: false };
+
+        const screenshotRows = await tx
+          .select({ dropboxPath: screenshotsTable.dropboxPath })
+          .from(screenshotsTable)
+          .where(eq(screenshotsTable.deviceId, target.id));
+        const paths = Array.from(
+          new Set(
+            screenshotRows
+              .map((row) => row.dropboxPath)
+              .filter((path): path is string => Boolean(path)),
+          ),
+        );
+
+        try {
+          for (const path of paths) {
+            await deleteFile(path);
+          }
+        } catch (error) {
+          throw new DeviceScreenshotCleanupError(error);
+        }
+
+        const [deleted] = await tx
+          .delete(devicesTable)
+          .where(eq(devicesTable.id, target.id))
+          .returning({ id: devicesTable.id });
+        if (!deleted) {
+          throw new Error("Device disappeared during removal");
+        }
+        return { deleted: true };
+      });
+
+      if (!result.deleted) {
+        res.status(404).json({ error: "Device not found" });
+        return;
+      }
+
+      res.json({ ok: true });
+    } catch (error) {
+      if (error instanceof DeviceScreenshotCleanupError) {
+        res.status(502).json({
+          error:
+            "Device was not removed because its screenshots could not be deleted from remote storage",
+        });
+        return;
+      }
+      res.status(500).json({ error: (error as Error).message });
+    }
+  },
+);
 
 // GET /api/devices/:id/commands - command history for a device
 router.get("/:id/commands", async (req, res) => {
