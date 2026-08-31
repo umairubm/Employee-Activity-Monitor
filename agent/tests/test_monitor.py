@@ -26,6 +26,12 @@ class BrowserUrlNormalizationTests(unittest.TestCase):
         self.assertIsNone(_normalise_browser_url("Workforce Analytics Dashboard - Google Chrome"))
         self.assertIsNone(_normalise_browser_url("chrome://newtab"))
 
+    def test_rejects_malformed_already_schemed_urls(self) -> None:
+        self.assertIsNone(_normalise_browser_url("https://"))
+        self.assertIsNone(_normalise_browser_url("https://example.com/bad path"))
+        self.assertIsNone(_normalise_browser_url("https://example.com:invalid/path"))
+        self.assertIsNone(_normalise_browser_url("https://example.com/\nInjected"))
+
     @mock.patch("agent.monitor.subprocess.run")
     def test_reads_macos_browser_url_when_apple_script_returns_one(
         self, run: mock.Mock

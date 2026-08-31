@@ -12,6 +12,7 @@ import re
 import subprocess
 import sys
 from typing import Optional, Tuple
+from urllib.parse import urlsplit
 
 
 def get_active_window() -> Tuple[str, str, Optional[str]]:
@@ -113,6 +114,8 @@ def _normalise_browser_url(raw: str) -> Optional[str]:
     value = raw.strip()
     if not value:
         return None
+    if len(value) > 2048 or any(ch.isspace() or ord(ch) < 32 for ch in value):
+        return None
     if not value.lower().startswith(("http://", "https://")):
         if not re.match(
             r"^(?:www\.)?[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?::\d+)?(?:[/?#].*)?$",
@@ -121,7 +124,15 @@ def _normalise_browser_url(raw: str) -> Optional[str]:
         ):
             return None
         value = f"https://{value}"
-    return value if len(value) <= 2048 else None
+    try:
+        parsed = urlsplit(value)
+        # Accessing port also validates malformed values such as ":abc".
+        _ = parsed.port
+    except ValueError:
+        return None
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
+        return None
+    return value
 
 
 def _idle_windows() -> int:

@@ -890,10 +890,28 @@ rm -rf "$(dirname "$NEW")" "$0"
             batch = self._pending_logs[:]
             self._pending_logs.clear()
         if batch:
+            # Browser accessibility APIs can occasionally return malformed
+            # address-bar text. Keep the activity segment but omit an invalid
+            # URL so one bad field cannot make the server reject the entire
+            # batch forever.
+            clean_batch: list[dict] = []
+            for entry in batch:
+                clean = entry.copy()
+                raw_url = clean.get("url")
+                if raw_url is not None:
+                    normalised = monitor_mod._normalise_browser_url(str(raw_url))
+                    if normalised is None:
+                        clean.pop("url", None)
+                    else:
+                        clean["url"] = normalised
+                clean_batch.append(clean)
             try:
-                self.api.send_activity(batch, system_info_mod.get_cached())
+                self.api.send_activity(clean_batch, system_info_mod.get_cached())
             except Exception as exc:  # noqa: BLE001
-                with self._lock:  # requeue on failure
+                # Requeue the original records so temporary server, auth, or
+                # payload-size failures never lose activity. They will be
+                # sanitized again before the next upload attempt.
+                with self._lock:
                     self._pending_logs[0:0] = batch
                 print(f"[agent] activity sync failed: {exc}", file=sys.stderr)
 

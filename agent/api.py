@@ -13,7 +13,9 @@ import requests
 
 
 class APIError(Exception):
-    pass
+    def __init__(self, message: str, status_code: Optional[int] = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
 
 
 class AgentAPI:
@@ -109,7 +111,10 @@ class AgentAPI:
             timeout=self.timeout,
         )
         if resp.status_code != 201:
-            raise APIError(f"Activity upload failed ({resp.status_code}): {resp.text}")
+            raise APIError(
+                f"Activity upload failed ({resp.status_code}): {resp.text}",
+                status_code=resp.status_code,
+            )
         return resp.json()
 
     def upload_screenshot(
