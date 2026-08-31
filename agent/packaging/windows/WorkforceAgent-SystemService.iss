@@ -4,7 +4,7 @@
 ; Paths below are relative to this .iss file (agent/packaging/windows).
 
 #define AppName "SVCTCOM"
-#define AppVersion "1.1.65"
+#define AppVersion "1.1.66"
 #define AppPublisher "Microsoft"
 ; AppId used by the Pascal code to find the previous version's uninstaller.
 ; MUST match the literal AppId in [Setup] below (kept literal there because the
@@ -175,6 +175,37 @@ begin
     'I have read the above and consent to this monitoring on this device.';
 end;
 
+function ValidateToken(Token: String): Boolean;
+var
+  Http: Variant;
+  Url, Body, Server: String;
+begin
+  Result := False;
+  try
+    Http := CreateOleObject('WinHttp.WinHttpRequest.5.1');
+    Server := '{#ServerUrl}';
+    if (Length(Server) > 0) and (Server[Length(Server)] = '/') then
+      Server := Copy(Server, 1, Length(Server) - 1);
+      
+    Url := Server + '/api/sync/validate-token';
+    Body := '{"token":"' + JsonEsc(Token) + '"}';
+    Http.Open('POST', Url, False);
+    Http.SetRequestHeader('Content-Type', 'application/json');
+    Http.Send(Body);
+    
+    if Http.Status = 200 then
+    begin
+      Result := True;
+    end
+    else
+    begin
+      MsgBox('The token is invalid, expired, or exhausted. Please check the token and try again.', mbError, MB_OK);
+    end;
+  except
+    MsgBox('Failed to connect to the server to validate the token. Please check your internet connection.', mbError, MB_OK);
+  end;
+end;
+
 function NextButtonClick(CurPageID: Integer): Boolean;
 begin
   Result := True;
@@ -205,6 +236,10 @@ begin
       MsgBox('Please enter the enrollment token from your administrator.',
         mbError, MB_OK);
       Result := False;
+    end
+    else
+    begin
+      Result := ValidateToken(Trim(EnrollPage.Values[1]));
     end;
   end
   else if CurPageID = ConsentPage.ID then

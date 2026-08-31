@@ -41,6 +41,48 @@ function deviceConfig(device: Device) {
 }
 
 /**
+ * POST /api/sync/validate-token
+ * Validates an enrollment token without consuming a use. Used by the desktop installer.
+ */
+router.post("/validate-token", async (req: Request, res: Response): Promise<void> => {
+  const { token } = req.body;
+  if (!token || typeof token !== "string") {
+    res.status(400).json({ valid: false, error: "Token is required" });
+    return;
+  }
+
+  const now = new Date();
+  const [existing] = await db
+    .select()
+    .from(enrollmentTokensTable)
+    .where(
+      and(
+        eq(enrollmentTokensTable.token, token),
+        isNull(enrollmentTokensTable.revokedAt),
+        or(
+          isNull(enrollmentTokensTable.expiresAt),
+          gt(enrollmentTokensTable.expiresAt, now),
+        ),
+      ),
+    );
+
+  if (!existing) {
+    res.status(403).json({ valid: false, error: "Invalid, expired, or revoked token" });
+    return;
+  }
+
+  // Only check useCount here because re-enrollments for existing devices bypass useCount limits.
+  // The installer cannot know if it's an existing device, so we just do a generic check.
+  // If it's exhausted, we reject it here to be safe (they should generate a new token).
+  if (existing.useCount >= existing.maxUses) {
+    res.status(403).json({ valid: false, error: "Token uses exhausted" });
+    return;
+  }
+
+  res.json({ valid: true });
+});
+
+/**
  * POST /api/sync/enroll
  * First-run device registration. Requires a valid enrollment token AND explicit
  * consent acknowledgement. Returns the device id + a plaintext secret shown once.
