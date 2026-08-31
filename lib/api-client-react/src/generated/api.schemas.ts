@@ -1459,6 +1459,19 @@ export interface UpsertLeaveBalanceRequest {
   allocatedDays: number;
 }
 
+export interface ValidateEnrollmentTokenRequest {
+  /**
+   * @minLength 1
+   * @maxLength 500
+   */
+  token: string;
+}
+
+export interface ValidateEnrollmentTokenResult {
+  valid: boolean;
+  error?: string;
+}
+
 export interface EnrolledDeviceRef {
   id: string;
   systemName: string;

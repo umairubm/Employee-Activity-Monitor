@@ -117,6 +117,8 @@ import type {
   UpdateTaskRequest,
   UpdateTokenRequest,
   UpsertLeaveBalanceRequest,
+  ValidateEnrollmentTokenRequest,
+  ValidateEnrollmentTokenResult,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -7601,6 +7603,97 @@ export const useUpdateSecuritySettings = <
   TContext
 > => {
   return useMutation(getUpdateSecuritySettingsMutationOptions(options));
+};
+
+/**
+ * @summary Validate an enrollment token without consuming it
+ */
+export const getValidateEnrollmentTokenUrl = () => {
+  return `/api/sync/validate-token`;
+};
+
+export const validateEnrollmentToken = async (
+  validateEnrollmentTokenRequest: ValidateEnrollmentTokenRequest,
+  options?: RequestInit,
+): Promise<ValidateEnrollmentTokenResult> => {
+  return customFetch<ValidateEnrollmentTokenResult>(
+    getValidateEnrollmentTokenUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(validateEnrollmentTokenRequest),
+    },
+  );
+};
+
+export const getValidateEnrollmentTokenMutationOptions = <
+  TError = ErrorType<ValidateEnrollmentTokenResult>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof validateEnrollmentToken>>,
+    TError,
+    { data: BodyType<ValidateEnrollmentTokenRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof validateEnrollmentToken>>,
+  TError,
+  { data: BodyType<ValidateEnrollmentTokenRequest> },
+  TContext
+> => {
+  const mutationKey = ["validateEnrollmentToken"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof validateEnrollmentToken>>,
+    { data: BodyType<ValidateEnrollmentTokenRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return validateEnrollmentToken(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ValidateEnrollmentTokenMutationResult = NonNullable<
+  Awaited<ReturnType<typeof validateEnrollmentToken>>
+>;
+export type ValidateEnrollmentTokenMutationBody =
+  BodyType<ValidateEnrollmentTokenRequest>;
+export type ValidateEnrollmentTokenMutationError =
+  ErrorType<ValidateEnrollmentTokenResult>;
+
+/**
+ * @summary Validate an enrollment token without consuming it
+ */
+export const useValidateEnrollmentToken = <
+  TError = ErrorType<ValidateEnrollmentTokenResult>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof validateEnrollmentToken>>,
+    TError,
+    { data: BodyType<ValidateEnrollmentTokenRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof validateEnrollmentToken>>,
+  TError,
+  { data: BodyType<ValidateEnrollmentTokenRequest> },
+  TContext
+> => {
+  return useMutation(getValidateEnrollmentTokenMutationOptions(options));
 };
 
 /**

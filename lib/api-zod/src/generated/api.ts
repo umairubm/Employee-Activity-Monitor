@@ -2787,6 +2787,20 @@ export const UpdateSecuritySettingsResponse = zod.object({
 });
 
 /**
+ * @summary Validate an enrollment token without consuming it
+ */
+export const validateEnrollmentTokenBodyTokenMax = 500;
+
+export const ValidateEnrollmentTokenBody = zod.object({
+  token: zod.string().min(1).max(validateEnrollmentTokenBodyTokenMax),
+});
+
+export const ValidateEnrollmentTokenResponse = zod.object({
+  valid: zod.boolean(),
+  error: zod.string().optional(),
+});
+
+/**
  * @summary Node reports status and pulls configuration
  */
 export const HeartbeatBody = zod.object({

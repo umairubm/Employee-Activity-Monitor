@@ -217,6 +217,67 @@ function deviceConfig(device: Device) {
   };
 }
 
+const ValidateTokenBody = z.object({
+  token: z.string().trim().min(1).max(500),
+});
+
+/**
+ * POST /api/sync/validate-token
+ * Checks whether an enrollment token can currently be used without consuming
+ * one of its uses. Enrollment still performs its own atomic validation.
+ */
+router.post(
+  "/validate-token",
+  async (req: Request, res: Response): Promise<void> => {
+    const parsed = ValidateTokenBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ valid: false, error: "Token is required" });
+      return;
+    }
+
+    const now = new Date();
+    const [token] = await db
+      .select({
+        companyId: enrollmentTokensTable.companyId,
+      })
+      .from(enrollmentTokensTable)
+      .where(
+        and(
+          eq(enrollmentTokensTable.token, parsed.data.token),
+          isNull(enrollmentTokensTable.revokedAt),
+          or(
+            isNull(enrollmentTokensTable.expiresAt),
+            gt(enrollmentTokensTable.expiresAt, now),
+          ),
+          lt(enrollmentTokensTable.useCount, enrollmentTokensTable.maxUses),
+        ),
+      );
+
+    if (!token) {
+      res
+        .status(403)
+        .json({ valid: false, error: "Enrollment token invalid or exhausted" });
+      return;
+    }
+
+    if (token.companyId) {
+      const [company] = await db
+        .select({ status: companiesTable.status })
+        .from(companiesTable)
+        .where(eq(companiesTable.id, token.companyId));
+      if (company?.status === "suspended") {
+        res.status(403).json({
+          valid: false,
+          error: "Company account is suspended",
+        });
+        return;
+      }
+    }
+
+    res.status(200).json({ valid: true });
+  },
+);
+
 /**
  * POST /api/sync/enroll
  * First-run device registration. Requires a valid enrollment token AND explicit

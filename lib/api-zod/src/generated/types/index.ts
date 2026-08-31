@@ -173,3 +173,5 @@ export * from "./updateTaskRequestStatus";
 export * from "./updateTokenRequest";
 export * from "./upsertLeaveBalanceRequest";
 export * from "./upsertLeaveBalanceRequestLeaveType";
+export * from "./validateEnrollmentTokenRequest";
+export * from "./validateEnrollmentTokenResult";

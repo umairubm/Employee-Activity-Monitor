@@ -69,6 +69,48 @@ function enrollBody(token: string) {
   };
 }
 
+describe("POST /sync/validate-token", () => {
+  it("validates a usable token without consuming it", async () => {
+    const token = await createEnrollmentToken({ maxUses: 2 });
+    createdTokenIds.push(token.id);
+
+    const res = await request(app)
+      .post("/sync/validate-token")
+      .send({ token: token.token });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ valid: true });
+
+    const [stored] = await db
+      .select()
+      .from(enrollmentTokensTable)
+      .where(eq(enrollmentTokensTable.id, token.id));
+    expect(stored.useCount).toBe(token.useCount);
+  });
+
+  it.each([
+    ["unknown", { token: `missing-${randomUUID()}` }],
+    ["missing", {}],
+  ])("rejects a %s token", async (_case, body) => {
+    const res = await request(app).post("/sync/validate-token").send(body);
+
+    expect([400, 403]).toContain(res.status);
+    expect(res.body.valid).toBe(false);
+  });
+
+  it("rejects an exhausted token", async () => {
+    const token = await createEnrollmentToken({ maxUses: 1, useCount: 1 });
+    createdTokenIds.push(token.id);
+
+    const res = await request(app)
+      .post("/sync/validate-token")
+      .send({ token: token.token });
+
+    expect(res.status).toBe(403);
+    expect(res.body.valid).toBe(false);
+  });
+});
+
 describe("POST /sync/enroll", () => {
   it("issues a device + one-time secret and records consent for a valid token", async () => {
     const token = await createEnrollmentToken();
