@@ -45,7 +45,7 @@ else:
     from . import system_info as system_info_mod
 
 # You can change this to 1.1.32, etc. to test auto-update
-AGENT_VERSION = "1.1.64"
+AGENT_VERSION = "1.1.65"
 POLL_SECONDS = 15
 
 def _now_iso() -> str:
@@ -176,9 +176,9 @@ class MonitoringAgent:
             with self._lock:
                 self._pending_logs.append(
                     {
-                        "processName": seg["process"],
-                        "windowTitle": seg["title"],
-                        "url": seg.get("url", ""),
+                        "processName": seg["process"] or "unknown",
+                        "windowTitle": seg["title"] or "",
+                        "url": seg.get("url", "") or "",
                         "startedAt": seg["start_iso"],
                         "endedAt": _now_iso(),
                         "durationSeconds": elapsed,
@@ -721,6 +721,10 @@ class MonitoringAgent:
                 return
             # Take a snapshot of the current logs to send (capped at 500 per API limit)
             batch = self._pending_logs[:500]
+            # Sanitize existing bad logs that would fail API validation
+            for b in batch:
+                if not b.get("processName"):
+                    b["processName"] = "unknown"
 
         try:
             try:
