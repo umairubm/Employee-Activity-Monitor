@@ -45,7 +45,7 @@ else:
     from . import system_info as system_info_mod
 
 # You can change this to 1.1.32, etc. to test auto-update
-AGENT_VERSION = "1.1.68"
+AGENT_VERSION = "1.1.69"
 POLL_SECONDS = 15
 
 def _now_iso() -> str:
@@ -174,17 +174,18 @@ class MonitoringAgent:
         elapsed = max(0, int(time.time() - seg["start_ts"]))
         if elapsed > 0:
             with self._lock:
-                self._pending_logs.append(
-                    {
-                        "processName": seg["process"] or "unknown",
-                        "windowTitle": seg["title"] or "",
-                        "url": seg.get("url", "") or "",
-                        "startedAt": seg["start_iso"],
-                        "endedAt": _now_iso(),
-                        "durationSeconds": elapsed,
-                        "idleSeconds": min(elapsed, seg["idle"]),
-                    }
-                )
+                log_item = {
+                    "processName": seg["process"] or "unknown",
+                    "windowTitle": seg["title"] or "",
+                    "startedAt": seg["start_iso"],
+                    "endedAt": _now_iso(),
+                    "durationSeconds": elapsed,
+                    "idleSeconds": min(elapsed, seg["idle"]),
+                }
+                if seg.get("url"):
+                    log_item["url"] = seg["url"]
+                    
+                self._pending_logs.append(log_item)
                 self._current = None
                 self._save_offline_logs()
         self._current = None
@@ -726,6 +727,8 @@ class MonitoringAgent:
             for b in batch:
                 if not b.get("processName"):
                     b["processName"] = "unknown"
+                if "url" in b and not b.get("url"):
+                    del b["url"]
 
         try:
             try:
