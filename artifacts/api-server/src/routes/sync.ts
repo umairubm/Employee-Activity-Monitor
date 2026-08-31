@@ -62,6 +62,26 @@ const MAX_SCREENSHOT_BYTES = 8 * 1024 * 1024;
 /** Commands must not execute after a device has been offline for a day. */
 const COMMAND_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * Any successfully accepted, authenticated agent telemetry proves the device
+ * is currently communicating. Do not depend on heartbeat alone: activity or
+ * screenshot uploads may succeed even when a separate heartbeat request fails.
+ */
+async function touchDeviceLastSeen(device: Pick<Device, "id" | "companyId">) {
+  const now = new Date();
+  await db
+    .update(devicesTable)
+    .set({ lastSeenAt: now, updatedAt: now })
+    .where(
+      and(
+        eq(devicesTable.id, device.id),
+        device.companyId
+          ? eq(devicesTable.companyId, device.companyId)
+          : isNull(devicesTable.companyId),
+      ),
+    );
+}
+
 /** Content types the agent may upload, mapped to their magic-byte signatures. */
 const IMAGE_SIGNATURES: Array<{
   contentType: string;
@@ -646,6 +666,7 @@ router.post(
     });
 
     await db.insert(activityLogsTable).values(values);
+    await touchDeviceLastSeen(device);
 
     // Optional hardware/system inventory snapshot. Detect changes in
     // identity fields, record alerts, and store the latest snapshot.
@@ -756,6 +777,10 @@ router.post(
         where: sql`content_hash IS NOT NULL`,
       })
       .returning({ id: screenshotsTable.id });
+
+    // A valid duplicate is still proof that this authenticated device has
+    // communicated successfully.
+    await touchDeviceLastSeen(device);
 
     if (!shot) {
       // Duplicate capture — already enqueued. Report the existing row.

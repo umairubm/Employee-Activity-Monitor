@@ -616,6 +616,13 @@ describe("server-side consent enforcement", () => {
       .from(activityLogsTable)
       .where(eq(activityLogsTable.deviceId, device.id));
     expect(stored.url).toBe("https://example.com/work-item/123");
+
+    const [activeDevice] = await db
+      .select({ lastSeenAt: devicesTable.lastSeenAt })
+      .from(devicesTable)
+      .where(eq(devicesTable.id, device.id));
+    expect(activeDevice.lastSeenAt).not.toBeNull();
+    expect(Date.now() - activeDevice.lastSeenAt!.getTime()).toBeLessThan(5_000);
   });
 
   it("syncs devices.systemName with the reported Host Name (trimmed) and ignores blanks", async () => {
@@ -689,6 +696,13 @@ describe("screenshot upload stages bytes and enqueues them for Dropbox", () => {
     // Bytes are staged in the DB so the screenshot is viewable before upload.
     expect(shot.pendingData).toBeTruthy();
     expect(shot.dropboxPath).toBeNull();
+
+    const [activeDevice] = await db
+      .select({ lastSeenAt: devicesTable.lastSeenAt })
+      .from(devicesTable)
+      .where(eq(devicesTable.id, device.id));
+    expect(activeDevice.lastSeenAt).not.toBeNull();
+    expect(Date.now() - activeDevice.lastSeenAt!.getTime()).toBeLessThan(5_000);
   });
 
   it("rejects a body whose bytes are not a supported image (400)", async () => {
