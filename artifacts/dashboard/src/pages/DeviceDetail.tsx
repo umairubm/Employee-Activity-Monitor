@@ -561,6 +561,11 @@ export default function DeviceDetail({ id }: { id: string }) {
                 }
               }}
             />
+              {deleteDevice.isPending && (
+                <p className="text-sm text-muted-foreground" role="status">
+                  Securely deleting stored screenshots. Devices with long histories may take a moment.
+                </p>
+              )}
           </div>
           <DialogFooter>
             <Button

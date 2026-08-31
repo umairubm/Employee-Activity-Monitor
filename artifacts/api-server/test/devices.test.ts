@@ -168,7 +168,17 @@ describe("DELETE /devices/:id", () => {
     createdTokenIds.push(token.id);
     const device = await newDevice({ enrolledViaTokenId: token.id });
     await seedActivity(device.id, "2026-08-31", 120);
-    const screenshot = await createScreenshot(device.id);
+    const screenshots = await Promise.all(
+      Array.from({ length: 12 }, () => createScreenshot(device.id)),
+    );
+    let activeDeletes = 0;
+    let maxActiveDeletes = 0;
+    vi.mocked(deleteFile).mockImplementation(async () => {
+      activeDeletes += 1;
+      maxActiveDeletes = Math.max(maxActiveDeletes, activeDeletes);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      activeDeletes -= 1;
+    });
     await createDeviceCommand(device.id);
     const [alert] = await db
       .insert(deviceAlertsTable)
@@ -186,7 +196,13 @@ describe("DELETE /devices/:id", () => {
       .send({ confirmation: "REMOVE DEVICE" });
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true });
-    expect(deleteFile).toHaveBeenCalledWith(screenshot.dropboxPath);
+    expect(deleteFile).toHaveBeenCalledTimes(screenshots.length);
+    for (const screenshot of screenshots) {
+      expect(deleteFile).toHaveBeenCalledWith(screenshot.dropboxPath);
+    }
+    expect(maxActiveDeletes).toBeGreaterThan(1);
+    expect(maxActiveDeletes).toBeLessThanOrEqual(10);
+    vi.mocked(deleteFile).mockResolvedValue(undefined);
 
     expect(
       await db

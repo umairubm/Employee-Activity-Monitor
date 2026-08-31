@@ -37,11 +37,39 @@ const router: IRouter = Router();
 
 const ONLINE_WINDOW_MS = 5 * 60 * 1000;
 const DEVICE_REMOVAL_CONFIRMATION = "REMOVE DEVICE";
+const DEVICE_SCREENSHOT_DELETE_CONCURRENCY = 10;
 
 class DeviceScreenshotCleanupError extends Error {
   constructor(cause: unknown) {
     super("Unable to remove device screenshots from remote storage", { cause });
     this.name = "DeviceScreenshotCleanupError";
+  }
+}
+
+async function deleteDeviceScreenshotFiles(paths: string[]): Promise<void> {
+  let firstError: unknown;
+  const queue = [...paths];
+  const workers = Array.from(
+    {
+      length: Math.min(DEVICE_SCREENSHOT_DELETE_CONCURRENCY, queue.length),
+    },
+    async () => {
+      while (queue.length > 0) {
+        const path = queue.shift();
+        if (!path) return;
+        try {
+          await deleteFile(path);
+        } catch (error) {
+          // Keep processing the remaining paths. A retry is safe because
+          // Dropbox treats already-absent objects as successfully deleted.
+          firstError ??= error;
+        }
+      }
+    },
+  );
+  await Promise.all(workers);
+  if (firstError) {
+    throw new DeviceScreenshotCleanupError(firstError);
   }
 }
 
@@ -337,13 +365,7 @@ router.delete(
           ),
         );
 
-        try {
-          for (const path of paths) {
-            await deleteFile(path);
-          }
-        } catch (error) {
-          throw new DeviceScreenshotCleanupError(error);
-        }
+        await deleteDeviceScreenshotFiles(paths);
 
         const [deleted] = await tx
           .delete(devicesTable)

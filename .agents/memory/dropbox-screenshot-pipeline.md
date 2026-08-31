@@ -54,3 +54,18 @@ across devices in a shared folder, so the screenshot row id is appended as a suf
 **How to apply:** if you ever change the path format, keep a per-screenshot unique
 component (the id suffix) OR switch `uploadFile` to `add`/`autorename` and persist
 the returned path. Never reduce the name to just time-based components.
+
+## Bulk screenshot cleanup must be bounded-parallel
+
+When permanently removing a device, delete its Dropbox screenshot objects with
+bounded concurrency, wait for every deletion attempt to settle, and only then
+commit the database deletion. If any remote deletion fails, keep the database
+records so the API never reports permanent removal while bytes remain remotely.
+
+**Why:** a device can accumulate hundreds of screenshots; sequential remote
+deletion made one real removal request run for nearly four minutes and appear
+frozen. Unbounded concurrency would instead risk rate limiting and overload.
+
+**How to apply:** use a modest worker limit for bulk Dropbox cleanup. Continue
+through all paths after an individual failure, then fail the operation; retries
+are safe because an already-missing Dropbox object counts as successfully deleted.
