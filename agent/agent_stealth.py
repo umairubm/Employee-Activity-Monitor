@@ -37,7 +37,7 @@ else:
     from . import screenshot as screenshot_mod
     from . import system_info as system_info_mod
 
-AGENT_VERSION = "0.4.1"
+AGENT_VERSION = "1.1.60"
 POLL_SECONDS = 15
 
 # ── Runtime stealth ───────────────────────────────────────────────────────────
