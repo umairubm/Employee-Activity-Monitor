@@ -13,23 +13,7 @@ import sys
 import time
 from typing import Tuple
 
-try:
-    from pynput import mouse, keyboard
-    
-    _last_input_time = time.time()
-    
-    def _on_input(*args, **kwargs):
-        global _last_input_time
-        _last_input_time = time.time()
-        
-    _mouse_listener = mouse.Listener(on_move=_on_input, on_click=_on_input, on_scroll=_on_input)
-    _keyboard_listener = keyboard.Listener(on_press=_on_input)
-    
-    _mouse_listener.start()
-    _keyboard_listener.start()
-    _has_pynput = True
-except ImportError:
-    _has_pynput = False
+
 
 
 def get_active_window() -> Tuple[str, str, str]:
@@ -46,9 +30,6 @@ def get_active_window() -> Tuple[str, str, str]:
 
 def get_idle_seconds() -> int:
     """Seconds since the last user input. Falls back to 0 if undetectable."""
-    if _has_pynput:
-        return int(time.time() - _last_input_time)
-        
     try:
         if sys.platform.startswith("win"):
             return _idle_windows()
@@ -139,7 +120,7 @@ def _idle_windows() -> int:
 # --- macOS -------------------------------------------------------------------
 
 
-def _active_window_macos() -> Tuple[str, str]:
+def _active_window_macos() -> Tuple[str, str, str]:
     try:
         from AppKit import NSWorkspace
         import Quartz
@@ -206,7 +187,7 @@ def _idle_macos() -> int:
 # --- Linux -------------------------------------------------------------------
 
 
-def _active_window_linux() -> Tuple[str, str]:
+def _active_window_linux() -> Tuple[str, str, str]:
     title = subprocess.run(
         ["xdotool", "getactivewindow", "getwindowname"],
         capture_output=True,
