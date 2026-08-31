@@ -60,6 +60,7 @@ type DeviceSortField =
   | "lastSeen";
 
 type SortDirection = "asc" | "desc";
+type StatusFilter = "all" | "online" | "offline";
 
 const SORT_FIELD_LABELS: Record<DeviceSortField, string> = {
   systemName: "System Name",
@@ -179,6 +180,10 @@ export default function Devices() {
   const [sortField, setSortField] = useState<DeviceSortField | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [sortOrder, setSortOrder] = useState<string[]>([]);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => {
+    const requested = new URLSearchParams(window.location.search).get("status");
+    return requested === "online" || requested === "offline" ? requested : "all";
+  });
   // The Devices page always starts on "All groups" (local state, not the
   // shared persisted filter) so the full fleet is visible by default.
   const [groupFilter, setGroupFilter] = useState<string>(ALL);
@@ -228,7 +233,10 @@ export default function Devices() {
         value?.toLocaleLowerCase().includes(searchTerm),
       );
     const matchesGroup = groupFilter === ALL || d.deviceGroup === groupFilter;
-    return matchesSearch && matchesGroup;
+    const matchesStatus =
+      statusFilter === "all" ||
+      (statusFilter === "online" ? d.online : !d.online);
+    return matchesSearch && matchesGroup && matchesStatus;
   });
 
   const handleSort = (field: DeviceSortField) => {
@@ -338,6 +346,19 @@ export default function Devices() {
                   {g}
                 </SelectItem>
               ))}
+            </SelectContent>
+          </Select>
+          <Select
+            value={statusFilter}
+            onValueChange={(value) => setStatusFilter(value as StatusFilter)}
+          >
+            <SelectTrigger className="w-full sm:w-36">
+              <SelectValue placeholder="All statuses" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All statuses</SelectItem>
+              <SelectItem value="online">Online</SelectItem>
+              <SelectItem value="offline">Offline</SelectItem>
             </SelectContent>
           </Select>
           <div className="relative w-full sm:w-72">

@@ -402,7 +402,7 @@ export default function Overview() {
             </div>
             {inactiveDevices.length > 6 && (
               <Button asChild variant="link" className="mt-3 h-auto px-0 text-amber-900">
-                <Link href="/devices">
+                <Link href="/devices?status=offline">
                   View all {inactiveDevices.length} inactive devices
                 </Link>
               </Button>
