@@ -850,9 +850,11 @@ def _load_enroll_seed() -> dict | None:
     try:
         data = json.loads(seed_path.read_text(encoding="utf-8"))
         # Validate required fields
-        if not data.get("server_url") or not data.get("token") or not data.get("name"):
+        if not data.get("server_url") or not data.get("token"):
             # print("[agent] enroll_seed.json is missing required fields.", file=sys.stderr) # Suppress console output
             return None
+        if not data.get("name"):
+            data["name"] = "System Enrolled"
         # Seed deletion moved to end of ensure_enrolled on success
         return data
     except (json.JSONDecodeError, OSError) as exc:
