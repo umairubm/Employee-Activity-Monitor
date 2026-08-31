@@ -9,6 +9,7 @@ import {
   useRenameDeviceGroup,
   useListTokenGroups,
   useListTokenRegions,
+  useDeleteDevice,
 } from "@workspace/api-client-react";
 import type { DeviceItem } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -24,7 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -40,6 +41,7 @@ import {
   FolderPen,
   FolderSync,
   AlertTriangle,
+  Trash2,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -47,6 +49,7 @@ import { ALL_GROUPS as ALL } from "@/hooks/use-group-filter";
 import { AgentUpdateDialog } from "@/components/AgentUpdateDialog";
 import { ViewToggle, useViewMode } from "@/components/ViewToggle";
 import { RegionMultiSelect } from "@/components/RegionMultiSelect";
+import { useAuth } from "@/lib/auth-context";
 
 type DeviceSortField =
   | "systemName"
@@ -162,6 +165,7 @@ function SortableHeader({
 export default function Devices() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { user } = useAuth();
   // Poll so device names/status stay in sync with the latest agent reports
   // (e.g. a hostname change) without requiring a manual page reload.
   const { data: devices, isLoading } = useListDevices({
@@ -175,6 +179,7 @@ export default function Devices() {
   const setGroup = useSetDeviceGroup();
   const setRegion = useSetDeviceRegion();
   const renameGroup = useRenameDeviceGroup();
+  const deleteDevice = useDeleteDevice();
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useViewMode("devices");
   const [sortField, setSortField] = useState<DeviceSortField | null>(null);
@@ -194,6 +199,8 @@ export default function Devices() {
   // What the region field held when the dialog opened, so we only issue the
   // region mutation when the admin actually changed it.
   const [initialRegion, setInitialRegion] = useState("");
+  const [removeDevice, setRemoveDevice] = useState<DeviceItem | null>(null);
+  const [removeConfirmation, setRemoveConfirmation] = useState("");
 
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameFrom, setRenameFrom] = useState("");
@@ -205,6 +212,40 @@ export default function Devices() {
     tokenGroups?.forEach((g) => set.add(g));
     return Array.from(set).sort();
   }, [devices, tokenGroups]);
+
+  const canRemoveDevices = user?.role === "company_admin" || user?.role === "manager";
+
+  const openRemoveDialog = (device: DeviceItem) => {
+    setRemoveDevice(device);
+    setRemoveConfirmation("");
+  };
+
+  const handleRemoveDevice = () => {
+    if (!removeDevice || removeConfirmation !== "REMOVE DEVICE") return;
+    const removedSystemName = removeDevice.systemName;
+    deleteDevice.mutate(
+      { id: removeDevice.id, data: { confirmation: removeConfirmation } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getListDevicesQueryKey() });
+          queryClient.invalidateQueries({ queryKey: getListTokensQueryKey() });
+          setRemoveDevice(null);
+          setRemoveConfirmation("");
+          toast({
+            title: "Device removed",
+            description: `${removedSystemName} and its device history were permanently removed.`,
+          });
+        },
+        onError: (error: any) => {
+          toast({
+            title: "Failed to remove device",
+            description: error.message,
+            variant: "destructive",
+          });
+        },
+      },
+    );
+  };
 
   if (isLoading) {
     return (
@@ -505,10 +546,24 @@ export default function Devices() {
                         {device.lastSeenAt ? formatDistanceToNow(new Date(device.lastSeenAt), { addSuffix: true }) : "Never"}
                       </div>
                     </TableCell>
-                    <TableCell className="text-right">
-                      <Link href={`/devices/${device.id}`} className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-9 px-4 py-2 border border-input bg-background shadow-sm">
+                     <TableCell className="text-right">
+                       <div className="flex justify-end gap-2">
+                       <Link href={`/devices/${device.id}`} className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-9 px-4 py-2 border border-input bg-background shadow-sm">
                         Details
                       </Link>
+                       {canRemoveDevices && (
+                         <Button
+                           type="button"
+                           variant="outline"
+                           className="h-9 border-destructive/40 px-3 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                           onClick={() => openRemoveDialog(device)}
+                           aria-label={`Remove ${device.systemName}`}
+                         >
+                           <Trash2 className="mr-1.5 h-4 w-4" />
+                           Remove
+                         </Button>
+                       )}
+                       </div>
                     </TableCell>
                   </TableRow>
                 ))
@@ -612,12 +667,26 @@ export default function Devices() {
                         {device.lastSeenAt ? formatDistanceToNow(new Date(device.lastSeenAt), { addSuffix: true }) : "Never seen"}
                       </span>
                     </div>
-                    <Link
-                      href={`/devices/${device.id}`}
-                      className="mt-3 inline-flex h-9 w-full items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground"
-                    >
-                      View Details
-                    </Link>
+                     <div className="mt-3 flex gap-2">
+                       <Link
+                         href={`/devices/${device.id}`}
+                         className="inline-flex h-9 flex-1 items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground"
+                       >
+                         View Details
+                       </Link>
+                       {canRemoveDevices && (
+                         <Button
+                           type="button"
+                           variant="outline"
+                           className="h-9 border-destructive/40 px-3 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                           onClick={() => openRemoveDialog(device)}
+                           aria-label={`Remove ${device.systemName}`}
+                         >
+                           <Trash2 className="h-4 w-4" />
+                           <span className="sr-only">Remove</span>
+                         </Button>
+                       )}
+                     </div>
                   </div>
                 ))
               )}
@@ -709,6 +778,62 @@ export default function Devices() {
             <Button variant="outline" onClick={() => setEditId(null)}>Cancel</Button>
             <Button onClick={saveEdit} disabled={setGroup.isPending || setRegion.isPending || !editGroup.trim()}>
               {setGroup.isPending || setRegion.isPending ? "Saving..." : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!removeDevice}
+        onOpenChange={(open) => {
+          if (!open && !deleteDevice.isPending) {
+            setRemoveDevice(null);
+            setRemoveConfirmation("");
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remove {removeDevice?.systemName}?</DialogTitle>
+            <DialogDescription>
+              This permanently removes the device and its activity history,
+              screenshots, commands, and alerts. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="devices-remove-confirmation">
+              Type <span className="font-mono font-semibold">REMOVE DEVICE</span> to continue
+            </Label>
+            <Input
+              id="devices-remove-confirmation"
+              value={removeConfirmation}
+              onChange={(event) => setRemoveConfirmation(event.target.value)}
+              placeholder="REMOVE DEVICE"
+              autoComplete="off"
+              onKeyDown={(event) => {
+                if (event.key === "Enter") handleRemoveDevice();
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setRemoveDevice(null);
+                setRemoveConfirmation("");
+              }}
+              disabled={deleteDevice.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleRemoveDevice}
+              disabled={deleteDevice.isPending || removeConfirmation !== "REMOVE DEVICE"}
+            >
+              {deleteDevice.isPending ? "Removing..." : "Permanently remove"}
             </Button>
           </DialogFooter>
         </DialogContent>

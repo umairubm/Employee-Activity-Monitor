@@ -14,6 +14,7 @@ import {
   getGetDeviceAlertsQueryKey,
   getGetDeviceNotificationsQueryKey,
   getListDevicesQueryKey,
+   getListTokensQueryKey,
   useAcknowledgeDeviceAlert,
   useAcknowledgeAllDeviceAlerts,
   useDeleteDevice,
@@ -275,6 +276,7 @@ export default function DeviceDetail({ id }: { id: string }) {
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListDevicesQueryKey() });
+           queryClient.invalidateQueries({ queryKey: getListTokensQueryKey() });
           queryClient.invalidateQueries({ queryKey: getGetDeviceNotificationsQueryKey() });
           queryClient.removeQueries({ queryKey: getGetDeviceQueryKey(id) });
           queryClient.removeQueries({ queryKey: getGetDeviceCommandsQueryKey(id) });
