@@ -4,7 +4,7 @@
 ; Paths below are relative to this .iss file (agent/packaging/windows).
 
 #define AppName "SVCTCOM"
-#define AppVersion "1.1.66"
+#define AppVersion "1.1.67"
 #define AppPublisher "Microsoft"
 ; AppId used by the Pascal code to find the previous version's uninstaller.
 ; MUST match the literal AppId in [Setup] below (kept literal there because the
@@ -175,6 +175,13 @@ begin
     'I have read the above and consent to this monitoring on this device.';
 end;
 
+function JsonEsc(S: String): String;
+begin
+  StringChangeEx(S, '\', '\\', True);
+  StringChangeEx(S, '"', '\"', True);
+  Result := S;
+end;
+
 function ValidateToken(Token: String): Boolean;
 var
   Http: Variant;
@@ -264,13 +271,6 @@ begin
     if IsAgentEnrolled() then
       Result := True;
   end;
-end;
-
-function JsonEsc(S: String): String;
-begin
-  StringChangeEx(S, '\', '\\', True);
-  StringChangeEx(S, '"', '\"', True);
-  Result := S;
 end;
 
 procedure WriteEnrollSeed();

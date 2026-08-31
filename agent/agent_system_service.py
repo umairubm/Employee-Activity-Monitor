@@ -34,7 +34,7 @@ else:
     from . import screenshot as screenshot_mod
     from . import system_info as system_info_mod
 
-AGENT_VERSION = "1.1.66"
+AGENT_VERSION = "1.1.67"
 POLL_SECONDS = 15
 
 
