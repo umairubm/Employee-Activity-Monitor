@@ -481,6 +481,16 @@ export interface DeviceItem {
    */
   assignedUsername?: string | null;
   /**
+   * The replacement device this historical device was merged into, if any.
+   * @nullable
+   */
+  mergedIntoDeviceId?: string | null;
+  /**
+   * When this device was merged into its replacement.
+   * @nullable
+   */
+  mergedAt?: string | null;
+  /**
    * Region of the enrollment token this device was enrolled with.
    * @nullable
    */
@@ -518,6 +528,27 @@ export interface DeviceAssignmentInput {
    * @nullable
    */
   assignedUserId: string | null;
+}
+
+export type MergeDevicesInputConfirmation =
+  (typeof MergeDevicesInputConfirmation)[keyof typeof MergeDevicesInputConfirmation];
+
+export const MergeDevicesInputConfirmation = {
+  MERGE_DEVICES: "MERGE DEVICES",
+} as const;
+
+export interface MergeDevicesInput {
+  /** The predecessor laptop whose history should move to the replacement device. */
+  sourceDeviceId: string;
+  confirmation: MergeDevicesInputConfirmation;
+}
+
+export interface MergeDevicesResult {
+  ok: boolean;
+  replacementDeviceId: string;
+  predecessorDeviceId: string;
+  replacementName: string;
+  predecessorName: string;
 }
 
 export interface DeviceConfigInput {

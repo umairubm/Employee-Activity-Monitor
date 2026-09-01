@@ -157,6 +157,17 @@ export const ListDevicesResponseItem = zod.object({
     .string()
     .nullish()
     .describe("Username of the employee assigned to this device."),
+  mergedIntoDeviceId: zod
+    .string()
+    .uuid()
+    .nullish()
+    .describe(
+      "The replacement device this historical device was merged into, if any.",
+    ),
+  mergedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("When this device was merged into its replacement."),
   tokenRegion: zod
     .string()
     .nullish()
@@ -281,6 +292,17 @@ export const GetDeviceResponse = zod.object({
     .string()
     .nullish()
     .describe("Username of the employee assigned to this device."),
+  mergedIntoDeviceId: zod
+    .string()
+    .uuid()
+    .nullish()
+    .describe(
+      "The replacement device this historical device was merged into, if any.",
+    ),
+  mergedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("When this device was merged into its replacement."),
   tokenRegion: zod
     .string()
     .nullish()
@@ -315,6 +337,31 @@ export const DeleteDeviceBody = zod.object({
 
 export const DeleteDeviceResponse = zod.object({
   ok: zod.boolean(),
+});
+
+/**
+ * @summary Merge a predecessor laptop into the replacement device
+ */
+export const MergeDevicesParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
+
+export const MergeDevicesBody = zod.object({
+  sourceDeviceId: zod
+    .string()
+    .uuid()
+    .describe(
+      "The predecessor laptop whose history should move to the replacement device.",
+    ),
+  confirmation: zod.enum(["MERGE DEVICES"]),
+});
+
+export const MergeDevicesResponse = zod.object({
+  ok: zod.boolean(),
+  replacementDeviceId: zod.string().uuid(),
+  predecessorDeviceId: zod.string().uuid(),
+  replacementName: zod.string(),
+  predecessorName: zod.string(),
 });
 
 /**
@@ -605,6 +652,17 @@ export const SetDeviceGroupResponse = zod.object({
     .string()
     .nullish()
     .describe("Username of the employee assigned to this device."),
+  mergedIntoDeviceId: zod
+    .string()
+    .uuid()
+    .nullish()
+    .describe(
+      "The replacement device this historical device was merged into, if any.",
+    ),
+  mergedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("When this device was merged into its replacement."),
   tokenRegion: zod
     .string()
     .nullish()
@@ -707,6 +765,17 @@ export const SetDeviceRegionResponse = zod.object({
     .string()
     .nullish()
     .describe("Username of the employee assigned to this device."),
+  mergedIntoDeviceId: zod
+    .string()
+    .uuid()
+    .nullish()
+    .describe(
+      "The replacement device this historical device was merged into, if any.",
+    ),
+  mergedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("When this device was merged into its replacement."),
   tokenRegion: zod
     .string()
     .nullish()
@@ -806,6 +875,17 @@ export const SetDeviceAssignmentResponse = zod.object({
     .string()
     .nullish()
     .describe("Username of the employee assigned to this device."),
+  mergedIntoDeviceId: zod
+    .string()
+    .uuid()
+    .nullish()
+    .describe(
+      "The replacement device this historical device was merged into, if any.",
+    ),
+  mergedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("When this device was merged into its replacement."),
   tokenRegion: zod
     .string()
     .nullish()
@@ -962,6 +1042,17 @@ export const UpdateDeviceConfigResponse = zod.object({
     .string()
     .nullish()
     .describe("Username of the employee assigned to this device."),
+  mergedIntoDeviceId: zod
+    .string()
+    .uuid()
+    .nullish()
+    .describe(
+      "The replacement device this historical device was merged into, if any.",
+    ),
+  mergedAt: zod.coerce
+    .date()
+    .nullish()
+    .describe("When this device was merged into its replacement."),
   tokenRegion: zod
     .string()
     .nullish()

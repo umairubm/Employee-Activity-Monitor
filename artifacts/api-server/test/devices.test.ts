@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "crypto";
 import request from "supertest";
-import { inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import {
   activityLogsTable,
   db,
@@ -20,7 +20,10 @@ import {
   createScreenshot,
   createUser,
   makeApp,
+  makeSyncApp,
   seedActivity,
+  TEST_COMPANY_ID,
+  createDeviceWithSecret,
 } from "./helpers";
 import { deleteFile } from "../src/lib/dropbox";
 
@@ -32,6 +35,7 @@ vi.mock("../src/lib/dropbox", async () => {
 });
 
 const app = makeApp();
+const syncApp = makeSyncApp();
 const createdDeviceIds: string[] = [];
 const createdTokenIds: string[] = [];
 const createdUserIds: string[] = [];
@@ -164,6 +168,181 @@ describe("PATCH /devices/:id/assignment", () => {
       .send({ assignedUserId: user.id });
     expect(visible.status).toBe(200);
     expect(visible.body.assignedUserId).toBe(user.id);
+  });
+});
+
+describe("POST /devices/:id/merge", () => {
+  it("moves predecessor history, keeps the replacement, and retires the old device", async () => {
+    const replacement = await newDevice({
+      systemName: "Dell-102",
+      deviceGroup: "Farm",
+    });
+    const predecessor = await newDevice({
+      systemName: "DESKTOP-90RDACL",
+      deviceGroup: "Farm",
+    });
+    const { user } = await createUser({ role: "team_member" });
+    createdUserIds.push(user.id);
+    await db
+      .update(devicesTable)
+      .set({ assignedUserId: user.id })
+      .where(eq(devicesTable.id, predecessor.id));
+
+    await seedActivity(predecessor.id, "2026-09-01", 300);
+    await createScreenshot(predecessor.id);
+    await createDeviceCommand(predecessor.id);
+    await db.insert(deviceAlertsTable).values({
+      deviceId: predecessor.id,
+      companyId: TEST_COMPANY_ID,
+      field: "systemName",
+      oldValue: "old",
+      newValue: "new",
+    });
+
+    const merged = await request(app)
+      .post(`/devices/${replacement.id}/merge`)
+      .send({
+        sourceDeviceId: predecessor.id,
+        confirmation: "MERGE DEVICES",
+      });
+
+    expect(merged.status).toBe(200);
+    expect(merged.body).toMatchObject({
+      ok: true,
+      replacementDeviceId: replacement.id,
+      predecessorDeviceId: predecessor.id,
+      replacementName: "Dell-102",
+      predecessorName: "DESKTOP-90RDACL",
+    });
+
+    const [replacementRow] = await db
+      .select({
+        assignedUserId: devicesTable.assignedUserId,
+        mergedIntoDeviceId: devicesTable.mergedIntoDeviceId,
+      })
+      .from(devicesTable)
+      .where(eq(devicesTable.id, replacement.id));
+    const [predecessorRow] = await db
+      .select({
+        mergedIntoDeviceId: devicesTable.mergedIntoDeviceId,
+        mergedAt: devicesTable.mergedAt,
+      })
+      .from(devicesTable)
+      .where(eq(devicesTable.id, predecessor.id));
+
+    expect(replacementRow.assignedUserId).toBe(user.id);
+    expect(replacementRow.mergedIntoDeviceId).toBeNull();
+    expect(predecessorRow.mergedIntoDeviceId).toBe(replacement.id);
+    expect(predecessorRow.mergedAt).toBeInstanceOf(Date);
+
+    const [activityCount, screenshotCount, commandRows, alertCount] =
+      await Promise.all([
+        db
+          .select({ id: activityLogsTable.id })
+          .from(activityLogsTable)
+          .where(eq(activityLogsTable.deviceId, replacement.id)),
+        db
+          .select({ id: screenshotsTable.id })
+          .from(screenshotsTable)
+          .where(eq(screenshotsTable.deviceId, replacement.id)),
+        db
+          .select({
+            id: deviceCommandsTable.id,
+            deviceId: deviceCommandsTable.deviceId,
+            status: deviceCommandsTable.status,
+            cancelReason: deviceCommandsTable.cancelReason,
+          })
+          .from(deviceCommandsTable)
+          .where(eq(deviceCommandsTable.deviceId, replacement.id)),
+        db
+          .select({ id: deviceAlertsTable.id })
+          .from(deviceAlertsTable)
+          .where(eq(deviceAlertsTable.deviceId, replacement.id)),
+      ]);
+    expect(activityCount.length).toBe(1);
+    expect(screenshotCount.length).toBe(1);
+    expect(commandRows).toHaveLength(1);
+    expect(commandRows[0]).toMatchObject({
+      deviceId: replacement.id,
+      status: "cancelled",
+      cancelReason:
+        "Device was merged into a replacement before this command completed.",
+    });
+    expect(alertCount.length).toBe(1);
+
+    const fleet = await request(app).get("/devices");
+    expect(fleet.status).toBe(200);
+    expect(fleet.body.some((d: { id: string }) => d.id === predecessor.id)).toBe(
+      false,
+    );
+    expect(fleet.body.some((d: { id: string }) => d.id === replacement.id)).toBe(
+      true,
+    );
+
+    const attendance = await request(app).get(
+      "/attendance?date=2026-09-01",
+    );
+    expect(attendance.status).toBe(200);
+    expect(
+      attendance.body.devices.some(
+        (d: { deviceId: string }) => d.deviceId === predecessor.id,
+      ),
+    ).toBe(false);
+    expect(
+      attendance.body.devices.some(
+        (d: { deviceId: string }) => d.deviceId === replacement.id,
+      ),
+    ).toBe(true);
+  });
+
+  it("requires confirmation and enforces both-device manager scope", async () => {
+    const replacement = await newDevice({
+      deviceGroup: "Visible",
+      region: "EU",
+    });
+    const predecessor = await newDevice({
+      deviceGroup: "Hidden",
+      region: "US",
+    });
+    const managerApp = makeApp({
+      role: "manager",
+      allowedGroups: ["Visible"],
+      allowedRegions: ["EU"],
+    });
+
+    const missingConfirmation = await request(app)
+      .post(`/devices/${replacement.id}/merge`)
+      .send({ sourceDeviceId: predecessor.id });
+    expect(missingConfirmation.status).toBe(400);
+
+    const hidden = await request(managerApp)
+      .post(`/devices/${replacement.id}/merge`)
+      .send({
+        sourceDeviceId: predecessor.id,
+        confirmation: "MERGE DEVICES",
+      });
+    expect(hidden.status).toBe(404);
+  });
+
+  it("blocks the predecessor from authenticating after the merge", async () => {
+    const { device: replacement } = await createDeviceWithSecret();
+    const { device: predecessor, secret } = await createDeviceWithSecret();
+    createdDeviceIds.push(replacement.id, predecessor.id);
+
+    const merged = await request(app)
+      .post(`/devices/${replacement.id}/merge`)
+      .send({
+        sourceDeviceId: predecessor.id,
+        confirmation: "MERGE DEVICES",
+      });
+    expect(merged.status).toBe(200);
+
+    const heartbeat = await request(syncApp)
+      .post("/sync/heartbeat")
+      .set("x-device-id", predecessor.id)
+      .set("x-device-secret", secret)
+      .send({});
+    expect(heartbeat.status).toBe(401);
   });
 });
 

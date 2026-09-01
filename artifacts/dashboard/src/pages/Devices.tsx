@@ -10,7 +10,6 @@ import {
   useListTokenGroups,
   useListTokenRegions,
   useDeleteDevice,
-  useSetDeviceAssignment,
 } from "@workspace/api-client-react";
 import type { DeviceItem } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -43,7 +42,7 @@ import {
   FolderSync,
   AlertTriangle,
   Trash2,
-  UserPlus,
+  GitMerge,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -51,7 +50,7 @@ import { ALL_GROUPS as ALL } from "@/hooks/use-group-filter";
 import { AgentUpdateDialog } from "@/components/AgentUpdateDialog";
 import { ViewToggle, useViewMode } from "@/components/ViewToggle";
 import { RegionMultiSelect } from "@/components/RegionMultiSelect";
-import { AssignDeviceDialog } from "@/components/AssignDeviceDialog";
+import { MergeDevicesDialog } from "@/components/MergeDevicesDialog";
 import { useAuth } from "@/lib/auth-context";
 
 type DeviceSortField =
@@ -183,7 +182,7 @@ export default function Devices() {
   const setRegion = useSetDeviceRegion();
   const renameGroup = useRenameDeviceGroup();
   const deleteDevice = useDeleteDevice();
-  const [assignmentDevice, setAssignmentDevice] = useState<DeviceItem | null>(null);
+  const [mergeDevice, setMergeDevice] = useState<DeviceItem | null>(null);
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useViewMode("devices");
   const [sortField, setSortField] = useState<DeviceSortField | null>(null);
@@ -560,11 +559,11 @@ export default function Devices() {
                            type="button"
                            variant="outline"
                            className="h-9 gap-1.5 px-3"
-                           onClick={() => setAssignmentDevice(device)}
-                           aria-label={`Assign ${device.systemName} to an existing user`}
+                            onClick={() => setMergeDevice(device)}
+                            aria-label={`Merge ${device.systemName} with a previous laptop`}
                          >
-                           <UserPlus className="h-4 w-4" />
-                           Assign user
+                            <GitMerge className="h-4 w-4" />
+                            Merge device
                          </Button>
                        )}
                        {canRemoveDevices && (
@@ -695,11 +694,11 @@ export default function Devices() {
                            type="button"
                            variant="outline"
                            className="h-9 border-primary/40 px-3 text-primary hover:bg-primary/10"
-                           onClick={() => setAssignmentDevice(device)}
-                           aria-label={`Assign ${device.systemName} to an existing user`}
+                            onClick={() => setMergeDevice(device)}
+                            aria-label={`Merge ${device.systemName} with a previous laptop`}
                          >
-                           <UserPlus className="h-4 w-4" />
-                           <span className="sr-only">Assign user</span>
+                            <GitMerge className="h-4 w-4" />
+                            <span className="sr-only">Merge device</span>
                          </Button>
                        )}
                        {canRemoveDevices && (
@@ -723,14 +722,13 @@ export default function Devices() {
         </CardContent>
       </Card>
 
-      {assignmentDevice && (
-        <AssignDeviceDialog
-          deviceId={assignmentDevice.id}
-          deviceLabel={assignmentDevice.systemName}
-          currentUserId={assignmentDevice.assignedUserId}
-          open={!!assignmentDevice}
+      {mergeDevice && (
+        <MergeDevicesDialog
+          replacementDeviceId={mergeDevice.id}
+          replacementDeviceLabel={mergeDevice.systemName}
+          open={!!mergeDevice}
           onOpenChange={(open) => {
-            if (!open) setAssignmentDevice(null);
+            if (!open) setMergeDevice(null);
           }}
         />
       )}

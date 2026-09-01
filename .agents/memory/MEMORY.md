@@ -35,4 +35,4 @@
 - [Activity URL capture](activity-url-capture.md) — URLs are optional activity metadata captured from browser address bars via Windows UI Automation; old records remain URL-less.
 - [Device liveness from telemetry](device-liveness-telemetry.md) — accepted authenticated activity or screenshots must refresh last-seen; heartbeat is not the sole proof a device is online.
 - [Activity batches must survive bad URLs](activity-batch-url-validation.md) — validate browser URLs before upload and sanitize on every retry; never let one URL poison the queue or drop a failed batch.
-- [Device-to-user assignment semantics](device-user-assignment.md) — assigning a replacement laptop links it to the existing user without moving/deleting device history or changing the user's other laptops.
+- [Device replacement merge semantics](device-user-assignment.md) — laptop changes use an atomic device-to-device merge; keep the replacement active, retain predecessor provenance, and never merge user records.

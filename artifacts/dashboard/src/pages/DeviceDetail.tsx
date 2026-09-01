@@ -26,7 +26,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
-import { MonitorSmartphone, ShieldAlert, LogOut, Clock, ShieldCheck, Cpu, Ban, Users, Globe, Pencil, AlertTriangle, HardDrive, Check, MemoryStick, Network, Server, LockOpen, KeyRound, RotateCcw, Power, Usb, Gauge, Trash2 } from "lucide-react";
+import { MonitorSmartphone, ShieldAlert, LogOut, Clock, ShieldCheck, Cpu, Ban, Users, Globe, Pencil, AlertTriangle, HardDrive, Check, MemoryStick, Network, Server, LockOpen, KeyRound, RotateCcw, Power, Usb, Gauge, Trash2, GitMerge } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Progress } from "@/components/ui/progress";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
@@ -38,7 +38,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { AgentUpdateDialog } from "@/components/AgentUpdateDialog";
-import { AssignDeviceDialog } from "@/components/AssignDeviceDialog";
+import { MergeDevicesDialog } from "@/components/MergeDevicesDialog";
 import { RegionMultiSelect } from "@/components/RegionMultiSelect";
 import { ViewToggle, useViewMode } from "@/components/ViewToggle";
 import { useLocation } from "wouter";
@@ -182,7 +182,7 @@ export default function DeviceDetail({ id }: { id: string }) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
   const [removeConfirmation, setRemoveConfirmation] = useState("");
-  const [assignmentDialogOpen, setAssignmentDialogOpen] = useState(false);
+  const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
 
   // Ticks every 30s so the "Locked (34m remaining)" badge counts down live.
   const [now, setNow] = useState(() => Date.now());
@@ -432,10 +432,10 @@ export default function DeviceDetail({ id }: { id: string }) {
           <Button
             variant="outline"
             className="gap-2"
-            onClick={() => setAssignmentDialogOpen(true)}
+            onClick={() => setMergeDialogOpen(true)}
           >
-            <Users className="h-4 w-4" />
-            Assign user
+            <GitMerge className="h-4 w-4" />
+            Merge device
           </Button>
           {device.isLocked && (
             <Button
@@ -466,12 +466,11 @@ export default function DeviceDetail({ id }: { id: string }) {
         </div>
       </div>
 
-      <AssignDeviceDialog
-        deviceId={device.id}
-        deviceLabel={device.systemName}
-        currentUserId={device.assignedUserId}
-        open={assignmentDialogOpen}
-        onOpenChange={setAssignmentDialogOpen}
+      <MergeDevicesDialog
+        replacementDeviceId={device.id}
+        replacementDeviceLabel={device.systemName}
+        open={mergeDialogOpen}
+        onOpenChange={setMergeDialogOpen}
       />
 
       {unackAlerts.length > 0 && (

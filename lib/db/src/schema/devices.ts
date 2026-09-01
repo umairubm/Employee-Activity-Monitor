@@ -8,6 +8,7 @@ import {
   jsonb,
   pgEnum,
   index,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
@@ -75,6 +76,14 @@ export const devicesTable = pgTable("devices", {
   // reported; `metricsAt` records when they were captured.
   metrics: jsonb("metrics").$type<Record<string, number | null>>(),
   metricsAt: timestamp("metrics_at", { withTimezone: true }),
+  // A replacement laptop can absorb the history of this device. The old row is
+  // retained for audit/provenance but is hidden from the active fleet and can no
+  // longer authenticate as an agent.
+  mergedIntoDeviceId: uuid("merged_into_device_id").references(
+    (): AnyPgColumn => devicesTable.id,
+    { onDelete: "set null" },
+  ),
+  mergedAt: timestamp("merged_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -131,6 +140,8 @@ export const publicDeviceColumns = {
   region: devicesTable.region,
   tzOffsetMinutes: devicesTable.tzOffsetMinutes,
   systemInfo: devicesTable.systemInfo,
+  mergedIntoDeviceId: devicesTable.mergedIntoDeviceId,
+  mergedAt: devicesTable.mergedAt,
   createdAt: devicesTable.createdAt,
   updatedAt: devicesTable.updatedAt,
 };

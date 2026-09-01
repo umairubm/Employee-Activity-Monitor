@@ -190,6 +190,44 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /devices/{id}/merge:
+    post:
+      operationId: mergeDevices
+      tags: [devices]
+      summary: Merge a predecessor laptop into the replacement device
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MergeDevicesInput"
+      responses:
+        "200":
+          description: Devices merged
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MergeDevicesResult"
+        "400":
+          description: Invalid merge request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Device not found or not visible to the caller
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Devices cannot be merged
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /devices/{id}/commands:
     get:
       operationId: getDeviceCommands
@@ -2560,6 +2598,14 @@ components:
         assignedUsername:
           type: [string, "null"]
           description: Username of the employee assigned to this device.
+        mergedIntoDeviceId:
+          type: [string, "null"]
+          format: uuid
+          description: The replacement device this historical device was merged into, if any.
+        mergedAt:
+          type: [string, "null"]
+          format: date-time
+          description: When this device was merged into its replacement.
         tokenRegion:
           type: [string, "null"]
           description: Region of the enrollment token this device was enrolled with.
@@ -2620,6 +2666,38 @@ components:
           format: uuid
           description: Existing company user to assign this device to; null clears the assignment.
       required: [assignedUserId]
+    MergeDevicesInput:
+      type: object
+      properties:
+        sourceDeviceId:
+          type: string
+          format: uuid
+          description: The predecessor laptop whose history should move to the replacement device.
+        confirmation:
+          type: string
+          enum: ["MERGE DEVICES"]
+      required: [sourceDeviceId, confirmation]
+    MergeDevicesResult:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        replacementDeviceId:
+          type: string
+          format: uuid
+        predecessorDeviceId:
+          type: string
+          format: uuid
+        replacementName:
+          type: string
+        predecessorName:
+          type: string
+      required:
+        - ok
+        - replacementDeviceId
+        - predecessorDeviceId
+        - replacementName
+        - predecessorName
     DeviceConfigInput:
       type: object
       properties:

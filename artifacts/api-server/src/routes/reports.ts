@@ -15,6 +15,7 @@ import {
   gt,
   gte,
   inArray,
+  isNull,
   lt,
   sql,
 } from "drizzle-orm";
@@ -101,6 +102,7 @@ router.get("/summary", async (req, res) => {
         and(
           eq(devicesTable.companyId, companyId),
           group ? eq(devicesTable.deviceGroup, group) : undefined,
+          isNull(devicesTable.mergedIntoDeviceId),
           deviceScopeCondition(req),
         ),
       );
@@ -129,6 +131,7 @@ router.get("/summary", async (req, res) => {
           .where(
             and(
               eq(devicesTable.companyId, companyId),
+              isNull(devicesTable.mergedIntoDeviceId),
               deviceGroupFilter,
               deviceScopeCondition(req),
             ),
@@ -139,6 +142,7 @@ router.get("/summary", async (req, res) => {
           .where(
             and(
               eq(devicesTable.companyId, companyId),
+              isNull(devicesTable.mergedIntoDeviceId),
               gt(devicesTable.lastSeenAt, onlineSince),
               deviceGroupFilter,
               deviceScopeCondition(req),
@@ -302,6 +306,7 @@ router.get("/leaderboard", async (req, res) => {
           gte(activityLogsTable.startedAt, rangeStart),
           lt(activityLogsTable.startedAt, rangeEnd),
           group ? eq(devicesTable.deviceGroup, group) : undefined,
+          isNull(devicesTable.mergedIntoDeviceId),
           deviceScopeCondition(req),
         ),
       )
@@ -320,6 +325,7 @@ router.get("/leaderboard", async (req, res) => {
             and(
               eq(devicesTable.companyId, companyId),
               group ? eq(devicesTable.deviceGroup, group) : undefined,
+              isNull(devicesTable.mergedIntoDeviceId),
               deviceScopeCondition(req),
             ),
           ),
@@ -406,7 +412,11 @@ router.get("/group-comparison", async (req, res) => {
         })
         .from(devicesTable)
         .where(
-          and(eq(devicesTable.companyId, companyId), deviceScopeCondition(req)),
+          and(
+            eq(devicesTable.companyId, companyId),
+            isNull(devicesTable.mergedIntoDeviceId),
+            deviceScopeCondition(req),
+          ),
         )
         .groupBy(devicesTable.deviceGroup),
       // Per-device activity totals within the range (aggregated to groups in JS
@@ -429,6 +439,7 @@ router.get("/group-comparison", async (req, res) => {
             eq(activityLogsTable.companyId, companyId),
             gte(activityLogsTable.startedAt, rangeStart),
             lt(activityLogsTable.startedAt, rangeEnd),
+            isNull(devicesTable.mergedIntoDeviceId),
             deviceScopeCondition(req),
           ),
         )

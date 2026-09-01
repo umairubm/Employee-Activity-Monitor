@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction } from "express";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { db, devicesTable, companiesTable, type Device } from "@workspace/db";
 import { hashSecret, safeEqualHex } from "../lib/secrets";
 
@@ -31,7 +31,12 @@ export async function deviceAuth(
     .select({ device: devicesTable, companyStatus: companiesTable.status })
     .from(devicesTable)
     .leftJoin(companiesTable, eq(devicesTable.companyId, companiesTable.id))
-    .where(eq(devicesTable.id, deviceId));
+    .where(
+      and(
+        eq(devicesTable.id, deviceId),
+        isNull(devicesTable.mergedIntoDeviceId),
+      ),
+    );
 
   const device = row?.device;
   if (!device || !safeEqualHex(device.secretHash, hashSecret(deviceSecret))) {

@@ -87,6 +87,8 @@ import type {
   ListScreenshotsParams,
   LoginRequest,
   Logout200,
+  MergeDevicesInput,
+  MergeDevicesResult,
   OkResult,
   ProjectItem,
   PushAgentUpdateRequest,
@@ -854,6 +856,93 @@ export const useDeleteDevice = <
   TContext
 > => {
   return useMutation(getDeleteDeviceMutationOptions(options));
+};
+
+/**
+ * @summary Merge a predecessor laptop into the replacement device
+ */
+export const getMergeDevicesUrl = (id: string) => {
+  return `/api/devices/${id}/merge`;
+};
+
+export const mergeDevices = async (
+  id: string,
+  mergeDevicesInput: MergeDevicesInput,
+  options?: RequestInit,
+): Promise<MergeDevicesResult> => {
+  return customFetch<MergeDevicesResult>(getMergeDevicesUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(mergeDevicesInput),
+  });
+};
+
+export const getMergeDevicesMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof mergeDevices>>,
+    TError,
+    { id: string; data: BodyType<MergeDevicesInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof mergeDevices>>,
+  TError,
+  { id: string; data: BodyType<MergeDevicesInput> },
+  TContext
+> => {
+  const mutationKey = ["mergeDevices"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof mergeDevices>>,
+    { id: string; data: BodyType<MergeDevicesInput> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return mergeDevices(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MergeDevicesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof mergeDevices>>
+>;
+export type MergeDevicesMutationBody = BodyType<MergeDevicesInput>;
+export type MergeDevicesMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Merge a predecessor laptop into the replacement device
+ */
+export const useMergeDevices = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof mergeDevices>>,
+    TError,
+    { id: string; data: BodyType<MergeDevicesInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof mergeDevices>>,
+  TError,
+  { id: string; data: BodyType<MergeDevicesInput> },
+  TContext
+> => {
+  return useMutation(getMergeDevicesMutationOptions(options));
 };
 
 /**

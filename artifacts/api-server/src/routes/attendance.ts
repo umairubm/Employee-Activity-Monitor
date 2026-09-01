@@ -9,7 +9,7 @@ import {
   attendanceSettingsTable,
   type AttendanceSettings,
 } from "@workspace/db";
-import { and, asc, eq, gte, inArray, lt, or, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import {
   coveredSecondsByKey,
   spanSecondsByKey,
@@ -255,6 +255,7 @@ router.put(
             and(
               eq(devicesTable.id, data.deviceId),
               eq(devicesTable.companyId, companyId),
+              isNull(devicesTable.mergedIntoDeviceId),
               deviceScopeCondition(req),
             ),
           );
@@ -404,6 +405,7 @@ router.get("/range", async (req, res) => {
       .where(
         and(
           eq(devicesTable.companyId, companyId),
+            isNull(devicesTable.mergedIntoDeviceId),
           group ? eq(devicesTable.deviceGroup, group) : undefined,
           deviceScopeCondition(req),
         ),
@@ -431,6 +433,7 @@ router.get("/range", async (req, res) => {
           .where(
             and(
               eq(devicesTable.companyId, companyId),
+              isNull(devicesTable.mergedIntoDeviceId),
               group ? eq(devicesTable.deviceGroup, group) : undefined,
               deviceScopeCondition(req),
             ),
@@ -657,6 +660,7 @@ router.get("/", async (req, res) => {
       .where(
         and(
           eq(devicesTable.companyId, companyId),
+            isNull(devicesTable.mergedIntoDeviceId),
           group ? eq(devicesTable.deviceGroup, group) : undefined,
           deviceScopeCondition(req),
         ),
@@ -712,6 +716,7 @@ router.get("/", async (req, res) => {
           .where(
             and(
               eq(devicesTable.companyId, companyId),
+              isNull(devicesTable.mergedIntoDeviceId),
               group ? eq(devicesTable.deviceGroup, group) : undefined,
               deviceScopeCondition(req),
             ),

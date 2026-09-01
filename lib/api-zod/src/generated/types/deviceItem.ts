@@ -72,6 +72,16 @@ export interface DeviceItem {
    */
   assignedUsername?: string | null;
   /**
+   * The replacement device this historical device was merged into, if any.
+   * @nullable
+   */
+  mergedIntoDeviceId?: string | null;
+  /**
+   * When this device was merged into its replacement.
+   * @nullable
+   */
+  mergedAt?: Date | null;
+  /**
    * Region of the enrollment token this device was enrolled with.
    * @nullable
    */

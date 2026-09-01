@@ -95,5 +95,11 @@ export function visibleDeviceIdsSubquery(req: Request, companyId: string) {
   return db
     .select({ id: devicesTable.id })
     .from(devicesTable)
-    .where(and(eq(devicesTable.companyId, companyId), deviceScopeCondition(req)));
+    .where(
+      and(
+        eq(devicesTable.companyId, companyId),
+        isNull(devicesTable.mergedIntoDeviceId),
+        deviceScopeCondition(req),
+      ),
+    );
 }

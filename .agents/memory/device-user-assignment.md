@@ -1,10 +1,10 @@
 ---
-name: Device-to-user assignment semantics
-description: Product rules for linking replacement or additional laptops to an existing company user.
+name: Device replacement merge semantics
+description: Product rules for treating a replacement laptop as the continuation of a predecessor device.
 ---
 
-**Rule:** Treat “merge a new laptop with an existing user” as device reassignment, not record migration. A user may own multiple devices; assigning one changes only that device’s user link and preserves its full device-owned history.
+**Rule:** Treat laptop replacement as an atomic device-to-device merge. The new laptop remains the active device; the predecessor remains as an audit/provenance row, leaves the active fleet, and cannot authenticate or send telemetry. Move device-owned history where compatible, preserve the replacement identity/settings, and never merge, create, or delete user records.
 
-**Why:** Laptop replacement should not create a duplicate person, delete the old laptop, move historical telemetry between devices, or alter the user’s other assigned laptops.
+**Why:** A person changing laptops should retain one continuous operational history without combining user accounts or losing the old hardware record. Different assigned users must be rejected rather than silently combined.
 
-**How to apply:** Keep activity, screenshots, commands, alerts, enrollment metadata, group, and region attached to their original device. Validate the selected user belongs to the same tenant and enforce manager device scope on every assignment mutation.
+**How to apply:** Require explicit merge confirmation, tenant and manager scope checks for both devices, and idempotent conflict handling for screenshots, daily summaries, and attendance overrides. Keep existing replacement-specific attendance settings canonical; only move the predecessor override when the replacement has none.

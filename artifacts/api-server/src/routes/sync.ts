@@ -154,6 +154,13 @@ class DeviceLimitError extends Error {
   }
 }
 
+class MergedDeviceError extends Error {
+  constructor() {
+    super("This device has already been merged into a replacement device");
+    this.name = "MergedDeviceError";
+  }
+}
+
 /**
  * Throws DeviceLimitError if enrolling one more device would exceed the
  * company's `maxDevices` quota. NULL quota (or a legacy null companyId) means
@@ -181,7 +188,12 @@ async function assertWithinDeviceLimit(
   const [{ n }] = await tx
     .select({ n: count() })
     .from(devicesTable)
-    .where(eq(devicesTable.companyId, companyId));
+    .where(
+      and(
+        eq(devicesTable.companyId, companyId),
+        isNull(devicesTable.mergedIntoDeviceId),
+      ),
+    );
   if (n >= company.maxDevices) {
     throw new DeviceLimitError(company.maxDevices);
   }
@@ -303,6 +315,9 @@ router.post("/enroll", async (req: Request, res: Response): Promise<void> => {
       .where(eq(devicesTable.hardwareHash, body.hardwareHash));
 
     if (existing) {
+      if (existing.mergedIntoDeviceId) {
+        throw new MergedDeviceError();
+      }
       // Re-enrollment of a known machine. Validate the token is still usable
       // but DO NOT consume a use — an already-enrolled device shouldn't burn a
       // token-use (and so shouldn't be blocked by max-uses being exhausted).
@@ -436,6 +451,10 @@ router.post("/enroll", async (req: Request, res: Response): Promise<void> => {
       error instanceof DeviceLimitError
     ) {
       res.status(403).json({ error: error.message });
+      return;
+    }
+    if (error instanceof MergedDeviceError) {
+      res.status(409).json({ error: error.message });
       return;
     }
     throw error;

@@ -5,7 +5,10 @@ import {
   devicesTable,
   deviceCommandsTable,
   deviceAlertsTable,
+  activityLogsTable,
   screenshotsTable,
+  dailySummariesTable,
+  attendanceSettingsTable,
   enrollmentTokensTable,
   usersTable,
   publicDeviceColumns,
@@ -103,7 +106,13 @@ router.get("/", async (req, res) => {
         ),
       )
       .leftJoin(usersTable, eq(devicesTable.assignedUserId, usersTable.id))
-      .where(and(eq(devicesTable.companyId, companyId), deviceScopeCondition(req)))
+      .where(
+        and(
+          eq(devicesTable.companyId, companyId),
+          isNull(devicesTable.mergedIntoDeviceId),
+          deviceScopeCondition(req),
+        ),
+      )
       // Keep the fleet in a stable order. `lastSeenAt` changes on every
       // heartbeat, so sorting by it makes rows visibly jump around whenever
       // the 30-second dashboard poll refreshes the list.
@@ -182,7 +191,11 @@ router.get("/notifications", async (req, res) => {
       )
       .leftJoin(usersTable, eq(devicesTable.assignedUserId, usersTable.id))
       .where(
-        and(eq(devicesTable.companyId, companyId), deviceScopeCondition(req)),
+        and(
+          eq(devicesTable.companyId, companyId),
+          isNull(devicesTable.mergedIntoDeviceId),
+          deviceScopeCondition(req),
+        ),
       );
 
     const alertRows = await db
@@ -391,6 +404,260 @@ router.delete(
         });
         return;
       }
+      res.status(500).json({ error: (error as Error).message });
+    }
+  },
+);
+
+const DEVICE_MERGE_CONFIRMATION = "MERGE DEVICES";
+const mergeDevicesSchema = z.object({
+  sourceDeviceId: z.string().uuid(),
+  confirmation: z.literal(DEVICE_MERGE_CONFIRMATION),
+});
+
+/**
+ * Merge the historical record for a predecessor laptop into the replacement
+ * laptop. The predecessor row is retained as an audit pointer, but no longer
+ * appears in the active fleet or accepts agent traffic.
+ */
+router.post(
+  "/:id/merge",
+  requireRole("company_admin", "manager"),
+  async (req, res) => {
+    const parsed = mergeDevicesSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: `Type "${DEVICE_MERGE_CONFIRMATION}" to merge the predecessor device`,
+      });
+      return;
+    }
+
+    const replacementDeviceId = String(req.params.id);
+    const predecessorDeviceId = parsed.data.sourceDeviceId;
+    if (replacementDeviceId === predecessorDeviceId) {
+      res.status(400).json({ error: "A device cannot be merged with itself" });
+      return;
+    }
+
+    try {
+      const companyId = getCompanyId(req);
+      const result = await db.transaction(async (tx) => {
+        const lockIds = [replacementDeviceId, predecessorDeviceId].sort();
+        const locked = await tx
+          .select()
+          .from(devicesTable)
+          .where(
+            and(
+              eq(devicesTable.companyId, companyId),
+              inArray(devicesTable.id, lockIds),
+              deviceScopeCondition(req),
+            ),
+          )
+          .for("update");
+        const replacement = locked.find((d) => d.id === replacementDeviceId);
+        const predecessor = locked.find((d) => d.id === predecessorDeviceId);
+
+        if (!replacement || !predecessor) return { kind: "not_found" as const };
+        if (replacement.mergedIntoDeviceId) {
+          return { kind: "replacement_merged" as const };
+        }
+        if (predecessor.mergedIntoDeviceId) {
+          return { kind: "predecessor_merged" as const };
+        }
+        if (
+          replacement.assignedUserId &&
+          predecessor.assignedUserId &&
+          replacement.assignedUserId !== predecessor.assignedUserId
+        ) {
+          return { kind: "different_users" as const };
+        }
+
+        const assignedUserId =
+          replacement.assignedUserId ?? predecessor.assignedUserId;
+
+        // Preserve screenshot rows even when both laptops captured identical
+        // content. The unique index is per device+hash, so clear only the
+        // predecessor's colliding hash before moving the row.
+        const [predecessorHashes, replacementHashes] = await Promise.all([
+          tx
+            .select({ contentHash: screenshotsTable.contentHash })
+            .from(screenshotsTable)
+            .where(
+              and(
+                eq(screenshotsTable.deviceId, predecessor.id),
+                sql`${screenshotsTable.contentHash} is not null`,
+              ),
+            ),
+          tx
+            .select({ contentHash: screenshotsTable.contentHash })
+            .from(screenshotsTable)
+            .where(
+              and(
+                eq(screenshotsTable.deviceId, replacement.id),
+                sql`${screenshotsTable.contentHash} is not null`,
+              ),
+            ),
+        ]);
+        const replacementHashesSet = new Set(
+          replacementHashes.map((row) => row.contentHash),
+        );
+        const collidingHashes = predecessorHashes
+          .map((row) => row.contentHash)
+          .filter(
+            (hash): hash is string =>
+              hash !== null && replacementHashesSet.has(hash),
+          );
+        if (collidingHashes.length > 0) {
+          await tx
+            .update(screenshotsTable)
+            .set({ contentHash: null })
+            .where(
+              and(
+                eq(screenshotsTable.deviceId, predecessor.id),
+                inArray(screenshotsTable.contentHash, collidingHashes),
+              ),
+            );
+        }
+
+        const now = new Date();
+        const executableStatuses = [
+          "pending",
+          "acknowledged",
+          "downloading",
+          "installing",
+        ] as const;
+        await tx
+          .update(deviceCommandsTable)
+          .set({
+            status: "cancelled",
+            cancelReason:
+              "Device was merged into a replacement before this command completed.",
+            cancelledAt: now,
+          })
+          .where(
+            and(
+              eq(deviceCommandsTable.deviceId, predecessor.id),
+              inArray(deviceCommandsTable.status, executableStatuses),
+            ),
+          );
+
+        // Terminal command history can safely follow the replacement, but a
+        // command that could still execute must be cancelled before it moves.
+        // Otherwise the replacement laptop could receive a lock/logout/reset
+        // intended for the retired physical device.
+        await tx
+          .update(activityLogsTable)
+          .set({ deviceId: replacement.id })
+          .where(eq(activityLogsTable.deviceId, predecessor.id));
+        await tx
+          .update(screenshotsTable)
+          .set({ deviceId: replacement.id })
+          .where(eq(screenshotsTable.deviceId, predecessor.id));
+        await tx
+          .update(deviceCommandsTable)
+          .set({ deviceId: replacement.id })
+          .where(eq(deviceCommandsTable.deviceId, predecessor.id));
+        await tx
+          .update(deviceAlertsTable)
+          .set({ deviceId: replacement.id })
+          .where(eq(deviceAlertsTable.deviceId, predecessor.id));
+
+        // Daily summaries are derived records with a user+date uniqueness rule.
+        // Move non-conflicting rows; retain a conflicting source row rather
+        // than silently overwriting an existing summary.
+        const sourceSummaries = await tx
+          .select({
+            id: dailySummariesTable.id,
+            userId: dailySummariesTable.userId,
+            summaryDate: dailySummariesTable.summaryDate,
+          })
+          .from(dailySummariesTable)
+          .where(eq(dailySummariesTable.deviceId, predecessor.id));
+        const replacementSummaryKeys = new Set(
+          (
+            await tx
+              .select({
+                userId: dailySummariesTable.userId,
+                summaryDate: dailySummariesTable.summaryDate,
+              })
+              .from(dailySummariesTable)
+              .where(eq(dailySummariesTable.deviceId, replacement.id))
+          ).map((row) => `${row.userId}:${row.summaryDate}`),
+        );
+        for (const summary of sourceSummaries) {
+          const key = `${summary.userId}:${summary.summaryDate}`;
+          if (replacementSummaryKeys.has(key)) continue;
+          await tx
+            .update(dailySummariesTable)
+            .set({ deviceId: replacement.id })
+            .where(eq(dailySummariesTable.id, summary.id));
+          replacementSummaryKeys.add(key);
+        }
+
+        // Keep an existing replacement-specific attendance rule as the
+        // canonical rule. Otherwise carry the predecessor's rule forward.
+        const [replacementOverride] = await tx
+          .select({ id: attendanceSettingsTable.id })
+          .from(attendanceSettingsTable)
+          .where(eq(attendanceSettingsTable.deviceId, replacement.id));
+        if (!replacementOverride) {
+          await tx
+            .update(attendanceSettingsTable)
+            .set({ deviceId: replacement.id, updatedAt: new Date() })
+            .where(eq(attendanceSettingsTable.deviceId, predecessor.id));
+        }
+
+        if (assignedUserId && !replacement.assignedUserId) {
+          await tx
+            .update(devicesTable)
+            .set({ assignedUserId, updatedAt: now })
+            .where(eq(devicesTable.id, replacement.id));
+        }
+        await tx
+          .update(devicesTable)
+          .set({
+            mergedIntoDeviceId: replacement.id,
+            mergedAt: now,
+            updatedAt: now,
+          })
+          .where(eq(devicesTable.id, predecessor.id));
+
+        return {
+          kind: "merged" as const,
+          replacementId: replacement.id,
+          predecessorId: predecessor.id,
+          replacementName: replacement.systemName,
+          predecessorName: predecessor.systemName,
+        };
+      });
+
+      if (result.kind === "not_found") {
+        res.status(404).json({ error: "One or both devices were not found" });
+        return;
+      }
+      if (result.kind === "replacement_merged") {
+        res.status(409).json({ error: "The replacement device is already merged" });
+        return;
+      }
+      if (result.kind === "predecessor_merged") {
+        res.status(409).json({ error: "The predecessor device is already merged" });
+        return;
+      }
+      if (result.kind === "different_users") {
+        res.status(409).json({
+          error: "These devices are assigned to different users",
+        });
+        return;
+      }
+
+      res.json({
+        ok: true,
+        replacementDeviceId: result.replacementId,
+        predecessorDeviceId: result.predecessorId,
+        replacementName: result.replacementName,
+        predecessorName: result.predecessorName,
+      });
+    } catch (error) {
       res.status(500).json({ error: (error as Error).message });
     }
   },
