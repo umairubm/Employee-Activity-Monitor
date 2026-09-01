@@ -8,6 +8,7 @@ import {
 } from "@workspace/api-client-react";
 import type { DeviceItem } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { Check, ChevronsUpDown } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -20,12 +21,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useToast } from "@/hooks/use-toast";
 
 type MergeDevicesDialogProps = {
@@ -61,6 +64,7 @@ export function MergeDevicesDialog({
   });
   const mergeDevices = useMergeDevices();
   const [predecessorDeviceId, setPredecessorDeviceId] = useState("");
+  const [predecessorPickerOpen, setPredecessorPickerOpen] = useState(false);
   const [confirmation, setConfirmation] = useState("");
 
   const predecessorDevices = useMemo(
@@ -75,6 +79,7 @@ export function MergeDevicesDialog({
   useEffect(() => {
     if (open) {
       setPredecessorDeviceId("");
+      setPredecessorPickerOpen(false);
       setConfirmation("");
     }
   }, [open, replacementDeviceId]);
@@ -148,34 +153,75 @@ export function MergeDevicesDialog({
             <Label htmlFor={`merge-predecessor-${replacementDeviceId}`}>
               Previous laptop
             </Label>
-            <Select
-              value={predecessorDeviceId}
-              onValueChange={setPredecessorDeviceId}
-              disabled={devicesLoading || mergeDevices.isPending}
+            <Popover
+              open={predecessorPickerOpen}
+              onOpenChange={(nextOpen) => {
+                if (!mergeDevices.isPending) setPredecessorPickerOpen(nextOpen);
+              }}
             >
-              <SelectTrigger id={`merge-predecessor-${replacementDeviceId}`}>
-                <SelectValue
-                  placeholder={
-                    devicesLoading
+              <PopoverTrigger asChild>
+                <Button
+                  id={`merge-predecessor-${replacementDeviceId}`}
+                  type="button"
+                  variant="outline"
+                  role="combobox"
+                  aria-expanded={predecessorPickerOpen}
+                  disabled={devicesLoading || mergeDevices.isPending}
+                  className="w-full justify-between font-normal"
+                >
+                  <span className={predecessor ? "" : "text-muted-foreground"}>
+                    {devicesLoading
                       ? "Loading devices…"
-                      : "Select the laptop being replaced"
-                  }
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {predecessorDevices.map((device) => (
-                  <SelectItem key={device.id} value={device.id}>
-                    <span className="font-medium">{device.systemName}</span>
-                    <span className="ml-2 text-muted-foreground">
-                      ({device.hardwareHash.slice(0, 12)}…)
-                    </span>
-                    <span className="block text-xs text-muted-foreground">
-                      {predecessorDescription(device)}
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                      : predecessor
+                        ? `${predecessor.systemName} · ${predecessor.assignedUsername || predecessor.tokenLabel || "No user label"}`
+                        : "Select the laptop being replaced"}
+                  </span>
+                  <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent
+                className="w-[--radix-popover-trigger-width] p-0"
+                align="start"
+              >
+                <Command>
+                  <CommandInput placeholder="Search active laptops…" />
+                  <CommandList>
+                    <CommandEmpty>No matching active laptop.</CommandEmpty>
+                    <CommandGroup>
+                      {predecessorDevices.map((device) => (
+                        <CommandItem
+                          key={device.id}
+                          value={`${device.systemName} ${device.hardwareHash} ${predecessorDescription(device)}`}
+                          onSelect={() => {
+                            setPredecessorDeviceId(device.id);
+                            setPredecessorPickerOpen(false);
+                          }}
+                        >
+                          <Check
+                            className={`mr-2 h-4 w-4 ${
+                              predecessorDeviceId === device.id
+                                ? "opacity-100"
+                                : "opacity-0"
+                            }`}
+                          />
+                          <span className="min-w-0">
+                            <span className="block truncate font-medium">
+                              {device.systemName}
+                              <span className="ml-2 text-muted-foreground">
+                                ({device.hardwareHash.slice(0, 12)}…)
+                              </span>
+                            </span>
+                            <span className="block truncate text-xs text-muted-foreground">
+                              {predecessorDescription(device)}
+                            </span>
+                          </span>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
             {!devicesLoading && predecessorDevices.length === 0 && (
               <p className="text-xs text-muted-foreground">
                 No other active devices are available to merge.
