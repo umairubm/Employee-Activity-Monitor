@@ -111,6 +111,8 @@ function slotColor(code: number): string {
       return "bg-sky-400";
     case 4:
       return "bg-slate-400";
+    case 5:
+      return "bg-slate-300 dark:bg-slate-600";
     default:
       return "bg-muted";
   }
@@ -287,6 +289,26 @@ function aggregateLogs(
     }
   }
 
+  // Mark gaps between the first and last recorded session as breaks. A log only
+  // stores its total idleSeconds, not timestamps for each idle interval, so the
+  // exact position of within-session idle cannot be reconstructed. The explicit
+  // break metric below remains authoritative for the complete idle duration.
+  for (const [minStart, maxEnd] of dayBounds.values()) {
+    const start = new Date(minStart);
+    const end = new Date(maxEnd);
+    const startSlot = Math.min(
+      SLOTS_PER_DAY - 1,
+      Math.max(0, Math.floor(minutesIntoDay(start) / SLOT_MINUTES)),
+    );
+    const endSlot = Math.min(
+      SLOTS_PER_DAY - 1,
+      Math.max(0, Math.ceil(minutesIntoDay(end) / SLOT_MINUTES) - 1),
+    );
+    for (let i = startSlot; i <= endSlot; i++) {
+      if (agg.slots[i] === 0) agg.slots[i] = 5;
+    }
+  }
+
   // Total time is the first→last span of the day (first push to last upload),
   // so it includes the gaps between sessions. Active time is the overlap-merged
   // foreground coverage (duplicate-agent overlap removed), scaled by the same
@@ -331,6 +353,16 @@ function ActivitySlots({ slots }: { slots: Uint8Array }) {
         {HOUR_TICKS.map((h) => (
           <span key={h}>{tickLabel(h)}</span>
         ))}
+      </div>
+      <div className="mt-1.5 flex items-center gap-3 text-[10px] text-muted-foreground">
+        <span className="inline-flex items-center gap-1">
+          <span className="h-2 w-2 rounded-sm bg-emerald-500" />
+          Active
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="h-2 w-2 rounded-sm bg-slate-300 dark:bg-slate-600" />
+          Break
+        </span>
       </div>
     </div>
   );
@@ -814,6 +846,7 @@ export default function ActivityLogs() {
                   <TableHead>User</TableHead>
                   <TableHead className="text-right">Active Time</TableHead>
                   <TableHead className="text-right">Total Time</TableHead>
+                  <TableHead className="text-right">Break Time</TableHead>
                   <TableHead className="text-center">Start</TableHead>
                   <TableHead className="text-center">End</TableHead>
                   <TableHead className="min-w-[280px]">
@@ -830,7 +863,7 @@ export default function ActivityLogs() {
                 {!filteredDevices || filteredDevices.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={7}
+                      colSpan={8}
                       className="h-32 text-center text-muted-foreground"
                     >
                       <div className="flex flex-col items-center justify-center">
@@ -929,6 +962,9 @@ export default function ActivityLogs() {
                         <TableCell className="text-right tabular-nums text-muted-foreground">
                           {formatHm(agg.totalSeconds)}
                         </TableCell>
+                        <TableCell className="text-right tabular-nums text-amber-700 dark:text-amber-400">
+                          {formatHm(Math.max(0, agg.totalSeconds - agg.activeSeconds))}
+                        </TableCell>
                         <TableCell className="text-center tabular-nums text-muted-foreground">
                           {agg.startedAt ? format(agg.startedAt, "h:mm a") : "—"}
                         </TableCell>
@@ -998,6 +1034,7 @@ export default function ActivityLogs() {
                       <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
                         <div><p className="text-xs text-muted-foreground">Active time</p><p className="font-semibold tabular-nums">{formatHm(agg.activeSeconds)}</p></div>
                         <div><p className="text-xs text-muted-foreground">Total time</p><p className="tabular-nums text-muted-foreground">{formatHm(agg.totalSeconds)}</p></div>
+                        <div><p className="text-xs text-muted-foreground">Break time</p><p className="tabular-nums text-amber-700 dark:text-amber-400">{formatHm(Math.max(0, agg.totalSeconds - agg.activeSeconds))}</p></div>
                         <div><p className="text-xs text-muted-foreground">Start</p><p className="tabular-nums">{agg.startedAt ? format(agg.startedAt, "h:mm a") : "—"}</p></div>
                         <div><p className="text-xs text-muted-foreground">End</p><p className="tabular-nums">{agg.endedAt ? format(agg.endedAt, "h:mm a") : "—"}</p></div>
                       </div>
