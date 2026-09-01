@@ -61,7 +61,12 @@ const tenant = [
 // company_admins and users with NULL permissions are unrestricted.
 // /users backs the assignee pickers on Projects and Leave, so any of those
 // permissions grants access; /reports backs the Overview page.
-router.use("/users", ...tenant, requireAnyPageAccess(["projects", "leave"]), usersRouter);
+router.use(
+  "/users",
+  ...tenant,
+  requireAnyPageAccess(["devices", "projects", "leave"]),
+  usersRouter,
+);
 // The Agent Settings page edits device config via /devices endpoints, so
 // either the "devices" or "settings" permission grants this API group.
 router.use("/devices", ...tenant, requireAnyPageAccess(["devices", "settings"]), devicesRouter);

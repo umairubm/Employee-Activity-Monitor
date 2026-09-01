@@ -1192,6 +1192,10 @@ const setRegionSchema = z.object({
     .nullable(),
 });
 
+const setDeviceAssignmentSchema = z.object({
+  assignedUserId: z.string().uuid().nullable(),
+});
+
 // PATCH /api/devices/:id/region - set or clear a device's region override
 router.patch(
   "/:id/region",
@@ -1207,6 +1211,62 @@ router.patch(
       const [updated] = await db
         .update(devicesTable)
         .set({ region: parsed.data.region, updatedAt: new Date() })
+        .where(
+          and(
+            eq(devicesTable.id, String(req.params.id)),
+            eq(devicesTable.companyId, companyId),
+            deviceScopeCondition(req),
+          ),
+        )
+        .returning(publicDeviceColumns);
+      if (!updated) {
+        res.status(404).json({ error: "Device not found" });
+        return;
+      }
+      res.json(withOnline(updated));
+    } catch (error) {
+      res.status(500).json({ error: (error as Error).message });
+    }
+  },
+);
+
+// PATCH /api/devices/:id/assignment - assign a device to an existing user in
+// this tenant. The device scope is enforced on the device mutation, while the
+// user lookup prevents cross-tenant foreign-key links.
+router.patch(
+  "/:id/assignment",
+  requireRole("company_admin", "manager"),
+  async (req, res) => {
+    try {
+      const parsed = setDeviceAssignmentSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: "Invalid device assignment" });
+        return;
+      }
+
+      const companyId = getCompanyId(req);
+      if (parsed.data.assignedUserId) {
+        const [user] = await db
+          .select({ id: usersTable.id })
+          .from(usersTable)
+          .where(
+            and(
+              eq(usersTable.id, parsed.data.assignedUserId),
+              eq(usersTable.companyId, companyId),
+            ),
+          );
+        if (!user) {
+          res.status(400).json({ error: "User does not belong to this company" });
+          return;
+        }
+      }
+
+      const [updated] = await db
+        .update(devicesTable)
+        .set({
+          assignedUserId: parsed.data.assignedUserId,
+          updatedAt: new Date(),
+        })
         .where(
           and(
             eq(devicesTable.id, String(req.params.id)),

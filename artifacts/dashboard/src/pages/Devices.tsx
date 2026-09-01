@@ -10,6 +10,7 @@ import {
   useListTokenGroups,
   useListTokenRegions,
   useDeleteDevice,
+  useSetDeviceAssignment,
 } from "@workspace/api-client-react";
 import type { DeviceItem } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -42,6 +43,7 @@ import {
   FolderSync,
   AlertTriangle,
   Trash2,
+  UserPlus,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -49,6 +51,7 @@ import { ALL_GROUPS as ALL } from "@/hooks/use-group-filter";
 import { AgentUpdateDialog } from "@/components/AgentUpdateDialog";
 import { ViewToggle, useViewMode } from "@/components/ViewToggle";
 import { RegionMultiSelect } from "@/components/RegionMultiSelect";
+import { AssignDeviceDialog } from "@/components/AssignDeviceDialog";
 import { useAuth } from "@/lib/auth-context";
 
 type DeviceSortField =
@@ -180,6 +183,7 @@ export default function Devices() {
   const setRegion = useSetDeviceRegion();
   const renameGroup = useRenameDeviceGroup();
   const deleteDevice = useDeleteDevice();
+  const [assignmentDevice, setAssignmentDevice] = useState<DeviceItem | null>(null);
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useViewMode("devices");
   const [sortField, setSortField] = useState<DeviceSortField | null>(null);
@@ -555,6 +559,18 @@ export default function Devices() {
                          <Button
                            type="button"
                            variant="outline"
+                           className="h-9 gap-1.5 px-3"
+                           onClick={() => setAssignmentDevice(device)}
+                           aria-label={`Assign ${device.systemName} to an existing user`}
+                         >
+                           <UserPlus className="h-4 w-4" />
+                           Assign user
+                         </Button>
+                       )}
+                       {canRemoveDevices && (
+                         <Button
+                           type="button"
+                           variant="outline"
                            className="h-9 border-destructive/40 px-3 text-destructive hover:bg-destructive/10 hover:text-destructive"
                            onClick={() => openRemoveDialog(device)}
                            aria-label={`Remove ${device.systemName}`}
@@ -678,6 +694,18 @@ export default function Devices() {
                          <Button
                            type="button"
                            variant="outline"
+                           className="h-9 border-primary/40 px-3 text-primary hover:bg-primary/10"
+                           onClick={() => setAssignmentDevice(device)}
+                           aria-label={`Assign ${device.systemName} to an existing user`}
+                         >
+                           <UserPlus className="h-4 w-4" />
+                           <span className="sr-only">Assign user</span>
+                         </Button>
+                       )}
+                       {canRemoveDevices && (
+                         <Button
+                           type="button"
+                           variant="outline"
                            className="h-9 border-destructive/40 px-3 text-destructive hover:bg-destructive/10 hover:text-destructive"
                            onClick={() => openRemoveDialog(device)}
                            aria-label={`Remove ${device.systemName}`}
@@ -694,6 +722,18 @@ export default function Devices() {
           )}
         </CardContent>
       </Card>
+
+      {assignmentDevice && (
+        <AssignDeviceDialog
+          deviceId={assignmentDevice.id}
+          deviceLabel={assignmentDevice.systemName}
+          currentUserId={assignmentDevice.assignedUserId}
+          open={!!assignmentDevice}
+          onOpenChange={(open) => {
+            if (!open) setAssignmentDevice(null);
+          }}
+        />
+      )}
 
       <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
         <DialogContent>

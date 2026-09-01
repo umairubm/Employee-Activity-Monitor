@@ -11,12 +11,14 @@ import {
   enrollmentTokensTable,
   pool,
   screenshotsTable,
+  usersTable,
 } from "@workspace/db";
 import {
   createDevice,
   createDeviceCommand,
   createEnrollmentToken,
   createScreenshot,
+  createUser,
   makeApp,
   seedActivity,
 } from "./helpers";
@@ -32,6 +34,7 @@ vi.mock("../src/lib/dropbox", async () => {
 const app = makeApp();
 const createdDeviceIds: string[] = [];
 const createdTokenIds: string[] = [];
+const createdUserIds: string[] = [];
 
 async function newDevice(overrides = {}) {
   const d = await createDevice(overrides);
@@ -49,6 +52,9 @@ afterAll(async () => {
     await db
       .delete(enrollmentTokensTable)
       .where(inArray(enrollmentTokensTable.id, createdTokenIds));
+  }
+  if (createdUserIds.length) {
+    await db.delete(usersTable).where(inArray(usersTable.id, createdUserIds));
   }
   await pool.end();
 });
@@ -90,6 +96,74 @@ describe("PATCH /devices/:id/group", () => {
       .send({ deviceGroup: "Team Beta" });
 
     expect(res.status).toBe(403);
+  });
+});
+
+describe("PATCH /devices/:id/assignment", () => {
+  it("assigns an existing company user and can clear the assignment", async () => {
+    const device = await newDevice();
+    const { user } = await createUser({ role: "team_member" });
+    createdUserIds.push(user.id);
+
+    const assigned = await request(app)
+      .patch(`/devices/${device.id}/assignment`)
+      .send({ assignedUserId: user.id });
+
+    expect(assigned.status).toBe(200);
+    expect(assigned.body.assignedUserId).toBe(user.id);
+
+    const cleared = await request(app)
+      .patch(`/devices/${device.id}/assignment`)
+      .send({ assignedUserId: null });
+
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.assignedUserId).toBeNull();
+  });
+
+  it("rejects a user from another company", async () => {
+    const otherCompanyId = "00000000-0000-4000-8000-00000000c0df";
+    const device = await newDevice();
+    const { user } = await createUser({
+      role: "team_member",
+      companyId: otherCompanyId,
+    });
+    createdUserIds.push(user.id);
+
+    const res = await request(app)
+      .patch(`/devices/${device.id}/assignment`)
+      .send({ assignedUserId: user.id });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/does not belong/i);
+  });
+
+  it("enforces manager device scope", async () => {
+    const visibleDevice = await newDevice({
+      deviceGroup: "Visible",
+      region: "EU",
+    });
+    const hiddenDevice = await newDevice({
+      deviceGroup: "Hidden",
+      region: "US",
+    });
+    const { user } = await createUser({ role: "team_member" });
+    createdUserIds.push(user.id);
+    const managerApp = makeApp({
+      role: "manager",
+      allowedGroups: ["Visible"],
+      allowedRegions: ["EU"],
+    });
+
+    const hidden = await request(managerApp)
+      .patch(`/devices/${hiddenDevice.id}/assignment`)
+      .send({ assignedUserId: user.id });
+    expect(hidden.status).toBe(404);
+
+    const visible = await request(managerApp)
+      .patch(`/devices/${visibleDevice.id}/assignment`)
+      .send({ assignedUserId: user.id });
+    expect(visible.status).toBe(200);
+    expect(visible.body.assignedUserId).toBe(user.id);
   });
 });
 

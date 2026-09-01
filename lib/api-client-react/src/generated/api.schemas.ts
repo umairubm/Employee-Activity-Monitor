@@ -512,6 +512,14 @@ export interface DeviceRegionInput {
   region: string | null;
 }
 
+export interface DeviceAssignmentInput {
+  /**
+   * Existing company user to assign this device to; null clears the assignment.
+   * @nullable
+   */
+  assignedUserId: string | null;
+}
+
 export interface DeviceConfigInput {
   monitoringEnabled: boolean;
   /**

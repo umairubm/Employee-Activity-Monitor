@@ -18,7 +18,7 @@ import {
   useAcknowledgeDeviceAlert,
   useAcknowledgeAllDeviceAlerts,
   useDeleteDevice,
-  type DeviceAlertItem
+  type DeviceAlertItem,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -38,6 +38,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { AgentUpdateDialog } from "@/components/AgentUpdateDialog";
+import { AssignDeviceDialog } from "@/components/AssignDeviceDialog";
 import { RegionMultiSelect } from "@/components/RegionMultiSelect";
 import { ViewToggle, useViewMode } from "@/components/ViewToggle";
 import { useLocation } from "wouter";
@@ -181,6 +182,7 @@ export default function DeviceDetail({ id }: { id: string }) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
   const [removeConfirmation, setRemoveConfirmation] = useState("");
+  const [assignmentDialogOpen, setAssignmentDialogOpen] = useState(false);
 
   // Ticks every 30s so the "Locked (34m remaining)" badge counts down live.
   const [now, setNow] = useState(() => Date.now());
@@ -427,6 +429,14 @@ export default function DeviceDetail({ id }: { id: string }) {
         
         <div className="flex flex-wrap gap-2">
           <AgentUpdateDialog selectedDevice={device} defaultTargetMode="device" />
+          <Button
+            variant="outline"
+            className="gap-2"
+            onClick={() => setAssignmentDialogOpen(true)}
+          >
+            <Users className="h-4 w-4" />
+            Assign user
+          </Button>
           {device.isLocked && (
             <Button
               className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white"
@@ -455,6 +465,14 @@ export default function DeviceDetail({ id }: { id: string }) {
           </Button>
         </div>
       </div>
+
+      <AssignDeviceDialog
+        deviceId={device.id}
+        deviceLabel={device.systemName}
+        currentUserId={device.assignedUserId}
+        open={assignmentDialogOpen}
+        onOpenChange={setAssignmentDialogOpen}
+      />
 
       {unackAlerts.length > 0 && (
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3">
@@ -898,6 +916,18 @@ export default function DeviceDetail({ id }: { id: string }) {
               </Button>
             </div>
             <div className="grid grid-cols-2 gap-y-4 gap-x-4 text-sm">
+              <div className="col-span-2">
+                <p className="text-muted-foreground mb-1">Assigned User</p>
+                <p className="font-medium flex items-center gap-1.5">
+                  <Users className="h-3.5 w-3.5" />
+                  {device.assignedUsername || "Unassigned"}
+                  {device.assignedUsername && device.tokenEmployeeId && (
+                    <span className="font-normal text-muted-foreground">
+                      ({device.tokenEmployeeId})
+                    </span>
+                  )}
+                </p>
+              </div>
               <div>
                 <p className="text-muted-foreground mb-1">Operating System</p>
                 <p className="font-medium capitalize flex items-center gap-1.5"><Cpu className="h-3.5 w-3.5" />{device.osType}</p>

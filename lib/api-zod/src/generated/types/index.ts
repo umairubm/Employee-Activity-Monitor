@@ -55,6 +55,7 @@ export * from "./deleteAttendanceOverride200";
 export * from "./deleteDeviceRequest";
 export * from "./deleteDeviceRequestConfirmation";
 export * from "./deviceAlertItem";
+export * from "./deviceAssignmentInput";
 export * from "./deviceCommandItem";
 export * from "./deviceCommandItemCommandType";
 export * from "./deviceCommandItemStatus";

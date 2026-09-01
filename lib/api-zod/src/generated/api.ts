@@ -729,6 +729,105 @@ export const SetDeviceRegionResponse = zod.object({
 });
 
 /**
+ * @summary Assign a device to an existing company user
+ */
+export const SetDeviceAssignmentParams = zod.object({
+  id: zod.coerce.string().uuid(),
+});
+
+export const SetDeviceAssignmentBody = zod.object({
+  assignedUserId: zod
+    .string()
+    .uuid()
+    .nullable()
+    .describe(
+      "Existing company user to assign this device to; null clears the assignment.",
+    ),
+});
+
+export const SetDeviceAssignmentResponse = zod.object({
+  id: zod.string().uuid(),
+  hardwareHash: zod.string(),
+  systemName: zod.string(),
+  osType: zod.enum(["windows", "macos", "linux"]),
+  agentVersion: zod.string().nullish(),
+  assignedUserId: zod.string().uuid().nullish(),
+  consentAcknowledgedAt: zod.coerce.date().nullish(),
+  consentName: zod.string().nullish(),
+  enrolledAt: zod.coerce.date().nullish(),
+  lastSeenAt: zod.coerce.date().nullish(),
+  isLocked: zod.boolean(),
+  lockedUntil: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      'When the current lock auto-expires; null while locked means \"until manually unlocked\".',
+    ),
+  usbBlockEnabled: zod.boolean().optional(),
+  metrics: zod
+    .object({
+      cpuPercent: zod.number().nullish(),
+      ramPercent: zod.number().nullish(),
+      diskFreeBytes: zod.number().nullish(),
+      diskTotalBytes: zod.number().nullish(),
+    })
+    .nullish()
+    .describe("Latest live utilization metrics reported by the agent."),
+  metricsAt: zod.coerce.date().nullish(),
+  screenshotMinMinutes: zod.number(),
+  screenshotMaxMinutes: zod.number(),
+  idleThresholdSeconds: zod.number(),
+  syncIntervalSeconds: zod.number(),
+  monitoringEnabled: zod.boolean(),
+  deviceGroup: zod.string(),
+  region: zod
+    .string()
+    .nullish()
+    .describe(
+      "Per-device region override. Null means the device inherits its enrollment token's region (see tokenRegion).",
+    ),
+  tzOffsetMinutes: zod
+    .number()
+    .nullish()
+    .describe(
+      "Device wall-clock offset in minutes from the stored UTC instants, reported by the agent on heartbeat. Used to display activity and screenshot times in the device's local time. Null until reported.",
+    ),
+  tokenLabel: zod
+    .string()
+    .nullish()
+    .describe("Label of the enrollment token this device was enrolled with."),
+  tokenEmployeeId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Employee ID of the enrollment token this device was enrolled with.",
+    ),
+  assignedUsername: zod
+    .string()
+    .nullish()
+    .describe("Username of the employee assigned to this device."),
+  tokenRegion: zod
+    .string()
+    .nullish()
+    .describe("Region of the enrollment token this device was enrolled with."),
+  online: zod.boolean(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+  systemInfo: zod
+    .record(zod.string(), zod.unknown())
+    .nullish()
+    .describe(
+      "Latest hardware\/system inventory snapshot reported by the agent.",
+    ),
+  alertCount: zod
+    .number()
+    .optional()
+    .describe(
+      "Number of unacknowledged hardware-change alerts for this device.",
+    ),
+});
+
+/**
  * @summary Apply agent configuration to all devices
  */
 export const applyDeviceConfigToAllBodyScreenshotMinMinutesMax = 1440;

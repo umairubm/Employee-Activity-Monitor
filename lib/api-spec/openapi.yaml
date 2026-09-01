@@ -330,6 +330,26 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DeviceItem"
+  /devices/{id}/assignment:
+    patch:
+      operationId: setDeviceAssignment
+      tags: [devices]
+      summary: Assign a device to an existing company user
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceAssignmentInput"
+      responses:
+        "200":
+          description: Updated device
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceItem"
   /devices/config:
     patch:
       operationId: applyDeviceConfigToAll
@@ -2592,6 +2612,14 @@ components:
             allowed). Null clears the override so the device falls back to its
             enrollment token's region.
       required: [region]
+    DeviceAssignmentInput:
+      type: object
+      properties:
+        assignedUserId:
+          type: [string, "null"]
+          format: uuid
+          description: Existing company user to assign this device to; null clears the assignment.
+      required: [assignedUserId]
     DeviceConfigInput:
       type: object
       properties:

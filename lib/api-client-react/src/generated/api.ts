@@ -46,6 +46,7 @@ import type {
   DeleteAttendanceOverride200,
   DeleteDeviceRequest,
   DeviceAlertItem,
+  DeviceAssignmentInput,
   DeviceCommandItem,
   DeviceConfigInput,
   DeviceGroupInput,
@@ -1468,6 +1469,93 @@ export const useSetDeviceRegion = <
   TContext
 > => {
   return useMutation(getSetDeviceRegionMutationOptions(options));
+};
+
+/**
+ * @summary Assign a device to an existing company user
+ */
+export const getSetDeviceAssignmentUrl = (id: string) => {
+  return `/api/devices/${id}/assignment`;
+};
+
+export const setDeviceAssignment = async (
+  id: string,
+  deviceAssignmentInput: DeviceAssignmentInput,
+  options?: RequestInit,
+): Promise<DeviceItem> => {
+  return customFetch<DeviceItem>(getSetDeviceAssignmentUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(deviceAssignmentInput),
+  });
+};
+
+export const getSetDeviceAssignmentMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setDeviceAssignment>>,
+    TError,
+    { id: string; data: BodyType<DeviceAssignmentInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof setDeviceAssignment>>,
+  TError,
+  { id: string; data: BodyType<DeviceAssignmentInput> },
+  TContext
+> => {
+  const mutationKey = ["setDeviceAssignment"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof setDeviceAssignment>>,
+    { id: string; data: BodyType<DeviceAssignmentInput> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return setDeviceAssignment(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SetDeviceAssignmentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof setDeviceAssignment>>
+>;
+export type SetDeviceAssignmentMutationBody = BodyType<DeviceAssignmentInput>;
+export type SetDeviceAssignmentMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Assign a device to an existing company user
+ */
+export const useSetDeviceAssignment = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setDeviceAssignment>>,
+    TError,
+    { id: string; data: BodyType<DeviceAssignmentInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof setDeviceAssignment>>,
+  TError,
+  { id: string; data: BodyType<DeviceAssignmentInput> },
+  TContext
+> => {
+  return useMutation(getSetDeviceAssignmentMutationOptions(options));
 };
 
 /**
