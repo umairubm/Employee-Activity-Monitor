@@ -32,9 +32,6 @@ results before being fixed to take `companyId`.
   and exposing CRUD is not enforcement.
 - A device's tenant binding is permanent: re-enrollment with a token from a
   different company must be rejected, never silently rebind the device.
-- Legacy activity rows may have a NULL `company_id`; activity history can safely
-  recover them only through a device already proven to belong to the current
-  tenant and visible manager scope.
 - FK writes to tenant principals need an explicit same-tenant ownership check.
   A DB foreign key to `users.id` only proves the row EXISTS, not that it belongs
   to the caller's company — so any write that accepts a `userId`/`assignedUserId`
