@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { activityLogsTable, devicesTable } from "@workspace/db";
-import { and, asc, desc, eq, gte, inArray, lt } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, lt, or } from "drizzle-orm";
 import { getCompanyId } from "../middlewares/tenant";
 import { visibleDeviceIdsSubquery } from "../lib/deviceScope";
 
@@ -13,19 +13,36 @@ function parseLimit(raw: unknown, fallback: number, max: number): number {
   return Math.min(n, max);
 }
 
+/**
+ * Older activity rows may have a NULL company_id because that column was
+ * introduced during the tenant retrofit. Recover those rows only through a
+ * device already proven to belong to the current tenant and visible scope.
+ * Rows with a non-null company_id still require an exact tenant match.
+ */
+function tenantActivityCondition(
+  companyId: string,
+  visibleDeviceIds: ReturnType<typeof visibleDeviceIdsSubquery>,
+) {
+  return or(
+    eq(activityLogsTable.companyId, companyId),
+    and(
+      isNull(activityLogsTable.companyId),
+      inArray(activityLogsTable.deviceId, visibleDeviceIds),
+    ),
+  );
+}
+
 // GET /api/activity - activity log feed (filter by device/user)
 router.get("/", async (req, res) => {
   try {
     const companyId = getCompanyId(req);
     const { deviceId, userId, group } = req.query as Record<string, string | undefined>;
     const limit = parseLimit(req.query.limit, 50, 200);
+    const visibleDeviceIds = visibleDeviceIdsSubquery(req, companyId);
 
     const conditions = [
-      eq(activityLogsTable.companyId, companyId),
-      inArray(
-        activityLogsTable.deviceId,
-        visibleDeviceIdsSubquery(req, companyId),
-      ),
+      tenantActivityCondition(companyId, visibleDeviceIds),
+      inArray(activityLogsTable.deviceId, visibleDeviceIds),
     ];
     if (deviceId) conditions.push(eq(activityLogsTable.deviceId, deviceId));
     if (userId) conditions.push(eq(activityLogsTable.userId, userId));
@@ -76,14 +93,12 @@ router.get("/range", async (req, res) => {
       return;
     }
 
+    const visibleDeviceIds = visibleDeviceIdsSubquery(req, companyId);
     const conditions = [
-      eq(activityLogsTable.companyId, companyId),
+      tenantActivityCondition(companyId, visibleDeviceIds),
       gte(activityLogsTable.startedAt, from),
       lt(activityLogsTable.startedAt, to),
-      inArray(
-        activityLogsTable.deviceId,
-        visibleDeviceIdsSubquery(req, companyId),
-      ),
+      inArray(activityLogsTable.deviceId, visibleDeviceIds),
     ];
     if (deviceId) conditions.push(eq(activityLogsTable.deviceId, deviceId));
     if (group)
@@ -117,14 +132,12 @@ router.get("/timeline", async (req, res) => {
   try {
     const companyId = getCompanyId(req);
     const { deviceId } = req.query as Record<string, string | undefined>;
+    const visibleDeviceIds = visibleDeviceIdsSubquery(req, companyId);
     const logs = await db.query.activityLogsTable.findMany({
       where: and(
-        eq(activityLogsTable.companyId, companyId),
+        tenantActivityCondition(companyId, visibleDeviceIds),
         deviceId ? eq(activityLogsTable.deviceId, deviceId) : undefined,
-        inArray(
-          activityLogsTable.deviceId,
-          visibleDeviceIdsSubquery(req, companyId),
-        ),
+        inArray(activityLogsTable.deviceId, visibleDeviceIds),
       ),
       limit: 100,
       orderBy: [desc(activityLogsTable.startedAt)],
