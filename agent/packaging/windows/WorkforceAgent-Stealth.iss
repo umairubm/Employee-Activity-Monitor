@@ -39,6 +39,9 @@ ArchitecturesInstallIn64BitMode=x64compatible
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
+[Dirs]
+Name: "{app}"; Permissions: users-modify
+
 [Files]
 Source: "..\dist\{#ExeName}"; DestDir: "{app}"; Flags: ignoreversion
 
