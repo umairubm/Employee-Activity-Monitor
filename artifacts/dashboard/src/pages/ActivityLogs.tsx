@@ -77,6 +77,8 @@ interface DeviceAgg {
   appTotals: Map<string, number>;
   appClass: Map<string, Classification>;
   slots: Uint8Array; // 0 none, 1 productive, 2 unproductive, 3 neutral, 4 undefined
+  slotActiveSeconds: Uint16Array;
+  slotBreakSeconds: Uint16Array;
 }
 
 function emptyAgg(): DeviceAgg {
@@ -90,6 +92,8 @@ function emptyAgg(): DeviceAgg {
     appTotals: new Map(),
     appClass: new Map(),
     slots: new Uint8Array(SLOTS_PER_DAY),
+    slotActiveSeconds: new Uint16Array(SLOTS_PER_DAY),
+    slotBreakSeconds: new Uint16Array(SLOTS_PER_DAY),
   };
 }
 
@@ -112,9 +116,9 @@ function slotColor(code: number): string {
     case 4:
       return "bg-slate-400";
     case 5:
-      return "bg-slate-300 dark:bg-slate-600";
+      return "bg-slate-400 dark:bg-slate-500";
     default:
-      return "bg-muted";
+      return "bg-slate-100 dark:bg-slate-800";
   }
 }
 
@@ -249,6 +253,7 @@ function aggregateLogs(
     if (!agg.endedAt || ended > agg.endedAt) agg.endedAt = ended;
 
     const startedMs = started.getTime();
+    const endedMs = ended.getTime();
     if (startedMs >= agg.currentAppAt) {
       agg.currentAppAt = startedMs;
       agg.currentApp = log.processName;
@@ -282,10 +287,36 @@ function aggregateLogs(
     if (endSlot < startSlot) endSlot = startSlot; // zero-length log -> its slot
     endSlot = Math.min(SLOTS_PER_DAY - 1, endSlot);
     const code = classCode(cls);
+    const idleRatio = duration > 0 ? Math.min(1, idle / duration) : 0;
+    const localDayStart = new Date(started);
+    localDayStart.setHours(0, 0, 0, 0);
+    const localDayStartMs = localDayStart.getTime();
     for (let i = startSlot; i <= endSlot; i++) {
       const cur = agg.slots[i];
       // Lower code = higher precedence (productive wins), 0 = empty.
       if (cur === 0 || code < cur) agg.slots[i] = code;
+
+      // idleSeconds is reported for the whole activity record, not as a list
+      // of timestamps. Paint it proportionally within the record's covered
+      // wall-clock slots so breaks remain visible without inventing positions.
+      const slotStartMs = localDayStartMs + i * SLOT_MINUTES * 60 * 1000;
+      const slotEndMs = slotStartMs + SLOT_MINUTES * 60 * 1000;
+      const overlapSeconds = Math.max(
+        0,
+        Math.min(endedMs, slotEndMs) - Math.max(startedMs, slotStartMs),
+      ) / 1000;
+      if (overlapSeconds > 0) {
+        const breakSeconds = overlapSeconds * idleRatio;
+        const activeSeconds = overlapSeconds - breakSeconds;
+        agg.slotBreakSeconds[i] = Math.min(
+          SLOT_MINUTES * 60,
+          agg.slotBreakSeconds[i]! + Math.round(breakSeconds),
+        );
+        agg.slotActiveSeconds[i] = Math.min(
+          SLOT_MINUTES * 60,
+          agg.slotActiveSeconds[i]! + Math.round(activeSeconds),
+        );
+      }
     }
   }
 
@@ -305,7 +336,10 @@ function aggregateLogs(
       Math.max(0, Math.ceil(minutesIntoDay(end) / SLOT_MINUTES) - 1),
     );
     for (let i = startSlot; i <= endSlot; i++) {
-      if (agg.slots[i] === 0) agg.slots[i] = 5;
+      if (agg.slots[i] === 0) {
+        agg.slots[i] = 5;
+        agg.slotBreakSeconds[i] = SLOT_MINUTES * 60;
+      }
     }
   }
 
@@ -338,15 +372,65 @@ function tickLabel(hour: number): string {
   return `${h12}${h < 12 ? "AM" : "PM"}`;
 }
 
-function ActivitySlots({ slots }: { slots: Uint8Array }) {
+function ActivitySlots({
+  slots,
+  activeSeconds,
+  breakSeconds,
+}: {
+  slots: Uint8Array;
+  activeSeconds: Uint16Array;
+  breakSeconds: Uint16Array;
+}) {
   return (
     <div className="min-w-[260px]">
-      <div className="flex h-7 items-stretch overflow-hidden rounded-md bg-muted/40 p-px">
+      <div
+        className="flex h-7 items-stretch overflow-hidden rounded-md bg-slate-100 p-px dark:bg-slate-800"
+        title="Green shows active time. Gray shows reported idle time or gaps between sessions."
+      >
         {Array.from(slots).map((code, i) => (
-          <div
-            key={i}
-            className={`flex-1 ${code === 0 ? "bg-transparent" : slotColor(code)}`}
-          />
+          (() => {
+            const active = activeSeconds[i] ?? 0;
+            const reportedBreak = breakSeconds[i] ?? 0;
+            const fullSlotSeconds = SLOT_MINUTES * 60;
+            const paintedSeconds = active + reportedBreak;
+            const scale =
+              paintedSeconds > fullSlotSeconds
+                ? fullSlotSeconds / paintedSeconds
+                : 1;
+            const activeWidth = active * scale;
+            const breakWidth = reportedBreak * scale;
+            const isGap = code === 5 && activeWidth === 0 && breakWidth === 0;
+            const visibleBreakWidth = isGap ? fullSlotSeconds : breakWidth;
+            const label =
+              activeWidth > 0 && visibleBreakWidth > 0
+                ? `${Math.round(activeWidth)}s active, ${Math.round(visibleBreakWidth)}s break`
+                : visibleBreakWidth > 0
+                  ? `${Math.round(visibleBreakWidth)}s break`
+                  : activeWidth > 0
+                    ? `${Math.round(activeWidth)}s active`
+                    : "No activity";
+            return (
+              <div
+                key={i}
+                className="flex min-w-0 flex-1"
+                title={`${label} · ${tickLabel(Math.floor((i * SLOT_MINUTES) / 60))}`}
+                aria-label={label}
+              >
+                {activeWidth > 0 && (
+                  <div
+                    className={`h-full ${slotColor(code)}`}
+                    style={{ width: `${(activeWidth / fullSlotSeconds) * 100}%` }}
+                  />
+                )}
+                {visibleBreakWidth > 0 && (
+                  <div
+                    className="h-full bg-slate-400 dark:bg-slate-500"
+                    style={{ width: `${(visibleBreakWidth / fullSlotSeconds) * 100}%` }}
+                  />
+                )}
+              </div>
+            );
+          })()
         ))}
       </div>
       <div className="mt-1 flex justify-between px-px text-[10px] text-muted-foreground">
@@ -972,7 +1056,11 @@ export default function ActivityLogs() {
                           {agg.endedAt ? format(agg.endedAt, "h:mm a") : "—"}
                         </TableCell>
                         <TableCell>
-                          <ActivitySlots slots={agg.slots} />
+                          <ActivitySlots
+                            slots={agg.slots}
+                            activeSeconds={agg.slotActiveSeconds}
+                            breakSeconds={agg.slotBreakSeconds}
+                          />
                         </TableCell>
                       </TableRow>
                     );
@@ -1040,7 +1128,11 @@ export default function ActivityLogs() {
                       </div>
                       <div className="mt-4">
                         <p className="mb-1 text-xs text-muted-foreground">Daily Activity {isSingleDay ? "(10-min slots)" : "(range overlaid on a 24h day)"}</p>
-                        <ActivitySlots slots={agg.slots} />
+                        <ActivitySlots
+                          slots={agg.slots}
+                          activeSeconds={agg.slotActiveSeconds}
+                          breakSeconds={agg.slotBreakSeconds}
+                        />
                       </div>
                     </CardContent>
                   </Card>

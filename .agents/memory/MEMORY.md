@@ -37,3 +37,4 @@
 - [Activity batches must survive bad URLs](activity-batch-url-validation.md) — validate browser URLs before upload and sanitize on every retry; never let one URL poison the queue or drop a failed batch.
 - [Device replacement merge semantics](device-user-assignment.md) — laptop changes use an atomic device-to-device merge; keep the replacement active, retain predecessor provenance, and never merge user records.
 - [Static publish build environment](static-publish-build-env.md) — static Vite builds may not inherit runtime service env; pass required build-time variables explicitly in artifact production config.
+- [External database secret naming](external-db-secret-naming.md) — Replit reserves DATABASE_URL for its managed database; external connection strings need another name in development and production.
