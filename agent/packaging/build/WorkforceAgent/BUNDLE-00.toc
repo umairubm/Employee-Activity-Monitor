@@ -1,4 +1,0 @@
-([('com.apple.telemetryd',
-   '/Users/ubmtechnologies/Desktop/Employee_monitor - '
-   'Copy/agent/packaging/dist/com.apple.telemetryd',
-   'EXECUTABLE')],)
