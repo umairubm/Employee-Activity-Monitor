@@ -1,0 +1,1 @@
+"""Durable interval telemetry for the desktop agent."""

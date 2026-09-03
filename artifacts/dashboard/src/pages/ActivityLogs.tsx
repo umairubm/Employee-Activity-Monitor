@@ -69,6 +69,8 @@ const SLOTS_PER_DAY = (24 * 60) / SLOT_MINUTES; // 144
 
 interface DeviceAgg {
   activeSeconds: number;
+  passiveSeconds: number;
+  idleStateSeconds: number;
   productiveSeconds: number;
   totalSeconds: number;
   startedAt: Date | null;
@@ -83,6 +85,8 @@ interface DeviceAgg {
 function emptyAgg(): DeviceAgg {
   return {
     activeSeconds: 0,
+    passiveSeconds: 0,
+    idleStateSeconds: 0,
     productiveSeconds: 0,
     totalSeconds: 0,
     startedAt: null,
@@ -216,6 +220,8 @@ function aggregateLogs(
   // Naive sums; corrected for overlapping duplicate-agent logs after the loop.
   let naiveTotal = 0;
   let naiveActive = 0;
+  let naivePassive = 0;
+  let naiveIdleState = 0;
   let naiveProductiveActive = 0;
   const intervals: Array<[number, number]> = [];
   // First→last span is keyed per local day so multi-day ranges sum daily spans
@@ -232,11 +238,26 @@ function aggregateLogs(
     const ended = endOff == null ? endedRaw : deviceWallDate(endedRaw, endOff);
     const cls = classOf(log);
     const duration = log.durationSeconds ?? 0;
-    const idle = log.idleSeconds ?? 0;
-    const active = Math.max(0, duration - idle);
+    const isInterval = Boolean(log.segmentId);
+    const isUnlocked = (log.sessionState ?? "unlocked") === "unlocked";
+    const engagement = log.engagementState ?? "active";
+    const active = isInterval
+      ? isUnlocked && engagement === "active"
+        ? duration
+        : 0
+      : Math.max(0, duration - (log.idleSeconds ?? 0));
+    const passive =
+      isInterval && isUnlocked && engagement === "passive" ? duration : 0;
+    const idleState = isInterval
+      ? !isUnlocked || engagement === "idle"
+        ? duration
+        : 0
+      : Math.min(duration, log.idleSeconds ?? 0);
 
     naiveTotal += duration;
     naiveActive += active;
+    naivePassive += passive;
+    naiveIdleState += idleState;
     if (cls === "productive") naiveProductiveActive += active;
     intervals.push([started.getTime(), ended.getTime()]);
 
@@ -327,6 +348,14 @@ function aggregateLogs(
   const ratio = naiveTotal > 0 ? cappedCovered / naiveTotal : 0;
   agg.totalSeconds = Math.max(span, cappedCovered);
   agg.activeSeconds = Math.min(cappedCovered, Math.round(naiveActive * ratio));
+  agg.passiveSeconds = Math.min(
+    Math.max(0, cappedCovered - agg.activeSeconds),
+    Math.round(naivePassive * ratio),
+  );
+  agg.idleStateSeconds = Math.min(
+    Math.max(0, cappedCovered - agg.activeSeconds - agg.passiveSeconds),
+    Math.round(naiveIdleState * ratio),
+  );
   agg.productiveSeconds = Math.min(
     agg.activeSeconds,
     Math.round(naiveProductiveActive * ratio),
@@ -853,6 +882,8 @@ export default function ActivityLogs() {
                   <TableHead className="w-12 text-center">Status</TableHead>
                   <TableHead>User</TableHead>
                   <TableHead className="text-right">Active Time</TableHead>
+                  <TableHead className="text-right">Passive Time</TableHead>
+                  <TableHead className="text-right">Idle Time</TableHead>
                   <TableHead className="text-right">Productive Time</TableHead>
                   <TableHead className="text-right">Total Time</TableHead>
                   <TableHead className="text-right">Break Time</TableHead>
@@ -872,7 +903,7 @@ export default function ActivityLogs() {
                 {!filteredDevices || filteredDevices.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={9}
+                      colSpan={11}
                       className="h-32 text-center text-muted-foreground"
                     >
                       <div className="flex flex-col items-center justify-center">
@@ -968,6 +999,12 @@ export default function ActivityLogs() {
                         <TableCell className="text-right font-semibold tabular-nums">
                           {formatHm(agg.activeSeconds)}
                         </TableCell>
+                        <TableCell className="text-right tabular-nums text-sky-700 dark:text-sky-400">
+                          {formatHm(agg.passiveSeconds)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums text-slate-600 dark:text-slate-400">
+                          {formatHm(agg.idleStateSeconds)}
+                        </TableCell>
                         <TableCell className="text-right font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
                           {formatHm(agg.productiveSeconds)}
                         </TableCell>
@@ -975,7 +1012,7 @@ export default function ActivityLogs() {
                           {formatHm(agg.totalSeconds)}
                         </TableCell>
                         <TableCell className="text-right tabular-nums text-amber-700 dark:text-amber-400">
-                          {formatHm(Math.max(0, agg.totalSeconds - agg.activeSeconds))}
+                          {formatHm(Math.max(0, agg.totalSeconds - agg.activeSeconds - agg.passiveSeconds))}
                         </TableCell>
                         <TableCell className="text-center tabular-nums text-muted-foreground">
                           {agg.startedAt ? format(agg.startedAt, "h:mm a") : "—"}
@@ -1045,9 +1082,11 @@ export default function ActivityLogs() {
                       )}
                       <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
                         <div><p className="text-xs text-muted-foreground">Active time</p><p className="font-semibold tabular-nums">{formatHm(agg.activeSeconds)}</p></div>
+                        <div><p className="text-xs text-muted-foreground">Passive time</p><p className="tabular-nums text-sky-700 dark:text-sky-400">{formatHm(agg.passiveSeconds)}</p></div>
+                        <div><p className="text-xs text-muted-foreground">Idle time</p><p className="tabular-nums text-slate-600 dark:text-slate-400">{formatHm(agg.idleStateSeconds)}</p></div>
                         <div><p className="text-xs text-muted-foreground">Productive time</p><p className="font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">{formatHm(agg.productiveSeconds)}</p></div>
                         <div><p className="text-xs text-muted-foreground">Total time</p><p className="tabular-nums text-muted-foreground">{formatHm(agg.totalSeconds)}</p></div>
-                        <div><p className="text-xs text-muted-foreground">Break time</p><p className="tabular-nums text-amber-700 dark:text-amber-400">{formatHm(Math.max(0, agg.totalSeconds - agg.activeSeconds))}</p></div>
+                        <div><p className="text-xs text-muted-foreground">Break time</p><p className="tabular-nums text-amber-700 dark:text-amber-400">{formatHm(Math.max(0, agg.totalSeconds - agg.activeSeconds - agg.passiveSeconds))}</p></div>
                         <div><p className="text-xs text-muted-foreground">Start</p><p className="tabular-nums">{agg.startedAt ? format(agg.startedAt, "h:mm a") : "—"}</p></div>
                         <div><p className="text-xs text-muted-foreground">End</p><p className="tabular-nums">{agg.endedAt ? format(agg.endedAt, "h:mm a") : "—"}</p></div>
                       </div>

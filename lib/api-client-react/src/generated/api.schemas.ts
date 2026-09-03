@@ -782,11 +782,45 @@ export interface PushAgentUpdateResponse {
   commandIds: string[];
 }
 
+export type ActivityLogRecordEngagementState =
+  (typeof ActivityLogRecordEngagementState)[keyof typeof ActivityLogRecordEngagementState];
+
+export const ActivityLogRecordEngagementState = {
+  active: "active",
+  passive: "passive",
+  idle: "idle",
+} as const;
+
+export type ActivityLogRecordSessionState =
+  (typeof ActivityLogRecordSessionState)[keyof typeof ActivityLogRecordSessionState];
+
+export const ActivityLogRecordSessionState = {
+  unlocked: "unlocked",
+  locked: "locked",
+  suspended: "suspended",
+  monitoring_paused: "monitoring_paused",
+} as const;
+
+export type ActivityLogRecordConnectivityState =
+  (typeof ActivityLogRecordConnectivityState)[keyof typeof ActivityLogRecordConnectivityState];
+
+export const ActivityLogRecordConnectivityState = {
+  online: "online",
+  offline: "offline",
+  unknown: "unknown",
+} as const;
+
 export interface ActivityLogRecord {
   id: string;
   deviceId: string;
   /** @nullable */
   userId?: string | null;
+  /** @nullable */
+  segmentId?: string | null;
+  /** @nullable */
+  sequenceNamespace?: string | null;
+  /** @nullable */
+  sequence?: number | null;
   processName: string;
   /** @nullable */
   windowTitle?: string | null;
@@ -794,8 +828,16 @@ export interface ActivityLogRecord {
   url?: string | null;
   /** @nullable */
   categoryId?: string | null;
+  engagementState: ActivityLogRecordEngagementState;
+  sessionState: ActivityLogRecordSessionState;
+  connectivityState: ActivityLogRecordConnectivityState;
+  /** @nullable */
+  transitionReason?: string | null;
+  /** @nullable */
+  policyVersion?: string | null;
   startedAt: string;
   endedAt: string;
+  elapsedMilliseconds: number;
   durationSeconds: number;
   idleSeconds: number;
   createdAt: string;

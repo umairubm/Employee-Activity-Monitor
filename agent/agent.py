@@ -23,6 +23,7 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -37,6 +38,8 @@ if __package__ in (None, ""):
     from agent import screenshot as screenshot_mod
     from agent import system_info as system_info_mod
     from agent import tray as tray_mod
+    from agent.telemetry.durable_queue import DurableActivityQueue
+    from agent.telemetry.interval_journal import IntervalJournal
 else:
     from . import api as api_mod
     from . import config as config_mod
@@ -46,8 +49,10 @@ else:
     from . import screenshot as screenshot_mod
     from . import system_info as system_info_mod
     from . import tray as tray_mod
+    from .telemetry.durable_queue import DurableActivityQueue
+    from .telemetry.interval_journal import IntervalJournal
 
-AGENT_VERSION = "1.2.3"
+AGENT_VERSION = "1.2.4"
 POLL_SECONDS = 15
 
 
@@ -64,8 +69,15 @@ class MonitoringAgent:
         self._stop = threading.Event()
         self._paused = threading.Event()  # set => paused
         self._lock = threading.Lock()
-        self._pending_logs: list[dict] = []
-        self._current = None  # active segment being accumulated
+        self._activity_queue = DurableActivityQueue(
+            config_mod.config_dir() / "activity_intervals.sqlite3"
+        )
+        passive_threshold = max(1, cfg.idle_threshold_seconds)
+        self._journal = IntervalJournal(
+            self._activity_queue,
+            passive_threshold_seconds=passive_threshold,
+            idle_threshold_seconds=max(300, passive_threshold + 60),
+        )
         self._last_screenshot = 0.0
         self._next_screenshot_gap = self._screenshot_gap()
         # Timed-lock enforcement state. `_enforced_lock` mirrors the server's
@@ -105,49 +117,36 @@ class MonitoringAgent:
     # --- activity accumulation ----------------------------------------------
 
     def _flush_segment(self) -> None:
-        if self._current is None:
-            return
-        seg = self._current
-        elapsed = max(0, int(time.time() - seg["start_ts"]))
-        if elapsed > 0:
-            log = {
-                "processName": seg["process"],
-                "windowTitle": seg["title"],
-                "startedAt": seg["start_iso"],
-                "endedAt": _now_iso(),
-                "durationSeconds": elapsed,
-                "idleSeconds": min(elapsed, seg["idle"]),
-            }
-            if seg.get("url"):
-                log["url"] = seg["url"]
-            with self._lock:
-                self._pending_logs.append(log)
-        self._current = None
+        with self._lock:
+            self._journal.close_current()
 
     def _observe(self) -> None:
-        process, title, url = monitor_mod.get_active_window()
-        idle = monitor_mod.get_idle_seconds()
-        key = (process, title, url)
-        if (
-            self._current is None
-            or (
-                self._current["process"],
-                self._current["title"],
-                self._current.get("url"),
+        monitoring_paused = not self.is_active()
+        if monitoring_paused:
+            process, title, url, idle = "System", "Monitoring paused", None, 0
+        else:
+            process, title, raw_url = monitor_mod.get_active_window()
+            title = title or ""
+            url = (
+                monitor_mod._normalise_browser_url(str(raw_url))
+                if raw_url
+                else None
             )
-            != key
-        ):
-            self._flush_segment()
-            self._current = {
-                "process": process,
-                "title": title,
-                "url": url,
-                "start_ts": time.time(),
-                "start_iso": _now_iso(),
-                "idle": 0,
-            }
-        if idle >= self.cfg.idle_threshold_seconds:
-            self._current["idle"] += POLL_SECONDS
+            idle = monitor_mod.get_idle_seconds()
+        passive_threshold = max(1, self.cfg.idle_threshold_seconds)
+        with self._lock:
+            self._journal.set_thresholds(
+                passive_threshold,
+                max(300, passive_threshold + 60),
+            )
+            self._journal.observe(
+                process_name=process,
+                window_title=title,
+                url=url,
+                idle_seconds=idle,
+                monitoring_paused=monitoring_paused,
+                locked=self._enforced_lock,
+            )
 
     # --- screenshots ---------------------------------------------------------
 
@@ -866,8 +865,8 @@ rm -rf "$(dirname "$NEW")" "$0"
         last_sync = 0.0
         while not self._stop.is_set():
             try:
+                self._observe()
                 if self.is_active():
-                    self._observe()
                     self._maybe_screenshot()
 
                 if time.time() - last_sync >= self.cfg.sync_interval_seconds:
@@ -884,35 +883,27 @@ rm -rf "$(dirname "$NEW")" "$0"
             pass
 
     def _sync(self) -> None:
-        # Push buffered activity.
+        # Close the current state interval and send the oldest durable batch.
         self._flush_segment()
-        with self._lock:
-            batch = self._pending_logs[:]
-            self._pending_logs.clear()
+        batch = self._activity_queue.get_batch(limit=500)
         if batch:
-            # Browser accessibility APIs can occasionally return malformed
-            # address-bar text. Keep the activity segment but omit an invalid
-            # URL so one bad field cannot make the server reject the entire
-            # batch forever.
-            clean_batch: list[dict] = []
-            for entry in batch:
-                clean = entry.copy()
-                raw_url = clean.get("url")
-                if raw_url is not None:
-                    normalised = monitor_mod._normalise_browser_url(str(raw_url))
-                    if normalised is None:
-                        clean.pop("url", None)
-                    else:
-                        clean["url"] = normalised
-                clean_batch.append(clean)
             try:
-                self.api.send_activity(clean_batch, system_info_mod.get_cached())
+                response = self.api.send_interval_activity(
+                    str(uuid.uuid4()),
+                    batch,
+                    system_info_mod.get_cached(),
+                )
+                accepted = response.get("acceptedSegmentIds")
+                if not isinstance(accepted, list):
+                    raise api_mod.APIError(
+                        "Interval activity response did not acknowledge segments"
+                    )
+                self._activity_queue.acknowledge(
+                    [value for value in accepted if isinstance(value, str)]
+                )
             except Exception as exc:  # noqa: BLE001
-                # Requeue the original records so temporary server, auth, or
-                # payload-size failures never lose activity. They will be
-                # sanitized again before the next upload attempt.
-                with self._lock:
-                    self._pending_logs[0:0] = batch
+                # Rows remain in SQLite until the server explicitly
+                # acknowledges their stable segment IDs.
                 print(f"[agent] activity sync failed: {exc}", file=sys.stderr)
 
         # Heartbeat + commands. Include best-effort live health metrics.

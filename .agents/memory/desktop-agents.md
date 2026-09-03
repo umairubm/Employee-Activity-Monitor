@@ -48,6 +48,20 @@ together with a new interval-capable agent. During a rolling fleet upgrade,
 normalize elapsed milliseconds into legacy duration/idle totals so existing
 reports continue working, while retaining the richer states for newer views.
 
+**Sender rule:** interval-capable agents must persist closed segments in a local
+SQLite queue, retry with stable segment IDs, and delete only IDs explicitly
+acknowledged by the receiver. Heartbeats and screenshots succeeding are not
+evidence that the activity loop is healthy.
+
+**Why:** an agent release remained online and uploaded screenshots while its
+activity worker never attempted another upload. An inconsistent interval port
+also referenced a client API method that did not exist in the packaged agent.
+
+**How to apply:** compile the actual packaged entrypoint, test queue persistence
+and partial acknowledgements, and keep heartbeat execution independent from
+activity-upload failures. Never blindly acknowledge a whole batch when the
+receiver omits `acceptedSegmentIds`.
+
 ## systemInfo is a flat record keyed by the dashboard's display field names
 
 The optional `systemInfo` on `POST /sync/activity` is a FLAT

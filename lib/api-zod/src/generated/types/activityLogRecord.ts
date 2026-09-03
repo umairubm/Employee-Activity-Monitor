@@ -5,12 +5,21 @@
  * API specification for Workforce Analytics & IT Management
  * OpenAPI spec version: 0.1.0
  */
+import type { ActivityLogRecordConnectivityState } from "./activityLogRecordConnectivityState";
+import type { ActivityLogRecordEngagementState } from "./activityLogRecordEngagementState";
+import type { ActivityLogRecordSessionState } from "./activityLogRecordSessionState";
 
 export interface ActivityLogRecord {
   id: string;
   deviceId: string;
   /** @nullable */
   userId?: string | null;
+  /** @nullable */
+  segmentId?: string | null;
+  /** @nullable */
+  sequenceNamespace?: string | null;
+  /** @nullable */
+  sequence?: number | null;
   processName: string;
   /** @nullable */
   windowTitle?: string | null;
@@ -18,8 +27,16 @@ export interface ActivityLogRecord {
   url?: string | null;
   /** @nullable */
   categoryId?: string | null;
+  engagementState: ActivityLogRecordEngagementState;
+  sessionState: ActivityLogRecordSessionState;
+  connectivityState: ActivityLogRecordConnectivityState;
+  /** @nullable */
+  transitionReason?: string | null;
+  /** @nullable */
+  policyVersion?: string | null;
   startedAt: Date;
   endedAt: Date;
+  elapsedMilliseconds: number;
   durationSeconds: number;
   idleSeconds: number;
   createdAt: Date;

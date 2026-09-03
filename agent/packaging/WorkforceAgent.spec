@@ -53,6 +53,8 @@ hiddenimports = [
     "agent.monitor",
     "agent.screenshot",
     "agent.tray",
+    "agent.telemetry.durable_queue",
+    "agent.telemetry.interval_journal",
     "PIL._tkinter_finder",
 ]
 if is_win:

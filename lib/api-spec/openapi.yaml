@@ -2951,6 +2951,13 @@ components:
         userId:
           type: [string, "null"]
           format: uuid
+        segmentId:
+          type: [string, "null"]
+          format: uuid
+        sequenceNamespace:
+          type: [string, "null"]
+        sequence:
+          type: [integer, "null"]
         processName:
           type: string
         windowTitle:
@@ -2961,12 +2968,27 @@ components:
         categoryId:
           type: [string, "null"]
           format: uuid
+        engagementState:
+          type: string
+          enum: [active, passive, idle]
+        sessionState:
+          type: string
+          enum: [unlocked, locked, suspended, monitoring_paused]
+        connectivityState:
+          type: string
+          enum: [online, offline, unknown]
+        transitionReason:
+          type: [string, "null"]
+        policyVersion:
+          type: [string, "null"]
         startedAt:
           type: string
           format: date-time
         endedAt:
           type: string
           format: date-time
+        elapsedMilliseconds:
+          type: integer
         durationSeconds:
           type: integer
         idleSeconds:
@@ -2978,8 +3000,12 @@ components:
         - id
         - deviceId
         - processName
+        - engagementState
+        - sessionState
+        - connectivityState
         - startedAt
         - endedAt
+        - elapsedMilliseconds
         - durationSeconds
         - idleSeconds
         - createdAt

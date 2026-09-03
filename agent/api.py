@@ -117,6 +117,25 @@ class AgentAPI:
             )
         return resp.json()
 
+    def send_interval_activity(
+        self, batch_id: str, logs: list[dict], system_info: Optional[dict] = None
+    ) -> dict:
+        payload: dict[str, Any] = {"batchId": batch_id, "logs": logs}
+        if system_info:
+            payload["hardwareChanges"] = system_info
+        resp = requests.post(
+            self._url("/activity"),
+            json=payload,
+            headers=self._auth_headers(),
+            timeout=self.timeout,
+        )
+        if resp.status_code != 201:
+            raise APIError(
+                f"Interval activity upload failed ({resp.status_code}): {resp.text}",
+                status_code=resp.status_code,
+            )
+        return resp.json()
+
     def upload_screenshot(
         self,
         data: bytes,
