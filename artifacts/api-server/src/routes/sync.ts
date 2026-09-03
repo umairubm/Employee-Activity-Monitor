@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { Router, type IRouter, type Request, type Response } from "express";
 import { z } from "zod/v4";
 import { and, eq, sql, isNull, or, gt, lt, inArray } from "drizzle-orm";
@@ -301,18 +302,33 @@ router.post(
       return {
         deviceId: device.id,
         userId: device.assignedUserId,
+        segmentId: log.segmentId ?? randomUUID(),
+        sequenceNamespace: log.sequenceNamespace ?? null,
+        sequence: log.sequence ?? 0,
         processName: log.processName,
         windowTitle: log.windowTitle ?? null,
         url: log.url ?? null,
         categoryId: category?.id ?? null,
+        engagementState: log.engagementState ?? "active",
+        sessionState: log.sessionState ?? "unlocked",
+        connectivityState: log.connectivityState ?? "unknown",
+        transitionReason: log.transitionReason ?? null,
+        policyVersion: log.policyVersion ?? null,
         startedAt: log.startedAt,
         endedAt: log.endedAt,
-        durationSeconds: log.durationSeconds,
+        elapsedMilliseconds: log.elapsedMilliseconds ?? (log.durationSeconds ? log.durationSeconds * 1000 : 0),
+        durationSeconds: log.durationSeconds ?? 0,
         idleSeconds: log.idleSeconds ?? 0,
       };
     });
 
-    await db.insert(activityLogsTable).values(values);
+    try {
+      await db.insert(activityLogsTable).values(values).onConflictDoNothing();
+    } catch (e) {
+      console.error("Failed to insert logs", e);
+      res.status(500).json({ error: "Failed to persist logs" });
+      return;
+    }
 
     if (parsed.data.hardwareChanges && Object.keys(parsed.data.hardwareChanges).length > 0) {
       await db.insert(deviceAlertsTable).values({
@@ -323,7 +339,15 @@ router.post(
       });
     }
 
-    res.status(201).json({ accepted: values.length });
+    if (parsed.data.batchId) {
+      res.status(201).json({
+        batchId: parsed.data.batchId,
+        acceptedSegmentIds: values.map(v => v.segmentId),
+        rejected: []
+      });
+    } else {
+      res.status(201).json({ accepted: values.length });
+    }
   },
 );
 

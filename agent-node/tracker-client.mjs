@@ -897,8 +897,17 @@ function startPersistentTelemetryStreamWin() {
         public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder text, int count);
         [DllImport("user32.dll")]
         public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+        
+        [StructLayout(LayoutKind.Sequential)]
+        public struct LASTINPUTINFO {
+            public uint cbSize;
+            public uint dwTime;
+        }
+        [DllImport("user32.dll")]
+        public static extern bool GetLastInputInfo(ref LASTINPUTINFO plii);
+        [DllImport("kernel32.dll")]
+        public static extern uint GetTickCount();
     }';
-    Add-Type -AssemblyName System.Windows.Forms;
 
     while ($true) {
         try {
@@ -912,9 +921,17 @@ function startPersistentTelemetryStreamWin() {
             $process = Get-Process -Id $wpid -ErrorAction SilentlyContinue;
             $processName = if ($process) { $process.ProcessName } else { 'System' };
 
-            $pos = [System.Windows.Forms.Cursor]::Position;
+            $lii = New-Object Win32+LASTINPUTINFO;
+            $lii.cbSize = [System.Runtime.InteropServices.Marshal]::SizeOf($lii);
+            $idleMs = 0;
+            if ([Win32]::GetLastInputInfo([ref]$lii)) {
+                $ticks = [Win32]::GetTickCount();
+                # Handle tick count wraparound (~49.7 days) safely by casting difference to int
+                $idleMs = [uint32]$ticks - [uint32]$lii.dwTime;
+            }
+            $idleSec = [math]::Floor($idleMs / 1000);
 
-            $out = @{ title = $title; process = $processName; x = $pos.X; y = $pos.Y; };
+            $out = @{ title = $title; process = $processName; idle = $idleSec; };
             Write-Output ($out | ConvertTo-Json -Compress);
         } catch { }
         Start-Sleep -Seconds 2;
@@ -931,20 +948,11 @@ function startPersistentTelemetryStreamWin() {
   rl.on("line", (line) => {
     try {
       const data = JSON.parse(line.trim());
-      if (data && typeof data.x === "number" && typeof data.y === "number") {
+      if (data && typeof data.idle === "number") {
         clientState.activeApp = data.process || "System";
         clientState.windowTitle = data.title || "Desktop";
-        const { x, y } = data;
-        if (clientState.lastMouseX !== null && clientState.lastMouseY !== null) {
-          const dx = x - clientState.lastMouseX;
-          const dy = y - clientState.lastMouseY;
-          if (Math.sqrt(dx * dx + dy * dy) > 0) {
-            clientState.isCurrentlyIdle = false;
-            clientState.idleSecondsCounter = 0;
-          }
-        }
-        clientState.lastMouseX = x;
-        clientState.lastMouseY = y;
+        clientState.idleSecondsCounter = data.idle;
+        clientState.isCurrentlyIdle = data.idle >= configState.idleThresholdSeconds;
       }
     } catch { }
   });
@@ -1164,31 +1172,49 @@ async function syncTelemetry() {
   if (elapsed > cap) elapsed = cap; // ignore sleep/hibernation gaps
 
   if (configState.monitoringEnabled) {
-    const idleSeconds = clientState.isCurrentlyIdle
-      ? Math.min(elapsed, clientState.idleSecondsCounter)
-      : 0;
+    const isLocked = clientState.isLocked;
+    const isPaused = clientState.isPaused;
+    
+    let sessionState = "unlocked";
+    if (isPaused) sessionState = "monitoring_paused";
+    else if (isLocked) sessionState = "locked";
+    
+    let engagementState = "active";
+    if (sessionState !== "unlocked") engagementState = "idle";
+    else if (clientState.isCurrentlyIdle) engagementState = "idle";
+    else if (clientState.idleSecondsCounter >= (configState.passiveAfterSeconds || 120)) engagementState = "passive";
+
+    const segmentId = crypto.randomUUID();
     const logItem = {
+      segmentId,
+      sequenceNamespace: clientState.sequenceNamespace || (clientState.sequenceNamespace = crypto.randomUUID()),
+      sequence: (clientState.sequenceCounter = (clientState.sequenceCounter || 0) + 1),
       processName: clientState.activeApp || "System",
       windowTitle: clientState.windowTitle || "",
       startedAt: new Date(startMs + clientState.serverClockOffset).toISOString(),
       endedAt: new Date(now + clientState.serverClockOffset).toISOString(),
-      durationSeconds: elapsed,
-      idleSeconds,
+      elapsedMilliseconds: elapsed * 1000,
+      engagementState,
+      sessionState,
+      connectivityState: "online", // Infer via sync
+      transitionReason: "interval",
+      policyVersion: "default"
     };
 
-    // Drain oldest-first, at most 500 per request (server cap). Any remainder
-    // stays queued for the next cycle so nothing is dropped under backlog.
     const combined = [...offlineQueue.logs, logItem];
     const batch = combined.slice(0, 500);
     try {
-      await apiPost("/activity", { logs: batch });
-      offlineQueue.logs = combined.slice(batch.length);
+      const batchId = crypto.randomUUID();
+      const payload = { batchId, logs: batch };
+      const resp = await apiPost("/activity", payload);
+      
+      if (resp && resp.acceptedSegmentIds) {
+        offlineQueue.logs = combined.filter(log => !resp.acceptedSegmentIds.includes(log.segmentId));
+      } else {
+        offlineQueue.logs = combined.slice(batch.length);
+      }
       offlineQueue.save();
-      console.log(
-        `📝 Sent ${batch.length} activity log(s): [${logItem.processName}] ${elapsed}s` +
-        (idleSeconds ? ` (idle ${idleSeconds}s)` : "") +
-        (offlineQueue.logs.length ? ` — ${offlineQueue.logs.length} still queued` : "")
-      );
+      console.log(`📝 Sent ${batch.length} interval(s)`);
     } catch (err) {
       offlineQueue.add(logItem);
       console.warn(`⏸️ Activity queued offline (${offlineQueue.logs.length} pending).`);

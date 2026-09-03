@@ -438,7 +438,7 @@ router.get("/range", async (req, res) => {
       .select({
         deviceId: activityLogsTable.deviceId,
         day: dayBucket,
-        workedSeconds: sql<number>`coalesce(sum(${activityLogsTable.durationSeconds}), 0)`,
+        workedSeconds: sql<number>`coalesce(sum(case when ${activityLogsTable.sessionState} = 'unlocked' and ${activityLogsTable.engagementState} != 'idle' then ${activityLogsTable.elapsedMilliseconds} / 1000 else 0 end), 0)`,
       })
       .from(activityLogsTable)
       .where(
@@ -603,8 +603,8 @@ router.get("/", async (req, res) => {
         deviceId: activityLogsTable.deviceId,
         checkIn: sql<string | null>`min(${activityLogsTable.startedAt})`,
         lastSeen: sql<string | null>`max(${activityLogsTable.endedAt})`,
-        workedSeconds: sql<number>`coalesce(sum(${activityLogsTable.durationSeconds}), 0)`,
-        idleSeconds: sql<number>`coalesce(sum(${activityLogsTable.idleSeconds}), 0)`,
+        workedSeconds: sql<number>`coalesce(sum(case when ${activityLogsTable.sessionState} = 'unlocked' and ${activityLogsTable.engagementState} != 'idle' then ${activityLogsTable.elapsedMilliseconds} / 1000 else 0 end), 0)`,
+        idleSeconds: sql<number>`coalesce(sum(case when ${activityLogsTable.sessionState} = 'unlocked' and ${activityLogsTable.engagementState} = 'idle' then ${activityLogsTable.elapsedMilliseconds} / 1000 else 0 end), 0)`,
       })
       .from(activityLogsTable)
       .where(

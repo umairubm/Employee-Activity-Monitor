@@ -34,6 +34,10 @@ if __package__ in (None, ""):
     from agent import screenshot as screenshot_mod
     from agent import tray as tray_mod
     from agent import system_info as system_info_mod
+    from agent.telemetry.interval_journal import IntervalJournal
+    from agent.telemetry.durable_queue import DurableQueue
+    from agent.telemetry.clock import Clock
+    from agent.telemetry.activity_state import ConnectivityState
 else:
     from . import api as api_mod
     from . import config as config_mod
@@ -43,6 +47,10 @@ else:
     from . import screenshot as screenshot_mod
     from . import tray as tray_mod
     from . import system_info as system_info_mod
+    from .telemetry.interval_journal import IntervalJournal
+    from .telemetry.durable_queue import DurableQueue
+    from .telemetry.clock import Clock
+    from .telemetry.activity_state import ConnectivityState
 
 # You can change this to 1.1.32, etc. to test auto-update
 AGENT_VERSION = "1.1.76"
@@ -61,8 +69,12 @@ class MonitoringAgent:
         self._stop = threading.Event()
         self._paused = threading.Event()  # set => paused
         self._lock = threading.Lock()
-        self._pending_logs: list[dict] = self._load_offline_logs()
-        self._current = None  # active segment being accumulated
+        
+        # Telemetry
+        db_path = config_mod.config_dir() / "offline_logs.sqlite3"
+        self._queue = DurableQueue(str(db_path))
+        self._journal = IntervalJournal(self._queue, Clock())
+        
         self._last_screenshot = 0.0
         self._next_screenshot_gap = self._screenshot_gap()
         self.tray: tray_mod.AgentTray | None = None
@@ -75,25 +87,7 @@ class MonitoringAgent:
     # --- helpers -------------------------------------------------------------
 
     def _offline_logs_path(self) -> Path:
-        return config_mod.config_dir() / "offline_logs.json"
-
-    def _load_offline_logs(self) -> list[dict]:
-        path = self._offline_logs_path()
-        if path.exists():
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except Exception as exc:
-                print(f"[agent] failed to load offline logs: {exc}", file=sys.stderr)
-        return []
-
-    def _save_offline_logs(self) -> None:
-        path = self._offline_logs_path()
-        try:
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(self._pending_logs, f, indent=2)
-        except Exception as exc:
-            print(f"[agent] failed to save offline logs: {exc}", file=sys.stderr)
+        return config_mod.config_dir() / "offline_logs.sqlite3"
 
     def _usb_monitor_loop(self) -> None:
         # Wait a bit on startup for system to settle
@@ -123,30 +117,28 @@ class MonitoringAgent:
                 end_str = (now + timedelta(seconds=1)).isoformat()
 
                 for dev in added:
-                    log_entry = {
-                        "processName": "USB_Monitor",
-                        "windowTitle": f"USB Connected: {dev}",
-                        "startedAt": now_str,
-                        "endedAt": end_str,
-                        "durationSeconds": 1,
-                        "idleSeconds": 0
-                    }
                     with self._lock:
-                        self._pending_logs.append(log_entry)
-                        self._save_offline_logs()
+                        self._journal.record_observation(
+                            process_name="USB_Monitor",
+                            window_title=f"USB Connected: {dev}",
+                            url="",
+                            is_locked=False,
+                            is_paused=self._paused.is_set(),
+                            is_suspended=False,
+                            idle_seconds=0
+                        )
 
                 for dev in removed:
-                    log_entry = {
-                        "processName": "USB_Monitor",
-                        "windowTitle": f"USB Disconnected: {dev}",
-                        "startedAt": now_str,
-                        "endedAt": end_str,
-                        "durationSeconds": 1,
-                        "idleSeconds": 0
-                    }
                     with self._lock:
-                        self._pending_logs.append(log_entry)
-                        self._save_offline_logs()
+                        self._journal.record_observation(
+                            process_name="USB_Monitor",
+                            window_title=f"USB Disconnected: {dev}",
+                            url="",
+                            is_locked=False,
+                            is_paused=self._paused.is_set(),
+                            is_suspended=False,
+                            idle_seconds=0
+                        )
 
                 prev_devices = curr_devices
 
@@ -156,7 +148,9 @@ class MonitoringAgent:
         return random.uniform(lo, hi) * 60.0
 
     def is_active(self) -> bool:
-        return not self._paused.is_set() and self.cfg.monitoring_enabled
+        return (not self._paused.is_set() 
+                and self.cfg.monitoring_enabled 
+                and not monitor_mod.is_system_locked())
 
     def status_text(self) -> str:
         if self._paused.is_set():
@@ -165,55 +159,23 @@ class MonitoringAgent:
             return "Status: disabled by administrator"
         return "Status: monitoring ACTIVE"
 
-    # --- activity accumulation ----------------------------------------------
-
-    def _flush_segment(self) -> None:
-        if self._current is None:
-            return
-        seg = self._current
-        elapsed = max(0, int(time.time() - seg["start_ts"]))
-        if elapsed > 0:
-            with self._lock:
-                log_item = {
-                    "processName": seg["process"] or "unknown",
-                    "windowTitle": seg["title"] or "",
-                    "startedAt": seg["start_iso"],
-                    "endedAt": _now_iso(),
-                    "durationSeconds": elapsed,
-                    "idleSeconds": min(elapsed, seg["idle"]),
-                }
-                if seg.get("url"):
-                    log_item["url"] = seg["url"]
-                    
-                self._pending_logs.append(log_item)
-                self._current = None
-                self._save_offline_logs()
-        self._current = None
-
     def _observe(self) -> None:
         process, title, url = monitor_mod.get_active_window()
         idle = monitor_mod.get_idle_seconds()
-        key = (process, title, url)
-        is_break_entry = False
-        is_break_exit = False
-        if self._current is not None:
-            curr_idle = self._current["idle"]
-            threshold = self.cfg.idle_threshold_seconds
-            is_break_entry = (idle >= threshold) and (curr_idle < threshold)
-            is_break_exit = (idle < threshold) and (curr_idle >= threshold)
-
-        if self._current is None or (self._current["process"], self._current["title"], self._current.get("url", "")) != key or is_break_entry or is_break_exit:
-            self._flush_segment()
-            self._current = {
-                "process": process,
-                "title": title,
-                "url": url,
-                "start_ts": time.time(),
-                "start_iso": _now_iso(),
-                "idle": 0,
-            }
+        is_locked = monitor_mod.is_system_locked()
+        is_paused = self._paused.is_set()
         
-        self._current["idle"] = max(self._current["idle"], idle)
+        with self._lock:
+            self._journal.record_observation(
+                process_name=process,
+                window_title=title,
+                url=url,
+                is_locked=is_locked,
+                is_paused=is_paused,
+                is_suspended=False, # TODO: add suspend hook
+                idle_seconds=idle,
+                connectivity=ConnectivityState.UNKNOWN # Inferred at sync time
+            )
 
     # --- screenshots ---------------------------------------------------------
 
@@ -686,10 +648,13 @@ class MonitoringAgent:
         last_sync = 0.0
         last_heartbeat = 0.0
         while not self._stop.is_set():
-            if self.is_active():
-                try:
-                    self._observe()
-                    self._maybe_screenshot()
+            time.sleep(2.0)
+            if not self.is_active():
+                # Still record state (paused, locked, suspended)
+                self._observe()
+                continue
+            self._observe()
+            self._maybe_screenshot()
                 except Exception as exc:
                     print(f"[agent] observe/screenshot error: {exc}", file=sys.stderr)
 
@@ -719,25 +684,20 @@ class MonitoringAgent:
             pass
 
     def _sync_activity(self) -> None:
-        # Push buffered activity.
-        self._flush_segment()
         with self._lock:
-            if not self._pending_logs:
-                return
-            # Take a snapshot of the current logs to send (capped at 500 per API limit)
-            batch = self._pending_logs[:500]
-            # Sanitize existing bad logs that would fail API validation
-            for b in batch:
-                if not b.get("processName"):
-                    b["processName"] = "unknown"
-                if "url" in b and not b.get("url"):
-                    del b["url"]
+            # Check for config updates
+            # Close the current segment
+            self._journal.shutdown() 
+            
+            batch = self._queue.get_batch(limit=500)
+            
+        if not batch:
+            return
 
         try:
             try:
                 raw_sysinfo = system_info_mod.sysinfo.system_info
                 if isinstance(raw_sysinfo, dict):
-                    # The spec dictates that empty strings must be dropped before sending
                     system_hardware_details = {
                         k: str(v) for k, v in raw_sysinfo.items() if v != ""
                     }
@@ -747,12 +707,23 @@ class MonitoringAgent:
             except Exception:
                 system_hardware_details = None
 
-            self.api.send_activity(batch, system_info=system_hardware_details)
+            import uuid
+            batch_id = str(uuid.uuid4())
+            payload = {"batchId": batch_id, "logs": batch}
+            if system_hardware_details:
+                payload["hardwareChanges"] = system_hardware_details
+
+            resp = self.api.upload_activity(payload)
             
-            # Success! Remove exactly the batch we just sent and save to disk
-            with self._lock:
-                self._pending_logs = self._pending_logs[len(batch):]
-                self._save_offline_logs()
+            if resp and isinstance(resp, dict) and "acceptedSegmentIds" in resp:
+                with self._lock:
+                    self._queue.ack(resp["acceptedSegmentIds"])
+                    for rej in resp.get("rejected", []):
+                        self._queue.reject(rej.get("segmentId"), rej.get("code", "unknown"))
+            else:
+                # Legacy fallback
+                with self._lock:
+                    self._queue.ack([b["segmentId"] for b in batch])
             
             # Always update the baseline to the latest state ONLY on successful send
             if system_hardware_details and isinstance(system_hardware_details, dict):

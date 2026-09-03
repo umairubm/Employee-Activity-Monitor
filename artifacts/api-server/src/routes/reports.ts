@@ -131,7 +131,7 @@ router.get("/summary", async (req, res) => {
     const breakdownRows = await db
       .select({
         classification: sql<string>`coalesce(${appCategoriesTable.classification}, 'undefined')`,
-        seconds: sql<number>`coalesce(sum(${activityLogsTable.durationSeconds}), 0)`,
+        seconds: sql<number>`coalesce(sum(${activityLogsTable.elapsedMilliseconds} / 1000), 0)`,
       })
       .from(activityLogsTable)
       .leftJoin(
@@ -143,11 +143,15 @@ router.get("/summary", async (req, res) => {
           ? and(
               gte(activityLogsTable.startedAt, rangeStart),
               lt(activityLogsTable.startedAt, rangeEnd),
+              eq(activityLogsTable.sessionState, 'unlocked'),
+              ne(activityLogsTable.engagementState, 'idle'),
               activityGroupFilter,
             )
           : and(
               gte(activityLogsTable.startedAt, rangeStart),
               lt(activityLogsTable.startedAt, rangeEnd),
+              eq(activityLogsTable.sessionState, 'unlocked'),
+              ne(activityLogsTable.engagementState, 'idle'),
             ),
       )
       .groupBy(sql`coalesce(${appCategoriesTable.classification}, 'undefined')`);
@@ -206,8 +210,8 @@ router.get("/leaderboard", async (req, res) => {
       .select({
         deviceId: activityLogsTable.deviceId,
         systemName: devicesTable.systemName,
-        productiveSeconds: sql<number>`coalesce(sum(case when ${appCategoriesTable.classification} = 'productive' then ${activityLogsTable.durationSeconds} else 0 end), 0)`,
-        totalSeconds: sql<number>`coalesce(sum(${activityLogsTable.durationSeconds}), 0)`,
+        productiveSeconds: sql<number>`coalesce(sum(case when ${appCategoriesTable.classification} = 'productive' and ${activityLogsTable.sessionState} = 'unlocked' and ${activityLogsTable.engagementState} != 'idle' then ${activityLogsTable.elapsedMilliseconds} / 1000 else 0 end), 0)`,
+        totalSeconds: sql<number>`coalesce(sum(case when ${activityLogsTable.sessionState} = 'unlocked' and ${activityLogsTable.engagementState} != 'idle' then ${activityLogsTable.elapsedMilliseconds} / 1000 else 0 end), 0)`,
       })
       .from(activityLogsTable)
       .innerJoin(
@@ -288,8 +292,8 @@ router.get("/group-comparison", async (req, res) => {
       db
         .select({
           group: devicesTable.deviceGroup,
-          productiveSeconds: sql<number>`coalesce(sum(case when ${appCategoriesTable.classification} = 'productive' then ${activityLogsTable.durationSeconds} else 0 end), 0)`,
-          totalSeconds: sql<number>`coalesce(sum(${activityLogsTable.durationSeconds}), 0)`,
+          productiveSeconds: sql<number>`coalesce(sum(case when ${appCategoriesTable.classification} = 'productive' and ${activityLogsTable.sessionState} = 'unlocked' and ${activityLogsTable.engagementState} != 'idle' then ${activityLogsTable.elapsedMilliseconds} / 1000 else 0 end), 0)`,
+          totalSeconds: sql<number>`coalesce(sum(case when ${activityLogsTable.sessionState} = 'unlocked' and ${activityLogsTable.engagementState} != 'idle' then ${activityLogsTable.elapsedMilliseconds} / 1000 else 0 end), 0)`,
         })
         .from(activityLogsTable)
         .innerJoin(devicesTable, eq(activityLogsTable.deviceId, devicesTable.id))

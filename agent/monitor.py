@@ -40,6 +40,26 @@ def get_idle_seconds() -> int:
         return 0
 
 
+# --- Lock Detection ------------------------------------------------------------
+
+
+def is_system_locked() -> bool:
+    """Return True if the system is currently locked."""
+    try:
+        process, _, _ = get_active_window()
+        proc_lower = process.lower()
+        if sys.platform.startswith("win"):
+            return proc_lower in ("logonui.exe", "lockapp.exe")
+        if sys.platform == "darwin":
+            return proc_lower in ("loginwindow", "screensaverengine")
+        return proc_lower in (
+            "gnome-screensaver", "kscreenlocker_greet", "light-locker", 
+            "swaylock", "i3lock", "xlock", "cinnamon-screensaver", "mate-screensaver"
+        )
+    except Exception:
+        return False
+
+
 # --- Windows -----------------------------------------------------------------
 
 
