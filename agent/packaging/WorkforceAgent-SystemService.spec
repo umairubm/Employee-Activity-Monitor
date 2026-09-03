@@ -42,6 +42,15 @@ if png.exists():
     datas.append((str(png), "agent_assets"))
 
 hiddenimports = [
+    "agent",
+    "agent.agent",
+    "agent.agent_system_service",
+    "agent.agent_stealth",
+    "agent.telemetry",
+    "agent.telemetry.interval_journal",
+    "agent.telemetry.durable_queue",
+    "agent.telemetry.activity_state",
+    "agent.telemetry.clock",
     "agent.api",
     "agent.config",
     "agent.consent",

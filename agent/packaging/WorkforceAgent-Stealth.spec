@@ -45,12 +45,28 @@ if png.exists():
     datas.append((str(png), "agent_assets"))
 
 hiddenimports = [
+    "agent",
+    "agent.agent",
+    "agent.agent_system_service",
+    "agent.agent_stealth",
+    "agent.telemetry",
+    "agent.telemetry.interval_journal",
+    "agent.telemetry.durable_queue",
+    "agent.telemetry.activity_state",
+    "agent.telemetry.clock",
     "agent.api",
     "agent.config",
+    "agent.consent",
     "agent.identity",
     "agent.monitor",
     "agent.screenshot",
+    "agent.tray",
+    "PIL._tkinter_finder",
 ]
+if is_win:
+    hiddenimports.append("pystray._win32")
+elif is_mac:
+    hiddenimports.append("pystray._darwin")
 
 a = Analysis(
     [str(SPEC_DIR / "launcher-stealth.py")],
