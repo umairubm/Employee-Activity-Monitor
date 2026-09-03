@@ -736,6 +736,53 @@ describe("server-side consent enforcement", () => {
     });
   });
 
+  it("does not reject an interval batch because optional URL or hardware metadata is unusable", async () => {
+    const { device, secret } = await createDeviceWithSecret({ consent: true });
+    trackDevice(device.id);
+    const segmentId = randomUUID();
+    const now = Date.now();
+
+    const res = await request(app)
+      .post("/sync/activity")
+      .set("x-device-id", device.id)
+      .set("x-device-secret", secret)
+      .send({
+        batchId: randomUUID(),
+        logs: [
+          {
+            segmentId,
+            sequenceNamespace: randomUUID(),
+            sequence: 1,
+            processName: "searchapp.exe",
+            windowTitle: "Windows Search",
+            url: "",
+            startedAt: new Date(now - 30_000).toISOString(),
+            endedAt: new Date(now).toISOString(),
+            elapsedMilliseconds: 30_000,
+            engagementState: "passive",
+            sessionState: "unlocked",
+            connectivityState: "online",
+          },
+        ],
+        hardwareChanges: {
+          "Host Name": "Interval-PC",
+          unsupportedNestedValue: { ignored: true },
+        },
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.acceptedSegmentIds).toEqual([segmentId]);
+
+    const [stored] = await db
+      .select({
+        url: activityLogsTable.url,
+        engagementState: activityLogsTable.engagementState,
+      })
+      .from(activityLogsTable)
+      .where(eq(activityLogsTable.deviceId, device.id));
+    expect(stored).toEqual({ url: null, engagementState: "passive" });
+  });
+
   it("syncs devices.systemName with the reported Host Name (trimmed) and ignores blanks", async () => {
     const { device, secret } = await createDeviceWithSecret({ consent: true });
     trackDevice(device.id);

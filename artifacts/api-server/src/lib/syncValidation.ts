@@ -39,13 +39,9 @@ export const ActivityLogItem = z.object({
   sequence: z.number().int().nonnegative().optional(),
   processName: z.string().min(1),
   windowTitle: z.string().nullable().optional(),
-  url: z
-    .string()
-    .url()
-    .max(2048)
-    .refine((value) => /^https?:\/\//i.test(value), "Only web URLs are supported")
-    .nullable()
-    .optional(),
+  // Optional URL metadata must never poison a durable activity batch. The
+  // route keeps only valid HTTP(S) URLs and stores all other values as null.
+  url: z.string().max(2048).nullable().optional(),
   startedAt: z.coerce.date(),
   endedAt: z.coerce.date(),
   elapsedMilliseconds: z.number().int().nonnegative().optional(),
@@ -85,7 +81,9 @@ export const ActivityBody = z.object({
   batchId: z.string().uuid().optional(),
   logs: z.array(ActivityLogItem).min(1).max(500),
   systemInfo: SystemInfo.optional(),
-  hardwareChanges: SystemInfo.optional(),
+  // Interval agents may include extra/non-scalar hardware metadata. The route
+  // retains only the scalar fields supported by devices.systemInfo.
+  hardwareChanges: z.record(z.string(), z.unknown()).optional(),
 });
 export type ActivityBody = z.infer<typeof ActivityBody>;
 

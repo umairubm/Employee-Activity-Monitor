@@ -711,6 +711,14 @@ router.post(
     const device = (req as DeviceRequest).device;
     const parsed = ActivityBody.safeParse(req.body);
     if (!parsed.success) {
+      console.warn("Invalid activity payload", {
+        deviceId: device.id,
+        issues: parsed.error.issues.map((issue) => ({
+          path: issue.path.join("."),
+          code: issue.code,
+          message: issue.message,
+        })),
+      });
       res.status(400).json({ error: "Invalid activity payload" });
       return;
     }
@@ -736,6 +744,15 @@ router.post(
       const idleSeconds =
         log.idleSeconds ??
         (log.engagementState === "idle" ? durationSeconds : 0);
+      const normalizedUrl = (() => {
+        if (!log.url) return null;
+        try {
+          const parsedUrl = new URL(log.url);
+          return /^https?:$/.test(parsedUrl.protocol) ? log.url : null;
+        } catch {
+          return null;
+        }
+      })();
       return {
         deviceId: device.id,
         companyId: device.companyId,
@@ -745,7 +762,7 @@ router.post(
         sequence: log.sequence ?? null,
         processName: log.processName,
         windowTitle: log.windowTitle ?? null,
-        url: log.url ?? null,
+        url: normalizedUrl,
         categoryId: category?.id ?? null,
         engagementState: log.engagementState ?? "active",
         sessionState: log.sessionState ?? "unlocked",
@@ -766,8 +783,19 @@ router.post(
 
     // Optional hardware/system inventory snapshot. Detect changes in
     // identity fields, record alerts, and store the latest snapshot.
-    const incomingSystemInfo =
+    const rawSystemInfo =
       parsed.data.systemInfo ?? parsed.data.hardwareChanges;
+    const incomingSystemInfo = rawSystemInfo
+      ? (Object.fromEntries(
+          Object.entries(rawSystemInfo).filter(
+            ([, value]) =>
+              value === null ||
+              typeof value === "string" ||
+              typeof value === "number" ||
+              typeof value === "boolean",
+          ),
+        ) as Snapshot)
+      : undefined;
     if (incomingSystemInfo) {
       const incoming = incomingSystemInfo as Snapshot;
       const prev = (device.systemInfo as Snapshot | null) ?? null;

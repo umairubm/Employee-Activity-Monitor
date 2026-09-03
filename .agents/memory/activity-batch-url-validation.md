@@ -7,4 +7,4 @@ Validate every captured browser URL, including already-schemed values, and sanit
 
 **Why:** one malformed browser accessibility value can make server validation reject the whole batch. Retrying the unchanged URL blocks every later segment, while dropping rejected batches causes silent activity loss.
 
-**How to apply:** permit only bounded HTTP(S) URLs with a valid hostname and port and no whitespace/control characters. Build a sanitized send copy, but retain original queued records on any upload failure.
+**How to apply:** agents should permit only bounded HTTP(S) URLs with a valid hostname and port and no whitespace/control characters, using a sanitized send copy while retaining queued records on failure. The receiver must also treat unusable optional URLs as null rather than reject the full durable batch; client-side sanitation alone cannot repair already-queued rows.
