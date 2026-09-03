@@ -1,0 +1,64 @@
+# Implementation Plan: Interval-Based Activity Telemetry Migration
+
+## Goal Description
+Perform a staged telemetry migration across the API, PostgreSQL database, Python agent, and Node agent. The goal is to record exact timestamped state transitions (intervals) rather than aggregated duration snapshots. This fundamentally changes how Active, Passive, Total, Productive, and Break Time are calculated, ensuring ActivTrak/TimeDoctor-level accuracy.
+
+## Telemetry Contract & Definitions
+
+### Engagement & Session States
+Network connectivity is independent of activity and will be tracked via a separate `connectivityState` field (or separate connectivity events), rather than overriding worked time.
+
+**State Machine Precedence (Highest to Lowest):**
+1. `suspended` (System is asleep/suspended)
+2. `monitoring_paused` (Agent is explicitly paused by user)
+3. `locked` (Screen is locked)
+4. `idle` (No input > `idleAfterSeconds`)
+5. `passive` (No input > `passiveAfterSeconds` but app remains foreground)
+6. `active` (Input within `passiveAfterSeconds`)
+
+### Configuration & Dynamic Thresholds
+Thresholds for Passive and Idle time will be dynamically provided by the server via the configuration/heartbeat response and cached locally for offline use:
+```json
+{
+  "passiveAfterSeconds": 120,
+  "idleAfterSeconds": 300
+}
+```
+Every uploaded interval will include the policy version/thresholds used at the time of recording to ensure historical calculations remain immutable even if an administrator changes company policies later.
+
+## Proposed Changes
+
+### Phase 1: Contract, API, and Compatibility
+- **API Payload & Acknowledgement**: Introduce the new batch payload format. The API will respond with explicit ACKs:
+  ```json
+  {
+    "batchId": "uuid",
+    "acceptedSegmentIds": ["uuid-1"],
+    "rejected": [ { "segmentId": "uuid-2", "code": "INVALID_INTERVAL" } ]
+  }
+  ```
+- **Strict Server Validation**: Enforce `endedAt > startedAt`, positive safe durations, valid states, monotonic duration agreement, URL length limits, and correct segment/batch IDs. Future timestamps and extreme clock skew will be rejected or quarantined. The server will calculate the authoritative duration from interval bounds.
+- **Database (PostgreSQL / Drizzle)**: Update schemas to store the new interval fields, policy versions, and the productivity category resolved *at ingestion time* (preserving classification history).
+- **Day/Timezone Boundaries**: The reporting engine will clip intervals accurately at day/timezone boundaries rather than assigning an entire cross-midnight interval to the start day.
+
+### Phase 2: Python Interval Journal
+- **Shared Module**: Create `telemetry/interval_journal.py`, `telemetry/activity_state.py`, `telemetry/durable_queue.py`, and `telemetry/clock.py` used across all agent entry points.
+- **Durable Queue & Crash Recovery**: Use a local SQLite journal. If the process terminates, the agent will recover the open interval on restart, conservatively closing it at the last trustworthy observation rather than spanning the crash gap. Rejected segments from the server will be moved to a local dead-letter table, not retried forever.
+- **Privacy First**: Normalize hostnames, remove fragments/credentials/sensitive queries, and apply limits to URLs *before* writing to the local durable queue.
+- **Exact Windows Input**: Ensure keyboard events are natively captured (verifying `GetLastInputInfo` or hooking directly) to fix idle attribution.
+
+### Phase 3: Reporting
+- **Duration Calculation**: Calculate duration strictly from interval bounds. 
+- **Overlaps & Unioning**: Union overlapping intervals to avoid double-counting.
+- **State Segregation**: Keep offline, locked, suspended, and paused time fully isolated from Productive/Active/Break metrics.
+- **Legacy Support**: Preserve legacy snapshot calculations for older agent versions simultaneously during the rollout.
+
+### Phase 4: Node Parity
+- **Agent Node (`agent-node/`)**: Implement the exact same interval contract.
+- **SQLite Viability Check**: Before committing to SQLite in Node, verify the selected library works seamlessly in both Windows and macOS installers without requiring local build tools on customer devices, supports WAL mode, and handles abrupt termination.
+- **Windows Keyboard Detection**: Remove reliance on cursor movement to accurately detect keyboard-only input.
+
+### Phase 5: Controlled Rollout & Testing
+- **Automated Testing**: Add extensive unit tests using injectable fake clocks for: midnight boundary crossing, timezone changes, policy changes, URL-only transitions, lock/suspend/resume/pause transitions, network loss while active, lost API ACKs, partially accepted batches, duplicate UUIDs, sequence gaps, and recovery from abrupt termination.
+- **Shadow Rollout**: Do *not* dual-deploy agents on a single staging device to avoid file/hook conflicts. Instead, shadow calculations from one telemetry stream on the backend, or use separate dedicated virtual machines to replay captured scripted event sequences through both calculation paths.
+- **Release**: Release behind a telemetry-version flag. Compare daily differences and cut over only when metrics stabilize.
