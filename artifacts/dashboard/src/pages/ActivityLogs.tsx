@@ -69,6 +69,7 @@ const SLOTS_PER_DAY = (24 * 60) / SLOT_MINUTES; // 144
 
 interface DeviceAgg {
   activeSeconds: number;
+  productiveSeconds: number;
   totalSeconds: number;
   startedAt: Date | null;
   endedAt: Date | null;
@@ -82,6 +83,7 @@ interface DeviceAgg {
 function emptyAgg(): DeviceAgg {
   return {
     activeSeconds: 0,
+    productiveSeconds: 0,
     totalSeconds: 0,
     startedAt: null,
     endedAt: null,
@@ -214,6 +216,7 @@ function aggregateLogs(
   // Naive sums; corrected for overlapping duplicate-agent logs after the loop.
   let naiveTotal = 0;
   let naiveActive = 0;
+  let naiveProductiveActive = 0;
   const intervals: Array<[number, number]> = [];
   // First→last span is keyed per local day so multi-day ranges sum daily spans
   // instead of one giant span across overnight gaps (mirrors the server, which
@@ -234,6 +237,7 @@ function aggregateLogs(
 
     naiveTotal += duration;
     naiveActive += active;
+    if (cls === "productive") naiveProductiveActive += active;
     intervals.push([started.getTime(), ended.getTime()]);
 
     const dayKey = `${started.getFullYear()}-${started.getMonth()}-${started.getDate()}`;
@@ -323,6 +327,10 @@ function aggregateLogs(
   const ratio = naiveTotal > 0 ? cappedCovered / naiveTotal : 0;
   agg.totalSeconds = Math.max(span, cappedCovered);
   agg.activeSeconds = Math.min(cappedCovered, Math.round(naiveActive * ratio));
+  agg.productiveSeconds = Math.min(
+    agg.activeSeconds,
+    Math.round(naiveProductiveActive * ratio),
+  );
   return agg;
 }
 
@@ -845,6 +853,7 @@ export default function ActivityLogs() {
                   <TableHead className="w-12 text-center">Status</TableHead>
                   <TableHead>User</TableHead>
                   <TableHead className="text-right">Active Time</TableHead>
+                  <TableHead className="text-right">Productive Time</TableHead>
                   <TableHead className="text-right">Total Time</TableHead>
                   <TableHead className="text-right">Break Time</TableHead>
                   <TableHead className="text-center">Start</TableHead>
@@ -863,7 +872,7 @@ export default function ActivityLogs() {
                 {!filteredDevices || filteredDevices.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={8}
+                      colSpan={9}
                       className="h-32 text-center text-muted-foreground"
                     >
                       <div className="flex flex-col items-center justify-center">
@@ -959,6 +968,9 @@ export default function ActivityLogs() {
                         <TableCell className="text-right font-semibold tabular-nums">
                           {formatHm(agg.activeSeconds)}
                         </TableCell>
+                        <TableCell className="text-right font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
+                          {formatHm(agg.productiveSeconds)}
+                        </TableCell>
                         <TableCell className="text-right tabular-nums text-muted-foreground">
                           {formatHm(agg.totalSeconds)}
                         </TableCell>
@@ -1033,6 +1045,7 @@ export default function ActivityLogs() {
                       )}
                       <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
                         <div><p className="text-xs text-muted-foreground">Active time</p><p className="font-semibold tabular-nums">{formatHm(agg.activeSeconds)}</p></div>
+                        <div><p className="text-xs text-muted-foreground">Productive time</p><p className="font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">{formatHm(agg.productiveSeconds)}</p></div>
                         <div><p className="text-xs text-muted-foreground">Total time</p><p className="tabular-nums text-muted-foreground">{formatHm(agg.totalSeconds)}</p></div>
                         <div><p className="text-xs text-muted-foreground">Break time</p><p className="tabular-nums text-amber-700 dark:text-amber-400">{formatHm(Math.max(0, agg.totalSeconds - agg.activeSeconds))}</p></div>
                         <div><p className="text-xs text-muted-foreground">Start</p><p className="tabular-nums">{agg.startedAt ? format(agg.startedAt, "h:mm a") : "—"}</p></div>
