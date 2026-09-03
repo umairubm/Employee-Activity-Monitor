@@ -1,0 +1,63 @@
+# Implementation Plan: Accurate Activity Telemetry (Python Agent)
+
+## Goal Description
+Overhaul the Python agent to send timestamped, exact state transitions (intervals) rather than summarized snapshots. This ensures complete alignment with ActivTrak-level accuracy, including robust idle attribution, monotonic duration calculations, stable segment UUIDs, and explicit lock/sleep/offline states.
+
+## Open Questions
+- **Node Agent Scope**: This workspace appears to only contain the Python agent. I will focus the implementation strictly on the Python agent. Please confirm if the Node agent code is in a different repository that you would like me to tackle separately.
+- **Monotonic Clocks across Restarts**: Should the `elapsedMilliseconds` use `time.monotonic()` purely within a single process run, and rely on `startedAt`/`endedAt` differences across agent restarts? (I will default to this standard approach).
+
+## Proposed Changes
+
+### Stage 1: Windows Input and Exact Idle Transitions
+We will fix how the Python agent splits idle transitions and records idle time.
+#### [MODIFY] [monitor.py](file:///Users/ubmtechnologies/Desktop/Employee_monitor%20-%20Copy/agent/monitor.py)
+- Confirm `GetLastInputInfo` reliably captures keyboard on Windows (it natively captures both mouse and keyboard).
+- Expose state checks for system suspend/resume (e.g., using `WM_POWERBROADCAST` or checking large monotonic clock jumps).
+
+#### [MODIFY] [agent.py](file:///Users/ubmtechnologies/Desktop/Employee_monitor%20-%20Copy/agent/agent.py) (and `agent_system_service.py`, `agent_stealth.py`)
+- Redesign `_observe()` to emit explicit events on: 
+  - `user_became_idle`
+  - `user_returned`
+- An idle period will split the interval and create a new interval with state `idle`. 
+
+### Stage 2: Shared Interval Journal
+#### [MODIFY] [agent.py](file:///Users/ubmtechnologies/Desktop/Employee_monitor%20-%20Copy/agent/agent.py) (and `agent_system_service.py`, `agent_stealth.py`)
+- Change the segment structure to exactly match the requested payload:
+  ```json
+  {
+    "segmentId": "uuid",
+    "sequence": 1,
+    "startedAt": "...",
+    "endedAt": "...",
+    "elapsedMilliseconds": 1234,
+    "state": "active",
+    "processName": "...",
+    "windowTitle": "...",
+    "url": "...",
+    "transitionReason": "..."
+  }
+  ```
+- Split intervals on URL changes (already partially done, but will ensure it respects URL normalization and privacy filters).
+
+### Stage 3: Stable Segment IDs, Durable Queue, Idempotent Uploads
+#### [MODIFY] [agent.py](file:///Users/ubmtechnologies/Desktop/Employee_monitor%20-%20Copy/agent/agent.py) (and `agent_system_service.py`, `agent_stealth.py`)
+- Add UUID generation for `segmentId` and an incrementing `sequence` counter, persisted to a local state file across restarts.
+- Upgrade the `_sync_activity()` logic to properly handle server ACKs before deleting segments from the local durable queue (`offline_logs.json`).
+
+### Stage 4: Explicit Sleep, Lock, Offline, and Pause States
+#### [MODIFY] [monitor.py](file:///Users/ubmtechnologies/Desktop/Employee_monitor%20-%20Copy/agent/monitor.py)
+- Enhance `is_system_locked()` (recently added) to actively trigger interval splits with state `locked`.
+- Detect system sleep/resume (using monotonic clock jumps as a cross-platform heuristic: if `time.monotonic()` advances much less than wall-clock time, or vice-versa, the system was suspended).
+
+#### [MODIFY] [agent.py](file:///Users/ubmtechnologies/Desktop/Employee_monitor%20-%20Copy/agent/agent.py) (and `agent_system_service.py`, `agent_stealth.py`)
+- Record `monitoring_paused` state intervals when the user clicks Pause.
+- When `_sync_activity()` fails, record transitions as `offline` if no network is available.
+
+## Verification Plan
+### Automated Tests
+- N/A for UI agent, relies on manual testing.
+
+### Manual Verification
+- Run the agent locally and verify the offline queue (`offline_logs.json`) populates with exact interval objects matching the payload spec.
+- Trigger manual idle (do not touch mouse/keyboard for threshold), lock the screen, and pause the agent, then inspect the generated `segmentId`s, monotonic elapsed times, and states to ensure they correctly represent the user's timeline without aggregating overlapping periods.
