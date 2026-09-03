@@ -1141,6 +1141,31 @@ router.post(
           })
           .returning({ id: agentReleasesTable.id });
 
+        await tx
+          .update(deviceCommandsTable)
+          .set({
+            status: "cancelled",
+            cancelledAt: new Date(),
+            cancelledById: (req as AuthedRequest).user.id,
+            cancelReason: `Superseded by agent update to v${data.version}`,
+          })
+          .where(
+            and(
+              inArray(
+                deviceCommandsTable.deviceId,
+                targets.map((target) => target.id),
+              ),
+              eq(deviceCommandsTable.companyId, companyId),
+              eq(deviceCommandsTable.commandType, "update_agent"),
+              inArray(deviceCommandsTable.status, [
+                "pending",
+                "acknowledged",
+                "downloading",
+                "installing",
+              ]),
+            ),
+          );
+
         const commands = await tx
           .insert(deviceCommandsTable)
           .values(
@@ -1223,18 +1248,44 @@ router.post(
         });
         return;
       }
-      const [command] = await db
-        .insert(deviceCommandsTable)
-        .values({
-          deviceId: String(req.params.id),
-          companyId,
-          commandType: data.commandType,
-          payload: commandPayload(data),
-          reason: data.reason ?? null,
-          issuedById: (req as AuthedRequest).user.id,
-          status: "pending",
-        })
-        .returning();
+      const [command] = await db.transaction(async (tx) => {
+        if (data.commandType === "update_agent") {
+          await tx
+            .update(deviceCommandsTable)
+            .set({
+              status: "cancelled",
+              cancelledAt: new Date(),
+              cancelledById: (req as AuthedRequest).user.id,
+              cancelReason: `Superseded by agent update to v${data.version}`,
+            })
+            .where(
+              and(
+                eq(deviceCommandsTable.deviceId, device.id),
+                eq(deviceCommandsTable.companyId, companyId),
+                eq(deviceCommandsTable.commandType, "update_agent"),
+                inArray(deviceCommandsTable.status, [
+                  "pending",
+                  "acknowledged",
+                  "downloading",
+                  "installing",
+                ]),
+              ),
+            );
+        }
+
+        return tx
+          .insert(deviceCommandsTable)
+          .values({
+            deviceId: String(req.params.id),
+            companyId,
+            commandType: data.commandType,
+            payload: commandPayload(data),
+            reason: data.reason ?? null,
+            issuedById: (req as AuthedRequest).user.id,
+            status: "pending",
+          })
+          .returning();
+      });
 
       // Keep the device's lock state in sync with the command so the
       // dashboard badge/countdown and heartbeat expiry agree.

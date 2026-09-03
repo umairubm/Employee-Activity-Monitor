@@ -147,6 +147,80 @@ describe("Remote Agent Update Manager", () => {
     expect(resolved.body.fileName).toBe("agent-4.9.0.zip");
   });
 
+  it("cancels older active update commands before queueing a newer update", async () => {
+    const device = await createDevice({ companyId: UPDATE_COMPANY_ID });
+    deviceIds.push(device.id);
+
+    await db.insert(deviceCommandsTable).values([
+      {
+        deviceId: device.id,
+        companyId: UPDATE_COMPANY_ID,
+        issuedById: adminId,
+        commandType: "update_agent",
+        payload: JSON.stringify({ version: "4.7.0" }),
+        status: "pending",
+      },
+      {
+        deviceId: device.id,
+        companyId: UPDATE_COMPANY_ID,
+        issuedById: adminId,
+        commandType: "update_agent",
+        payload: JSON.stringify({ version: "4.7.1" }),
+        status: "installing",
+      },
+      {
+        deviceId: device.id,
+        companyId: UPDATE_COMPANY_ID,
+        issuedById: adminId,
+        commandType: "update_agent",
+        payload: JSON.stringify({ version: "4.6.9" }),
+        status: "completed",
+        completedAt: new Date(),
+      },
+    ]);
+
+    const response = await request(adminApp)
+      .post("/devices/agent-updates")
+      .send({
+        version: "4.9.2",
+        downloadUrl: "https://downloads.example.test/agent-4.9.2.exe",
+        objectPath: null,
+        fileName: "agent-4.9.2.exe",
+        targetMode: "device",
+        deviceId: device.id,
+        reason: null,
+      });
+
+    expect(response.status).toBe(201);
+    releaseIds.push(response.body.releaseId);
+
+    const commands = await db
+      .select()
+      .from(deviceCommandsTable)
+      .where(
+        and(
+          eq(deviceCommandsTable.deviceId, device.id),
+          eq(deviceCommandsTable.commandType, "update_agent"),
+        ),
+      );
+
+    const byVersion = new Map(
+      commands.map((command) => [
+        JSON.parse(command.payload ?? "{}").version,
+        command,
+      ]),
+    );
+    expect(byVersion.get("4.7.0")).toMatchObject({
+      status: "cancelled",
+      cancelledById: adminId,
+      cancelReason: "Superseded by agent update to v4.9.2",
+    });
+    expect(byVersion.get("4.7.0")?.cancelledAt).not.toBeNull();
+    expect(byVersion.get("4.7.1")?.status).toBe("cancelled");
+    expect(byVersion.get("4.6.9")?.status).toBe("completed");
+    expect(byVersion.get("4.9.2")?.status).toBe("pending");
+  });
+
   it("rejects a patch whose file is not a .zip", async () => {
     const device = await createDevice({ companyId: UPDATE_COMPANY_ID });
     deviceIds.push(device.id);

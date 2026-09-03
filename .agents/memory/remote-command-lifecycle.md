@@ -10,6 +10,7 @@ Rules:
 - The server heartbeat redelivers stale acknowledged/download/install commands (acknowledgedAt older than ~2 min), but never retries stale acknowledged restart/shutdown commands; those are marked failed to prevent repeated power actions. Same-status re-acks remain idempotent 200s.
 - Recent scheduled power actions use a short admin cancellation window; heartbeat returns cancellation requests separately from commands so older agents cannot execute a cancelled shutdown as a fresh one.
 - Non-terminal commands have a maximum age; once older than a day they are failed before heartbeat delivery instead of executing after a long-offline device reconnects.
+- Queueing a new agent update atomically cancels every older non-terminal update for each targeted device before inserting the replacement; preserve completed and cancelled records for audit instead of deleting history.
 - Version comparisons for update completion use the leading numeric prefix (the Node agent reports a suffixed version).
 - Password commands report only generic failure text in acks AND local logs.
 
