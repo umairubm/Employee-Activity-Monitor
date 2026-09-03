@@ -1,0 +1,56 @@
+# Implementation Plan: Interval-Based Activity Telemetry
+
+## Goal Description
+Overhaul the telemetry architecture across the API, database, Python agent, and Node agent to record exact timestamped state transitions (intervals) rather than aggregated duration snapshots. This addresses inaccuracies with idle attribution, offline states, overlapping time, and incomplete keyboard detection, bringing the accuracy to ActivTrak/TimeDoctor standards.
+
+## Open Questions
+- Are there specific configurable policy thresholds for the "Passive Time" transition (e.g., exactly 2 minutes) you want hardcoded for now, or should they be pulled dynamically from a configuration endpoint?
+- Does the server use PostgreSQL or another datastore for the schema changes?
+
+## Proposed Changes
+
+### Phase 1: Contract and Compatibility
+Update the backend to define the new interval payload, support stable segment and batch IDs, and ensure backward compatibility for older agents.
+- **API Schema**: Introduce new endpoints or update existing ones to accept the `engagementState` and `sessionState` split payload.
+- **Database Support**: Add tables/columns for the new properties (`segmentId`, `sequence`, `engagementState`, `sessionState`, `elapsedMilliseconds`).
+- **Server Deduplication**: Process acknowledgements and deduplicate incoming segments using `deviceId` + `segmentId`.
+- **Backward Compatibility**: Preserve support for the legacy summarized payload format.
+
+### Phase 2: Python Interval Journal
+Implement a shared telemetry module in the Python agent to prevent logic duplication across `agent.py`, `agent_stealth.py`, and `agent_system_service.py`.
+- **Shared Module (`telemetry/`)**: Create `interval_journal.py`, `activity_state.py`, `durable_queue.py`, and `clock.py`.
+- **Durable Local Queue**: Replace `offline_logs.json` with a robust SQLite local journal for atomic writes, guaranteed ordering, sequence numbers, and ACK-based deletion.
+- **Exact Windows Input**: Fix Windows input detection to explicitly capture keyboard events (verifying `GetLastInputInfo` covers this or hooking directly if necessary).
+- **Interval Transitions**: Split intervals precisely on foreground app changes, URL changes, idle transitions, and explicit states (lock, suspend, resume, pause).
+- **Testing**: Add robust automated state-machine tests using injectable fake clocks to verify interval logic without real-time delays.
+
+### Phase 3: Reporting
+Update the server-side calculation engine to process exact intervals.
+- **Duration Calculation**: Calculate duration strictly from interval bounds (`startedAt` and `endedAt`) and monotonic validations.
+- **Overlaps & Unioning**: Union overlapping intervals correctly instead of treating the first-to-last span as Total Time.
+- **State Segregation**: Ensure offline, locked, suspended, and paused time are completely segregated from Productive / Active / Break metrics.
+- **Productive vs. Passive**: Formally calculate *Productive Active* vs. *Productive Passive* based on application categorization and the new `engagementState`.
+
+### Phase 4: Node Parity
+Bring the Node agent up to the exact same telemetry contract.
+- **Agent Node (`agent-node/`)**: Implement the same interval journal and local SQLite queue logic in `tracker-client.mjs`.
+- **Windows Keyboard Detection**: Fix the Node agent's reliance on cursor movement to accurately detect keyboard-only input.
+- **Interval Accuracy**: Ensure foreground transitions aren't lost between synchronization periods.
+- **Validation**: Run scripted timelines against both the Python and Node agents to ensure their outputs are identical.
+
+### Phase 5: Controlled Rollout
+- Release the new functionality behind a telemetry-version flag.
+- Run legacy and new calculations side-by-side on the backend.
+- Compare daily differences and investigate any abnormal gaps.
+- Cut over reports to the new metrics once stability is confirmed.
+
+## Verification Plan
+### Automated Tests
+- Unit tests using fake clocks to simulate active -> passive -> idle transitions.
+- Sequence ID generation, database constraints, and deduplication logic tests.
+- Offline queue simulation: simulate abrupt process termination, interrupted writes, and test SQLite recovery mechanisms.
+- Time jump tests (simulating sleep/resume and Daylight Savings adjustments).
+
+### Manual Verification
+- Dual-deploy the legacy and new agents side-by-side in a staging environment to observe timeline fidelity.
+- Perform a scripted "keyboard-only typing" test on both Windows agents to confirm they do not falsely report passive/idle states.
