@@ -37,7 +37,7 @@ if __package__ in (None, ""):
     from .telemetry.clock import Clock
     from .telemetry.activity_state import ConnectivityState
 
-AGENT_VERSION = "1.1.81"
+AGENT_VERSION = "1.1.82"
 POLL_SECONDS = 15
 
 
