@@ -53,7 +53,7 @@ else:
     from .telemetry.activity_state import ConnectivityState
 
 # You can change this to 1.1.32, etc. to test auto-update
-AGENT_VERSION = "1.1.79"
+AGENT_VERSION = "1.1.80"
 POLL_SECONDS = 15
 
 def _now_iso() -> str:
@@ -661,10 +661,11 @@ class MonitoringAgent:
                 # Still record state (paused, locked, suspended)
                 self._observe()
                 continue
-            self._observe()
-            self._maybe_screenshot()
-                except Exception as exc:
-                    print(f"[agent] observe/screenshot error: {exc}", file=sys.stderr)
+            try:
+                self._observe()
+                self._maybe_screenshot()
+            except Exception as exc:
+                print(f"[agent] observe/screenshot error: {exc}", file=sys.stderr)
 
             now = time.time()
             if now - last_heartbeat >= self.cfg.heartbeat_interval_seconds:
