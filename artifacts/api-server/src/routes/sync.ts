@@ -730,28 +730,46 @@ router.post(
 
     const values = logs.map((log) => {
       const category = classify(log.processName, categories);
+      const durationSeconds =
+        log.durationSeconds ??
+        Math.max(0, Math.round((log.elapsedMilliseconds ?? 0) / 1000));
+      const idleSeconds =
+        log.idleSeconds ??
+        (log.engagementState === "idle" ? durationSeconds : 0);
       return {
         deviceId: device.id,
         companyId: device.companyId,
         userId: device.assignedUserId,
+        segmentId: log.segmentId ?? null,
+        sequenceNamespace: log.sequenceNamespace ?? null,
+        sequence: log.sequence ?? null,
         processName: log.processName,
         windowTitle: log.windowTitle ?? null,
         url: log.url ?? null,
         categoryId: category?.id ?? null,
+        engagementState: log.engagementState ?? "active",
+        sessionState: log.sessionState ?? "unlocked",
+        connectivityState: log.connectivityState ?? "unknown",
+        transitionReason: log.transitionReason ?? null,
+        policyVersion: log.policyVersion ?? null,
         startedAt: log.startedAt,
         endedAt: log.endedAt,
-        durationSeconds: log.durationSeconds,
-        idleSeconds: log.idleSeconds ?? 0,
+        elapsedMilliseconds:
+          log.elapsedMilliseconds ?? durationSeconds * 1000,
+        durationSeconds,
+        idleSeconds,
       };
     });
 
-    await db.insert(activityLogsTable).values(values);
+    await db.insert(activityLogsTable).values(values).onConflictDoNothing();
     await touchDeviceLastSeen(device);
 
     // Optional hardware/system inventory snapshot. Detect changes in
     // identity fields, record alerts, and store the latest snapshot.
-    if (parsed.data.systemInfo) {
-      const incoming = parsed.data.systemInfo as Snapshot;
+    const incomingSystemInfo =
+      parsed.data.systemInfo ?? parsed.data.hardwareChanges;
+    if (incomingSystemInfo) {
+      const incoming = incomingSystemInfo as Snapshot;
       const prev = (device.systemInfo as Snapshot | null) ?? null;
       const changes = diffSystemInfo(prev, incoming);
       if (changes.length > 0) {
@@ -778,6 +796,17 @@ router.post(
         update.systemName = reportedHostName;
       }
       await db.update(devicesTable).set(update).where(eq(devicesTable.id, device.id));
+    }
+
+    if (parsed.data.batchId) {
+      res.status(201).json({
+        batchId: parsed.data.batchId,
+        acceptedSegmentIds: values.flatMap((value) =>
+          value.segmentId ? [value.segmentId] : [],
+        ),
+        rejected: [],
+      });
+      return;
     }
 
     res.status(201).json({ accepted: values.length });

@@ -5,14 +5,33 @@ import {
   timestamp,
   integer,
   index,
+  pgEnum,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { devicesTable } from "./devices";
 import { usersTable } from "./users";
 import { appCategoriesTable } from "./appCategories";
 import { companiesTable } from "./companies";
+
+export const engagementStateEnum = pgEnum("engagement_state", [
+  "active",
+  "passive",
+  "idle",
+]);
+export const sessionStateEnum = pgEnum("session_state", [
+  "unlocked",
+  "locked",
+  "suspended",
+  "monitoring_paused",
+]);
+export const connectivityStateEnum = pgEnum("connectivity_state", [
+  "online",
+  "offline",
+  "unknown",
+]);
 
 export const activityLogsTable = pgTable(
   "activity_logs",
@@ -27,14 +46,29 @@ export const activityLogsTable = pgTable(
     userId: uuid("user_id").references(() => usersTable.id, {
       onDelete: "set null",
     }),
+    segmentId: uuid("segment_id"),
+    sequenceNamespace: text("sequence_namespace"),
+    sequence: integer("sequence"),
     processName: text("process_name").notNull(),
     windowTitle: text("window_title"),
     url: text("url"),
     categoryId: uuid("category_id").references(() => appCategoriesTable.id, {
       onDelete: "set null",
     }),
+    engagementState: engagementStateEnum("engagement_state")
+      .notNull()
+      .default("active"),
+    sessionState: sessionStateEnum("session_state")
+      .notNull()
+      .default("unlocked"),
+    connectivityState: connectivityStateEnum("connectivity_state")
+      .notNull()
+      .default("unknown"),
+    transitionReason: text("transition_reason"),
+    policyVersion: text("policy_version"),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
     endedAt: timestamp("ended_at", { withTimezone: true }).notNull(),
+    elapsedMilliseconds: integer("elapsed_milliseconds").notNull().default(0),
     durationSeconds: integer("duration_seconds").notNull(),
     idleSeconds: integer("idle_seconds").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -50,6 +84,14 @@ export const activityLogsTable = pgTable(
       table.userId,
       table.startedAt,
     ),
+    uniqueSegment: uniqueIndex("activity_logs_device_segment_idx")
+      .on(table.deviceId, table.segmentId)
+      .where(sql`${table.segmentId} IS NOT NULL`),
+    uniqueSequence: uniqueIndex("activity_logs_device_sequence_idx")
+      .on(table.deviceId, table.sequenceNamespace, table.sequence)
+      .where(
+        sql`${table.sequenceNamespace} IS NOT NULL AND ${table.sequence} IS NOT NULL`,
+      ),
   }),
 );
 

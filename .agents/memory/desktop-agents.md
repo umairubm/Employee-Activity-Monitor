@@ -30,6 +30,24 @@ server. The server (`artifacts/api-server/src/routes/sync.ts`, `deviceAuth.ts`,
 **How to apply:** when a new/changed client appears, diff its payloads against
 `lib/syncValidation.ts` and mirror `agent/api.py`. Never add a public sync route.
 
+## Interval telemetry must support rolling agent upgrades
+
+**Rule:** the activity receiver must accept both legacy duration-based logs and
+new interval segments. Interval batches carry stable segment IDs and sequences,
+elapsed milliseconds, engagement/session/connectivity states, and a batch ID.
+Persist those fields, acknowledge accepted segment IDs, and make retries
+idempotent without dropping legacy support.
+
+**Why:** interval-capable agents could still heartbeat and upload screenshots
+while every activity batch was rejected by an older receiver that required
+`durationSeconds`. That looked like a healthy online device while its activity
+queue silently stopped reaching the dashboard.
+
+**How to apply:** deploy additive receiver/schema compatibility before or
+together with a new interval-capable agent. During a rolling fleet upgrade,
+normalize elapsed milliseconds into legacy duration/idle totals so existing
+reports continue working, while retaining the richer states for newer views.
+
 ## systemInfo is a flat record keyed by the dashboard's display field names
 
 The optional `systemInfo` on `POST /sync/activity` is a FLAT

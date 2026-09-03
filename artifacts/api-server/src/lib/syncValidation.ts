@@ -34,19 +34,40 @@ export const HeartbeatBody = z.object({
 export type HeartbeatBody = z.infer<typeof HeartbeatBody>;
 
 export const ActivityLogItem = z.object({
+  segmentId: z.string().uuid().optional(),
+  sequenceNamespace: z.string().min(1).optional(),
+  sequence: z.number().int().nonnegative().optional(),
   processName: z.string().min(1),
-  windowTitle: z.string().optional(),
+  windowTitle: z.string().nullable().optional(),
   url: z
     .string()
     .url()
     .max(2048)
     .refine((value) => /^https?:\/\//i.test(value), "Only web URLs are supported")
+    .nullable()
     .optional(),
   startedAt: z.coerce.date(),
   endedAt: z.coerce.date(),
-  durationSeconds: z.number().int().nonnegative(),
+  elapsedMilliseconds: z.number().int().nonnegative().optional(),
+  engagementState: z.enum(["active", "passive", "idle"]).optional(),
+  sessionState: z
+    .enum(["unlocked", "locked", "suspended", "monitoring_paused"])
+    .optional(),
+  connectivityState: z.enum(["online", "offline", "unknown"]).optional(),
+  transitionReason: z.string().max(200).optional(),
+  policyVersion: z.string().max(100).optional(),
+  durationSeconds: z.number().int().nonnegative().optional(),
   idleSeconds: z.number().int().nonnegative().optional(),
-});
+}).refine(
+  (log) =>
+    log.endedAt >= log.startedAt &&
+    (log.durationSeconds !== undefined ||
+      log.elapsedMilliseconds !== undefined),
+  {
+    message:
+      "endedAt must not precede startedAt and a duration value is required",
+  },
+);
 
 /**
  * Optional device hardware/system inventory snapshot. The agent decides the
@@ -61,8 +82,10 @@ export const SystemInfo = z.record(
 export type SystemInfo = z.infer<typeof SystemInfo>;
 
 export const ActivityBody = z.object({
+  batchId: z.string().uuid().optional(),
   logs: z.array(ActivityLogItem).min(1).max(500),
   systemInfo: SystemInfo.optional(),
+  hardwareChanges: SystemInfo.optional(),
 });
 export type ActivityBody = z.infer<typeof ActivityBody>;
 

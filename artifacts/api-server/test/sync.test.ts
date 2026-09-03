@@ -667,6 +667,75 @@ describe("server-side consent enforcement", () => {
     expect(Date.now() - activeDevice.lastSeenAt!.getTime()).toBeLessThan(5_000);
   });
 
+  it("accepts and acknowledges interval telemetry from agent 1.1.83", async () => {
+    const { device, secret } = await createDeviceWithSecret({ consent: true });
+    trackDevice(device.id);
+    const batchId = randomUUID();
+    const segmentId = randomUUID();
+    const now = Date.now();
+
+    const payload = {
+      batchId,
+      logs: [
+        {
+          segmentId,
+          sequenceNamespace: randomUUID(),
+          sequence: 1,
+          processName: "chrome.exe",
+          windowTitle: "Work item",
+          url: "https://example.com/work-item/456",
+          startedAt: new Date(now - 90_000).toISOString(),
+          endedAt: new Date(now).toISOString(),
+          elapsedMilliseconds: 90_000,
+          engagementState: "active",
+          sessionState: "unlocked",
+          connectivityState: "online",
+          transitionReason: "foreground_changed",
+          policyVersion: "default",
+        },
+      ],
+      hardwareChanges: { "Host Name": "Interval-PC" },
+    };
+
+    const first = await request(app)
+      .post("/sync/activity")
+      .set("x-device-id", device.id)
+      .set("x-device-secret", secret)
+      .send(payload);
+
+    expect(first.status).toBe(201);
+    expect(first.body).toEqual({
+      batchId,
+      acceptedSegmentIds: [segmentId],
+      rejected: [],
+    });
+
+    // Retrying the same durable segment is acknowledged but never duplicated.
+    const retry = await request(app)
+      .post("/sync/activity")
+      .set("x-device-id", device.id)
+      .set("x-device-secret", secret)
+      .send(payload);
+    expect(retry.status).toBe(201);
+    expect(retry.body.acceptedSegmentIds).toEqual([segmentId]);
+
+    const rows = await db
+      .select()
+      .from(activityLogsTable)
+      .where(eq(activityLogsTable.deviceId, device.id));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      segmentId,
+      processName: "chrome.exe",
+      engagementState: "active",
+      sessionState: "unlocked",
+      connectivityState: "online",
+      elapsedMilliseconds: 90_000,
+      durationSeconds: 90,
+      idleSeconds: 0,
+    });
+  });
+
   it("syncs devices.systemName with the reported Host Name (trimmed) and ignores blanks", async () => {
     const { device, secret } = await createDeviceWithSecret({ consent: true });
     trackDevice(device.id);
