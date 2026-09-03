@@ -1328,8 +1328,8 @@ const cancelCommandSchema = z.object({
 });
 
 // PATCH /api/devices/:id/commands/:commandId/cancel - cancel a pending command,
-// stop an acknowledged logout from being retried, or abort a recently
-// acknowledged/scheduled power command.
+// stop an active agent update or acknowledged logout from being retried, or
+// abort a recently acknowledged/scheduled power command.
 router.patch(
   "/:id/commands/:commandId/cancel",
   requireRole("company_admin", "manager"),
@@ -1371,6 +1371,14 @@ router.patch(
               and(
                 eq(deviceCommandsTable.commandType, "logout_user"),
                 eq(deviceCommandsTable.status, "acknowledged"),
+              ),
+              and(
+                eq(deviceCommandsTable.commandType, "update_agent"),
+                inArray(deviceCommandsTable.status, [
+                  "acknowledged",
+                  "downloading",
+                  "installing",
+                ]),
               ),
               and(
                 inArray(deviceCommandsTable.commandType, ["restart", "shutdown"]),

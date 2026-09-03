@@ -223,6 +223,36 @@ describe("Remote Agent Update Manager", () => {
     expect(byVersion.get("4.9.2")?.status).toBe("pending");
   });
 
+  it("lets an admin directly cancel an update stuck in installing", async () => {
+    const device = await createDevice({ companyId: UPDATE_COMPANY_ID });
+    deviceIds.push(device.id);
+
+    const [command] = await db
+      .insert(deviceCommandsTable)
+      .values({
+        deviceId: device.id,
+        companyId: UPDATE_COMPANY_ID,
+        issuedById: adminId,
+        commandType: "update_agent",
+        payload: JSON.stringify({ version: "4.9.3" }),
+        status: "installing",
+      })
+      .returning({ id: deviceCommandsTable.id });
+
+    const response = await request(adminApp)
+      .patch(`/devices/${device.id}/commands/${command.id}/cancel`)
+      .send({ reason: "Superseded by a newer update" });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      id: command.id,
+      status: "cancelled",
+      cancelledById: adminId,
+      cancelReason: "Superseded by a newer update",
+    });
+    expect(response.body.cancelledAt).toBeTruthy();
+  });
+
   it("rejects a patch whose file is not a .zip", async () => {
     const device = await createDevice({ companyId: UPDATE_COMPANY_ID });
     deviceIds.push(device.id);

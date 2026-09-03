@@ -402,6 +402,8 @@ export default function DeviceDetail({ id }: { id: string }) {
   const cancelTarget = commands?.find((cmd) => cmd.id === cancelCommandId);
   const canCancelCommand = (cmd: NonNullable<typeof commands>[number]) =>
     cmd.status === "pending" ||
+    (cmd.commandType === "update_agent" &&
+      ["acknowledged", "downloading", "installing"].includes(cmd.status)) ||
     (cmd.commandType === "logout_user" && cmd.status === "acknowledged");
 
   return (
