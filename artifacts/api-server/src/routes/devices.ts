@@ -1155,7 +1155,6 @@ router.post(
                 deviceCommandsTable.deviceId,
                 targets.map((target) => target.id),
               ),
-              eq(deviceCommandsTable.companyId, companyId),
               eq(deviceCommandsTable.commandType, "update_agent"),
               inArray(deviceCommandsTable.status, [
                 "pending",
@@ -1261,7 +1260,6 @@ router.post(
             .where(
               and(
                 eq(deviceCommandsTable.deviceId, device.id),
-                eq(deviceCommandsTable.companyId, companyId),
                 eq(deviceCommandsTable.commandType, "update_agent"),
                 inArray(deviceCommandsTable.status, [
                   "pending",

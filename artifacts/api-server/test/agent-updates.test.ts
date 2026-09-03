@@ -154,7 +154,9 @@ describe("Remote Agent Update Manager", () => {
     await db.insert(deviceCommandsTable).values([
       {
         deviceId: device.id,
-        companyId: UPDATE_COMPANY_ID,
+        // Legacy commands predate companyId backfilling. They must still be
+        // superseded because the already-authorized target device owns them.
+        companyId: null,
         issuedById: adminId,
         commandType: "update_agent",
         payload: JSON.stringify({ version: "4.7.0" }),
