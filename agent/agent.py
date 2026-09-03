@@ -53,7 +53,7 @@ else:
     from .telemetry.activity_state import ConnectivityState
 
 # You can change this to 1.1.32, etc. to test auto-update
-AGENT_VERSION = "1.1.76"
+AGENT_VERSION = "1.1.77"
 POLL_SECONDS = 15
 
 def _now_iso() -> str:
