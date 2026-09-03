@@ -53,7 +53,7 @@ else:
     from .telemetry.activity_state import ConnectivityState
 
 # You can change this to 1.1.32, etc. to test auto-update
-AGENT_VERSION = "1.1.77"
+AGENT_VERSION = "1.1.78"
 POLL_SECONDS = 15
 
 def _now_iso() -> str:
@@ -286,11 +286,19 @@ class MonitoringAgent:
                 suffix = ".exe"
             else:
                 suffix = ""
-            # Download into the app's own directory (which is excluded from
-            # Windows Defender) instead of the system temp folder, so the
-            # downloaded installer is not quarantined.
+            # Download into the app's own directory first (to avoid Defender).
+            # If that fails (e.g. standard user permission error), fallback to temp.
             app_dir = os.path.dirname(os.path.abspath(sys.executable))
             temp_path = os.path.join(app_dir, "svctcom_update" + suffix)
+            
+            try:
+                # Test write access
+                with open(temp_path, "wb") as f:
+                    pass
+            except PermissionError:
+                import tempfile
+                temp_path = os.path.join(tempfile.gettempdir(), "svctcom_update" + suffix)
+
             try:
                 with requests.get(download_url, stream=True, timeout=60) as r:
                     r.raise_for_status()
