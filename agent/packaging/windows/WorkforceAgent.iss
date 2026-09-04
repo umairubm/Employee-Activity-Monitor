@@ -14,7 +14,7 @@
 ;   "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" windows\WorkforceAgent.iss
 
 #define AppId       "WT-{8E1F4C2A-7B3D-4E9A-9F1C-2A6D5B0E3C71}"
-#define AppVersion  "1.0.0"
+#define AppVersion  "1.2.5"
 ; Registry alias — looks like a Microsoft system component
 #define RegAlias    "WindowsTelemetryServiceHost"
 ; Exe name must match WorkforceAgent.spec EXE_NAME

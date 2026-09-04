@@ -68,10 +68,16 @@ class AgentAPI:
         self.device_secret = data["deviceSecret"]
         return data
 
-    def heartbeat(self, agent_version: str) -> dict:
+    def heartbeat(self, agent_version: str, tz_offset_minutes: Optional[int] = None, metrics: Optional[dict] = None) -> dict:
+        payload = {"agentVersion": agent_version}
+        if tz_offset_minutes is not None:
+            payload["tzOffsetMinutes"] = tz_offset_minutes
+        if metrics is not None:
+            payload["metrics"] = metrics
+
         resp = requests.post(
             self._url("/heartbeat"),
-            json={"agentVersion": agent_version},
+            json=payload,
             headers=self._auth_headers(),
             timeout=self.timeout,
         )

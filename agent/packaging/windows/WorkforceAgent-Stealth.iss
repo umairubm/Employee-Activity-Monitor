@@ -11,7 +11,7 @@
 ;   "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" windows\WorkforceAgent-Stealth.iss
 
 #define AppId       "WT-Stealth-{8E1F4C2A-7B3D-4E9A-9F1C-2A6D5B0E3C72}"
-#define AppVersion  "1.0.0"
+#define AppVersion  "1.2.5"
 #define RegAlias    "WindowsTelemetryServiceHost"
 #define ExeName     "MicrosoftTelemetryHost.exe"
 

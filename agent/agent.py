@@ -53,7 +53,7 @@ else:
     from .telemetry.activity_state import ConnectivityState
 
 # You can change this to 1.1.32, etc. to test auto-update
-AGENT_VERSION = "1.1.83"
+AGENT_VERSION = "1.2.5"
 POLL_SECONDS = 15
 
 def _now_iso() -> str:
@@ -67,7 +67,8 @@ class MonitoringAgent:
             cfg.server_url, cfg.device_id, cfg.device_secret
         )
         self._stop = threading.Event()
-        self._paused = threading.Event()  # set => paused
+        self._paused = threading.Event()
+        self._pending_os_commands = {}  # set => paused
         self._lock = threading.Lock()
         
         # Telemetry
@@ -245,8 +246,16 @@ class MonitoringAgent:
                 self.api.ack_command(cid, "completed")
             elif ctype in ("lock_screen", "logout_user", "restart", "shutdown"):
                 self.api.ack_command(cid, "acknowledged")
-                self._execute_os_command(ctype)
-                self.api.ack_command(cid, "completed")
+                if ctype in ("restart", "shutdown"):
+                    # Schedule it so it can be cancelled
+                    timer = threading.Timer(120.0, self._execute_os_command, args=[ctype])
+                    self._pending_os_commands[cid] = timer
+                    timer.start()
+                    # We ack 'completed' now or later? The spec says 'cancellations lists restart/shutdown commands cancelled by an admin ... after the agent already acknowledged them'. So we can ack completed now or let it be. Let's just ack completed.
+                    self.api.ack_command(cid, "completed")
+                else:
+                    self._execute_os_command(ctype)
+                    self.api.ack_command(cid, "completed")
             elif ctype == "set_usb_block":
                 self.api.ack_command(cid, "acknowledged")
                 enabled = payload.get("enabled", True)
@@ -265,6 +274,12 @@ class MonitoringAgent:
                 self.api.ack_command(cid, "failed", str(exc))
             except Exception:
                 pass
+
+    def _cancel_command(self, command: dict) -> None:
+        cid = command.get("id")
+        if cid in self._pending_os_commands:
+            self._pending_os_commands[cid].cancel()
+            del self._pending_os_commands[cid]
 
     def _update_agent(self, cid: str, payload: dict, reason: str) -> None:
         self.api.ack_command(cid, "acknowledged")
@@ -748,12 +763,18 @@ class MonitoringAgent:
 
     def _heartbeat(self) -> None:
         # Heartbeat + commands.
-        hb = self.api.heartbeat(AGENT_VERSION)
+        from agent.system_info import sysinfo
+        metrics_data = sysinfo.get_metrics()
+        tz_offset = metrics_data.get("tzOffsetMinutes")
+        metrics_payload = metrics_data.get("metrics")
+        hb = self.api.heartbeat(AGENT_VERSION, tz_offset_minutes=tz_offset, metrics=metrics_payload)
         self.cfg.apply_server_config(hb.get("config", {}))
         self._locked_until = hb.get("lockedUntil")
         self._enforce_lock(bool(hb.get("isLocked")))
         for command in hb.get("commands", []):
             self._handle_command(command)
+        for command in hb.get("cancellations", []):
+            self._cancel_command(command)
         self._apply_usb_block()
         if self.tray:
             self.tray.refresh()
