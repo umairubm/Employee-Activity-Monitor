@@ -52,8 +52,32 @@ else:
     from .telemetry.durable_queue import DurableActivityQueue
     from .telemetry.interval_journal import IntervalJournal
 
-AGENT_VERSION = "1.2.4"
+AGENT_VERSION = "1.2.6"
 POLL_SECONDS = 15
+# Activity batching. The server caps a batch at 500 rows; we additionally cap
+# serialized bytes well under its JSON body limit so a backlog of rich
+# interval segments (URLs, states, IDs) can never trip 413 Payload Too Large.
+ACTIVITY_BATCH_MAX = 500
+ACTIVITY_BATCH_MIN = 25
+ACTIVITY_BATCH_MAX_BYTES = 512 * 1024
+ACTIVITY_BATCHES_PER_SYNC = 5
+
+
+def _trim_batch_to_bytes(batch: list, max_bytes: int) -> list:
+    """Return the longest oldest-first prefix of ``batch`` whose JSON body fits
+    within ``max_bytes``. Returns an empty list when even the first row is too
+    large on its own so the caller can quarantine it."""
+    if not batch:
+        return batch
+    total = 2  # surrounding brackets
+    kept = 0
+    for item in batch:
+        size = len(json.dumps(item, separators=(",", ":"))) + 1
+        if total + size > max_bytes:
+            break
+        total += size
+        kept += 1
+    return batch[:kept]
 
 
 def _now_iso() -> str:
@@ -72,6 +96,10 @@ class MonitoringAgent:
         self._activity_queue = DurableActivityQueue(
             config_mod.config_dir() / "activity_intervals.sqlite3"
         )
+        # Adaptive batch size: shrinks on 413 (payload too large) so a backlog
+        # can never wedge the queue behind one oversized request, then grows
+        # back after successful uploads.
+        self._activity_batch_limit = ACTIVITY_BATCH_MAX
         passive_threshold = max(1, cfg.idle_threshold_seconds)
         self._journal = IntervalJournal(
             self._activity_queue,
@@ -882,11 +910,32 @@ rm -rf "$(dirname "$NEW")" "$0"
         except Exception:
             pass
 
-    def _sync(self) -> None:
-        # Close the current state interval and send the oldest durable batch.
-        self._flush_segment()
-        batch = self._activity_queue.get_batch(limit=500)
-        if batch:
+    def _drain_activity_queue(self) -> None:
+        """Upload queued segments oldest-first, bounded by count AND bytes.
+
+        A batch is capped at ``self._activity_batch_limit`` rows and
+        ``ACTIVITY_BATCH_MAX_BYTES`` of serialized JSON. A 413 from the server
+        halves the row limit and retries next sync; success restores growth.
+        Several batches are sent per sync while a backlog exists so a device
+        that was offline for a day catches up quickly.
+        """
+        for _ in range(ACTIVITY_BATCHES_PER_SYNC):
+            fetched = self._activity_queue.get_batch(limit=self._activity_batch_limit)
+            if not fetched:
+                return
+            batch = _trim_batch_to_bytes(fetched, ACTIVITY_BATCH_MAX_BYTES)
+            if not batch:
+                # The oldest row alone exceeds the byte budget; no batch size
+                # can ever make it fit, so quarantine it locally rather than
+                # wedge the queue behind it forever.
+                bad = fetched[0]
+                print(
+                    f"[agent] discarding oversized activity segment "
+                    f"{bad.get('segmentId')}",
+                    file=sys.stderr,
+                )
+                self._activity_queue.acknowledge([str(bad.get("segmentId") or "")])
+                continue
             try:
                 response = self.api.send_interval_activity(
                     str(uuid.uuid4()),
@@ -901,10 +950,40 @@ rm -rf "$(dirname "$NEW")" "$0"
                 self._activity_queue.acknowledge(
                     [value for value in accepted if isinstance(value, str)]
                 )
+                # Drained only if we fetched fewer rows than we asked for AND
+                # sent every fetched row (i.e. nothing was byte-trimmed).
+                drained = (
+                    len(fetched) < self._activity_batch_limit
+                    and len(batch) == len(fetched)
+                )
+                self._activity_batch_limit = min(
+                    ACTIVITY_BATCH_MAX, self._activity_batch_limit * 2
+                )
+                if drained:
+                    return
+            except api_mod.APIError as exc:
+                if exc.status_code == 413:
+                    self._activity_batch_limit = max(
+                        ACTIVITY_BATCH_MIN, self._activity_batch_limit // 2
+                    )
+                    print(
+                        f"[agent] activity batch too large; retrying with "
+                        f"{self._activity_batch_limit} segments",
+                        file=sys.stderr,
+                    )
+                else:
+                    print(f"[agent] activity sync failed: {exc}", file=sys.stderr)
+                return
             except Exception as exc:  # noqa: BLE001
                 # Rows remain in SQLite until the server explicitly
                 # acknowledges their stable segment IDs.
                 print(f"[agent] activity sync failed: {exc}", file=sys.stderr)
+                return
+
+    def _sync(self) -> None:
+        # Close the current state interval and send the oldest durable batch.
+        self._flush_segment()
+        self._drain_activity_queue()
 
         # Heartbeat + commands. Include best-effort live health metrics.
         metrics = system_info_mod.collect_metrics()

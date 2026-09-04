@@ -62,7 +62,7 @@ Request body:
   "hardwareHash": "<stable-hardware-id>",
   "systemName": "<pc-name>",
   "osType": "windows",
-  "agentVersion": "1.2.4",
+  "agentVersion": "1.2.6",
   "consentAcknowledged": true,
   "consentName": "<employee name>"
 }
@@ -109,7 +109,7 @@ config, lock state, and any pending remote commands.
 Request body:
 ```json
 {
-  "agentVersion": "1.2.4",
+  "agentVersion": "1.2.6",
   "tzOffsetMinutes": 300,
   "metrics": {
     "cpuPercent": 12.5,
@@ -163,7 +163,7 @@ agent handles:
 | `shutdown` | — | power off (ack `completed` **before** executing) |
 | `set_usb_block` | `{"enabled":true\|false}` | Windows: USBSTOR `Start`=4 (block)/3 (allow); macOS/Linux unsupported → `failed` |
 | `update_config` | — | re-read `config` from this heartbeat response |
-| `update_agent` | `{"version":"1.2.4","kind":"installer","platform":"windows","fileName":"..."}` | call `commands/download-url`, download, ack `downloading` → `installing`, run installer; the new build acks `completed` on its first heartbeat |
+| `update_agent` | `{"version":"1.2.6","kind":"installer","platform":"windows","fileName":"..."}` | call `commands/download-url`, download, ack `downloading` → `installing`, run installer; the new build acks `completed` on its first heartbeat |
 
 The agent also applies `config.usbBlockEnabled` idempotently on every heartbeat
 (Windows, best-effort) so a reinstalled/offline device converges.
@@ -224,7 +224,7 @@ Per-item field rules (enforced server-side):
 | `url` | optional | string ≤ 2048; only valid http(s) URLs are stored, others become null (never rejects the batch) |
 | `idleSeconds` | optional (legacy) | int ≥ 0 |
 
-Body rules: `logs` 1–500 items; `batchId` optional UUID; `systemInfo` flat map
+Body rules: `logs` 1–500 items and the JSON body must stay under **5 MB** (server returns `413` otherwise; the agent keeps its own batches ≤ 512 KB); `batchId` optional UUID; `systemInfo` flat map
 of string→(string|number|boolean|null).
 
 Success `201` when `batchId` was sent:
@@ -311,10 +311,10 @@ Request body:
 Success `200`:
 ```json
 {
-  "version": "1.2.4",
+  "version": "1.2.6",
   "kind": "installer",
   "platform": "windows",
-  "fileName": "WorkforceAgent-Setup-1.2.4.exe",
+  "fileName": "WorkforceAgent-Setup-1.2.6.exe",
   "downloadUrl": "https://..."
 }
 ```

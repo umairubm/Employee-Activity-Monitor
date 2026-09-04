@@ -83,3 +83,6 @@ help production.
 best-effort and OMIT empty snapshots (don't send `{}`). Missing optional fields
 are fine — they just don't render. A non-NULL `devices.system_info` only appears
 after a *rebuilt* agent is redeployed and sends its next activity batch.
+
+## Body-size limits wedge durable queues (found 2026-09-04)
+Express `json()` defaults to 100 KB. Interval agents with a backlog sent 500-row batches (~300 KB) → 413 → retried the same batch forever, so devices looked online (heartbeat/screenshots OK) with zero activity. Rule: `/api/sync` gets a larger JSON limit (5 MB, scoped — not global), and the agent must bound batches by BYTES as well as rows, back off on 413, and quarantine any single row that can never fit. Heartbeat "online" never proves activity is arriving — check `activity_logs` max(created_at) per device and grep prod logs for `sync/activity` non-201.

@@ -26,6 +26,13 @@ app.use(
   }),
 );
 app.use(cors());
+// Interval agents upload up to 500 activity segments per batch with URL,
+// state and sequencing metadata; that routinely exceeds Express's 100 KB
+// default and produced 413s that stalled durable queues forever (the agent
+// retried the same oversized batch every sync). Only the device sync routes
+// get the larger limit; everything else (login, admin API) keeps the default
+// so unauthenticated callers cannot force multi-MB JSON parsing.
+app.use("/api/sync", express.json({ limit: "5mb" }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
