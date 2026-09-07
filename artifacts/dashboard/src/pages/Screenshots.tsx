@@ -19,7 +19,28 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Image as ImageIcon, Info, Flag, Trash2 } from "lucide-react";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
+import {
+  Check,
+  ChevronsUpDown,
+  Image as ImageIcon,
+  Info,
+  Flag,
+  Trash2,
+} from "lucide-react";
 import { formatDeviceTime, deviceTzMap } from "@/lib/device-time";
 import { ScreenshotLightbox } from "@/components/ScreenshotLightbox";
 import { useToast } from "@/hooks/use-toast";
@@ -37,6 +58,7 @@ export default function Screenshots() {
   const [versionFilter, setVersionFilter] = useState("all");
   const [osFilter, setOsFilter] = useState<ListScreenshotsOsType | "all">("all");
   const [labelFilter, setLabelFilter] = useState("all");
+  const [labelPickerOpen, setLabelPickerOpen] = useState(false);
   const [dateRange] = useDateRange();
   const { from, to } = useMemo(() => rangeBoundsIso(dateRange), [dateRange]);
   const isSingleDay = dateRange.from === dateRange.to;
@@ -194,19 +216,73 @@ export default function Screenshots() {
               ))}
             </SelectContent>
           </Select>
-          <Select value={labelFilter} onValueChange={setLabelFilter}>
-            <SelectTrigger className="w-full sm:w-44">
-              <SelectValue placeholder="All labels" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All labels</SelectItem>
-              {labels.map((label) => (
-                <SelectItem key={label} value={label}>
-                  {label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Popover open={labelPickerOpen} onOpenChange={setLabelPickerOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                role="combobox"
+                aria-expanded={labelPickerOpen}
+                className="w-full justify-between font-normal sm:w-44"
+              >
+                <span
+                  className={cn(
+                    "truncate",
+                    labelFilter === "all" && "text-muted-foreground",
+                  )}
+                >
+                  {labelFilter === "all" ? "All labels" : labelFilter}
+                </span>
+                <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent
+              className="w-[--radix-popover-trigger-width] p-0"
+              align="start"
+            >
+              <Command>
+                <CommandInput placeholder="Search labels…" />
+                <CommandList className="max-h-72">
+                  <CommandEmpty>No matching label.</CommandEmpty>
+                  <CommandGroup>
+                    <CommandItem
+                      value="all labels"
+                      onSelect={() => {
+                        setLabelFilter("all");
+                        setLabelPickerOpen(false);
+                      }}
+                    >
+                      <Check
+                        className={cn(
+                          "mr-2 h-4 w-4",
+                          labelFilter === "all" ? "opacity-100" : "opacity-0",
+                        )}
+                      />
+                      All labels
+                    </CommandItem>
+                    {labels.map((label) => (
+                      <CommandItem
+                        key={label}
+                        value={label}
+                        onSelect={() => {
+                          setLabelFilter(label);
+                          setLabelPickerOpen(false);
+                        }}
+                      >
+                        <Check
+                          className={cn(
+                            "mr-2 h-4 w-4",
+                            labelFilter === label ? "opacity-100" : "opacity-0",
+                          )}
+                        />
+                        <span className="truncate">{label}</span>
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
           <Button
             variant={flaggedOnly ? "default" : "outline"}
             className="gap-2"
