@@ -29,14 +29,18 @@ export async function ensureUndefinedCategories(
   patterns: string[],
 ): Promise<void> {
   if (patterns.length === 0) return;
-  await db
-    .insert(appCategoriesTable)
-    .values(
-      patterns.map((pattern) => ({
-        pattern,
-        displayName: pattern,
-        classification: "undefined" as const,
-      })),
-    )
-    .onConflictDoNothing();
+  try {
+    await db
+      .insert(appCategoriesTable)
+      .values(
+        patterns.map((pattern) => ({
+          pattern,
+          displayName: pattern,
+          classification: "undefined" as const,
+        })),
+      )
+      .onConflictDoNothing();
+  } catch (error) {
+    console.error("Failed to insert undefined categories:", error);
+  }
 }

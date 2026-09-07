@@ -331,12 +331,16 @@ router.post(
     }
 
     if (parsed.data.hardwareChanges && Object.keys(parsed.data.hardwareChanges).length > 0) {
-      await db.insert(deviceAlertsTable).values({
-        deviceId: device.id,
-        alertType: "hardware_change",
-        oldValue: parsed.data.hardwareChanges.old,
-        newValue: parsed.data.hardwareChanges.new,
-      });
+      try {
+        await db.insert(deviceAlertsTable).values({
+          deviceId: device.id,
+          alertType: "hardware_change",
+          oldValue: parsed.data.hardwareChanges.old,
+          newValue: parsed.data.hardwareChanges.new,
+        });
+      } catch (e) {
+        console.error("Failed to insert device alert", e);
+      }
     }
 
     if (parsed.data.batchId) {
