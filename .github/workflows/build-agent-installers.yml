@@ -23,13 +23,13 @@ jobs:
     runs-on: windows-latest
     steps:
       # actions/checkout v4.2+ ships Node.js 24 support
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v4
         with:
           # Fetch full history so git tag operations work correctly
           fetch-depth: 0
 
       # actions/setup-python v5.3+ supports Node.js 24 runner
-      - uses: actions/setup-python@v5.3.0
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: 'pip' # Enable automatic pip caching
@@ -78,11 +78,11 @@ jobs:
   macos:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-python@v5.3.0
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
           cache: 'pip' # Enable automatic pip caching
@@ -124,11 +124,11 @@ jobs:
   linux:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-python@v5.3.0
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: 'pip'

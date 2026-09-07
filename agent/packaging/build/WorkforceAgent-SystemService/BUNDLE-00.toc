@@ -1,0 +1,4 @@
+([('svctcom',
+   '/Users/ubmtechnologies/Desktop/Employee_monitor - '
+   'Copy/agent/packaging/dist/svctcom',
+   'EXECUTABLE')],)

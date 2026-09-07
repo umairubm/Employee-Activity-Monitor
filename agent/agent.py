@@ -53,7 +53,7 @@ else:
     from .telemetry.activity_state import ConnectivityState
 
 # You can change this to 1.1.32, etc. to test auto-update
-AGENT_VERSION = "1.1.77"
+AGENT_VERSION = "1.1.78"
 POLL_SECONDS = 15
 
 def _now_iso() -> str:
@@ -653,10 +653,11 @@ class MonitoringAgent:
                 # Still record state (paused, locked, suspended)
                 self._observe()
                 continue
-            self._observe()
-            self._maybe_screenshot()
-                except Exception as exc:
-                    print(f"[agent] observe/screenshot error: {exc}", file=sys.stderr)
+            try:
+                self._observe()
+                self._maybe_screenshot()
+            except Exception as exc:
+                print(f"[agent] observe/screenshot error: {exc}", file=sys.stderr)
 
             now = time.time()
             if now - last_heartbeat >= self.cfg.heartbeat_interval_seconds:
@@ -711,7 +712,7 @@ class MonitoringAgent:
             batch_id = str(uuid.uuid4())
             payload = {"batchId": batch_id, "logs": batch}
             if system_hardware_details:
-                payload["hardwareChanges"] = system_hardware_details
+                payload["systemInfo"] = system_hardware_details
 
             resp = self.api.upload_activity(payload)
             
