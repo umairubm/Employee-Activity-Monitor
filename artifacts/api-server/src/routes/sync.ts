@@ -285,7 +285,12 @@ router.post(
     }
     const { logs } = parsed.data;
 
-    let categories = await loadCategories();
+    let categories: typeof import("@workspace/db").appCategoriesTable.$inferSelect[] = [];
+    try {
+      categories = await loadCategories();
+    } catch (e) {
+      console.error("Failed to load categories, proceeding without classification", e);
+    }
     const unknown = new Set<string>();
     for (const log of logs) {
       if (!classify(log.processName, categories)) {
@@ -294,7 +299,11 @@ router.post(
     }
     if (unknown.size > 0) {
       await ensureUndefinedCategories([...unknown]);
-      categories = await loadCategories();
+      try {
+        categories = await loadCategories();
+      } catch (e) {
+        console.error("Failed to load categories after unknown, proceeding without classification", e);
+      }
     }
 
     const values = logs.map((log) => {
