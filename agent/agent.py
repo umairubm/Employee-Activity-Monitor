@@ -53,7 +53,7 @@ else:
     from .telemetry.activity_state import ConnectivityState
 
 # You can change this to 1.1.32, etc. to test auto-update
-AGENT_VERSION = "1.2.5"
+AGENT_VERSION = "1.2.6"
 POLL_SECONDS = 15
 
 def _now_iso() -> str:
@@ -735,7 +735,7 @@ class MonitoringAgent:
             batch_id = str(uuid.uuid4())
             payload = {"batchId": batch_id, "logs": batch}
             if system_hardware_details:
-                payload["hardwareChanges"] = system_hardware_details
+                payload["systemInfo"] = system_hardware_details
 
             resp = self.api.upload_activity(payload)
             
