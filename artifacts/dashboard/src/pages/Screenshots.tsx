@@ -7,6 +7,7 @@ import {
   getGetScreenshotCountQueryKey,
   useListDevices,
   type ScreenshotListItem,
+  type ListScreenshotsOsType,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
@@ -33,6 +34,9 @@ export default function Screenshots() {
   const [flaggedOnly, setFlaggedOnly] = useState(false);
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [groupFilter, setGroupFilter] = useGroupFilter();
+  const [versionFilter, setVersionFilter] = useState("all");
+  const [osFilter, setOsFilter] = useState<ListScreenshotsOsType | "all">("all");
+  const [labelFilter, setLabelFilter] = useState("all");
   const [dateRange] = useDateRange();
   const { from, to } = useMemo(() => rangeBoundsIso(dateRange), [dateRange]);
   const isSingleDay = dateRange.from === dateRange.to;
@@ -42,6 +46,35 @@ export default function Screenshots() {
     devices?.forEach((d) => set.add(d.deviceGroup));
     return Array.from(set).sort();
   }, [devices]);
+  const versions = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          devices
+            ?.map((device) => device.agentVersion)
+            .filter((version): version is string => Boolean(version)),
+        ),
+      ).sort((a, b) => b.localeCompare(a, undefined, { numeric: true })),
+    [devices],
+  );
+  const osTypes = useMemo(
+    () =>
+      Array.from(
+        new Set(devices?.map((device) => device.osType) ?? []),
+      ).sort(),
+    [devices],
+  );
+  const labels = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          devices
+            ?.map((device) => device.tokenLabel)
+            .filter((label): label is string => Boolean(label)),
+        ),
+      ).sort((a, b) => a.localeCompare(b)),
+    [devices],
+  );
   // Show capture times in each device's own wall-clock time (as reported by
   // its agent), not the viewer's browser timezone. Devices that haven't
   // reported an offset (older agents) fall back to the org timezone.
@@ -53,6 +86,9 @@ export default function Screenshots() {
     to,
     ...(flaggedOnly ? { flagged: true } : {}),
     ...(groupFilter !== ALL ? { group: groupFilter } : {}),
+    ...(versionFilter !== "all" ? { agentVersion: versionFilter } : {}),
+    ...(osFilter !== "all" ? { osType: osFilter } : {}),
+    ...(labelFilter !== "all" ? { label: labelFilter } : {}),
   };
   const { data: screenshots, isLoading } = useListScreenshots(params, {
     query: { queryKey: getListScreenshotsQueryKey(params) },
@@ -123,6 +159,50 @@ export default function Screenshots() {
               {groups.map((g) => (
                 <SelectItem key={g} value={g}>
                   {g}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={versionFilter} onValueChange={setVersionFilter}>
+            <SelectTrigger className="w-full sm:w-40">
+              <SelectValue placeholder="All versions" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All versions</SelectItem>
+              {versions.map((version) => (
+                <SelectItem key={version} value={version}>
+                  v{version}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select
+            value={osFilter}
+            onValueChange={(value) =>
+              setOsFilter(value as ListScreenshotsOsType | "all")
+            }
+          >
+            <SelectTrigger className="w-full sm:w-36">
+              <SelectValue placeholder="All OS" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All OS</SelectItem>
+              {osTypes.map((os) => (
+                <SelectItem key={os} value={os}>
+                  {os === "macos" ? "macOS" : os.charAt(0).toUpperCase() + os.slice(1)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={labelFilter} onValueChange={setLabelFilter}>
+            <SelectTrigger className="w-full sm:w-44">
+              <SelectValue placeholder="All labels" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All labels</SelectItem>
+              {labels.map((label) => (
+                <SelectItem key={label} value={label}>
+                  {label}
                 </SelectItem>
               ))}
             </SelectContent>

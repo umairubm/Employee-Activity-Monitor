@@ -5,6 +5,7 @@
  * API specification for Workforce Analytics & IT Management
  * OpenAPI spec version: 0.1.0
  */
+import type { ListScreenshotsOsType } from "./listScreenshotsOsType";
 
 export type ListScreenshotsParams = {
   deviceId?: string;
@@ -13,6 +14,18 @@ export type ListScreenshotsParams = {
    * Restrict to devices in this group
    */
   group?: string;
+  /**
+   * Restrict to devices running this agent version
+   */
+  agentVersion?: string;
+  /**
+   * Restrict to devices using this operating system
+   */
+  osType?: ListScreenshotsOsType;
+  /**
+   * Restrict to devices enrolled with this token label
+   */
+  label?: string;
   /**
    * Only screenshots captured at or after this instant (inclusive)
    */

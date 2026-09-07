@@ -1291,6 +1291,18 @@ export const ListScreenshotsQueryParams = zod.object({
     .string()
     .optional()
     .describe("Restrict to devices in this group"),
+  agentVersion: zod.coerce
+    .string()
+    .optional()
+    .describe("Restrict to devices running this agent version"),
+  osType: zod
+    .enum(["windows", "macos", "linux"])
+    .optional()
+    .describe("Restrict to devices using this operating system"),
+  label: zod.coerce
+    .string()
+    .optional()
+    .describe("Restrict to devices enrolled with this token label"),
   from: zod
     .date()
     .optional()
@@ -1325,6 +1337,18 @@ export const GetScreenshotCountQueryParams = zod.object({
     .string()
     .optional()
     .describe("Restrict to devices in this group"),
+  agentVersion: zod.coerce
+    .string()
+    .optional()
+    .describe("Restrict to devices running this agent version"),
+  osType: zod
+    .enum(["windows", "macos", "linux"])
+    .optional()
+    .describe("Restrict to devices using this operating system"),
+  label: zod.coerce
+    .string()
+    .optional()
+    .describe("Restrict to devices enrolled with this token label"),
   from: zod
     .date()
     .optional()

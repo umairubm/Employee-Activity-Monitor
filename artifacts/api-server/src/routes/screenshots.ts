@@ -1,6 +1,11 @@
 import { Router, type IRouter, type Request } from "express";
 import { z } from "zod/v4";
-import { db, screenshotsTable, devicesTable } from "@workspace/db";
+import {
+  db,
+  screenshotsTable,
+  devicesTable,
+  enrollmentTokensTable,
+} from "@workspace/db";
 import { and, count, desc, eq, gte, inArray, lt } from "drizzle-orm";
 import { getTemporaryLink, deleteFile } from "../lib/dropbox";
 import { requireRole } from "../middlewares/userAuth";
@@ -49,10 +54,41 @@ function buildFilters(opts: {
   companyId: string;
   deviceId?: string;
   group?: string;
+  agentVersion?: string;
+  osType?: string;
+  label?: string;
   flaggedOnly: boolean;
   fromDate: Date | null;
   toDate: Date | null;
 }) {
+  const hasDeviceMetadataFilter =
+    Boolean(opts.agentVersion) || Boolean(opts.osType) || Boolean(opts.label);
+  const deviceMetadataFilter = hasDeviceMetadataFilter
+    ? inArray(
+        screenshotsTable.deviceId,
+        db
+          .select({ id: devicesTable.id })
+          .from(devicesTable)
+          .leftJoin(
+            enrollmentTokensTable,
+            and(
+              eq(devicesTable.enrolledViaTokenId, enrollmentTokensTable.id),
+              eq(enrollmentTokensTable.companyId, opts.companyId),
+            ),
+          )
+          .where(
+            and(
+              eq(devicesTable.companyId, opts.companyId),
+              opts.agentVersion
+                ? eq(devicesTable.agentVersion, opts.agentVersion)
+                : undefined,
+              opts.osType ? eq(devicesTable.osType, opts.osType as any) : undefined,
+              opts.label ? eq(enrollmentTokensTable.label, opts.label) : undefined,
+            ),
+          ),
+      )
+    : undefined;
+
   return [
     eq(screenshotsTable.companyId, opts.companyId),
     opts.deviceId ? eq(screenshotsTable.deviceId, opts.deviceId) : undefined,
@@ -71,6 +107,7 @@ function buildFilters(opts: {
             ),
         )
       : undefined,
+    deviceMetadataFilter,
     // Restrict to devices visible under the caller's per-manager scope.
     inArray(
       screenshotsTable.deviceId,
@@ -85,7 +122,7 @@ function buildFilters(opts: {
 router.get("/", async (req, res) => {
   try {
     const companyId = getCompanyId(req);
-    const { deviceId, group, from, to } = req.query as Record<
+    const { deviceId, group, agentVersion, osType, label, from, to } = req.query as Record<
       string,
       string | undefined
     >;
@@ -103,6 +140,9 @@ router.get("/", async (req, res) => {
       companyId,
       deviceId,
       group,
+      agentVersion,
+      osType,
+      label,
       flaggedOnly,
       fromDate: range.fromDate,
       toDate: range.toDate,
@@ -137,7 +177,7 @@ router.get("/", async (req, res) => {
 router.get("/count", async (req, res) => {
   try {
     const companyId = getCompanyId(req);
-    const { deviceId, group, from, to } = req.query as Record<
+    const { deviceId, group, agentVersion, osType, label, from, to } = req.query as Record<
       string,
       string | undefined
     >;
@@ -154,6 +194,9 @@ router.get("/count", async (req, res) => {
       companyId,
       deviceId,
       group,
+      agentVersion,
+      osType,
+      label,
       flaggedOnly,
       fromDate: range.fromDate,
       toDate: range.toDate,

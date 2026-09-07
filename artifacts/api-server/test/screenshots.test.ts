@@ -2,13 +2,29 @@ import { afterAll, describe, expect, it } from "vitest";
 import { randomUUID } from "crypto";
 import request from "supertest";
 import { inArray } from "drizzle-orm";
-import { db, devicesTable, pool } from "@workspace/db";
-import { createDevice, createScreenshot, makeApp } from "./helpers";
+import {
+  db,
+  devicesTable,
+  enrollmentTokensTable,
+  pool,
+} from "@workspace/db";
+import {
+  createDevice,
+  createEnrollmentToken,
+  createScreenshot,
+  makeApp,
+} from "./helpers";
 
 const app = makeApp();
 const createdDeviceIds: string[] = [];
+const createdTokenIds: string[] = [];
 
 afterAll(async () => {
+  if (createdTokenIds.length) {
+    await db
+      .delete(enrollmentTokensTable)
+      .where(inArray(enrollmentTokensTable.id, createdTokenIds));
+  }
   if (createdDeviceIds.length) {
     // Screenshots cascade-delete with their device.
     await db
@@ -48,6 +64,39 @@ describe("GET /screenshots", () => {
     expect(res.body).toHaveLength(1);
     expect(res.body[0].id).toBe(flagged.id);
     expect(res.body[0].flagged).toBe(true);
+  });
+
+  it("filters screenshots by agent version, OS, and enrollment label", async () => {
+    const matchingToken = await createEnrollmentToken({ label: "Field Team" });
+    const otherToken = await createEnrollmentToken({ label: "Office Team" });
+    createdTokenIds.push(matchingToken.id, otherToken.id);
+    const matchingDevice = await createDevice({
+      agentVersion: "1.2.6",
+      osType: "windows",
+      enrolledViaTokenId: matchingToken.id,
+    });
+    const otherDevice = await createDevice({
+      agentVersion: "1.1.54",
+      osType: "macos",
+      enrolledViaTokenId: otherToken.id,
+    });
+    createdDeviceIds.push(matchingDevice.id, otherDevice.id);
+    const matchingShot = await createScreenshot(matchingDevice.id);
+    await createScreenshot(otherDevice.id);
+
+    const res = await request(app).get(
+      "/screenshots?agentVersion=1.2.6&osType=windows&label=Field%20Team",
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.map((shot: { id: string }) => shot.id)).toEqual([
+      matchingShot.id,
+    ]);
+
+    const count = await request(app).get(
+      "/screenshots/count?agentVersion=1.2.6&osType=windows&label=Field%20Team",
+    );
+    expect(count.status).toBe(200);
+    expect(count.body).toEqual({ count: 1 });
   });
 });
 

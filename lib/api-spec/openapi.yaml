@@ -643,6 +643,25 @@ paths:
           description: Restrict to devices in this group
           schema:
             type: string
+        - name: agentVersion
+          in: query
+          required: false
+          description: Restrict to devices running this agent version
+          schema:
+            type: string
+        - name: osType
+          in: query
+          required: false
+          description: Restrict to devices using this operating system
+          schema:
+            type: string
+            enum: [windows, macos, linux]
+        - name: label
+          in: query
+          required: false
+          description: Restrict to devices enrolled with this token label
+          schema:
+            type: string
         - name: from
           in: query
           required: false
@@ -692,6 +711,25 @@ paths:
           in: query
           required: false
           description: Restrict to devices in this group
+          schema:
+            type: string
+        - name: agentVersion
+          in: query
+          required: false
+          description: Restrict to devices running this agent version
+          schema:
+            type: string
+        - name: osType
+          in: query
+          required: false
+          description: Restrict to devices using this operating system
+          schema:
+            type: string
+            enum: [windows, macos, linux]
+        - name: label
+          in: query
+          required: false
+          description: Restrict to devices enrolled with this token label
           schema:
             type: string
         - name: from

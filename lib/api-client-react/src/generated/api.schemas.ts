@@ -1806,6 +1806,18 @@ export type ListScreenshotsParams = {
    */
   group?: string;
   /**
+   * Restrict to devices running this agent version
+   */
+  agentVersion?: string;
+  /**
+   * Restrict to devices using this operating system
+   */
+  osType?: ListScreenshotsOsType;
+  /**
+   * Restrict to devices enrolled with this token label
+   */
+  label?: string;
+  /**
    * Only screenshots captured at or after this instant (inclusive)
    */
   from?: string;
@@ -1816,6 +1828,15 @@ export type ListScreenshotsParams = {
   limit?: number;
 };
 
+export type ListScreenshotsOsType =
+  (typeof ListScreenshotsOsType)[keyof typeof ListScreenshotsOsType];
+
+export const ListScreenshotsOsType = {
+  windows: "windows",
+  macos: "macos",
+  linux: "linux",
+} as const;
+
 export type GetScreenshotCountParams = {
   deviceId?: string;
   flagged?: boolean;
@@ -1823,6 +1844,18 @@ export type GetScreenshotCountParams = {
    * Restrict to devices in this group
    */
   group?: string;
+  /**
+   * Restrict to devices running this agent version
+   */
+  agentVersion?: string;
+  /**
+   * Restrict to devices using this operating system
+   */
+  osType?: GetScreenshotCountOsType;
+  /**
+   * Restrict to devices enrolled with this token label
+   */
+  label?: string;
   /**
    * Only screenshots captured at or after this instant (inclusive)
    */
@@ -1832,6 +1865,15 @@ export type GetScreenshotCountParams = {
    */
   to?: string;
 };
+
+export type GetScreenshotCountOsType =
+  (typeof GetScreenshotCountOsType)[keyof typeof GetScreenshotCountOsType];
+
+export const GetScreenshotCountOsType = {
+  windows: "windows",
+  macos: "macos",
+  linux: "linux",
+} as const;
 
 export type GetScreenshotCount200 = {
   count: number;
