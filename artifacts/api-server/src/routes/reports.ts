@@ -16,6 +16,7 @@ import {
   gte,
   inArray,
   lt,
+  ne,
   sql,
 } from "drizzle-orm";
 
