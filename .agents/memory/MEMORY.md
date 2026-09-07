@@ -36,3 +36,4 @@
 - [Device liveness from telemetry](device-liveness-telemetry.md) — accepted authenticated activity or screenshots must refresh last-seen; heartbeat is not the sole proof a device is online.
 - [Activity batches must survive bad URLs](activity-batch-url-validation.md) — validate browser URLs before upload and sanitize on every retry; never let one URL poison the queue or drop a failed batch.
 - [Device replacement merge semantics](device-user-assignment.md) — laptop changes use an atomic device-to-device merge; keep the replacement active, retain predecessor provenance, and never merge user records.
+- [Legacy activity duration overflow](activity-legacy-duration-overflow.md) — normalize epoch-sized legacy durations before DB insert so one malformed row cannot poison the durable queue.

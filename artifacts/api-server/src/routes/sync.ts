@@ -59,6 +59,9 @@ const router: IRouter = Router();
 /** Max accepted screenshot upload size (raw bytes). */
 const MAX_SCREENSHOT_BYTES = 8 * 1024 * 1024;
 
+/** PostgreSQL integer maximum used by activity duration columns. */
+const MAX_ACTIVITY_INTEGER = 2_147_483_647;
+
 /** Commands must not execute after a device has been offline for a day. */
 const COMMAND_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
@@ -738,9 +741,25 @@ router.post(
 
     const values = logs.map((log) => {
       const category = classify(log.processName, categories);
-      const durationSeconds =
-        log.durationSeconds ??
-        Math.max(0, Math.round((log.elapsedMilliseconds ?? 0) / 1000));
+      const wallClockElapsedMilliseconds = Math.max(
+        0,
+        log.endedAt.getTime() - log.startedAt.getTime(),
+      );
+      // A short-lived 1.2.5 telemetry bug wrote epoch milliseconds into the
+      // elapsedMilliseconds field. Those values pass Zod's non-negative
+      // integer check but overflow the PostgreSQL integer column and cause the
+      // entire durable batch to roll back. When the value cannot fit, trust the
+      // interval timestamps instead so the queue can recover.
+      const hasOverflowingElapsedMilliseconds =
+        log.elapsedMilliseconds !== undefined &&
+        log.elapsedMilliseconds > MAX_ACTIVITY_INTEGER;
+      const elapsedMilliseconds = hasOverflowingElapsedMilliseconds
+        ? wallClockElapsedMilliseconds
+        : (log.elapsedMilliseconds ?? wallClockElapsedMilliseconds);
+      const durationSeconds = hasOverflowingElapsedMilliseconds
+        ? Math.round(elapsedMilliseconds / 1000)
+        : (log.durationSeconds ??
+          Math.max(0, Math.round(elapsedMilliseconds / 1000)));
       const idleSeconds =
         log.idleSeconds ??
         (log.engagementState === "idle" ? durationSeconds : 0);
@@ -771,8 +790,7 @@ router.post(
         policyVersion: log.policyVersion ?? null,
         startedAt: log.startedAt,
         endedAt: log.endedAt,
-        elapsedMilliseconds:
-          log.elapsedMilliseconds ?? durationSeconds * 1000,
+        elapsedMilliseconds,
         durationSeconds,
         idleSeconds,
       };

@@ -736,6 +736,50 @@ describe("server-side consent enforcement", () => {
     });
   });
 
+  it("recovers epoch-millisecond durations from legacy interval rows", async () => {
+    const { device, secret } = await createDeviceWithSecret({ consent: true });
+    trackDevice(device.id);
+    const segmentId = randomUUID();
+    const startedAt = new Date("2026-09-07T07:18:52.835Z");
+    const endedAt = new Date("2026-09-07T07:19:23.864Z");
+
+    const res = await request(app)
+      .post("/sync/activity")
+      .set("x-device-id", device.id)
+      .set("x-device-secret", secret)
+      .send({
+        batchId: randomUUID(),
+        logs: [
+          {
+            segmentId,
+            sequenceNamespace: randomUUID(),
+            sequence: 1,
+            processName: "chrome.exe",
+            windowTitle: "Legacy queued activity",
+            startedAt: startedAt.toISOString(),
+            endedAt: endedAt.toISOString(),
+            // Reproduces the 1.2.5 queue corruption seen in production:
+            // epoch milliseconds and epoch seconds instead of interval values.
+            elapsedMilliseconds: startedAt.getTime(),
+            durationSeconds: Math.floor(startedAt.getTime() / 1000),
+          },
+        ],
+      });
+
+    expect(res.status).toBe(201);
+    const [stored] = await db
+      .select({
+        elapsedMilliseconds: activityLogsTable.elapsedMilliseconds,
+        durationSeconds: activityLogsTable.durationSeconds,
+      })
+      .from(activityLogsTable)
+      .where(eq(activityLogsTable.segmentId, segmentId));
+    expect(stored).toEqual({
+      elapsedMilliseconds: endedAt.getTime() - startedAt.getTime(),
+      durationSeconds: 31,
+    });
+  });
+
   it("does not reject an interval batch because optional URL or hardware metadata is unusable", async () => {
     const { device, secret } = await createDeviceWithSecret({ consent: true });
     trackDevice(device.id);
