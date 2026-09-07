@@ -317,7 +317,7 @@ router.post(
         startedAt: log.startedAt,
         endedAt: log.endedAt,
         elapsedMilliseconds: log.elapsedMilliseconds ?? (log.durationSeconds ? log.durationSeconds * 1000 : 0),
-        durationSeconds: log.durationSeconds ?? 0,
+        durationSeconds: log.durationSeconds ?? (log.elapsedMilliseconds ? Math.floor(log.elapsedMilliseconds / 1000) : 0),
         idleSeconds: log.idleSeconds ?? 0,
       };
     });

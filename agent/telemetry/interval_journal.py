@@ -102,6 +102,7 @@ class IntervalJournal:
             # Just extend the current segment
             self.current_segment["endedAt"] = now
             self.current_segment["elapsedMilliseconds"] = int((now - self.current_segment["_start_mono"]) * 1000)
+            self.current_segment["durationSeconds"] = int(now - self.current_segment["_start_mono"])
 
     def _open_new_segment(self, process_name, window_title, url, session_state, engagement_state, connectivity, reason, now):
         self.current_segment = {
@@ -119,6 +120,7 @@ class IntervalJournal:
             "startedAt": now,
             "endedAt": now,
             "elapsedMilliseconds": 0,
+            "durationSeconds": 0,
             "_start_mono": self.clock.monotonic() # internal field, removed before push
         }
 
