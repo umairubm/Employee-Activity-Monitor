@@ -1,6 +1,15 @@
 import type { Request } from "express";
 import { db, devicesTable, enrollmentTokensTable } from "@workspace/db";
-import { and, eq, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  eq,
+  inArray,
+  isNull,
+  or,
+  sql,
+  type SQL,
+  type SQLWrapper,
+} from "drizzle-orm";
 import type { AuthedRequest } from "../middlewares/userAuth";
 
 /**
@@ -24,6 +33,23 @@ export interface UserDeviceScope {
   regions: string[] | null;
 }
 
+/**
+ * Match a region name against a slash-separated region value such as
+ * "FR/AU". Region values are intentionally free-form, so matching complete
+ * segments avoids both hiding multi-region devices and accidentally matching
+ * a partial name.
+ */
+export function regionOverlapCondition(
+  column: SQLWrapper,
+  regions: string[],
+): SQL {
+  const allowedRegions = sql`ARRAY[${sql.join(
+    regions.map((region) => sql`${region}`),
+    sql`, `,
+  )}]::text[]`;
+  return sql`string_to_array(${column}, '/') && ${allowedRegions}`;
+}
+
 /** The scope lists for the current user, or nulls when unrestricted. */
 export function getUserScope(req: Request): UserDeviceScope {
   const user = (req as AuthedRequest).user;
@@ -32,9 +58,15 @@ export function getUserScope(req: Request): UserDeviceScope {
     user.allowedGroups && user.allowedGroups.length > 0
       ? user.allowedGroups
       : null;
+  const normalizedRegions = user.allowedRegions?.flatMap((region) =>
+    region
+      .split("/")
+      .map((part) => part.trim())
+      .filter(Boolean),
+  );
   const regions =
-    user.allowedRegions && user.allowedRegions.length > 0
-      ? user.allowedRegions
+    normalizedRegions && normalizedRegions.length > 0
+      ? normalizedRegions
       : null;
   return { groups, regions };
 }
@@ -59,23 +91,27 @@ export function deviceScopeCondition(req: Request): SQL | undefined {
   }
   if (regions) {
     const companyId = (req as AuthedRequest).user?.companyId;
-    const tokenIds = db
-      .select({ id: enrollmentTokensTable.id })
-      .from(enrollmentTokensTable)
-      .where(
-        and(
-          companyId ? eq(enrollmentTokensTable.companyId, companyId) : sql`true`,
-          inArray(enrollmentTokensTable.region, regions),
-        ),
-      );
     // Effective region: a device's own region override wins; only a device
     // with no override falls back to its enrollment token's region.
     parts.push(
       or(
-        inArray(devicesTable.region, regions),
+        regionOverlapCondition(devicesTable.region, regions),
         and(
           isNull(devicesTable.region),
-          inArray(devicesTable.enrolledViaTokenId, tokenIds),
+          inArray(
+            devicesTable.enrolledViaTokenId,
+            db
+              .select({ id: enrollmentTokensTable.id })
+              .from(enrollmentTokensTable)
+              .where(
+                and(
+                  companyId
+                    ? eq(enrollmentTokensTable.companyId, companyId)
+                    : sql`true`,
+                  regionOverlapCondition(enrollmentTokensTable.region, regions),
+                ),
+              ),
+          ),
         ),
       )!,
     );

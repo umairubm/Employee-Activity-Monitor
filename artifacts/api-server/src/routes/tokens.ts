@@ -10,7 +10,11 @@ import { and, desc, eq, inArray, isNotNull, or, type SQL } from "drizzle-orm";
 import { generateEnrollmentToken } from "../lib/secrets";
 import { requireRole, type AuthedRequest } from "../middlewares/userAuth";
 import { getCompanyId } from "../middlewares/tenant";
-import { getUserScope, visibleDeviceIdsSubquery } from "../lib/deviceScope";
+import {
+  getUserScope,
+  regionOverlapCondition,
+  visibleDeviceIdsSubquery,
+} from "../lib/deviceScope";
 
 const router: IRouter = Router();
 
@@ -29,7 +33,9 @@ function tokenScopeCondition(req: Request): SQL | undefined {
   const { groups, regions } = getUserScope(req);
   const parts: SQL[] = [eq(enrollmentTokensTable.createdById, user.id)];
   if (groups) parts.push(inArray(enrollmentTokensTable.deviceGroup, groups));
-  if (regions) parts.push(inArray(enrollmentTokensTable.region, regions));
+  if (regions) {
+    parts.push(regionOverlapCondition(enrollmentTokensTable.region, regions));
+  }
   return or(...parts);
 }
 
@@ -269,7 +275,12 @@ router.post("/", requireRole("company_admin", "manager"), async (req, res) => {
       const groupInScope =
         !!allowedGroups && !!deviceGroup && allowedGroups.includes(deviceGroup);
       const regionInScope =
-        !!allowedRegions && !!region && allowedRegions.includes(region);
+        !!allowedRegions &&
+        !!region &&
+        region
+          .split("/")
+          .map((part) => part.trim())
+          .some((part) => allowedRegions.includes(part));
       if (!groupInScope && !regionInScope) {
         res
           .status(403)

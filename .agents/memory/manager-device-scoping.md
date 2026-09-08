@@ -10,3 +10,13 @@ Managers can carry group and region restrictions (only the manager role is scope
 **Why:** an architect review caught six routes (timesheets, bulk config, group rename, attendance overrides, token mutations, token device expansion) leaking cross-scope data after the first pass — the filter is easy to forget because companyId scoping alone looks sufficient.
 
 **How to apply:** reuse the shared scope condition or visible-device subquery on every device-derived route. Treat configured group and region lists as intersecting filters; a single configured list works alone. "Installer" is a UI preset, not a DB role.
+
+Region values may contain multiple slash-separated regions such as `FR/AU`.
+Manager visibility must match complete region segments, not exact whole-string
+equality, for both explicit device overrides and token fallback regions.
+
+**Why:** a device assigned to `FR/AU` was hidden from a manager allowed to see
+`AU` because exact equality treated the combined value as a different region.
+
+**How to apply:** normalize manager permissions into individual region segments
+and use segment-overlap matching anywhere region scope is enforced.

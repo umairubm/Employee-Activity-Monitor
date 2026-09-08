@@ -160,6 +160,25 @@ describe("manager region scoping uses the effective region", () => {
       .send({ region: scope });
     expect(res.status).toBe(404);
   });
+
+  it("matches a manager region against any segment of a multi-region value", async () => {
+    const token = await newToken({ region: "DE/IT" });
+    const device = await newDevice({
+      enrolledViaTokenId: token.id,
+      region: "FR/AU",
+    });
+
+    const managerApp = makeApp({
+      role: "manager",
+      allowedRegions: ["AU"],
+    });
+    const list = await request(managerApp).get("/devices");
+
+    expect(list.status).toBe(200);
+    expect(
+      list.body.some((row: { id: string }) => row.id === device.id),
+    ).toBe(true);
+  });
 });
 
 describe("enrollment leaves the per-device override null", () => {
