@@ -1,0 +1,1620 @@
+// =============================================================================
+//  Cowgenic LoRa -> WiFi Gateway  —  ESP32-C5-WROOM-1 variant (v10 / build 161)
+// -----------------------------------------------------------------------------
+//  This is a board port of the classic-ESP32 gateway firmware. The firmware
+//  logic is IDENTICAL; the ONLY differences are the GPIO pins, which were moved
+//  because the classic ESP32's pins (LoRa SS=5/RST=14/DIO0=2, LED=25, and the
+//  default VSPI bus SCK=18/MISO=19/MOSI=23) do not exist or are not valid on
+//  the single-core RISC-V ESP32-C5.
+//
+//  BUILD REQUIREMENTS:
+//   - Arduino-ESP32 core >= 3.1.0 (first release with ESP32-C5 support).
+//   - Board: "ESP32C5 Dev Module".
+//
+//  WIRING (change the LORA_* / STATUS_LED_PIN defines below if your board
+//  breaks out different pins). Pins were chosen to avoid the C5 strapping
+//  pins (2/7/27/28) and the native USB-JTAG pins (13/14). The boot serial log
+//  prints the pins actually in use so you can confirm wiring.
+//
+//  WARNING: never OTA-push this C5 binary to a classic (Xtensa) ESP32 gateway,
+//  and vice-versa — the two chips are different architectures.
+// =============================================================================
+// === Radio toggle ===
+// LoRa is DISABLED for this WiFi-only / 5 GHz test build so the gateway boots
+// straight to WiFi without a radio attached (no "LoRa FAIL — check wiring" hang).
+// Set this back to 1 to restore full LoRa RX + ACK/command behaviour.
+#define LORA_ENABLED 1
+
+#include <SPI.h>
+#if LORA_ENABLED
+  #include <LoRa.h>
+#endif
+#include <WiFi.h>
+#include <WiFiMulti.h>
+#include <WiFiClientSecure.h>
+#include <HTTPClient.h>
+#include <ArduinoJson.h>
+#include <LittleFS.h>
+#include <esp_task_wdt.h>
+#include <esp_wifi.h>
+#include <time.h>
+#include <WiFiManager.h>
+#include <WebServer.h>
+#include <Update.h>
+#include <Preferences.h>
+
+
+// ---------------------------------------------------------------------------
+// WiFi / portal
+// ---------------------------------------------------------------------------
+#define WIFI_AP_NAME          "CowgenicServer"
+#define WIFI_AP_PASSWORD      "12345678"
+#define WIFI_PORTAL_TIMEOUT_S 300
+#define WIFI_FAILSAFE_REBOOT_MS  300000UL
+#define WIFI_RESET_BTN_PIN    0   // wire a button to this GPIO (held LOW at boot = wipe WiFi creds). NOTE: the C5 DevKitC BOOT button is GPIO28 (a strapping pin); set this to 28 to reuse it, or keep 0 and wire your own button.
+
+// Fallback SSIDs (compile-time, up to 4)
+#define WIFI_FALLBACK_SSID_1   "MERCUSYS_BA54"
+#define WIFI_FALLBACK_PSK_1    "74674114"
+#define WIFI_FALLBACK_SSID_2   "test"
+#define WIFI_FALLBACK_PSK_2    "12345678"
+#define WIFI_FALLBACK_SSID_3   "PopCornStudio_5G_3F"
+#define WIFI_FALLBACK_PSK_3    "PopCornStudio@35"
+#define WIFI_FALLBACK_SSID_4   ""
+#define WIFI_FALLBACK_PSK_4    ""
+
+// ---------------------------------------------------------------------------
+// Gateway identity
+// ---------------------------------------------------------------------------
+#define DEFAULT_GATEWAY_NAME        "wali_khan_gateway"
+#define DEFAULT_GATEWAY_NAME_FORCE  false
+#define GATEWAY_ID_OVERRIDE  "ESP32_GW_WALI_KHAN_GATEWAY_001"
+
+// ---------------------------------------------------------------------------
+// OTA (browser-based)
+// ---------------------------------------------------------------------------
+#define OTA_PORT             80
+#define OTA_USERNAME         "admin"
+#define OTA_PASSWORD         "cowgenic"
+
+// ---------------------------------------------------------------------------
+// Debug / build
+// ---------------------------------------------------------------------------
+#define DEBUG               1
+#define GATEWAY_FW_BUILD    168      // 168: max RX sensitivity (LNA boost) + log rejected unknown collar ids + PKT timestamps  |  167: receiver log streaming to server  |  166: no reboot-loop on LoRa fail
+
+// ---------------------------------------------------------------------------
+// LoRa / radio
+// ---------------------------------------------------------------------------
+#define LORA_FREQ           433.3E6
+// --- Waveshare ESP32-C5-WIFI6-KIT SPI/LoRa pin map ---
+// Kept on the user's EXISTING physical wiring (4/5/23/10/24/25) so no re-wiring
+// is needed. chipID=0x00 is a wire/power fault (thin enamel wire not conducting,
+// or module not powered), NOT a pin-choice problem — moving pins won't fix it.
+#define LORA_SCK_PIN        4     // header: IO4
+#define LORA_MISO_PIN       5     // header: IO5
+#define LORA_MOSI_PIN       23    // header: IO23
+#define SS_PIN              10    // header: IO10  — LoRa NSS / chip-select
+#define RST_PIN             24    // header: IO24
+#define DIO0_PIN            25    // header: IO25
+
+// ---------------------------------------------------------------------------
+// Timing / sizing
+// ---------------------------------------------------------------------------
+#define WDT_TIMEOUT_S       60
+#define STATS_INTERVAL_MS   60000UL
+#define HEARTBEAT_INTERVAL_MS  60000UL
+#define HEARTBEAT_WARMUP_MS    10000UL
+#define HTTP_TIMEOUT_MS     15000
+#define OTA_DOWNLOAD_TIMEOUT_MS  60000
+
+// ---------------------------------------------------------------------------
+// ACQ queue (v10 — RAM ring buffer decoupling RX from POST)
+// ---------------------------------------------------------------------------
+// Each slot holds one serialised JSON body (~300-400 bytes). With 16 slots
+// and 5 collars at 8-second sleep cycles you have ~25 s of headroom before
+// the queue can fill — far more than any realistic POST storm.
+// At ~400 bytes/slot × 16 slots = ~6.4 KB RAM, well within the ESP32's
+// 320 KB heap budget (free heap typically >200 KB at runtime).
+#define ACQ_QUEUE_DEPTH  16
+
+// Minimum ms between consecutive POSTs when draining the queue.
+// 200 ms ≈ 5 POST attempts/s maximum. Each POST can block for up to
+// HTTP_TIMEOUT_MS (15 s) but in the happy path (good WiFi, Replit warm)
+// it completes in 1-3 s, so throughput easily keeps up with 5 collars × 1
+// packet per 8 s = 0.625 packets/s. Raise this if you see WDT pressure.
+#define ACQ_DRAIN_INTERVAL_MS  200UL
+
+// ---------------------------------------------------------------------------
+// Server
+// ---------------------------------------------------------------------------
+#define SERVER_HOST         "cowgenic-collar.replit.app"
+#define SERVER_PATH         "/api/usama-collar/data"
+
+// ---------------------------------------------------------------------------
+// NTP
+// ---------------------------------------------------------------------------
+#define NTP_SERVER_PRIMARY    "pool.ntp.org"
+#define NTP_SERVER_SECONDARY  "time.google.com"
+#define NTP_SERVER_TERTIARY   "time.cloudflare.com"
+#define NTP_MIN_VALID_EPOCH   1700000000UL
+
+// ---------------------------------------------------------------------------
+// LED (plain single-colour fallback — used only when RGB_STATUS_ENABLED = 0)
+// ---------------------------------------------------------------------------
+#define STATUS_LED_PIN      8     // C5: moved off classic GPIO25 (doesn't exist on C5)
+#define STATUS_LED_ACTIVE   HIGH
+
+// ---------------------------------------------------------------------------
+// Onboard addressable RGB LED (WS2812) — WiFi status indicator
+// ---------------------------------------------------------------------------
+//   RED  (blinking) = WiFi NOT connected
+//   GREEN           = data just sent to the server (flashes on each send)
+//   BLUE            = WiFi connected, idle (waiting / nothing to send)
+//
+// The Arduino-ESP32 core defines RGB_BUILTIN for boards that ship a WS2812. If
+// your build doesn't define it, the fallback below is used. On the
+// ESP32-C5-DevKitC-1 the onboard RGB LED is GPIO27 — change it here if your
+// board differs (the core's built-in rgbLedWrite() drives it, no library).
+#define RGB_STATUS_ENABLED  1
+#ifndef RGB_BUILTIN
+  #define RGB_BUILTIN       27
+#endif
+#define RGB_BRIGHTNESS      40    // 0-255; keep low, the WS2812 is very bright
+// Many WS2812 LEDs use GRB order, so "red" can come out green. If your colours
+// are swapped, flip this (1 = swap red<->green). Set to 0 if colours are correct.
+#define RGB_SWAP_RG         1
+
+// ---------------------------------------------------------------------------
+// Offline buffer (LittleFS)
+// ---------------------------------------------------------------------------
+#define BUF_PATH            "/buf.jsonl"
+#define BUF_PATH_TMP        "/buf.tmp"
+#define BUF_MAX_LINES       5000UL
+#define BUF_FLUSH_BATCH     20
+
+// ---------------------------------------------------------------------------
+// Tracking
+// ---------------------------------------------------------------------------
+#define MAX_TRACKED_COWS    16
+#define MAX_PENDING_CMDS    8
+
+// ---------------------------------------------------------------------------
+// Collar-ID whitelist
+// ---------------------------------------------------------------------------
+static const uint16_t VALID_COLLAR_IDS[] = {148,140,244,254,245,85,252};
+static const uint8_t  VALID_COLLAR_IDS_COUNT = sizeof(VALID_COLLAR_IDS) / sizeof(VALID_COLLAR_IDS[0]);
+
+static bool isValidCollarId(uint16_t id) {
+  for (uint8_t i = 0; i < VALID_COLLAR_IDS_COUNT; i++) {
+    if (VALID_COLLAR_IDS[i] == id) return true;
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// Serial macros
+// ---------------------------------------------------------------------------
+#define SUM(x)    Serial.print(x)
+#define SUMLN(x)  Serial.println(x)
+#define SUMX(x,f) Serial.print((x),(f))
+#define SUMF()    Serial.flush()
+
+#if DEBUG
+  #define DBG(x)      Serial.print(x)
+  #define DBGLN(x)    Serial.println(x)
+  #define DBGX(x,f)   Serial.print((x),(f))
+#else
+  #define DBG(x)
+  #define DBGLN(x)
+  #define DBGX(x,f)
+#endif
+
+// ---------------------------------------------------------------------------
+// Packet structs (must match collar firmware)
+// ---------------------------------------------------------------------------
+struct __attribute__((__packed__)) PayloadV7 {
+  uint8_t uptime_raw[4];
+  uint8_t id_raw[2];
+  uint8_t seq_raw[2];
+  uint8_t vbat_raw[2];
+  uint8_t behavior, activity, heat, alert, fw_version;
+  int8_t  xMax, xMin, yMax, yMin, zMax, zMin;
+};
+
+struct __attribute__((__packed__)) PayloadV9 {
+  uint8_t uptime_raw[4];
+  uint8_t id_raw[2];
+  uint8_t seq_raw[2];
+  uint8_t vbat_raw[2];
+  uint8_t behavior, activity, heat, alert, fw_version;
+  uint8_t zeroCrossings;
+  int8_t  tiltAngle;
+  uint8_t zRange, motionXY, motionZ, reserved;
+};
+
+struct __attribute__((__packed__)) ConfigConfirm {
+  uint8_t id_raw[2];
+  uint8_t msg_type, applied_cmd, new_val;
+};
+
+struct PendingCmd {
+  uint16_t cow;
+  uint8_t  cmd, val;
+  bool     active;
+};
+
+// ---------------------------------------------------------------------------
+// Globals
+// ---------------------------------------------------------------------------
+PendingCmd pendingCmds[MAX_PENDING_CMDS];
+
+const char* behaviorNames[] = {"None","Resting","Eating","Walking","Panic","Rumination"};
+
+uint32_t payloadCount    = 0;
+uint32_t confirmCount    = 0;
+uint32_t malformedCount  = 0;
+uint32_t unknownIdCount  = 0;
+uint32_t postOkCount     = 0;
+uint32_t postFailCount   = 0;
+uint32_t bufferedCount   = 0;
+uint32_t flushedCount    = 0;
+uint32_t queueDropCount  = 0;   // v10: packets dropped because ACQ queue was full
+uint32_t lastPayloadTime = 0;
+uint32_t lastPostOkTime  = 0;
+uint32_t bootMillis      = 0;
+
+uint32_t prevMalformedCount = 0;
+uint32_t prevUnknownIdCount = 0;
+uint32_t prevPayloadCount   = 0;
+uint32_t prevStatsMs        = 0;
+
+bool     wifiOk          = false;
+uint32_t remoteRebootAtMs = 0;   // v11.1: nonzero = reboot scheduled (remote command)
+bool     fsOk            = false;
+bool     loraOk          = false;   // set true once the LoRa radio answers
+uint32_t lastLoraProbeMs = 0;       // live re-probe pacing when radio is down
+bool     otaBusy         = false;
+String   gatewayId;
+String   friendlyName;
+Preferences gwPrefs;
+WiFiMulti wifiMulti;
+uint8_t   wifiMultiCount = 0;
+bool      nvsHadSavedCreds = false;
+
+WebServer otaServer(OTA_PORT);
+
+struct CowStat {
+  uint16_t id, lastSeq;
+  uint32_t lastRxMs, rxCount;
+};
+CowStat cows[MAX_TRACKED_COWS];
+uint8_t cowCount = 0;
+
+// ---------------------------------------------------------------------------
+// v10: ACQ queue — RAM ring buffer
+// ---------------------------------------------------------------------------
+struct AcqSlot {
+  String body;
+  bool   used;
+};
+static AcqSlot acqQueue[ACQ_QUEUE_DEPTH];
+static uint8_t acqHead = 0, acqTail = 0;
+
+static uint8_t acqSize() {
+  return (acqTail >= acqHead)
+    ? (acqTail - acqHead)
+    : (ACQ_QUEUE_DEPTH - acqHead + acqTail);
+}
+
+// Returns false if queue is full.
+static bool acqPush(const String& body) {
+  uint8_t next = (uint8_t)((acqTail + 1) % ACQ_QUEUE_DEPTH);
+  if (next == acqHead) return false;   // full
+  acqQueue[acqTail].body = body;
+  acqQueue[acqTail].used = true;
+  acqTail = next;
+  return true;
+}
+
+// Returns false if queue is empty.
+static bool acqPop(String& out) {
+  if (acqHead == acqTail) return false;
+  out = acqQueue[acqHead].body;
+  acqQueue[acqHead].body = String();   // free String heap immediately
+  acqQueue[acqHead].used = false;
+  acqHead = (uint8_t)((acqHead + 1) % ACQ_QUEUE_DEPTH);
+  return true;
+}
+
+// Drain entire queue to LittleFS (called when WiFi drops while queue has data).
+static void acqFlushToFlash() {
+  String body;
+  while (acqPop(body)) {
+    appendToBuffer(body);   // forward declaration resolved below
+    DBG(F("[QUEUE] WiFi-down flush to flash"));
+  }
+}
+
+// =============================================================================
+//   v11 (build 167): RECEIVER LOG STREAMING — "gateway_log"
+//   Key events (boot, LoRa up, every collar RX, POST failures, stats) are
+//   captured into a small RAM ring buffer and flushed to the server every
+//   GWLOG_FLUSH_INTERVAL_MS as a `type:"gateway_log"` POST with a `lines`
+//   array. The server keeps a rolling per-gateway tail that the dashboard
+//   shows live — so the receiver's serial output is visible remotely without
+//   a USB cable. Lines are only popped after a successful POST, so a failed
+//   upload retries next cycle (oldest lines are overwritten if the ring
+//   wraps — logs are diagnostics, never worth blocking data for).
+// =============================================================================
+#define GWLOG_DEPTH             28     // ring slots (~120 B each ≈ 3.4 KB RAM)
+#define GWLOG_MAX_LINE          140    // per-line cap (server caps too)
+#define GWLOG_FLUSH_INTERVAL_MS 20000UL
+#define GWLOG_BATCH_MAX         12     // lines per POST (keeps body < ~2 KB)
+
+static String  gwLogRing[GWLOG_DEPTH];
+static uint8_t gwLogHead = 0, gwLogTail = 0;
+static uint32_t gwLogDropCount = 0;
+
+static uint8_t gwLogSize() {
+  return (gwLogTail >= gwLogHead)
+    ? (gwLogTail - gwLogHead)
+    : (GWLOG_DEPTH - gwLogHead + gwLogTail);
+}
+
+// Capture one log line (also echoed to USB serial). Timestamped with wall
+// clock when NTP is valid, else with uptime seconds.
+static void gwLog(const String& msg) {
+  String line;
+  time_t nowEpoch = time(nullptr);
+  if ((uint32_t)nowEpoch > NTP_MIN_VALID_EPOCH) {
+    struct tm tmInfo;
+    localtime_r(&nowEpoch, &tmInfo);
+    char ts[12];
+    snprintf(ts, sizeof(ts), "%02d:%02d:%02d ", tmInfo.tm_hour, tmInfo.tm_min, tmInfo.tm_sec);
+    line = ts;
+  } else {
+    line = "+" + String((millis()-bootMillis)/1000UL) + "s ";
+  }
+  line += msg;
+  if (line.length() > GWLOG_MAX_LINE) line = line.substring(0, GWLOG_MAX_LINE);
+
+  uint8_t next = (uint8_t)((gwLogTail + 1) % GWLOG_DEPTH);
+  if (next == gwLogHead) {
+    // Ring full — drop the OLDEST line to make room (newest wins).
+    gwLogRing[gwLogHead] = String();
+    gwLogHead = (uint8_t)((gwLogHead + 1) % GWLOG_DEPTH);
+    gwLogDropCount++;
+  }
+  gwLogRing[gwLogTail] = line;
+  gwLogTail = next;
+}
+
+// Flush pending log lines to the server. Pops only on success.
+// force=true bypasses the 20 s pacing (used just before a remote reboot so
+// the [REBOOT] line reaches the dashboard before the restart).
+// NOTE: no default argument — the Arduino .ino auto-prototype generator
+// duplicates default args and fails the build.
+static void serviceGwLogFlush(bool force) {
+  if (!wifiOk || WiFi.status() != WL_CONNECTED) return;
+  if (gwLogHead == gwLogTail) return;
+  static uint32_t lastGwLogFlush = 0;
+  if (!force && millis() - lastGwLogFlush < GWLOG_FLUSH_INTERVAL_MS) return;
+  lastGwLogFlush = millis();
+
+  JsonDocument doc;
+  doc["type"] = "gateway_log";
+  time_t nowEpoch = time(nullptr);
+  if ((uint32_t)nowEpoch > NTP_MIN_VALID_EPOCH) doc["timestamp"] = (uint32_t)nowEpoch;
+  JsonObject d = doc["data"].to<JsonObject>();
+  d["pi_serial_id"] = gatewayId;
+  if (friendlyName.length() > 0) d["gateway_name"] = friendlyName;
+  d["gateway_fw"]   = (uint16_t)GATEWAY_FW_BUILD;
+  JsonArray lines = d["lines"].to<JsonArray>();
+
+  uint8_t idx = gwLogHead, count = 0;
+  while (idx != gwLogTail && count < GWLOG_BATCH_MAX) {
+    lines.add(gwLogRing[idx]);
+    idx = (uint8_t)((idx + 1) % GWLOG_DEPTH);
+    count++;
+  }
+  if (count == 0) return;
+
+  String body; serializeJson(doc, body);
+  esp_task_wdt_reset();
+  if (postPayload(body)) {
+    // Pop exactly the lines we sent.
+    while (gwLogHead != idx) {
+      gwLogRing[gwLogHead] = String();
+      gwLogHead = (uint8_t)((gwLogHead + 1) % GWLOG_DEPTH);
+    }
+  }
+  // On failure: keep lines, retry next interval (ring overwrites oldest if full).
+}
+
+// =============================================================================
+//   COW TRACKING
+// =============================================================================
+static void trackCow(uint16_t id, uint16_t seq) {
+  for (uint8_t i = 0; i < cowCount; i++) {
+    if (cows[i].id == id) {
+      cows[i].lastSeq  = seq;
+      cows[i].lastRxMs = millis();
+      cows[i].rxCount++;
+      return;
+    }
+  }
+  if (cowCount < MAX_TRACKED_COWS) {
+    cows[cowCount] = {id, seq, millis(), 1};
+    cowCount++;
+    DBG(F("[NEW_COW] id=")); DBGLN(id);
+  }
+}
+
+// =============================================================================
+//   PENDING CMD QUEUE
+// =============================================================================
+static bool enqueueCmd(uint16_t cow, uint8_t cmd, uint8_t val) {
+  for (uint8_t i = 0; i < MAX_PENDING_CMDS; i++) {
+    if (pendingCmds[i].active && pendingCmds[i].cow == cow && pendingCmds[i].cmd == cmd) {
+      pendingCmds[i].val = val;
+      return true;
+    }
+  }
+  for (uint8_t i = 0; i < MAX_PENDING_CMDS; i++) {
+    if (!pendingCmds[i].active) {
+      pendingCmds[i] = {cow, cmd, val, true};
+      return true;
+    }
+  }
+  return false;
+}
+
+static int8_t findCmdForCow(uint16_t cow) {
+  for (uint8_t i = 0; i < MAX_PENDING_CMDS; i++) {
+    if (pendingCmds[i].active && pendingCmds[i].cow == cow) return (int8_t)i;
+  }
+  return -1;
+}
+
+// =============================================================================
+//   STATUS LED
+// =============================================================================
+enum LedState { LED_OFF, LED_SOLID, LED_BLINK_SLOW, LED_BLINK_FAST };
+
+static void setLed(bool on) {
+  if (STATUS_LED_PIN < 0) return;
+  digitalWrite(STATUS_LED_PIN, on ? STATUS_LED_ACTIVE : !STATUS_LED_ACTIVE);
+}
+
+static void setRgb(uint8_t r, uint8_t g, uint8_t b) {
+#if RGB_STATUS_ENABLED
+  #if RGB_SWAP_RG
+    rgbLedWrite(RGB_BUILTIN, g, r, b);   // swap red<->green for GRB-order LEDs
+  #else
+    rgbLedWrite(RGB_BUILTIN, r, g, b);
+  #endif
+#endif
+}
+
+static void serviceLed() {
+#if RGB_STATUS_ENABLED
+  // RGB WiFi-status indicator:
+  //   RED blink  = not connected
+  //   GREEN      = data sent to server within the last 4 s
+  //   BLUE       = connected, idle
+  static uint32_t lastToggle = 0;
+  static bool     redOn      = false;
+  uint32_t now = millis();
+  const uint8_t L = RGB_BRIGHTNESS;
+
+  if (!wifiOk) {
+    if (now - lastToggle >= 400) { redOn = !redOn; lastToggle = now; setRgb(redOn ? L : 0, 0, 0); }
+  } else if (lastPostOkTime && (now - lastPostOkTime) < 4000UL) {
+    setRgb(0, L, 0);          // green — actively sending / just sent
+  } else {
+    setRgb(0, 0, L);          // blue — connected, nothing to send right now
+  }
+#else
+  if (STATUS_LED_PIN < 0) return;
+  LedState state;
+  if (!wifiOk)                                                          state = LED_BLINK_FAST;
+  else if (lastPostOkTime && (millis()-lastPostOkTime) < 300000UL)      state = LED_SOLID;
+  else                                                                   state = LED_BLINK_SLOW;
+
+  static uint32_t lastToggle = 0;
+  static bool ledOn = false;
+  uint32_t now = millis();
+  switch (state) {
+    case LED_SOLID:      setLed(true);  ledOn = true;  break;
+    case LED_OFF:        setLed(false); ledOn = false; break;
+    case LED_BLINK_SLOW: if (now-lastToggle>=500) { ledOn=!ledOn; setLed(ledOn); lastToggle=now; } break;
+    case LED_BLINK_FAST: if (now-lastToggle>=125) { ledOn=!ledOn; setLed(ledOn); lastToggle=now; } break;
+  }
+#endif
+}
+
+// =============================================================================
+//   OTA — browser upload
+// =============================================================================
+static const char OTA_INDEX_HTML[] PROGMEM = R"=====(
+<!DOCTYPE html><html><head><meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>Cowgenic Gateway OTA</title>
+<style>
+body{font-family:system-ui,-apple-system,sans-serif;max-width:480px;margin:40px auto;padding:0 20px;color:#1f2937;background:#f9fafb}
+h1{color:#16a34a;margin-bottom:8px}.sub{color:#6b7280;font-size:14px;margin-bottom:24px}
+.box{border:1px solid #d1d5db;border-radius:12px;padding:20px;background:#fff}
+input[type=file]{width:100%;padding:10px;margin:12px 0;border:1px solid #d1d5db;border-radius:6px;background:#fff;box-sizing:border-box}
+button{background:#16a34a;color:#fff;border:0;padding:14px 24px;border-radius:8px;font-size:16px;cursor:pointer;width:100%;font-weight:600}
+button:hover{background:#15803d}button:disabled{background:#9ca3af;cursor:wait}
+.info{font-size:13px;color:#6b7280;margin-top:16px;line-height:1.5}
+#prog{display:none;margin-top:16px}#bar{height:8px;background:#e5e7eb;border-radius:4px;overflow:hidden}
+#fill{height:100%;background:#16a34a;width:0%;transition:width .2s}
+</style></head><body>
+<h1>Cowgenic Gateway OTA</h1>
+<div class='sub'>Upload a compiled firmware (.bin) to flash this gateway over the air.</div>
+<div class='box'><form id='f' method='POST' action='/update' enctype='multipart/form-data'>
+<label><b>Firmware file:</b></label>
+<input type='file' name='firmware' accept='.bin' required id='file'>
+<button type='submit' id='btn'>Upload &amp; Flash</button>
+<div id='prog'><div id='bar'><div id='fill'></div></div><div id='pct' style='font-size:12px;color:#6b7280;margin-top:6px'>0%</div></div>
+</form>
+<div class='info'>Once upload completes the gateway reboots automatically. Do not power-cycle during flashing (~30-60 s for 1 MB).</div>
+</div>
+<script>
+document.getElementById('f').addEventListener('submit',function(e){
+  e.preventDefault();
+  var f=document.getElementById('file').files[0];if(!f)return;
+  var b=document.getElementById('btn');b.disabled=true;b.textContent='Uploading…';
+  document.getElementById('prog').style.display='block';
+  var fd=new FormData();fd.append('firmware',f);
+  var x=new XMLHttpRequest();
+  x.upload.onprogress=function(ev){if(ev.lengthComputable){var p=Math.round(ev.loaded*100/ev.total);document.getElementById('fill').style.width=p+'%';document.getElementById('pct').textContent=p+'%';}};
+  x.onload=function(){document.body.innerHTML='<h1 style="color:#16a34a">Done!</h1><p>Gateway is rebooting…</p>'+x.responseText;};
+  x.onerror=function(){alert('Upload failed — check WiFi and try again.');b.disabled=false;b.textContent='Upload &amp; Flash';};
+  x.open('POST','/update');x.send(fd);
+});
+</script></body></html>
+)=====";
+
+static void otaBegin() {
+  otaServer.on("/", HTTP_GET, []() {
+    if (!otaServer.authenticate(OTA_USERNAME, OTA_PASSWORD))
+      return otaServer.requestAuthentication();
+    otaServer.send_P(200, "text/html", OTA_INDEX_HTML);
+  });
+  otaServer.on("/update", HTTP_POST,
+    []() {
+      otaServer.sendHeader("Connection", "close");
+      bool ok = !Update.hasError();
+      otaServer.send(200, "text/plain", ok ? "OK" : "FAIL");
+      delay(500);
+      if (ok) ESP.restart();
+    },
+    []() {
+      if (!otaServer.authenticate(OTA_USERNAME, OTA_PASSWORD))
+        return otaServer.requestAuthentication();
+      HTTPUpload& upload = otaServer.upload();
+      esp_task_wdt_reset();
+      if      (upload.status == UPLOAD_FILE_START) {
+        otaBusy = true;
+        DBG(F("[OTA] start=")); DBGLN(upload.filename);
+        if (!Update.begin(UPDATE_SIZE_UNKNOWN)) { Update.printError(Serial); otaBusy = false; }
+      }
+      else if (upload.status == UPLOAD_FILE_WRITE) {
+        if (Update.write(upload.buf, upload.currentSize) != upload.currentSize)
+          Update.printError(Serial);
+      }
+      else if (upload.status == UPLOAD_FILE_END) {
+        if (Update.end(true)) { DBG(F("[OTA] ok bytes=")); DBGLN(upload.totalSize); }
+        else Update.printError(Serial);
+        otaBusy = false;
+      }
+      else if (upload.status == UPLOAD_FILE_ABORTED) {
+        Update.end(); DBGLN(F("[OTA] aborted")); otaBusy = false;
+      }
+    }
+  );
+  otaServer.onNotFound([]() {
+    otaServer.sendHeader("Location", "/", true);
+    otaServer.send(302, "text/plain", "");
+  });
+  otaServer.begin();
+  DBG(F("[OTA] http://")); DBG(WiFi.localIP()); DBG(F(":")); DBGLN(OTA_PORT);
+}
+
+// =============================================================================
+//   WIFI HELPERS
+// =============================================================================
+static uint8_t populateWifiMulti() {
+  wifiMultiCount = 0;
+  nvsHadSavedCreds = false;
+  wifi_config_t conf;
+  if (esp_wifi_get_config(WIFI_IF_STA, &conf) == ESP_OK) {
+    String s = String((const char*)conf.sta.ssid);
+    if (s.length() > 0) {
+      wifiMulti.addAP(s.c_str(), (const char*)conf.sta.password);
+      wifiMultiCount++;
+      nvsHadSavedCreds = true;
+      DBG(F("[WIFI-MULTI] +saved ssid=")); DBGLN(s);
+    }
+  }
+  if (strlen(WIFI_FALLBACK_SSID_1)>0) { wifiMulti.addAP(WIFI_FALLBACK_SSID_1,WIFI_FALLBACK_PSK_1); wifiMultiCount++; }
+  if (strlen(WIFI_FALLBACK_SSID_2)>0) { wifiMulti.addAP(WIFI_FALLBACK_SSID_2,WIFI_FALLBACK_PSK_2); wifiMultiCount++; }
+  if (strlen(WIFI_FALLBACK_SSID_3)>0) { wifiMulti.addAP(WIFI_FALLBACK_SSID_3,WIFI_FALLBACK_PSK_3); wifiMultiCount++; }
+  if (strlen(WIFI_FALLBACK_SSID_4)>0) { wifiMulti.addAP(WIFI_FALLBACK_SSID_4,WIFI_FALLBACK_PSK_4); wifiMultiCount++; }
+  DBG(F("[WIFI-MULTI] total=")); DBGLN(wifiMultiCount);
+  return wifiMultiCount;
+}
+
+static void logVisibleNetworks(const __FlashStringHelper* tag) {
+  esp_task_wdt_reset();
+  int n = WiFi.scanNetworks(false, false);
+  esp_task_wdt_reset();
+  if (n < 0) { DBG(F("[WIFI-SCAN] ")); DBG(tag); DBGLN(F(" scan failed")); return; }
+  DBG(F("[WIFI-SCAN] ")); DBG(tag); DBG(F(" visible=")); DBGLN(n);
+  for (int i = 0; i < n; i++) {
+    DBG(F("[WIFI-SCAN]  \"")); DBG(WiFi.SSID(i)); DBG(F("\" rssi=")); DBG(WiFi.RSSI(i));
+    DBG(F(" ch=")); DBGLN(WiFi.channel(i));
+  }
+  WiFi.scanDelete();
+}
+
+static void ensureNtpStarted() {
+  static bool started = false;
+  if (started) return;
+  started = true;
+  // v11.1 (build 168): Pakistan time (UTC+5) so gwLog timestamps match the
+  // dashboard's PKT clock instead of showing UTC.
+  configTime(5 * 3600, 0, NTP_SERVER_PRIMARY, NTP_SERVER_SECONDARY, NTP_SERVER_TERTIARY);
+  DBGLN(F("[NTP] started"));
+  uint32_t t0 = millis();
+  while (millis()-t0 < 3000UL) {
+    if ((uint32_t)time(nullptr) > NTP_MIN_VALID_EPOCH) {
+      DBG(F("[NTP] synced epoch=")); DBGLN((uint32_t)time(nullptr)); return;
+    }
+    delay(100);
+  }
+  DBGLN(F("[NTP] no sync in 3 s — continuing in background"));
+}
+
+static void wifiBegin() {
+  WiFi.mode(WIFI_STA);
+  WiFi.setAutoReconnect(true);
+  WiFi.persistent(false);
+  WiFi.setSleep(false);
+  WiFi.setTxPower(WIFI_POWER_19_5dBm);
+  WiFi.setHostname(gatewayId.c_str());
+
+  pinMode(WIFI_RESET_BTN_PIN, INPUT_PULLUP);
+  delay(50);
+  bool wipeRequested = (digitalRead(WIFI_RESET_BTN_PIN) == LOW);
+  if (wipeRequested) {
+    DBGLN(F("[WIFI] BOOT held — wiping saved creds"));
+    WiFiManager wmTmp; wmTmp.resetSettings(); delay(300);
+  }
+
+  populateWifiMulti();
+
+  if (!wipeRequested && wifiMultiCount > 0) {
+    DBG(F("[WIFI-MULTI] phase 1: trying ")); DBG(wifiMultiCount); DBGLN(F(" networks (30 s)"));
+    uint32_t t0 = millis();
+    while (millis()-t0 < 30000UL) {
+      if (wifiMulti.run(5000) == WL_CONNECTED) {
+        wifiOk = true;
+        DBG(F("[WIFI] connected ssid=")); DBG(WiFi.SSID());
+        DBG(F(" ip=")); DBG(WiFi.localIP()); DBG(F(" rssi=")); DBGLN(WiFi.RSSI());
+        ensureNtpStarted();
+        otaBegin();
+        return;
+      }
+      esp_task_wdt_reset(); delay(200);
+    }
+    DBGLN(F("[WIFI-MULTI] phase 1 failed"));
+    logVisibleNetworks(F("post-phase1"));
+  }
+
+  if (nvsHadSavedCreds && !wipeRequested) {
+    DBGLN(F("[WIFI] NVS has creds — NOT opening captive portal"));
+    DBGLN(F("[WIFI] Will retry via wifiServiceReconnect every 15 s"));
+    wifiOk = false;
+    return;
+  }
+
+  DBG(F("[WIFI] phase 2: captive portal AP=")); DBGLN(F(WIFI_AP_NAME));
+  WiFiManager wm;
+  wm.setDebugOutput(false);
+  wm.setConnectTimeout(15);
+  wm.setConfigPortalTimeout(WIFI_PORTAL_TIMEOUT_S);
+  char nameBuf[65]; snprintf(nameBuf, sizeof(nameBuf), "%s", friendlyName.c_str());
+  WiFiManagerParameter pName("name", "Gateway name", nameBuf, 64);
+  wm.addParameter(&pName);
+
+  esp_task_wdt_delete(NULL);
+  WiFi.persistent(true);
+  bool connected = wm.startConfigPortal(WIFI_AP_NAME, WIFI_AP_PASSWORD);
+  WiFi.persistent(false);
+  esp_task_wdt_add(NULL);
+
+  if (connected) {
+    wifiOk = true;
+    DBG(F("[WIFI] OK ssid=")); DBG(WiFi.SSID()); DBG(F(" ip=")); DBGLN(WiFi.localIP());
+    populateWifiMulti();
+    ensureNtpStarted();
+    String entered = String(pName.getValue()); entered.trim();
+    if (entered.length() > 0 && entered != friendlyName) {
+      friendlyName = entered.substring(0, 64);
+      gwPrefs.putString("name", friendlyName);
+    }
+    otaBegin();
+  } else {
+    wifiOk = false;
+    DBGLN(F("[WIFI] portal timeout — rebooting"));
+    delay(1000); ESP.restart();
+  }
+}
+
+static void wifiServiceReconnect() {
+  static uint32_t lastCheck = 0;
+  static uint32_t disconnectedSince = 0;
+  static uint32_t lastSoftReset = 0;
+  if (millis()-lastCheck < 2000) return;
+  lastCheck = millis();
+
+  if (WiFi.status() == WL_CONNECTED) {
+    if (!wifiOk) {
+      DBG(F("[WIFI] reconnected ip=")); DBGLN(WiFi.localIP());
+      gwLog(String("[WIFI] reconnected ssid=") + WiFi.SSID() + " rssi=" + WiFi.RSSI());
+      ensureNtpStarted();
+      otaBegin();
+    }
+    wifiOk = true;
+    disconnectedSince = 0;
+    return;
+  }
+
+  if (wifiOk) {
+    DBGLN(F("[WIFI] link lost — buffering to flash"));
+    gwLog(F("[WIFI] link LOST — buffering packets to flash until reconnect"));
+    // v10: drain ACQ queue to flash so in-flight packets survive the outage
+    acqFlushToFlash();
+    disconnectedSince = millis();
+    lastSoftReset = millis();
+  } else if (disconnectedSince == 0) {
+    disconnectedSince = millis();
+    lastSoftReset = millis();
+  }
+  wifiOk = false;
+
+  if (millis()-lastSoftReset > WIFI_FAILSAFE_REBOOT_MS) {
+    lastSoftReset = millis();
+    DBG(F("[WIFI] soft-reset after ")); DBG((millis()-disconnectedSince)/1000UL); DBGLN(F(" s down"));
+    WiFi.disconnect(true, false);
+    WiFi.mode(WIFI_OFF); delay(1000);
+    WiFi.mode(WIFI_STA);
+    WiFi.persistent(false); WiFi.setAutoReconnect(true);
+    WiFi.setSleep(false); WiFi.setTxPower(WIFI_POWER_19_5dBm);
+    WiFi.setHostname(gatewayId.c_str());
+    populateWifiMulti();
+    logVisibleNetworks(F("post-soft-reset"));
+  }
+
+  static uint32_t lastReconnect = 0;
+  if (millis()-lastReconnect > 15000UL) {
+    lastReconnect = millis();
+    if (wifiMultiCount > 0) { DBGLN(F("[WIFI] retrying wifiMulti")); wifiMulti.run(8000); }
+    else WiFi.reconnect();
+  }
+}
+
+// Forward declaration
+static bool applyOtaFromUrl(uint32_t newBuild, const String& url, uint32_t expectedSize);
+
+// =============================================================================
+//   JSON PAYLOAD BUILDER
+// =============================================================================
+static void buildPayload(JsonDocument& doc,
+    uint16_t id, uint16_t seq, uint16_t vbat,
+    uint8_t behav, uint8_t act, uint8_t heat, uint8_t alert,
+    uint8_t fw, uint32_t uptime, int rssi, float snr,
+    bool isV9, uint8_t zeroCross, int8_t tiltAngle,
+    uint8_t zRange, uint8_t motionXY, uint8_t motionZ,
+    uint8_t bootReason) {
+  doc["type"] = "sensor_payload";
+  time_t nowEpoch = time(nullptr);
+  if ((uint32_t)nowEpoch > NTP_MIN_VALID_EPOCH) doc["timestamp"] = (uint32_t)nowEpoch;
+  JsonObject d = doc["data"].to<JsonObject>();
+  d["pi_serial_id"]  = gatewayId;
+  if (friendlyName.length() > 0) d["gateway_name"] = friendlyName;
+  d["collar_id"]     = id;
+  d["sequence"]      = seq;
+  d["uptime"]        = uptime;
+  d["vbat"]          = vbat;
+  d["behavior"]      = behav;
+  d["activity"]      = act;
+  d["heat"]          = heat;
+  d["alert"]         = alert;
+  d["fw_version"]    = fw;
+  d["gateway_fw"]    = (uint16_t)GATEWAY_FW_BUILD;
+  d["gateway_debug"] = (uint8_t)DEBUG;
+  d["rssi"]          = rssi;
+  d["snr"]           = snr;
+  if (isV9) {
+    d["zero_crossings"] = zeroCross;
+    d["tilt_angle"]     = tiltAngle;
+    d["z_range"]        = zRange;
+    d["motion_xy"]      = motionXY;
+    d["motion_z"]       = motionZ;
+    d["boot_reason"]    = bootReason;
+  }
+  d["wifi_rssi"] = WiFi.RSSI();
+  d["wifi_ssid"] = WiFi.SSID();
+}
+
+// =============================================================================
+//   HTTPS POST
+// =============================================================================
+static bool postPayload(const String& body) {
+  if (!wifiOk || WiFi.status() != WL_CONNECTED) return false;
+
+  WiFiClientSecure client;
+  client.setInsecure();
+  client.setTimeout(HTTP_TIMEOUT_MS / 1000);
+
+  HTTPClient https;
+  https.setConnectTimeout(HTTP_TIMEOUT_MS);
+  https.setTimeout(HTTP_TIMEOUT_MS);
+  https.setReuse(false);
+
+  String url = String("https://") + SERVER_HOST + SERVER_PATH;
+  esp_task_wdt_reset();
+  if (!https.begin(client, url)) { DBGLN(F("[HTTP] begin failed")); return false; }
+  https.addHeader("Content-Type", "application/json");
+  https.addHeader("User-Agent", String("ESP32Gateway/10 ") + gatewayId);
+
+  esp_task_wdt_reset();
+  int code = https.POST(body);
+  esp_task_wdt_reset();
+  bool ok = (code >= 200 && code < 300);
+
+  uint32_t pendingFwBuild = 0;
+  String   pendingFwUrl;
+  uint32_t pendingFwSize  = 0;
+
+  if (ok) {
+    esp_task_wdt_reset();
+    String resp = https.getString();
+    esp_task_wdt_reset();
+    JsonDocument respDoc;
+    if (!deserializeJson(respDoc, resp)) {
+      JsonArray cmds = respDoc["commands"].as<JsonArray>();
+      if (!cmds.isNull()) {
+        for (JsonObject c : cmds) {
+          uint16_t cow = (uint16_t)c["collar_id"].as<int>();
+          uint8_t  cmd = (uint8_t) c["cmd"].as<int>();
+          uint8_t  val = (uint8_t) c["value"].as<int>();
+          if (cow > 0 && cmd > 0) {
+            if (!enqueueCmd(cow, cmd, val)) DBGLN(F("[WARN] cmd queue full"));
+            else { DBG(F("[CMD_QUEUED] id=")); DBG(cow); DBG(F(" cmd=")); DBG(cmd); DBG(F(" val=")); DBGLN(val); }
+          }
+        }
+      }
+      // v11.1: remote reboot command from the dashboard. Schedule (not
+      // immediate) so the [REBOOT] log line below gets flushed to the server
+      // first — loop() performs the actual restart ~3 s later.
+      if (respDoc["reboot"].as<bool>() && remoteRebootAtMs == 0) {
+        remoteRebootAtMs = millis() + 3000UL;
+        gwLog(F("[REBOOT] remote reboot command received — restarting in 3 s"));
+      }
+      JsonObject fw = respDoc["firmwareUpdate"].as<JsonObject>();
+      if (!fw.isNull()) {
+        uint32_t b = fw["build"].as<uint32_t>();
+        const char* u = fw["url"].as<const char*>();
+        uint32_t sz = fw["sizeBytes"].as<uint32_t>();
+        if (b > GATEWAY_FW_BUILD && u && sz > 1024) {
+          pendingFwBuild = b; pendingFwUrl = u; pendingFwSize = sz;
+        }
+      }
+    }
+  } else {
+    SUM(F("[HTTP] POST fail code=")); SUM(code);
+    SUM(F(" wifi=")); SUM(WiFi.status()==WL_CONNECTED?"ok":"DOWN");
+    SUM(F(" rssi=")); SUMLN(WiFi.status()==WL_CONNECTED ? WiFi.RSSI() : 0);
+  }
+
+  https.end();
+
+  if (pendingFwBuild > 0) applyOtaFromUrl(pendingFwBuild, pendingFwUrl, pendingFwSize);
+
+  return ok;
+}
+
+// =============================================================================
+//   REMOTE OTA (server-pushed)
+// =============================================================================
+static bool applyOtaFromUrl(uint32_t newBuild, const String& url, uint32_t expectedSize) {
+  DBG(F("[OTA-PULL] build #")); DBG(newBuild); DBG(F(" size=")); DBGLN(expectedSize);
+  gwLog(String("[OTA] downloading build #") + newBuild + " (" + expectedSize + " bytes)");
+  serviceGwLogFlush(true);   // let the dashboard see the OTA start before we block
+  otaBusy = true;
+  esp_task_wdt_delete(NULL);
+
+  WiFiClientSecure dlClient; dlClient.setInsecure(); dlClient.setTimeout(OTA_DOWNLOAD_TIMEOUT_MS/1000);
+  HTTPClient dlHttp; dlHttp.setConnectTimeout(OTA_DOWNLOAD_TIMEOUT_MS); dlHttp.setTimeout(OTA_DOWNLOAD_TIMEOUT_MS); dlHttp.setReuse(false);
+
+  bool ok = false;
+  do {
+    if (!dlHttp.begin(dlClient, url)) { DBGLN(F("[OTA-PULL] begin failed")); break; }
+    int code = dlHttp.GET();
+    if (code != HTTP_CODE_OK) { DBG(F("[OTA-PULL] GET code=")); DBGLN(code); break; }
+    int contentLen = dlHttp.getSize();
+    if (contentLen <= 0) { DBGLN(F("[OTA-PULL] no Content-Length")); break; }
+    if ((uint32_t)contentLen != expectedSize) { DBG(F("[OTA-PULL] size mismatch")); break; }
+    if (!Update.begin((uint32_t)contentLen)) { DBG(F("[OTA-PULL] begin fail: ")); DBGLN(Update.errorString()); break; }
+    WiFiClient* stream = dlHttp.getStreamPtr();
+    size_t written = Update.writeStream(*stream);
+    if (written != (size_t)contentLen) { Update.abort(); break; }
+    if (!Update.end(true) || !Update.isFinished()) { DBGLN(Update.errorString()); break; }
+    ok = true;
+  } while (false);
+
+  dlHttp.end();
+  if (ok) {
+    DBG(F("[OTA-PULL] success — rebooting into build #")); DBGLN(newBuild);
+    gwLog(String("[OTA] SUCCESS — rebooting into build #") + newBuild);
+    serviceGwLogFlush(true);
+    delay(500); ESP.restart();
+  } else {
+    DBGLN(F("[OTA-PULL] FAILED — keeping current build"));
+    gwLog(String("[OTA] FAILED — keeping build #") + GATEWAY_FW_BUILD);
+  }
+  esp_task_wdt_add(NULL);
+  otaBusy = false;
+  return false;
+}
+
+// =============================================================================
+//   OFFLINE BUFFER (LittleFS)
+// =============================================================================
+static void appendToBuffer(const String& body) {
+  if (!fsOk) return;
+  File f = LittleFS.open(BUF_PATH, FILE_APPEND);
+  if (!f) { DBGLN(F("[FS] open append failed")); return; }
+  f.println(body); f.close();
+  bufferedCount++;
+
+  static uint32_t lastTrim = 0;
+  if (millis()-lastTrim > 60000UL) {
+    lastTrim = millis();
+    File chk = LittleFS.open(BUF_PATH, FILE_READ);
+    if (chk) {
+      uint32_t lines = 0;
+      while (chk.available()) { if (chk.read()=='\n') lines++; }
+      chk.close();
+      if (lines > BUF_MAX_LINES) {
+        File in = LittleFS.open(BUF_PATH, FILE_READ);
+        File out = LittleFS.open(BUF_PATH_TMP, FILE_WRITE);
+        if (in && out) {
+          uint32_t skip = lines - (BUF_MAX_LINES * 9/10), skipped = 0;
+          while (in.available() && skipped<skip) { if (in.read()=='\n') skipped++; }
+          while (in.available()) { int b=in.read(); if (b<0) break; out.write((uint8_t)b); }
+          in.close(); out.close();
+          LittleFS.remove(BUF_PATH);
+          LittleFS.rename(BUF_PATH_TMP, BUF_PATH);
+          DBG(F("[FS] trimmed ")); DBG(skip); DBGLN(F(" oldest"));
+        } else { if (in) in.close(); if (out) out.close(); }
+      }
+    }
+  }
+}
+
+static void serviceFlushBuffer() {
+  if (!fsOk || !wifiOk) return;
+  if (lastPostOkTime == 0) return;
+  if (!LittleFS.exists(BUF_PATH)) return;
+  static uint32_t lastFlush = 0;
+  if (millis()-lastFlush < 5000) return;
+  lastFlush = millis();
+
+  File in = LittleFS.open(BUF_PATH, FILE_READ); if (!in) return;
+  File out = LittleFS.open(BUF_PATH_TMP, FILE_WRITE); if (!out) { in.close(); return; }
+
+  uint8_t sent = 0;
+  uint32_t t0 = millis();
+  while (in.available()) {
+    String line = in.readStringUntil('\n'); line.trim();
+    if (line.length() == 0) continue;
+    bool sentThis = false;
+    if (sent < BUF_FLUSH_BATCH && (millis()-t0) < 8000UL) {
+      esp_task_wdt_reset();
+      if (postPayload(line)) { sent++; flushedCount++; sentThis = true; }
+    }
+    if (!sentThis) out.println(line);
+  }
+  in.close(); out.close();
+  LittleFS.remove(BUF_PATH);
+  if (LittleFS.exists(BUF_PATH_TMP)) LittleFS.rename(BUF_PATH_TMP, BUF_PATH);
+  if (sent > 0) { lastPostOkTime = millis(); DBG(F("[FS] flushed ")); DBG(sent); DBGLN(F(" packets")); }
+}
+
+// =============================================================================
+//   v10: ACQ QUEUE DRAIN
+//   Called every loop() iteration. Pops ONE packet and attempts a POST.
+//   On failure sends to LittleFS. On WiFi-down migrates entire queue to flash.
+//   200 ms minimum between attempts keeps each loop() pass short and prevents
+//   a single stuck POST from dominating loop() time.
+// =============================================================================
+static void serviceAcqQueue() {
+  // If WiFi just dropped, save everything to flash now
+  if (!wifiOk) {
+    if (acqHead != acqTail) {
+      DBGLN(F("[QUEUE] WiFi down — flushing queue to flash"));
+      acqFlushToFlash();
+    }
+    return;
+  }
+
+  if (acqHead == acqTail) return;   // nothing queued
+
+  static uint32_t lastDrain = 0;
+  if (millis()-lastDrain < ACQ_DRAIN_INTERVAL_MS) return;
+  lastDrain = millis();
+
+  String body;
+  if (!acqPop(body)) return;
+
+  if (postPayload(body)) {
+    postOkCount++;
+    lastPostOkTime = millis();
+    DBG(F("[QUEUE] POST OK queue=")); DBGLN(acqSize());
+  } else {
+    postFailCount++;
+    appendToBuffer(body);
+    DBG(F("[QUEUE] POST fail → flash queue=")); DBGLN(acqSize());
+    gwLog(String("[POST] FAIL -> buffered to flash (fails=") + postFailCount + ")");
+  }
+}
+
+// =============================================================================
+//   GATEWAY HEARTBEAT
+// =============================================================================
+static void postGatewayHeartbeat() {
+  if (!wifiOk || WiFi.status() != WL_CONNECTED) return;
+  JsonDocument doc;
+  doc["type"] = "gateway_heartbeat";
+  time_t nowEpoch = time(nullptr);
+  if ((uint32_t)nowEpoch > NTP_MIN_VALID_EPOCH) doc["timestamp"] = (uint32_t)nowEpoch;
+  JsonObject d = doc["data"].to<JsonObject>();
+  d["pi_serial_id"]  = gatewayId;
+  if (friendlyName.length() > 0) d["gateway_name"] = friendlyName;
+  d["gateway_fw"]    = (uint16_t)GATEWAY_FW_BUILD;
+  d["gateway_debug"] = (uint8_t)DEBUG;
+  d["wifi_rssi"]     = WiFi.RSSI();
+  d["wifi_ssid"]     = WiFi.SSID();
+  d["uptime_s"]      = (uint32_t)((millis()-bootMillis)/1000UL);
+  d["payload_count"] = payloadCount;
+  d["post_ok"]       = postOkCount;
+  d["post_fail"]     = postFailCount;
+  d["buffered"]      = bufferedCount;
+  d["queue_drops"]   = queueDropCount;   // v10: visible on dashboard
+  d["acq_queue_depth"] = acqSize();      // v10: how full is the queue right now
+  String body; serializeJson(doc, body);
+  postPayload(body);
+}
+
+// =============================================================================
+//   STATS
+// =============================================================================
+static void printStats() {
+  uint32_t up    = (millis()-bootMillis)/1000UL;
+  uint32_t lastAgo = lastPayloadTime ? (millis()-lastPayloadTime)/1000UL : 0;
+  // STATS,uptime,payload,confirm,malformed,unknownId,lastAgo,postOk,postFail,buffered,flushed,queueDrops,acqQueue,wifiRssi,heap
+  Serial.print(F("STATS,"));
+  Serial.print(up);           Serial.print(F(","));
+  Serial.print(payloadCount); Serial.print(F(","));
+  Serial.print(confirmCount); Serial.print(F(","));
+  Serial.print(malformedCount); Serial.print(F(","));
+  Serial.print(unknownIdCount); Serial.print(F(","));
+  Serial.print(lastAgo);      Serial.print(F(","));
+  Serial.print(postOkCount);  Serial.print(F(","));
+  Serial.print(postFailCount); Serial.print(F(","));
+  Serial.print(bufferedCount); Serial.print(F(","));
+  Serial.print(flushedCount); Serial.print(F(","));
+  Serial.print(queueDropCount); Serial.print(F(","));   // v10
+  Serial.print(acqSize());    Serial.print(F(","));     // v10
+  Serial.print(wifiOk ? WiFi.RSSI() : 0); Serial.print(F(","));
+  Serial.println(ESP.getFreeHeap());
+
+  for (uint8_t i = 0; i < cowCount; i++) {
+    uint32_t ago = (millis()-cows[i].lastRxMs)/1000UL;
+    Serial.print(F("COW,")); Serial.print(cows[i].id); Serial.print(F(","));
+    Serial.print(cows[i].lastSeq); Serial.print(F(","));
+    Serial.print(cows[i].rxCount); Serial.print(F(","));
+    Serial.println(ago);
+  }
+
+  uint32_t now = millis();
+  uint32_t dMal  = malformedCount - prevMalformedCount;
+  uint32_t dUnk  = unknownIdCount - prevUnknownIdCount;
+  uint32_t dReal = payloadCount   - prevPayloadCount;
+  if (dMal > 0 || dUnk > 0) {
+    SUM(F("noise: bad-header +")); SUM(dMal);
+    SUM(F(" unknown-id +"));       SUM(dUnk);
+    SUM(F(" real +"));             SUM(dReal);
+    SUM(F(" (window=")); SUM(prevStatsMs ? (now-prevStatsMs)/1000UL : 0); SUMLN(F("s)"));
+  }
+  prevMalformedCount = malformedCount;
+  prevUnknownIdCount = unknownIdCount;
+  prevPayloadCount   = payloadCount;
+  prevStatsMs        = now;
+
+  // v11: one compact stats line per minute into the cloud log tail
+  gwLog(String("[STATS] up=") + up + "s pkts=" + payloadCount +
+        " lastRx=" + lastAgo + "s ago postOk=" + postOkCount +
+        " postFail=" + postFailCount + " noise=" + malformedCount + "/" + unknownIdCount +
+        " wifiRssi=" + (wifiOk ? WiFi.RSSI() : 0) + " heap=" + ESP.getFreeHeap());
+}
+
+// =============================================================================
+//   HARDWARE SELF-TEST
+// =============================================================================
+static void selfTest() {
+  DBGLN(F("========================================"));
+  DBGLN(F(" ESP32 LoRa Gateway v10"));
+  DBGLN(F("----------------------------------------"));
+  DBG(F(" fw_build   : ")); DBGLN(GATEWAY_FW_BUILD);
+  DBG(F(" gateway_id : ")); DBGLN(gatewayId);
+  WiFi.mode(WIFI_STA); delay(50);
+  DBG(F(" wifi_ssid  : "));
+  {
+    wifi_config_t bc; String bs;
+    if (esp_wifi_get_config(WIFI_IF_STA,&bc)==ESP_OK) bs = String((const char*)bc.sta.ssid);
+    if (bs.length()>0) { DBG(bs); DBGLN(F(" (NVS)")); }
+    else DBGLN(F("(none — captive portal will open)"));
+  }
+  DBG(F(" acq_queue  : depth=")); DBG(ACQ_QUEUE_DEPTH);
+  DBG(F(" drain_ms=")); DBGLN(ACQ_DRAIN_INTERVAL_MS);
+  DBG(F(" server     : https://")); DBG(SERVER_HOST); DBGLN(SERVER_PATH);
+  DBGLN(F("----------------------------------------"));
+
+#if LORA_ENABLED
+  DBG(F(" [1/3] SPI  : SCK=")); DBG(LORA_SCK_PIN);
+  DBG(F(" MISO=")); DBG(LORA_MISO_PIN);
+  DBG(F(" MOSI=")); DBG(LORA_MOSI_PIN);
+  DBG(F(" SS=")); DBG(SS_PIN); DBG(F(" : "));
+  SPI.begin(LORA_SCK_PIN, LORA_MISO_PIN, LORA_MOSI_PIN, SS_PIN);
+  DBGLN(F("OK"));
+
+  DBG(F(" [2/3] LoRa : RST=")); DBG(RST_PIN);
+  DBG(F(" DIO0=")); DBG(DIO0_PIN); DBG(F(" : "));
+  LoRa.setPins(SS_PIN, RST_PIN, DIO0_PIN);
+  LoRa.setSPIFrequency(1E6);   // slow SPI (1 MHz) — robust over loose jumper wires
+
+  // --- Raw chip-ID probe ---------------------------------------------------
+  // Read the SX127x version register (0x42) directly so the log tells us WHY a
+  // failure happens instead of just "check wiring":
+  //   0x12 = healthy SX1276 / RFM95 / RFM96 / RFM98   (good)
+  //   0x22 = SX1272 / RFM92
+  //   0x00 = no answer  -> MISO not connected, no power, or SCK/MOSI dead
+  //   0xFF = bus stuck high -> CS(NSS) not wired / wrong CS pin / module off
+  //   0x24 = it's an RFM69 (NOT an SX127x; this LoRa library can't drive it)
+  // Intermittent connections (loose jumper / marginal power) can miss on the
+  // first try, so probe + begin up to 5 times, hard-resetting the module each
+  // pass. The log prints the chipID for every attempt so a flaky wire is obvious.
+  pinMode(SS_PIN, OUTPUT);  digitalWrite(SS_PIN, HIGH);
+  pinMode(RST_PIN, OUTPUT);
+  loraOk = false;
+  for (uint8_t attempt = 1; attempt <= 5 && !loraOk; attempt++) {
+    digitalWrite(RST_PIN, LOW);  delay(20);
+    digitalWrite(RST_PIN, HIGH); delay(20);
+    SPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
+    digitalWrite(SS_PIN, LOW);
+    SPI.transfer(0x42 & 0x7F);
+    uint8_t chipVer = SPI.transfer(0x00);
+    digitalWrite(SS_PIN, HIGH);
+    SPI.endTransaction();
+    DBG(F("try")); DBG(attempt);
+    DBG(F(" chipID=0x")); if (chipVer < 0x10) DBG('0'); DBGX(chipVer, HEX); DBG(F(" "));
+    if (LoRa.begin(LORA_FREQ)) { loraOk = true; break; }
+    delay(250);
+  }
+  DBG(F(": "));
+  if (loraOk) {
+    LoRa.setSpreadingFactor(10);
+    LoRa.setSyncWord(0x12);
+    LoRa.setSignalBandwidth(125000);
+    LoRa.setCodingRate4(8);
+    // v11.1 (build 168): maximum receive sensitivity.
+    //  - setGain(6) = LNA highest gain + LNA boost (default is auto-AGC which
+    //    can settle on a lower gain step); squeezes out a few extra dB on weak
+    //    collars at the edge of range.
+    //  - setTxPower(20) = PA_BOOST +20 dBm so ACK/command downlink reaches the
+    //    collars just as far as their uplink reaches us.
+    LoRa.setGain(6);
+    LoRa.setTxPower(20);
+    DBGLN(F("OK  433.3 MHz SF10 BW125 CR4/8 sync=0x12 LNAboost TX20dBm"));
+  } else {
+    // Do NOT halt here — a while(1) spin trips the task watchdog and the board
+    // reboot-loops every ~60 s. Instead keep the gateway alive (WiFi/OTA still
+    // work) and let loop() re-probe the radio live, so wiggling/reseating a
+    // loose wire shows the exact moment it starts answering.
+    DBGLN(F("FAIL — radio not answering; will keep re-probing live (wiggle/reseat wires)"));
+  }
+#else
+  DBGLN(F(" [1/3] SPI  : SKIPPED (LoRa disabled)"));
+  DBGLN(F(" [2/3] LoRa : DISABLED — WiFi-only / 5GHz test build"));
+#endif
+
+  DBG(F(" [3/3] FS   : "));
+  if (LittleFS.begin(true)) {
+    fsOk = true;
+    DBG(F("OK  used=")); DBG(LittleFS.usedBytes());
+    DBG(F("/")); DBGLN(LittleFS.totalBytes());
+  } else {
+    fsOk = false; DBGLN(F("FAIL — offline buffering disabled"));
+  }
+
+  DBGLN(F("----------------------------------------"));
+  DBGLN(F(" Listening for collar packets..."));
+  DBGLN(F("========================================"));
+  Serial.flush();
+}
+
+// =============================================================================
+//   SETUP
+// =============================================================================
+void setup() {
+  Serial.begin(115200);
+  while (!Serial && millis() < 2000) delay(10);
+  delay(500); Serial.flush();
+
+  SUM(F("[BOOT] gateway_fw=")); SUM(GATEWAY_FW_BUILD);
+  SUM(F(" debug=")); SUMLN(DEBUG);
+
+  bootMillis = millis();
+
+#if RGB_STATUS_ENABLED
+  setRgb(RGB_BRIGHTNESS, 0, 0);   // boot = red until WiFi comes up
+#else
+  if (STATUS_LED_PIN >= 0) { pinMode(STATUS_LED_PIN, OUTPUT); setLed(false); }
+#endif
+
+  uint8_t mac[6]; WiFi.macAddress(mac);
+  char macStr[20];
+  snprintf(macStr, sizeof(macStr), "ESP32_%02X%02X%02X%02X%02X%02X",
+           mac[0],mac[1],mac[2],mac[3],mac[4],mac[5]);
+  if (strlen(GATEWAY_ID_OVERRIDE) > 0) {
+    gatewayId = String(GATEWAY_ID_OVERRIDE);
+    SUM(F("[BOOT] auto MAC=")); SUM(macStr);
+    SUM(F(" overridden → ")); SUMLN(gatewayId);
+  } else {
+    gatewayId = String(macStr);
+    if (mac[0] & 0x01) {
+      SUM(F("[BOOT] *** WARNING: MAC=")); SUM(macStr);
+      SUMLN(F(" multicast bit set — likely counterfeit ESP32!"));
+      SUMLN(F("[BOOT] *** Set GATEWAY_ID_OVERRIDE before deploying."));
+    }
+  }
+
+  gwPrefs.begin("gw", false);
+  friendlyName = gwPrefs.getString("name", "");
+  {
+    String cn = String(DEFAULT_GATEWAY_NAME); cn.trim();
+    if (cn.length() > 0 && (DEFAULT_GATEWAY_NAME_FORCE || friendlyName.length() == 0)) {
+      friendlyName = cn.substring(0, 64);
+      gwPrefs.putString("name", friendlyName);
+    }
+  }
+
+  DBG(F("GATEWAY_ID   ")); DBGLN(gatewayId);
+  if (friendlyName.length() > 0) { DBG(F("GATEWAY_NAME ")); DBGLN(friendlyName); }
+
+  // Reconfigure task watchdog
+  esp_task_wdt_config_t twdt = { .timeout_ms = WDT_TIMEOUT_S*1000, .idle_core_mask = 0, .trigger_panic = true };
+#if ESP_IDF_VERSION_MAJOR >= 5
+  esp_err_t rc = esp_task_wdt_reconfigure(&twdt);
+  if (rc != ESP_OK) { DBG(F("[WDT] reconfigure rc=")); DBGLN(rc); }
+#else
+  esp_task_wdt_deinit();
+  esp_task_wdt_init(&twdt);
+#endif
+  esp_task_wdt_add(NULL);
+
+  // Init ACQ queue
+  for (uint8_t i = 0; i < ACQ_QUEUE_DEPTH; i++) acqQueue[i].used = false;
+  acqHead = acqTail = 0;
+
+  for (uint8_t i = 0; i < MAX_PENDING_CMDS; i++) pendingCmds[i].active = false;
+
+  selfTest();
+  wifiBegin();
+
+  // v11: first cloud log line — visible on the dashboard once WiFi is up
+  gwLog(String("[BOOT] gateway_fw=") + GATEWAY_FW_BUILD + " id=" + gatewayId +
+        (loraOk ? " lora=OK" : " lora=DOWN"));
+}
+
+// =============================================================================
+//   LOOP
+// =============================================================================
+void loop() {
+  esp_task_wdt_reset();
+
+  // --- WiFi health + reconnect ---
+  wifiServiceReconnect();
+
+  // --- Status LED ---
+  serviceLed();
+
+  // --- OTA web server ---
+  if (wifiOk) otaServer.handleClient();
+
+  // --- Suspend non-radio work during browser OTA flash ---
+  if (otaBusy) return;
+
+  // --- Drain LittleFS backlog (one batch every 5 s) ---
+  serviceFlushBuffer();
+
+  // --- v10: Drain ACQ queue (one POST per call, paced at 200 ms) ---
+  serviceAcqQueue();
+
+  // --- v11: Ship receiver log lines to the server (every 20 s) ---
+  serviceGwLogFlush(false);
+
+  // --- v11.1: remote reboot (scheduled from the dashboard) ---
+  if (remoteRebootAtMs != 0 && (int32_t)(millis() - remoteRebootAtMs) >= 0) {
+    serviceGwLogFlush(true);   // push the [REBOOT] line out before restarting
+    SUMLN(F("[REBOOT] executing remote reboot NOW"));
+    Serial.flush();
+    delay(200);
+    ESP.restart();
+  }
+
+  // --- Manual serial command: cowId,cmd,val\n ---
+  if (Serial.available()) {
+    String input = Serial.readStringUntil('\n');
+    int c1 = input.indexOf(','), c2 = input.lastIndexOf(',');
+    if (c1 > 0 && c2 > c1) {
+      uint16_t cow = (uint16_t)input.substring(0, c1).toInt();
+      uint8_t  cmd = (uint8_t) input.substring(c1+1, c2).toInt();
+      uint8_t  val = (uint8_t) input.substring(c2+1).toInt();
+      if (enqueueCmd(cow, cmd, val)) {
+        DBG(F("[CMD_QUEUED] id=")); DBG(cow); DBG(F(" cmd=")); DBG(cmd); DBG(F(" val=")); DBGLN(val);
+      }
+    }
+  }
+
+  // =========================================================================
+  //   INBOUND LoRa PACKET
+  // =========================================================================
+#if LORA_ENABLED
+  // --- Live radio re-probe while the LoRa module is not answering ---
+  // Prints chipID every 3 s so a loose/enamel wire can be wiggled or reseated
+  // and you see the instant it connects (0x00 -> 0x12). No reboot, no watchdog.
+  if (!loraOk) {
+    if (millis() - lastLoraProbeMs >= 3000) {
+      lastLoraProbeMs = millis();
+      digitalWrite(RST_PIN, LOW);  delay(10);
+      digitalWrite(RST_PIN, HIGH); delay(10);
+      SPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
+      digitalWrite(SS_PIN, LOW);
+      SPI.transfer(0x42 & 0x7F);
+      uint8_t chipVer = SPI.transfer(0x00);
+      digitalWrite(SS_PIN, HIGH);
+      SPI.endTransaction();
+      SUM(F("[LoRa-PROBE] chipID=0x"));
+      if (chipVer < 0x10) SUM('0'); Serial.println(chipVer, HEX);
+      if (LoRa.begin(LORA_FREQ)) {
+        LoRa.setSpreadingFactor(10);
+        LoRa.setSyncWord(0x12);
+        LoRa.setSignalBandwidth(125000);
+        LoRa.setCodingRate4(8);
+        LoRa.setGain(6);      // v11.1: max LNA gain + boost (same as boot path)
+        LoRa.setTxPower(20);  // v11.1: +20 dBm ACK/command downlink
+        loraOk = true;
+        SUMLN(F("[LoRa-PROBE] RADIO ONLINE — 433.3 MHz SF10 BW125 CR4/8 — listening"));
+        gwLog(F("[LoRa] RADIO ONLINE — listening 433.3 MHz SF10"));
+      }
+    }
+    return;   // nothing else to do until the radio answers
+  }
+
+  int packetSize = LoRa.parsePacket();
+
+  if (packetSize > 0) {
+    uint32_t now = millis();
+    int   rssi = LoRa.packetRssi();
+    float snr  = LoRa.packetSnr();
+
+    // ----- Sensor payload (V7 or V9) -----
+    if (packetSize == sizeof(PayloadV7) || packetSize == sizeof(PayloadV9)) {
+      uint8_t raw[sizeof(PayloadV9)]; memset(raw, 0, sizeof(raw));
+      LoRa.readBytes(raw, packetSize);
+
+      uint32_t uptime = (uint32_t)raw[0] | ((uint32_t)raw[1]<<8) | ((uint32_t)raw[2]<<16) | ((uint32_t)raw[3]<<24);
+      uint16_t id     = (uint16_t)raw[4] | ((uint16_t)raw[5]<<8);
+      uint16_t seq    = (uint16_t)raw[6] | ((uint16_t)raw[7]<<8);
+      uint16_t vbat   = (uint16_t)raw[8] | ((uint16_t)raw[9]<<8);
+      uint8_t  behav  = raw[10], act = raw[11], heat = raw[12], alert = raw[13], fw = raw[14];
+
+      // Sanity / whitelist filter
+      if (id == 0 || id > 9999 || fw == 0 || fw > 99) { malformedCount++; return; }
+      if (!isValidCollarId(id)) {
+        unknownIdCount++;
+        // v11.1 (build 168): show WHICH id was rejected so a collar with a
+        // corrupted/wrong id is diagnosable from the dashboard (rate-limited
+        // to one line per 30 s so a noisy neighbour can't flood the tail).
+        static uint32_t lastUnkLogMs = 0;
+        if (millis() - lastUnkLogMs > 30000UL) {
+          lastUnkLogMs = millis();
+          gwLog(String("[REJECT] unknown collar id=") + id + " seq=" + seq +
+                " vbat=" + vbat + "mV rssi=" + LoRa.packetRssi() +
+                " fw=" + fw + " (not in whitelist, total=" + unknownIdCount + ")");
+        }
+        return;
+      }
+      if (behav > 5) behav = 0;
+
+      payloadCount++;
+      lastPayloadTime = now;
+      trackCow(id, seq);
+
+      bool    isV9      = (packetSize == sizeof(PayloadV9));
+      uint8_t zeroCross = isV9 ? raw[15] : 0;
+      int8_t  tiltAngle = isV9 ? (int8_t)raw[16] : 0;
+      uint8_t zRange    = isV9 ? raw[17] : 0;
+      uint8_t motionXY  = isV9 ? raw[18] : 0;
+      uint8_t motionZ   = isV9 ? raw[19] : 0;
+      uint8_t bootReason = 0;   // reserved byte not yet populated by collar fw
+
+      // ---- ACK by seq immediately (~25 ms, before any POST) ----
+      uint8_t ackBuf[2] = { (uint8_t)(seq & 0xFF), (uint8_t)((seq >> 8) & 0xFF) };
+      delay(25);
+      LoRa.beginPacket(); LoRa.write(ackBuf, 2); LoRa.endPacket();
+
+      // ---- Piggyback queued downlink command in collar's 800 ms RX window ----
+      int8_t qIdx = findCmdForCow(id);
+      if (qIdx >= 0) {
+        delay(65);
+        uint8_t cmdID[2] = { (uint8_t)(pendingCmds[qIdx].cow & 0xFF), (uint8_t)((pendingCmds[qIdx].cow >> 8) & 0xFF) };
+        LoRa.beginPacket();
+        LoRa.write(cmdID, 2);
+        LoRa.write(pendingCmds[qIdx].cmd);
+        LoRa.write(pendingCmds[qIdx].val);
+        LoRa.endPacket();
+        DBG(F("[ACK_CMD_SENT] id=")); DBG(pendingCmds[qIdx].cow);
+        DBG(F(" cmd=")); DBG(pendingCmds[qIdx].cmd);
+        DBG(F(" val=")); DBGLN(pendingCmds[qIdx].val);
+        pendingCmds[qIdx].active = false;
+      }
+
+      // ---- Debug CSV (DEBUG=1 only) ----
+#if DEBUG
+      Serial.print(F("DATA,"));
+      Serial.print(id);   Serial.print(F(","));
+      Serial.print(behaviorNames[behav]); Serial.print(F(","));
+      Serial.print(vbat); Serial.print(F(","));
+      Serial.print(seq);  Serial.print(F(","));
+      Serial.print(uptime); Serial.print(F(","));
+      Serial.print(act);  Serial.print(F(","));
+      Serial.print(heat); Serial.print(F(","));
+      Serial.print(alert); Serial.print(F(","));
+      Serial.print(fw);   Serial.print(F(","));
+      Serial.print(rssi); Serial.print(F(","));
+      Serial.println(snr);
+#endif
+
+      // ---- Build JSON ----
+      JsonDocument doc;
+      buildPayload(doc, id, seq, vbat, behav, act, heat, alert, fw,
+                   uptime, rssi, snr, isV9, zeroCross, tiltAngle,
+                   zRange, motionXY, motionZ, bootReason);
+      String body; serializeJson(doc, body);
+
+      // ---- v10: Push to ACQ queue (non-blocking) ----
+      // ACK is already sent above. We enqueue and return immediately so
+      // LoRa.parsePacket() is called again on the next loop() pass.
+      // serviceAcqQueue() will POST it within ≤200 ms.
+      // If the queue is full (network totally down, LittleFS catching up),
+      // fall back to LittleFS directly — same path as v9 POST failures.
+      const char* disposition;
+      if (acqPush(body)) {
+        disposition = "QUEUE";
+      } else {
+        // Queue full — go straight to flash
+        queueDropCount++;
+        appendToBuffer(body);
+        disposition = "BUF";
+        DBG(F("[QUEUE] FULL — direct to flash (total drops=")); DBG(queueDropCount); DBGLN(F(")"));
+      }
+
+      // Always-on one-liner
+      SUM(F("rx collar=")); SUM(id);
+      SUM(F(" seq="));      SUM(seq);
+      SUM(F(" beh="));      SUM(behaviorNames[behav]);
+      SUM(F(" vbat="));     SUM(vbat); SUM(F("mV"));
+      SUM(F(" rssi="));     SUM(rssi);
+      SUM(F(" q="));        SUM(acqSize());   // v10: queue depth visible in field
+      SUM(F(" -> "));       SUMLN(disposition);
+      SUMF();
+
+      // v11: mirror the RX one-liner to the cloud log tail
+      gwLog(String("rx collar=") + id + " seq=" + seq +
+            " beh=" + behaviorNames[behav] + " vbat=" + vbat + "mV" +
+            " rssi=" + rssi + " snr=" + String(snr, 1) + " -> " + disposition);
+    }
+
+    // ----- Config confirm -----
+    else if (packetSize == sizeof(ConfigConfirm)) {
+      ConfigConfirm conf; memset(&conf, 0, sizeof(ConfigConfirm));
+      LoRa.readBytes((uint8_t*)&conf, sizeof(ConfigConfirm));
+      uint16_t conf_id = (uint16_t)conf.id_raw[0] | ((uint16_t)conf.id_raw[1]<<8);
+
+      if (conf.msg_type == 0xFF) {
+        Serial.print(F("CONFIRM,")); Serial.print(conf_id); Serial.print(F(","));
+        Serial.print(conf.applied_cmd); Serial.print(F(","));
+        Serial.println(conf.new_val);
+        confirmCount++;
+
+        JsonDocument doc;
+        doc["type"] = "config_confirm";
+        time_t nowEpoch = time(nullptr);
+        if ((uint32_t)nowEpoch > NTP_MIN_VALID_EPOCH) doc["timestamp"] = (uint32_t)nowEpoch;
+        JsonObject d = doc["data"].to<JsonObject>();
+        d["pi_serial_id"] = gatewayId;
+        if (friendlyName.length() > 0) d["gateway_name"] = friendlyName;
+        d["collar_id"]    = conf_id;
+        d["applied_cmd"]  = conf.applied_cmd;
+        d["new_val"]      = conf.new_val;
+        String body; serializeJson(doc, body);
+
+        // Config confirms are low-volume — push to ACQ queue, fall back to flash
+        if (!acqPush(body)) appendToBuffer(body);
+      } else {
+        malformedCount++;
+        DBG(F("[WARN] bad confirm msg_type=0x")); DBGX(conf.msg_type, HEX); DBGLN("");
+      }
+    }
+
+    // ----- Unknown packet size -----
+    else {
+      malformedCount++;
+      DBG(F("[WARN] unknown pkt size=")); DBG(packetSize); DBG(F(" rssi=")); DBGLN(rssi);
+      while (LoRa.available()) LoRa.read();
+    }
+  }
+#endif  // LORA_ENABLED
+
+  // =========================================================================
+  //   PERIODIC STATS
+  // =========================================================================
+  static uint32_t lastStats = 0;
+  if (millis()-lastStats > STATS_INTERVAL_MS) {
+    lastStats = millis();
+    printStats();
+  }
+
+  // =========================================================================
+  //   GATEWAY HEARTBEAT
+  // =========================================================================
+  static uint32_t firstHeartbeatDueAt = 0;
+  static uint32_t lastHeartbeat = 0;
+  static bool prevWifiOk = false;
+  if (wifiOk && !prevWifiOk) {
+    firstHeartbeatDueAt = millis() + HEARTBEAT_WARMUP_MS;
+    lastHeartbeat = 0;
+  }
+  prevWifiOk = wifiOk;
+  if (wifiOk) {
+    bool dueFirst    = (firstHeartbeatDueAt != 0 && (int32_t)(millis()-firstHeartbeatDueAt) >= 0);
+    bool duePeriodic = (lastHeartbeat != 0 && millis()-lastHeartbeat > HEARTBEAT_INTERVAL_MS);
+    if (dueFirst || duePeriodic) {
+      lastHeartbeat = millis();
+      firstHeartbeatDueAt = 0;
+      postGatewayHeartbeat();
+    }
+  }
+
+  delay(1);
+}
