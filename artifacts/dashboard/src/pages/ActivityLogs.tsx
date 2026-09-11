@@ -2,6 +2,8 @@ import React, { useMemo, useState } from "react";
 import {
   useGetActivityRange,
   getGetActivityRangeQueryKey,
+  useGetActivitySummary,
+  getGetActivitySummaryQueryKey,
   useListScreenshots,
   getListScreenshotsQueryKey,
   useListDevices,
@@ -748,9 +750,29 @@ export default function ActivityLogs() {
     to,
     group: groupFilter === ALL ? undefined : groupFilter,
   };
-  const { data: logs, isLoading: logsLoading } = useGetActivityRange(rangeParams, {
-    query: { queryKey: getGetActivityRangeQueryKey(rangeParams), refetchInterval: 30000 },
+  const {
+    data: summaries,
+    isLoading: logsLoading,
+    isError: summariesError,
+  } = useGetActivitySummary(rangeParams, {
+    query: {
+      queryKey: getGetActivitySummaryQueryKey(rangeParams),
+      refetchInterval: 30000,
+    },
   });
+  const detailParams = {
+    ...rangeParams,
+    deviceId: selectedId ?? undefined,
+  };
+  const { data: detailLogs, isLoading: detailLoading } = useGetActivityRange(
+    detailParams,
+    {
+      query: {
+        queryKey: getGetActivityRangeQueryKey(detailParams),
+        enabled: selectedId != null,
+      },
+    },
+  );
 
   const classById = useMemo(() => {
     const map = new Map<string, Classification>();
@@ -765,16 +787,6 @@ export default function ActivityLogs() {
       (log.categoryId && classById.get(log.categoryId)) || "undefined";
   }, [classById]);
 
-  const logsByDevice = useMemo(() => {
-    const map = new Map<string, ActivityLogRecord[]>();
-    logs?.forEach((log) => {
-      const arr = map.get(log.deviceId);
-      if (arr) arr.push(log);
-      else map.set(log.deviceId, [log]);
-    });
-    return map;
-  }, [logs]);
-
   const tzByDevice = useMemo(() => {
     const map = new Map<string, number | null>();
     devices?.forEach((d) => map.set(d.id, d.tzOffsetMinutes ?? null));
@@ -783,14 +795,39 @@ export default function ActivityLogs() {
 
   const aggByDevice = useMemo(() => {
     const map = new Map<string, DeviceAgg>();
-    logsByDevice.forEach((deviceLogs, deviceId) => {
-      map.set(
-        deviceId,
-        aggregateLogs(deviceLogs, classOf, tzByDevice.get(deviceId), orgZone),
-      );
+    summaries?.forEach((summary) => {
+      const offset = tzByDevice.get(summary.deviceId);
+      const startRaw = summary.startedAt ? new Date(summary.startedAt) : null;
+      const endRaw = summary.endedAt ? new Date(summary.endedAt) : null;
+      const resolvedStartOffset = startRaw
+        ? resolveDeviceOffset(startRaw, offset, orgZone)
+        : null;
+      const resolvedEndOffset = endRaw
+        ? resolveDeviceOffset(endRaw, offset, orgZone)
+        : null;
+      map.set(summary.deviceId, {
+        activeSeconds: summary.activeSeconds,
+        passiveSeconds: summary.passiveSeconds,
+        idleStateSeconds: summary.idleStateSeconds,
+        productiveSeconds: summary.productiveSeconds,
+        totalSeconds: summary.totalSeconds,
+        startedAt:
+          startRaw && resolvedStartOffset != null
+            ? deviceWallDate(startRaw, resolvedStartOffset)
+            : startRaw,
+        endedAt:
+          endRaw && resolvedEndOffset != null
+            ? deviceWallDate(endRaw, resolvedEndOffset)
+            : endRaw,
+        currentApp: summary.currentApp,
+        currentAppAt: startRaw?.getTime() ?? 0,
+        appTotals: new Map(summary.topApps.map((name, index) => [name, 3 - index])),
+        appClass: new Map(),
+        slots: Uint8Array.from(summary.slots),
+      });
     });
     return map;
-  }, [logsByDevice, classOf, tzByDevice, orgZone]);
+  }, [summaries, tzByDevice, orgZone]);
 
   const groups = useMemo(() => {
     const set = new Set<string>();
@@ -874,6 +911,10 @@ export default function ActivityLogs() {
               {[1, 2, 3, 4, 5].map((i) => (
                 <div key={i} className="h-14 rounded-md bg-muted" />
               ))}
+            </div>
+          ) : summariesError ? (
+            <div className="p-8 text-center text-sm text-destructive">
+              Activity totals could not be loaded. Please retry in a moment.
             </div>
           ) : viewMode === "table" ? (
             <Table>
@@ -1109,11 +1150,19 @@ export default function ActivityLogs() {
       >
         <SheetContent className="flex min-w-0 w-[min(100vw,720px)] max-w-none flex-col gap-0 overflow-hidden">
           {selectedDevice && (
-            <DeviceActivityPanel
-              device={selectedDevice}
-              logs={logsByDevice.get(selectedDevice.id) ?? []}
-              classOf={classOf}
-            />
+            detailLoading ? (
+              <div className="space-y-4 p-8 animate-pulse">
+                {[1, 2, 3, 4].map((i) => (
+                  <div key={i} className="h-16 rounded-md bg-muted" />
+                ))}
+              </div>
+            ) : (
+              <DeviceActivityPanel
+                device={selectedDevice}
+                logs={detailLogs ?? []}
+                classOf={classOf}
+              />
+            )
           )}
         </SheetContent>
       </Sheet>

@@ -843,6 +843,27 @@ export interface ActivityLogRecord {
   createdAt: string;
 }
 
+export interface ActivitySummary {
+  deviceId: string;
+  activeSeconds: number;
+  passiveSeconds: number;
+  idleStateSeconds: number;
+  productiveSeconds: number;
+  totalSeconds: number;
+  /** @nullable */
+  startedAt: string | null;
+  /** @nullable */
+  endedAt: string | null;
+  /** @nullable */
+  currentApp: string | null;
+  topApps: string[];
+  /**
+   * @minItems 144
+   * @maxItems 144
+   */
+  slots: number[];
+}
+
 export interface ScreenshotListItem {
   id: string;
   deviceId: string;
@@ -1792,6 +1813,12 @@ export type GetActivityRangeParams = {
    */
   group?: string;
   deviceId?: string;
+};
+
+export type GetActivitySummaryParams = {
+  from: string;
+  to: string;
+  group?: string;
 };
 
 export type GetTimelineParams = {

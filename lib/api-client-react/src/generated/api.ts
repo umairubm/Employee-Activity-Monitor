@@ -19,6 +19,7 @@ import type {
 import type {
   AcknowledgeAllResult,
   ActivityLogRecord,
+  ActivitySummary,
   AgentReleaseUploadRequest,
   AgentReleaseUploadResponse,
   AttendanceOverrideItem,
@@ -62,6 +63,7 @@ import type {
   FlagScreenshot200,
   GetActivityLogsParams,
   GetActivityRangeParams,
+  GetActivitySummaryParams,
   GetAttendanceRangeReportParams,
   GetAttendanceReportParams,
   GetGroupComparisonParams,
@@ -2428,6 +2430,103 @@ export function useGetActivityRange<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetActivityRangeQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Compact per-device activity totals within a time range
+ */
+export const getGetActivitySummaryUrl = (params: GetActivitySummaryParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/activity/summary?${stringifiedParams}`
+    : `/api/activity/summary`;
+};
+
+export const getActivitySummary = async (
+  params: GetActivitySummaryParams,
+  options?: RequestInit,
+): Promise<ActivitySummary[]> => {
+  return customFetch<ActivitySummary[]>(getGetActivitySummaryUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetActivitySummaryQueryKey = (
+  params?: GetActivitySummaryParams,
+) => {
+  return [`/api/activity/summary`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetActivitySummaryQueryOptions = <
+  TData = Awaited<ReturnType<typeof getActivitySummary>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetActivitySummaryParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getActivitySummary>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetActivitySummaryQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getActivitySummary>>
+  > = ({ signal }) => getActivitySummary(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getActivitySummary>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetActivitySummaryQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getActivitySummary>>
+>;
+export type GetActivitySummaryQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Compact per-device activity totals within a time range
+ */
+
+export function useGetActivitySummary<
+  TData = Awaited<ReturnType<typeof getActivitySummary>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetActivitySummaryParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getActivitySummary>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetActivitySummaryQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

@@ -1245,6 +1245,38 @@ export const GetActivityRangeResponseItem = zod.object({
 export const GetActivityRangeResponse = zod.array(GetActivityRangeResponseItem);
 
 /**
+ * @summary Compact per-device activity totals within a time range
+ */
+export const GetActivitySummaryQueryParams = zod.object({
+  from: zod.date(),
+  to: zod.date(),
+  group: zod.coerce.string().optional(),
+});
+
+export const getActivitySummaryResponseSlotsMin = 144;
+export const getActivitySummaryResponseSlotsMax = 144;
+
+export const GetActivitySummaryResponseItem = zod.object({
+  deviceId: zod.string().uuid(),
+  activeSeconds: zod.number(),
+  passiveSeconds: zod.number(),
+  idleStateSeconds: zod.number(),
+  productiveSeconds: zod.number(),
+  totalSeconds: zod.number(),
+  startedAt: zod.coerce.date().nullable(),
+  endedAt: zod.coerce.date().nullable(),
+  currentApp: zod.string().nullable(),
+  topApps: zod.array(zod.string()),
+  slots: zod
+    .array(zod.number())
+    .min(getActivitySummaryResponseSlotsMin)
+    .max(getActivitySummaryResponseSlotsMax),
+});
+export const GetActivitySummaryResponse = zod.array(
+  GetActivitySummaryResponseItem,
+);
+
+/**
  * @summary Get timeline view
  */
 export const GetTimelineQueryParams = zod.object({

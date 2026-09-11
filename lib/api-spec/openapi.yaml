@@ -598,6 +598,38 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/ActivityLogRecord"
+  /activity/summary:
+    get:
+      operationId: getActivitySummary
+      tags: [activity]
+      summary: Compact per-device activity totals within a time range
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: group
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Per-device activity summaries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ActivitySummary"
   /activity/timeline:
     get:
       operationId: getTimeline
@@ -3047,6 +3079,52 @@ components:
         - durationSeconds
         - idleSeconds
         - createdAt
+    ActivitySummary:
+      type: object
+      properties:
+        deviceId:
+          type: string
+          format: uuid
+        activeSeconds:
+          type: integer
+        passiveSeconds:
+          type: integer
+        idleStateSeconds:
+          type: integer
+        productiveSeconds:
+          type: integer
+        totalSeconds:
+          type: integer
+        startedAt:
+          type: [string, "null"]
+          format: date-time
+        endedAt:
+          type: [string, "null"]
+          format: date-time
+        currentApp:
+          type: [string, "null"]
+        topApps:
+          type: array
+          items:
+            type: string
+        slots:
+          type: array
+          minItems: 144
+          maxItems: 144
+          items:
+            type: integer
+      required:
+        - deviceId
+        - activeSeconds
+        - passiveSeconds
+        - idleStateSeconds
+        - productiveSeconds
+        - totalSeconds
+        - startedAt
+        - endedAt
+        - currentApp
+        - topApps
+        - slots
     ScreenshotListItem:
       type: object
       properties:

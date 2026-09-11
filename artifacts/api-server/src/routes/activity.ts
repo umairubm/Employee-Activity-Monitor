@@ -1,9 +1,15 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { activityLogsTable, devicesTable } from "@workspace/db";
+import {
+  activityLogsTable,
+  appCategoriesTable,
+  devicesTable,
+} from "@workspace/db";
 import { and, asc, desc, eq, gte, inArray, lt } from "drizzle-orm";
 import { getCompanyId } from "../middlewares/tenant";
 import { visibleDeviceIdsSubquery } from "../lib/deviceScope";
+import { getGlobalSettings } from "../lib/attendance";
+import { summarizeActivity } from "../lib/activitySummary";
 
 const router: IRouter = Router();
 
@@ -107,6 +113,67 @@ router.get("/range", async (req, res) => {
       orderBy: [asc(activityLogsTable.startedAt)],
     });
     res.json(logs);
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// GET /api/activity/summary - compact per-device range aggregates.
+router.get("/summary", async (req, res) => {
+  try {
+    const companyId = getCompanyId(req);
+    const { group } = req.query as Record<string, string | undefined>;
+    const from = typeof req.query.from === "string" ? new Date(req.query.from) : new Date(NaN);
+    const to = typeof req.query.to === "string" ? new Date(req.query.to) : new Date(NaN);
+    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+      res.status(400).json({ error: "Invalid `from`/`to`; expected ISO date-time" });
+      return;
+    }
+    if (from.getTime() > to.getTime()) {
+      res.status(400).json({ error: "`from` must be on or before `to`" });
+      return;
+    }
+
+    const visibleIds = visibleDeviceIdsSubquery(req, companyId);
+    const groupCondition = group
+      ? inArray(
+          activityLogsTable.deviceId,
+          db
+            .select({ id: devicesTable.id })
+            .from(devicesTable)
+            .where(and(eq(devicesTable.companyId, companyId), eq(devicesTable.deviceGroup, group))),
+        )
+      : undefined;
+    const [logs, devices, categories, settings] = await Promise.all([
+      db.query.activityLogsTable.findMany({
+        where: and(
+          eq(activityLogsTable.companyId, companyId),
+          gte(activityLogsTable.startedAt, from),
+          lt(activityLogsTable.startedAt, to),
+          inArray(activityLogsTable.deviceId, visibleIds),
+          groupCondition,
+        ),
+        orderBy: [asc(activityLogsTable.startedAt)],
+      }),
+      db
+        .select({ id: devicesTable.id, tzOffsetMinutes: devicesTable.tzOffsetMinutes })
+        .from(devicesTable)
+        .where(and(eq(devicesTable.companyId, companyId), inArray(devicesTable.id, visibleIds))),
+      db
+        .select({ id: appCategoriesTable.id, classification: appCategoriesTable.classification })
+        .from(appCategoriesTable)
+        .where(eq(appCategoriesTable.companyId, companyId)),
+      getGlobalSettings(companyId),
+    ]);
+
+    res.json(
+      summarizeActivity(
+        logs,
+        new Map(devices.map((device) => [device.id, device.tzOffsetMinutes])),
+        new Map(categories.map((category) => [category.id, category.classification])),
+        settings.timezone || "UTC",
+      ),
+    );
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }
