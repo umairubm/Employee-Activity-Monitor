@@ -1251,6 +1251,12 @@ export const GetActivitySummaryQueryParams = zod.object({
   from: zod.date(),
   to: zod.date(),
   group: zod.coerce.string().optional(),
+  search: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Match device, user, enrollment label, employee ID, group, region, or OS",
+    ),
 });
 
 export const getActivitySummaryResponseSlotsMin = 144;

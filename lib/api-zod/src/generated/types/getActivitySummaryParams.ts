@@ -10,4 +10,8 @@ export type GetActivitySummaryParams = {
   from: Date;
   to: Date;
   group?: string;
+  /**
+   * Match device, user, enrollment label, employee ID, group, region, or OS
+   */
+  search?: string;
 };

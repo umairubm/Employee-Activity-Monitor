@@ -4,8 +4,10 @@ import {
   activityLogsTable,
   appCategoriesTable,
   devicesTable,
+  enrollmentTokensTable,
+  usersTable,
 } from "@workspace/db";
-import { and, asc, desc, eq, gte, inArray, lt } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ilike, inArray, lt, or } from "drizzle-orm";
 import { getCompanyId } from "../middlewares/tenant";
 import { visibleDeviceIdsSubquery } from "../lib/deviceScope";
 import { getGlobalSettings } from "../lib/attendance";
@@ -122,7 +124,8 @@ router.get("/range", async (req, res) => {
 router.get("/summary", async (req, res) => {
   try {
     const companyId = getCompanyId(req);
-    const { group } = req.query as Record<string, string | undefined>;
+    const { group, search: searchRaw } = req.query as Record<string, string | undefined>;
+    const search = searchRaw?.trim();
     const from = typeof req.query.from === "string" ? new Date(req.query.from) : new Date(NaN);
     const to = typeof req.query.to === "string" ? new Date(req.query.to) : new Date(NaN);
     if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
@@ -135,6 +138,54 @@ router.get("/summary", async (req, res) => {
     }
 
     const visibleIds = visibleDeviceIdsSubquery(req, companyId);
+    const searchPattern = search ? `%${search}%` : null;
+    const matchingIds = db
+      .select({ id: devicesTable.id })
+      .from(devicesTable)
+      .where(
+        and(
+          eq(devicesTable.companyId, companyId),
+          inArray(devicesTable.id, visibleIds),
+          group ? eq(devicesTable.deviceGroup, group) : undefined,
+          searchPattern
+            ? or(
+                ilike(devicesTable.systemName, searchPattern),
+                ilike(devicesTable.hardwareHash, searchPattern),
+                ilike(devicesTable.deviceGroup, searchPattern),
+                ilike(devicesTable.region, searchPattern),
+                ilike(devicesTable.osType, searchPattern),
+                inArray(
+                  devicesTable.enrolledViaTokenId,
+                  db
+                    .select({ id: enrollmentTokensTable.id })
+                    .from(enrollmentTokensTable)
+                    .where(
+                      and(
+                        eq(enrollmentTokensTable.companyId, companyId),
+                        or(
+                          ilike(enrollmentTokensTable.label, searchPattern),
+                          ilike(enrollmentTokensTable.employeeId, searchPattern),
+                          ilike(enrollmentTokensTable.region, searchPattern),
+                        ),
+                      ),
+                    ),
+                ),
+                inArray(
+                  devicesTable.assignedUserId,
+                  db
+                    .select({ id: usersTable.id })
+                    .from(usersTable)
+                    .where(
+                      and(
+                        eq(usersTable.companyId, companyId),
+                        ilike(usersTable.username, searchPattern),
+                      ),
+                    ),
+                ),
+              )
+            : undefined,
+        ),
+      );
     const groupCondition = group
       ? inArray(
           activityLogsTable.deviceId,
@@ -150,7 +201,7 @@ router.get("/summary", async (req, res) => {
           eq(activityLogsTable.companyId, companyId),
           gte(activityLogsTable.startedAt, from),
           lt(activityLogsTable.startedAt, to),
-          inArray(activityLogsTable.deviceId, visibleIds),
+          inArray(activityLogsTable.deviceId, matchingIds),
           groupCondition,
         ),
         orderBy: [asc(activityLogsTable.startedAt)],
@@ -158,7 +209,7 @@ router.get("/summary", async (req, res) => {
       db
         .select({ id: devicesTable.id, tzOffsetMinutes: devicesTable.tzOffsetMinutes })
         .from(devicesTable)
-        .where(and(eq(devicesTable.companyId, companyId), inArray(devicesTable.id, visibleIds))),
+        .where(and(eq(devicesTable.companyId, companyId), inArray(devicesTable.id, matchingIds))),
       db
         .select({ id: appCategoriesTable.id, classification: appCategoriesTable.classification })
         .from(appCategoriesTable)

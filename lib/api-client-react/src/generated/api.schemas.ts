@@ -1819,6 +1819,10 @@ export type GetActivitySummaryParams = {
   from: string;
   to: string;
   group?: string;
+  /**
+   * Match device, user, enrollment label, employee ID, group, region, or OS
+   */
+  search?: string;
 };
 
 export type GetTimelineParams = {

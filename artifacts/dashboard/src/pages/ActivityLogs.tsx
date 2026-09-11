@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useDeferredValue, useMemo, useState } from "react";
 import {
   useGetActivityRange,
   getGetActivityRangeQueryKey,
@@ -732,6 +732,7 @@ function DeviceActivityPanel({
 
 export default function ActivityLogs() {
   const [search, setSearch] = useState("");
+  const deferredSearch = useDeferredValue(search.trim());
   const [viewMode, setViewMode] = useViewMode("activity-logs");
   const [groupFilter, setGroupFilter] = useGroupFilter();
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -750,14 +751,19 @@ export default function ActivityLogs() {
     to,
     group: groupFilter === ALL ? undefined : groupFilter,
   };
+  const summaryParams = {
+    ...rangeParams,
+    search: deferredSearch || undefined,
+  };
   const {
     data: summaries,
     isLoading: logsLoading,
     isError: summariesError,
-  } = useGetActivitySummary(rangeParams, {
+  } = useGetActivitySummary(summaryParams, {
     query: {
-      queryKey: getGetActivitySummaryQueryKey(rangeParams),
+      queryKey: getGetActivitySummaryQueryKey(summaryParams),
       refetchInterval: 30000,
+      placeholderData: (previous) => previous,
     },
   });
   const detailParams = {

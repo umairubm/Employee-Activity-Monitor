@@ -621,6 +621,12 @@ paths:
           required: false
           schema:
             type: string
+        - name: search
+          in: query
+          required: false
+          description: Match device, user, enrollment label, employee ID, group, region, or OS
+          schema:
+            type: string
       responses:
         "200":
           description: Per-device activity summaries
