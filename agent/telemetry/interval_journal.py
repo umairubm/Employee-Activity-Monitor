@@ -15,8 +15,11 @@ class IntervalJournal:
         self.sequence_ns = self.queue.get_sequence_namespace()
         
         self.current_segment: Optional[Dict[str, Any]] = None
-        self.passive_threshold_sec = 120
-        self.idle_threshold_sec = 300
+        # Industry-standard thresholds (matching ActivTrak defaults):
+        #   passive = user hasn't touched input for 5 min (was reading/thinking)
+        #   idle    = user is clearly away from the desk (10 min)
+        self.passive_threshold_sec = 300   # 5 minutes (was 120s / 2 min)
+        self.idle_threshold_sec = 600      # 10 minutes (was 300s / 5 min)
         self.policy_version = "default"
 
     def update_thresholds(self, passive_sec: int, idle_sec: int, version: str):

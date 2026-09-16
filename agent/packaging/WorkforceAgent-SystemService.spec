@@ -106,7 +106,7 @@ if is_mac:
             "NSHighResolutionCapable": True,
             "CFBundleDisplayName": "WorkforceTrack",
             "CFBundleName": "WorkforceTrack",
-            "CFBundleShortVersionString": "1.2.10",
+            "CFBundleShortVersionString": "1.2.11",
             "NSHumanReadableCopyright": "Copyright © Ubm Technologies Ltd",
         },
     )

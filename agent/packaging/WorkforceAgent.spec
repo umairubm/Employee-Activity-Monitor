@@ -104,8 +104,8 @@ if is_mac:
             # Real branding
             "CFBundleDisplayName": "WorkforceTrack",
             "CFBundleName":        "WorkforceTrack",
-            "CFBundleVersion":     "1.2.10",
-            "CFBundleShortVersionString": "1.2.10",
+            "CFBundleVersion":     "1.2.11",
+            "CFBundleShortVersionString": "1.2.11",
             "NSHumanReadableCopyright": "Copyright © Ubm Technologies Ltd",
         },
     )
