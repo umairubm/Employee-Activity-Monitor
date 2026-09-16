@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release tag to create/publish (e.g. agent-v0.1.0)"
+        description: "Release tag to create/publish (e.g. agent-v1.2.9)"
         required: true
-        default: "agent-v0.1.0"
+        default: "agent-v1.2.9"
 
 permissions:
   contents: write
@@ -32,7 +32,7 @@ jobs:
       - uses: actions/setup-python@v5.3.0
         with:
           python-version: "3.11"
-          cache: 'pip' # Enable automatic pip caching
+          cache: 'pip'
 
       - name: Install dependencies
         run: |
@@ -42,38 +42,42 @@ jobs:
       - name: Generate icons
         run: python agent/packaging/make_icons.py
 
-      - name: Build system service agent executable
+      - name: Build WorkforceTrack executable
         working-directory: agent/packaging
         shell: pwsh
         run: |
           pyinstaller --noconfirm WorkforceAgent-SystemService.spec
-          
+
           # Locate the generated .exe (handling both onefile and onedir modes)
-          $exe = Get-ChildItem -Path "dist" -Filter "*.exe" -Recurse | Select-Object -First 1
+          $exe = Get-ChildItem -Path "dist" -Filter "WorkforceTrack.exe" -Recurse | Select-Object -First 1
+          if (-not $exe) {
+            # Fallback: any .exe in dist/
+            $exe = Get-ChildItem -Path "dist" -Filter "*.exe" -Recurse | Select-Object -First 1
+          }
           if (-not $exe) { throw "PyInstaller failed to produce an executable." }
 
           # Ensure it is placed exactly where the .iss script expects it: agent/packaging/dist/
-          Copy-Item -Path $exe.FullName -Destination "dist\windowstelementoryservice.exe" -Force
+          Copy-Item -Path $exe.FullName -Destination "dist\WorkforceTrack.exe" -Force
+          Write-Host "Built: $($exe.FullName)"
 
-      - name: Build system service installer (Inno Setup)
+      - name: Build WorkforceTrack installer (Inno Setup)
         working-directory: agent/packaging
         run: |
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" windows\WorkforceAgent-SystemService.iss
 
       - uses: actions/upload-artifact@v4.4.3
         with:
-          name: SVCTCOM-installer
-          path: agent/packaging/dist/SVCTCOM-Setup.exe
+          name: WorkforceTrack-windows-installer
+          path: agent/packaging/dist/WorkforceTrack-Setup.exe
 
-      # Only publish a GitHub Release when this job was triggered by a real tag
-      - name: Publish system service to release
+      - name: Publish Windows installer to release
         if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2.2.1
         with:
           tag_name: ${{ github.event.inputs.version || github.ref_name }}
           generate_release_notes: true
           fail_on_unmatched_files: false
-          files: agent/packaging/dist/SVCTCOM-Setup.exe
+          files: agent/packaging/dist/WorkforceTrack-Setup.exe
 
   macos:
     runs-on: macos-latest
@@ -85,7 +89,7 @@ jobs:
       - uses: actions/setup-python@v5.3.0
         with:
           python-version: "3.10"
-          cache: 'pip' # Enable automatic pip caching
+          cache: 'pip'
 
       - name: Install dependencies
         run: |
@@ -100,17 +104,17 @@ jobs:
           export HOMEBREW_NO_AUTO_UPDATE=1
           brew install create-dmg
 
-      - name: Build system service .app and .dmg
+      - name: Build WorkforceTrack .app and .dmg
         run: |
           chmod +x agent/packaging/macos/build_dmg_system_service.sh
           bash agent/packaging/macos/build_dmg_system_service.sh
 
       - uses: actions/upload-artifact@v4.4.3
         with:
-          name: svctcom-installer
-          path: agent/packaging/dist/svctcom.dmg
+          name: WorkforceTrack-macos-installer
+          path: agent/packaging/dist/WorkforceTrack.dmg
 
-      - name: Publish system service to release
+      - name: Publish macOS installer to release
         if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2.2.1
         with:
@@ -118,8 +122,8 @@ jobs:
           generate_release_notes: true
           fail_on_unmatched_files: false
           files: |
-            agent/packaging/dist/svctcom.dmg
-            agent/packaging/dist/svctcom.app.zip
+            agent/packaging/dist/WorkforceTrack.dmg
+            agent/packaging/dist/WorkforceTrack.app.zip
 
   linux:
     runs-on: ubuntu-latest
@@ -146,18 +150,18 @@ jobs:
       - name: Build standalone Linux executable
         working-directory: agent
         run: |
-          pyinstaller --onefile --name svctcom agent.py
+          pyinstaller --onefile --name WorkforceTrack agent.py
 
       - uses: actions/upload-artifact@v4.4.3
         with:
-          name: svctcom-linux
-          path: agent/dist/svctcom
+          name: WorkforceTrack-linux
+          path: agent/dist/WorkforceTrack
 
-      - name: Publish system service to release
+      - name: Publish Linux binary to release
         if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2.2.1
         with:
           tag_name: ${{ github.event.inputs.version || github.ref_name }}
           generate_release_notes: true
           fail_on_unmatched_files: false
-          files: agent/dist/svctcom
+          files: agent/dist/WorkforceTrack

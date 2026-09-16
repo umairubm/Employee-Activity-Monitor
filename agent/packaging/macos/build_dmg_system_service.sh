@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Build the macOS .app and package it into a distributable .dmg.
+# Build the WorkforceTrack macOS .app and package it into a distributable .dmg.
 # Must run on macOS (uses sips/iconutil/hdiutil). Run from anywhere:
-#   bash agent/packaging/macos/build_dmg.sh
+#   bash agent/packaging/macos/build_dmg_system_service.sh
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # agent/packaging/macos
@@ -23,8 +23,8 @@ iconutil -c icns "$ICONSET" -o icons/icon.icns
 pyinstaller --noconfirm WorkforceAgent-SystemService.spec
 
 # 3. Package the .app into a compressed .dmg with an /Applications shortcut.
-APP="dist/svctcom.app"
-DMG="dist/svctcom.dmg"
+APP="dist/WorkforceTrack.app"
+DMG="dist/WorkforceTrack.dmg"
 STAGE="dist/dmg-stage"
 
 rm -f "$DMG"
@@ -34,7 +34,7 @@ cp -R "$APP" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"
 
 hdiutil create \
-  -volname "svctcom" \
+  -volname "WorkforceTrack" \
   -srcfolder "$STAGE" \
   -ov -format UDZO \
   "$DMG"
@@ -42,7 +42,7 @@ hdiutil create \
 echo "Built $DMG"
 
 # 4. Package the .app into a .zip for remote updates
-ZIP="dist/svctcom.app.zip"
+ZIP="dist/WorkforceTrack.app.zip"
 rm -f "$ZIP"
-(cd dist && zip -ry svctcom.app.zip svctcom.app >/dev/null)
+(cd dist && zip -ry WorkforceTrack.app.zip WorkforceTrack.app >/dev/null)
 echo "Built $ZIP"
