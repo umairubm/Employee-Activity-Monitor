@@ -48,17 +48,11 @@ jobs:
         run: |
           pyinstaller --noconfirm WorkforceAgent-SystemService.spec
 
-          # Locate the generated .exe (handling both onefile and onedir modes)
-          $exe = Get-ChildItem -Path "dist" -Filter "WorkforceTrack.exe" -Recurse | Select-Object -First 1
-          if (-not $exe) {
-            # Fallback: any .exe in dist/
-            $exe = Get-ChildItem -Path "dist" -Filter "*.exe" -Recurse | Select-Object -First 1
+          # Verify the output exists where the .iss script expects it
+          if (-not (Test-Path "dist\WorkforceTrack.exe")) {
+            throw "PyInstaller failed to produce dist\WorkforceTrack.exe"
           }
-          if (-not $exe) { throw "PyInstaller failed to produce an executable." }
-
-          # Ensure it is placed exactly where the .iss script expects it: agent/packaging/dist/
-          Copy-Item -Path $exe.FullName -Destination "dist\WorkforceTrack.exe" -Force
-          Write-Host "Built: $($exe.FullName)"
+          Write-Host "Built: dist\WorkforceTrack.exe"
 
       - name: Build WorkforceTrack installer (Inno Setup)
         working-directory: agent/packaging
