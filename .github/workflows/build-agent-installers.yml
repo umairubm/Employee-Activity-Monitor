@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release tag to create/publish (e.g. agent-v1.2.9)"
+        description: "Release tag to create/publish (e.g. agent-v1.2.10)"
         required: true
-        default: "agent-v1.2.9"
+        default: "agent-v1.2.10"
 
 permissions:
   contents: write
@@ -19,16 +19,34 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  # ── Create the GitHub Release first so build jobs don't race to create it ───
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - name: Resolve tag name
+        id: tag
+        run: |
+          TAG="${{ github.event.inputs.version || github.ref_name }}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2.2.1
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          generate_release_notes: true
+          fail_on_unmatched_files: false
+
+  # ── Windows ─────────────────────────────────────────────────────────────────
   windows:
+    needs: create-release
     runs-on: windows-latest
     steps:
-      # actions/checkout v4.2+ ships Node.js 24 support
       - uses: actions/checkout@v4.2.2
         with:
-          # Fetch full history so git tag operations work correctly
           fetch-depth: 0
 
-      # actions/setup-python v5.3+ supports Node.js 24 runner
       - uses: actions/setup-python@v5.3.0
         with:
           python-version: "3.11"
@@ -48,7 +66,6 @@ jobs:
         run: |
           pyinstaller --noconfirm WorkforceAgent-SystemService.spec
 
-          # Verify the output exists where the .iss script expects it
           if (-not (Test-Path "dist\WorkforceTrack.exe")) {
             throw "PyInstaller failed to produce dist\WorkforceTrack.exe"
           }
@@ -59,8 +76,7 @@ jobs:
         run: |
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" windows\WorkforceAgent-SystemService.iss
 
-      # Only upload artifact on manual test runs — release builds are published
-      # directly to GitHub Releases below (no need to store them twice).
+      # Only upload artifact on manual test runs — release builds go to GitHub Releases.
       - uses: actions/upload-artifact@v4.4.3
         if: "!startsWith(github.ref, 'refs/tags/') && github.event_name != 'workflow_dispatch'"
         with:
@@ -68,16 +84,17 @@ jobs:
           path: agent/packaging/dist/WorkforceTrack-Setup.exe
           retention-days: 1
 
-      - name: Publish Windows installer to release
+      - name: Upload Windows installer to release
         if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
-        uses: softprops/action-gh-release@v2.2.1
-        with:
-          tag_name: ${{ github.event.inputs.version || github.ref_name }}
-          generate_release_notes: true
-          fail_on_unmatched_files: false
-          files: agent/packaging/dist/WorkforceTrack-Setup.exe
+        run: |
+          gh release upload "${{ needs.create-release.outputs.tag }}" \
+            "agent/packaging/dist/WorkforceTrack-Setup.exe" --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  # ── macOS ───────────────────────────────────────────────────────────────────
   macos:
+    needs: create-release
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4.2.2
@@ -115,18 +132,18 @@ jobs:
           path: agent/packaging/dist/WorkforceTrack.dmg
           retention-days: 1
 
-      - name: Publish macOS installer to release
+      - name: Upload macOS installer to release
         if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
-        uses: softprops/action-gh-release@v2.2.1
-        with:
-          tag_name: ${{ github.event.inputs.version || github.ref_name }}
-          generate_release_notes: true
-          fail_on_unmatched_files: false
-          files: |
-            agent/packaging/dist/WorkforceTrack.dmg
-            agent/packaging/dist/WorkforceTrack.app.zip
+        run: |
+          gh release upload "${{ needs.create-release.outputs.tag }}" \
+            "agent/packaging/dist/WorkforceTrack.dmg" \
+            "agent/packaging/dist/WorkforceTrack.app.zip" --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  # ── Linux ───────────────────────────────────────────────────────────────────
   linux:
+    needs: create-release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4.2.2
@@ -161,11 +178,10 @@ jobs:
           path: agent/dist/WorkforceTrack
           retention-days: 1
 
-      - name: Publish Linux binary to release
+      - name: Upload Linux binary to release
         if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
-        uses: softprops/action-gh-release@v2.2.1
-        with:
-          tag_name: ${{ github.event.inputs.version || github.ref_name }}
-          generate_release_notes: true
-          fail_on_unmatched_files: false
-          files: agent/dist/WorkforceTrack
+        run: |
+          gh release upload "${{ needs.create-release.outputs.tag }}" \
+            "agent/dist/WorkforceTrack" --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
