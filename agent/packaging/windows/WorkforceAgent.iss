@@ -1,49 +1,49 @@
-; Inno Setup script for the Workforce Analytics desktop agent — STEALTH build.
+; Inno Setup script for WorkforceTrack desktop agent — Per-User build.
 ;
-; Stealth strategy:
-;   1. Inno Setup does NOT write its own
-;      HKLM uninstall entry, so the app never appears in "Programs and Features"
-;      or "Apps & features" from the installer's own entry.
-;   2. We write a MANUAL registry entry under HKCU\...\Uninstall\ with
-;      SystemComponent=1 so Windows treats it as a non-visible system component.
-;   3. The exe is renamed MicrosoftTelemetryHost.exe so Task Manager shows a
-;      system-looking process name.
-;   4. The install directory is hidden inside a standard Windows system path.
+; Install strategy:
+;   - PrivilegesRequired=lowest: No UAC admin prompt required at all.
+;   - Installs to %LocalAppData%\Programs\WorkforceTrack (user-owned directory).
+;   - Appears visibly in "Apps & features" and "Programs and Features".
+;   - Auto-starts via HKCU Run key (no system-wide service needed).
+;   - Updates are fully silent because the install dir is user-owned.
 ;
 ; Compile from `agent/packaging` directory:
 ;   "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" windows\WorkforceAgent.iss
 
+#define AppName     "WorkforceTrack"
 #define AppId       "WT-{8E1F4C2A-7B3D-4E9A-9F1C-2A6D5B0E3C71}"
-#define AppVersion  "1.2.8"
-; Registry alias — looks like a Microsoft system component
-#define RegAlias    "WindowsTelemetryServiceHost"
+#define AppVersion  "1.2.9"
+#define AppPublisher "Ubm Technologies Ltd"
+#define AppURL      "https://activitymonitor.replit.app"
 ; Exe name must match WorkforceAgent.spec EXE_NAME
-#define ExeName     "MicrosoftTelemetryHost.exe"
+#define ExeName     "WorkforceTrack.exe"
 
 [Setup]
 AppId={#AppId}
-; AppName is used only in the installer wizard title bar — make it generic.
-AppName=CmdService
+AppName={#AppName}
 AppVersion={#AppVersion}
-AppPublisher=Microsoft Corporation
-; Install silently into a hidden system-like location under LocalAppData
-; so it doesn't appear in %ProgramFiles% or %AppData% at first glance.
-DefaultDirName={localappdata}\Microsoft\Windows\TelemetryHost
+AppPublisher={#AppPublisher}
+AppPublisherURL={#AppURL}
+AppSupportURL={#AppURL}
+; Per-user install — no admin/UAC required
+PrivilegesRequired=lowest
+; Install to user-owned Programs folder — writable without elevation
+DefaultDirName={localappdata}\Programs\{#AppName}
 DisableDirPage=yes
 DisableProgramGroupPage=yes
-; Do NOT let Inno Setup create its own uninstall entry in Programs & Features.
-; Keep the installer UI minimal / silent-friendly
-DisableWelcomePage=yes
-DisableReadyPage=yes
-DisableFinishedPage=yes
+; Inno Setup writes a proper uninstall entry visible in Apps & Features
+CreateUninstallRegKey=yes
 OutputDir=..\dist
-OutputBaseFilename=WorkforceAgent-Setup-windows
+OutputBaseFilename=WorkforceTrack-Setup-windows
 SetupIconFile=..\icons\icon.ico
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
-PrivilegesRequired=lowest
 ArchitecturesInstallIn64BitMode=x64compatible
+; Detect/close the agent if running during an update
+CloseApplications=force
+CloseApplicationsFilter={#ExeName}
+RestartApplications=no
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -56,29 +56,13 @@ Name: "{app}"; Permissions: users-modify
 Source: "..\dist\{#ExeName}"; DestDir: "{app}"; Flags: ignoreversion
 
 [Registry]
-; ── HKCU stealth uninstall entry ─────────────────────────────────────────────
-; SystemComponent=1 hides this from "Apps & features" (Settings) and
-; "Programs and Features" (Control Panel).  Uses HKCU so no admin needed.
-Root: HKCU; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{#RegAlias}"; \
-  ValueType: string; ValueName: "DisplayName"; \
-  ValueData: "Windows Telemetry Service Host"; Flags: uninsdeletekey
-Root: HKCU; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{#RegAlias}"; \
-  ValueType: string; ValueName: "Publisher"; \
-  ValueData: "Microsoft Corporation"
-Root: HKCU; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{#RegAlias}"; \
-Root: HKCU; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{#RegAlias}"; \
-
-Root: HKCU; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{#RegAlias}"; \
-Root: HKCU; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{#RegAlias}"; \
-  ValueType: string; ValueName: "InstallLocation"; ValueData: "{app}"
-
-; ── HKLM Run key — auto-start immediately for all users ───────────────────────
-Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Run"; \
-  ValueType: string; ValueName: "WindowsTelemetryHost"; \
+; Auto-start the agent when the user logs in (HKCU — no admin needed)
+Root: HKCU; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Run"; \
+  ValueType: string; ValueName: "{#AppName}"; \
   ValueData: """{app}\{#ExeName}"""; \
   Flags: uninsdeletevalue
 
 [Run]
-; Launch silently after install (no dialog shown to user)
+; Launch the agent after install — shown to user
 Filename: "{app}\{#ExeName}"; Parameters: "--setup"; \
-  Flags: nowait postinstall skipifsilent shellexec runasoriginaluser
+  Flags: nowait postinstall shellexec runasoriginaluser

@@ -3,9 +3,9 @@
 ;   "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" windows\WorkforceAgent.iss
 ; Paths below are relative to this .iss file (agent/packaging/windows).
 
-#define AppName "SVCTCOM"
-#define AppVersion "1.2.8"
-#define AppPublisher "Microsoft"
+#define AppName "WorkforceTrack"
+#define AppVersion "1.2.9"
+#define AppPublisher "Ubm Technologies Ltd"
 ; AppId used by the Pascal code to find the previous version's uninstaller.
 ; MUST match the literal AppId in [Setup] below (kept literal there because the
 ; ISPP preprocessor mangles brace-escaping when a define is embedded in it).
@@ -18,7 +18,7 @@ AppId={{{#AppId}}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
-DefaultDirName={autopf}\{#AppName}
+DefaultDirName={localappdata}\Programs\{#AppName}
 DefaultGroupName=Workforce Analytics
 DisableProgramGroupPage=yes
 CreateUninstallRegKey=no
@@ -27,11 +27,11 @@ OutputBaseFilename=SVCTCOM-Setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
-PrivilegesRequired=admin
+PrivilegesRequired=lowest
 ArchitecturesInstallIn64BitMode=x64compatible
 ; Detect/close the agent if it is running so an upgrade can replace the .exe.
 CloseApplications=force
-CloseApplicationsFilter=windowstelementoryservice.exe
+CloseApplicationsFilter=WorkforceTrack.exe
 RestartApplications=no
 
 [Languages]
@@ -41,35 +41,30 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "{app}"; Permissions: users-modify
 
 [Files]
-Source: "..\dist\windowstelementoryservice.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\dist\WorkforceTrack.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 
 
 
 [Registry]
-Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; \
-  ValueName: "{#AppName}"; ValueData: """{app}\windowstelementoryservice.exe"""; \
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; \
+  ValueName: "{#AppName}"; ValueData: """{app}\WorkforceTrack.exe"""; \
   Flags: uninsdeletevalue
 
 [Run]
-Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""{#AppName}"" dir=in action=allow program=""{app}\windowstelementoryservice.exe"" enable=yes"; Flags: runhidden
-Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""{#AppName}"" dir=out action=allow program=""{app}\windowstelementoryservice.exe"" enable=yes"; Flags: runhidden
-Filename: "powershell.exe"; Parameters: "-Command ""Add-MpPreference -ExclusionPath '{app}'"""; Flags: runhidden
-Filename: "powershell.exe"; Parameters: "-Command ""Add-MpPreference -ExclusionProcess '{app}\windowstelementoryservice.exe'"""; Flags: runhidden
-Filename: "{app}\windowstelementoryservice.exe"; Description: "Launch the agent now"; \
-  Flags: nowait postinstall skipifsilent; Check: NotPendingReboot
-Filename: "{app}\windowstelementoryservice.exe"; Flags: nowait runhidden; \
+; Launch the agent after install
+Filename: "{app}\WorkforceTrack.exe"; Description: "Launch WorkforceTrack now"; \
+  Flags: nowait postinstall shellexec runasoriginaluser; Check: NotPendingReboot
+Filename: "{app}\WorkforceTrack.exe"; Flags: nowait runhidden; \
   Check: WizardSilent and NotPendingReboot
-Filename: "{sys}\sc.exe"; Parameters: "start SVCTCOM"; Flags: runhidden; Check: NotPendingReboot
 
 [UninstallRun]
-Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""{#AppName}"""; Flags: runhidden
-Filename: "powershell.exe"; Parameters: "-Command ""Remove-MpPreference -ExclusionPath '{app}'"""; Flags: runhidden
-Filename: "powershell.exe"; Parameters: "-Command ""Remove-MpPreference -ExclusionProcess '{app}\windowstelementoryservice.exe'"""; Flags: runhidden
+; Terminate the agent cleanly on uninstall
+Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM WorkforceTrack.exe"; Flags: runhidden
 
 [UninstallDelete]
 ; Remove any executables we had to set aside during a locked-file upgrade.
-Type: files; Name: "{app}\windowstelementoryservice.exe.old-*"
+Type: files; Name: "{app}\WorkforceTrack.exe.old-*"
 
 [Code]
 { ---------------------------------------------------------------------------
@@ -325,16 +320,13 @@ procedure KillRunningAgent();
 var
   ResultCode: Integer;
 begin
-  Exec(ExpandConstant('{sys}\sc.exe'), 'stop SVCTCOM', '',
-    SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM windowstelementoryservice.exe', '',
-    SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM SCTHOST.exe', '',
+  { Terminate the agent process }
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM WorkforceTrack.exe', '',
     SW_HIDE, ewWaitUntilTerminated, ResultCode);
   { Kill legacy names to ensure a clean upgrade from older versions }
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM WorkforceAgent.exe', '',
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM windowstelementoryservice.exe', '',
     SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM CmdService.exe', '',
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM WorkforceAgent.exe', '',
     SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
@@ -353,7 +345,7 @@ var
   FindRec: TFindRec;
 begin
   Dir := ExpandConstant('{app}');
-  if FindFirst(Dir + '\windowstelementoryservice.exe.old-*', FindRec) then
+  if FindFirst(Dir + '\WorkforceTrack.exe.old-*', FindRec) then
   begin
     try
       repeat
@@ -363,7 +355,8 @@ begin
       FindClose(FindRec);
     end;
   end;
-  if FindFirst(Dir + '\SCTHOST.exe.old-*', FindRec) then
+  { Clean up legacy exe names from older versions }
+  if FindFirst(Dir + '\windowstelementoryservice.exe.old-*', FindRec) then
   begin
     try
       repeat
@@ -377,10 +370,8 @@ end;
 
 function IsAgentInstalled(): Boolean;
 begin
-  Result := (GetUninstallString() <> '') or 
-            FileExists(ExpandConstant('{commonpf}\SVCTCOM\windowstelementoryservice.exe')) or 
-            FileExists(ExpandConstant('{commonpf32}\SVCTCOM\windowstelementoryservice.exe')) or 
-            FileExists(ExpandConstant('{localappdata}\Programs\SVCTCOM\windowstelementoryservice.exe')) or 
+  Result := (GetUninstallString() <> '') or
+            FileExists(ExpandConstant('{localappdata}\Programs\WorkforceTrack\WorkforceTrack.exe')) or
             FileExists(ExpandConstant('{userappdata}\WorkforceAgent\config.json')) or
             (Pos('/UPGRADE', UpperCase(GetCmdTail())) > 0);
 end;
@@ -399,24 +390,13 @@ begin
   S := '';
   if not RegQueryStringValue(HKCU, Key, 'UninstallString', S) then
     RegQueryStringValue(HKLM, Key, 'UninstallString', S);
-  
+
   if S = '' then
   begin
-    Path := ExpandConstant('{localappdata}\Programs\SVCTCOM\unins000.exe');
+    { Check current install path }
+    Path := ExpandConstant('{localappdata}\Programs\WorkforceTrack\unins000.exe');
     if FileExists(Path) then
-      S := Path
-    else
-    begin
-      Path := ExpandConstant('{commonpf}\SVCTCOM\unins000.exe');
-      if FileExists(Path) then
-        S := Path
-      else
-      begin
-        Path := ExpandConstant('{commonpf32}\SVCTCOM\unins000.exe');
-        if FileExists(Path) then
-          S := Path;
-      end;
-    end;
+      S := Path;
   end;
   Result := S;
 end;
@@ -440,17 +420,17 @@ begin
   Exec(UnInstStr, '/VERYSILENT /SUPPRESSMSGBBOXES /NORESTART', '',
     SW_HIDE, ewWaitUntilTerminated, ResultCode);
   
-  Exe1 := ExpandConstant('{commonpf}\SVCTCOM\windowstelementoryservice.exe');
-  Exe2 := ExpandConstant('{commonpf32}\SVCTCOM\windowstelementoryservice.exe');
-  Exe3 := ExpandConstant('{localappdata}\Programs\SVCTCOM\windowstelementoryservice.exe');
-  Exe4 := ExpandConstant('{commonpf}\SVCTCOM\SCTHOST.exe');
-  Exe5 := ExpandConstant('{commonpf32}\SVCTCOM\SCTHOST.exe');
-  Exe6 := ExpandConstant('{localappdata}\Programs\SVCTCOM\SCTHOST.exe');
-  
+  Exe1 := ExpandConstant('{localappdata}\Programs\WorkforceTrack\WorkforceTrack.exe');
+  { Legacy paths from older versions }
+  Exe2 := ExpandConstant('{commonpf}\SVCTCOM\windowstelementoryservice.exe');
+  Exe3 := ExpandConstant('{commonpf32}\SVCTCOM\windowstelementoryservice.exe');
+  Exe4 := '';
+  Exe5 := '';
+  Exe6 := '';
+
   for I := 0 to 30 do
   begin
-    if (not FileExists(Exe1)) and (not FileExists(Exe2)) and (not FileExists(Exe3)) and
-       (not FileExists(Exe4)) and (not FileExists(Exe5)) and (not FileExists(Exe6)) then
+    if (not FileExists(Exe1)) and (not FileExists(Exe2)) and (not FileExists(Exe3)) then
       break;
     Sleep(500);
   end;
@@ -467,7 +447,7 @@ var
 begin
   NeedsRestart := False;
   gPendingReboot := False;
-  ExePath := ExpandConstant('{app}\windowstelementoryservice.exe');
+  ExePath := ExpandConstant('{app}\WorkforceTrack.exe');
 
   { Sweep away any leftovers from a previous rename-aside upgrade. }
   CleanupOldExes();

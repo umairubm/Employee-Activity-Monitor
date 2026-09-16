@@ -142,8 +142,11 @@ def _idle_windows() -> int:
 
 def _active_window_macos() -> Tuple[str, str, str]:
     try:
-        from AppKit import NSWorkspace
+        from AppKit import NSWorkspace, NSRunLoop, NSDate
         import Quartz
+        
+        # Pump the run loop to ensure NSWorkspace updates its active application cache
+        NSRunLoop.currentRunLoop().runUntilDate_(NSDate.dateWithTimeIntervalSinceNow_(0.05))
         
         active_app = NSWorkspace.sharedWorkspace().frontmostApplication()
         process = active_app.localizedName() if active_app else "unknown"

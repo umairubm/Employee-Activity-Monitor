@@ -53,7 +53,7 @@ else:
     from .telemetry.activity_state import ConnectivityState
 
 # You can change this to 1.1.32, etc. to test auto-update
-AGENT_VERSION = "1.2.8"
+AGENT_VERSION = "1.2.9"
 POLL_SECONDS = 15
 
 def _now_iso() -> str:
@@ -304,7 +304,7 @@ class MonitoringAgent:
             # Download into the app's own directory first (to avoid Defender).
             # If that fails (e.g. standard user permission error), fallback to temp.
             app_dir = os.path.dirname(os.path.abspath(sys.executable))
-            temp_path = os.path.join(app_dir, "svctcom_update" + suffix)
+            temp_path = os.path.join(app_dir, "workforcetrack_update" + suffix)
             
             try:
                 # Test write access
@@ -312,7 +312,7 @@ class MonitoringAgent:
                     pass
             except PermissionError:
                 import tempfile
-                temp_path = os.path.join(tempfile.gettempdir(), "svctcom_update" + suffix)
+                temp_path = os.path.join(tempfile.gettempdir(), "workforcetrack_update" + suffix)
 
             try:
                 with requests.get(download_url, stream=True, timeout=60) as r:
@@ -341,13 +341,12 @@ class MonitoringAgent:
 
     def _run_installer(self, temp_path: str) -> None:
         if sys.platform.startswith("win"):
-            # Place helper scripts in the app's own directory so they
-            # are also covered by the Defender exclusion.
+            # Place helper scripts in the app's own directory.
             app_dir = os.path.dirname(os.path.abspath(sys.executable))
-            ps1_path = os.path.join(app_dir, "svctcom_update.ps1")
-            log_path = os.path.join(app_dir, "svctcom_update.log")
+            ps1_path = os.path.join(app_dir, "workforcetrack_update.ps1")
+            log_path = os.path.join(app_dir, "workforcetrack_update.log")
             pid = os.getpid()
-            exe_name = "windowstelementoryservice.exe"
+            exe_name = "WorkforceTrack.exe"
 
             # Escape backslashes for embedding in PS1 string literals
             log_ps = log_path.replace("\\", "\\\\")
@@ -365,19 +364,14 @@ class MonitoringAgent:
                 f"-ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /UPGRADE' "
                 f"-Wait -PassThru\r\n"
                 f"Add-Content -Path $log -Value (\"installer exit: \" + $p.ExitCode)\r\n"
-                # Find agent exe — check all known install locations
+                # Find agent exe — check current per-user install path first, then legacy paths
                 "$exe = $null\r\n"
                 f"$candidates = @(\r\n"
-                f"  \"$env:ProgramFiles\\SVCTCOM\\{exe_name}\",\r\n"
-                f"  \"$env:ProgramFiles\\SVCTCOM\\{exe_name}\",\r\n"
-                f"  \"${{env:ProgramFiles(x86)}}\\SVCTCOM\\{exe_name}\",\r\n"
-                f"  \"$env:LOCALAPPDATA\\Programs\\SVCTCOM\\{exe_name}\"\r\n"
+                f"  \"$env:LOCALAPPDATA\\Programs\\WorkforceTrack\\{exe_name}\",\r\n"
+                f"  \"$env:LOCALAPPDATA\\Programs\\SVCTCOM\\windowstelementoryservice.exe\",\r\n"
+                f"  \"${{env:ProgramFiles}}\\SVCTCOM\\windowstelementoryservice.exe\"\r\n"
                 ")\r\n"
                 "foreach ($c in $candidates) { if (Test-Path $c) { $exe = $c; break } }\r\n"
-                "if (-not $exe) {\r\n"
-                f"  $found = Get-ChildItem -Path $env:ProgramFiles -Filter {exe_name} -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1\r\n"
-                "  if ($found) { $exe = $found.FullName }\r\n"
-                "}\r\n"
                 "if (-not $exe) {\r\n"
                 f"  $found = Get-ChildItem -Path \"$env:LOCALAPPDATA\\Programs\" -Filter {exe_name} -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1\r\n"
                 "  if ($found) { $exe = $found.FullName }\r\n"
@@ -416,7 +410,7 @@ class MonitoringAgent:
                 os.environ.get("SystemRoot", r"C:\Windows"),
                 r"System32\wscript.exe",
             )
-            vbs_path = os.path.join(app_dir, "svctcom_update.vbs")
+            vbs_path = os.path.join(app_dir, "workforcetrack_update.vbs")
             vbs_content = (
                 'Set sh = CreateObject("WScript.Shell")\r\n'
                 f'sh.Run "powershell.exe -ExecutionPolicy Bypass -NonInteractive -WindowStyle Hidden -File ""{ps1_path}""", 0, False\r\n'

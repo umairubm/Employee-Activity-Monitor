@@ -1,14 +1,14 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec for the Workforce Analytics desktop agent.
+"""PyInstaller spec for WorkforceTrack desktop agent.
 
 Builds a windowed (no console) binary that keeps all transparency features:
 the consent dialog, the always-visible tray icon, and the pre-screenshot
 notice. Run from the `agent/packaging` directory:
 
-    pyinstaller --noconfirm WorkforceAgent.spec
+    pyinstaller --noconfirm WorkforceAgent-SystemService.spec
 
-Windows  -> dist/WorkforceAgent.exe  (packaged by Inno Setup into a Setup.exe)
-macOS    -> dist/WorkforceAgent.app  (packaged by build_dmg.sh into a .dmg)
+Windows  -> dist/WorkforceTrack.exe  (packaged by Inno Setup into a Setup.exe)
+macOS    -> dist/WorkforceTrack.app  (packaged by build_dmg.sh into a .dmg)
 """
 
 import sys
@@ -21,12 +21,9 @@ REPO_ROOT = AGENT_DIR.parent
 is_win = sys.platform.startswith("win")
 is_mac = sys.platform == "darwin"
 
-# ── Unified Naming ───────────────────────────────────────────────────────────
-if is_win:
-    EXE_NAME = "SCTHOST"
-else:
-    EXE_NAME = "svctcom"
-    BUNDLE_NAME = "svctcom.app"
+# ── Naming ───────────────────────────────────────────────────────────────────
+EXE_NAME    = "WorkforceTrack"
+BUNDLE_NAME = "WorkforceTrack.app"
 
 icon_path = None
 if is_win:
@@ -103,12 +100,13 @@ if is_mac:
         exe,
         name=BUNDLE_NAME,
         icon=icon_path,
-        bundle_identifier="com.apple.svctcom",
+        bundle_identifier="com.ubmtechnologies.workforcetrack",
         info_plist={
             "LSUIElement": True,
-            "CFBundleDisplayName": "svctcom",
-            "CFBundleName": "svctcom",
-            "CFBundleShortVersionString": "1.1.0",
             "NSHighResolutionCapable": True,
+            "CFBundleDisplayName": "WorkforceTrack",
+            "CFBundleName": "WorkforceTrack",
+            "CFBundleShortVersionString": "1.2.9",
+            "NSHumanReadableCopyright": "Copyright © Ubm Technologies Ltd",
         },
     )
