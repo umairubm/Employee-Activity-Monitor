@@ -85,5 +85,17 @@ releases were observed at the END of the list, so "first matching asset wins"
 served a stale installer version. `getReleases` must sort by `published_at`
 (fallback `created_at`) descending before any first-match scan.
 
+## Release upload paths must fail closed
+
+Every `softprops/action-gh-release` installer upload must set
+`fail_on_unmatched_files: true`, and its `files` path must exactly match the
+packager's output filename.
+**Why:** the action otherwise reports a successful step after logging only a
+warning when the installer path matches nothing. The release then lacks that
+platform, and the dashboard correctly falls back to an older release.
+**How to apply:** when renaming a PyInstaller/Inno/DMG output, update the release
+upload path in the same change and verify the final GitHub Release asset list,
+not only the workflow/job status.
+
 ## Service self-update hand-off
 A Windows-service agent cannot launch its own installer as a child process — Windows tears down the process tree when the service stops. Working pattern (verified in prod, v1.1.16): agent writes a batch (wait 5s → silent install → `sc start SVCTCOM`, all output logged to C:\Windows\Temp\svctcom_update.log), registers a one-time Task Scheduler task as SYSTEM with `/TR 'cmd /c ""<bat>""'` (nested double-quote escaping is mandatory), runs it with check=True, acks "installing", then exits. Heartbeat with new version auto-completes the command server-side.
