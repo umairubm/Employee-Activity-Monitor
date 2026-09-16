@@ -59,10 +59,14 @@ jobs:
         run: |
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" windows\WorkforceAgent-SystemService.iss
 
+      # Only upload artifact on manual test runs — release builds are published
+      # directly to GitHub Releases below (no need to store them twice).
       - uses: actions/upload-artifact@v4.4.3
+        if: "!startsWith(github.ref, 'refs/tags/') && github.event_name != 'workflow_dispatch'"
         with:
           name: WorkforceTrack-windows-installer
           path: agent/packaging/dist/WorkforceTrack-Setup.exe
+          retention-days: 1
 
       - name: Publish Windows installer to release
         if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
@@ -103,10 +107,13 @@ jobs:
           chmod +x agent/packaging/macos/build_dmg_system_service.sh
           bash agent/packaging/macos/build_dmg_system_service.sh
 
+      # Only upload artifact on manual test runs — release builds go to GitHub Releases.
       - uses: actions/upload-artifact@v4.4.3
+        if: "!startsWith(github.ref, 'refs/tags/') && github.event_name != 'workflow_dispatch'"
         with:
           name: WorkforceTrack-macos-installer
           path: agent/packaging/dist/WorkforceTrack.dmg
+          retention-days: 1
 
       - name: Publish macOS installer to release
         if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
@@ -146,10 +153,13 @@ jobs:
         run: |
           pyinstaller --onefile --name WorkforceTrack agent.py
 
+      # Only upload artifact on manual test runs — release builds go to GitHub Releases.
       - uses: actions/upload-artifact@v4.4.3
+        if: "!startsWith(github.ref, 'refs/tags/') && github.event_name != 'workflow_dispatch'"
         with:
           name: WorkforceTrack-linux
           path: agent/dist/WorkforceTrack
+          retention-days: 1
 
       - name: Publish Linux binary to release
         if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
