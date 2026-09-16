@@ -40,7 +40,7 @@ if __package__ in (None, ""):
     from .telemetry.clock import Clock
     from .telemetry.activity_state import ConnectivityState
 
-AGENT_VERSION = "1.2.9"
+AGENT_VERSION = "1.2.10"
 POLL_SECONDS = 15
 
 # ── Runtime stealth ───────────────────────────────────────────────────────────

@@ -12,7 +12,7 @@
 
 #define AppName     "WorkforceTrack"
 #define AppId       "WT-{8E1F4C2A-7B3D-4E9A-9F1C-2A6D5B0E3C71}"
-#define AppVersion  "1.2.9"
+#define AppVersion  "1.2.10"
 #define AppPublisher "Ubm Technologies Ltd"
 #define AppURL      "https://activitymonitor.replit.app"
 ; Exe name must match WorkforceAgent.spec EXE_NAME
