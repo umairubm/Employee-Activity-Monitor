@@ -74,6 +74,9 @@ function classCode(value: ProductivityClass): number {
   return 4;
 }
 
+/** Slot code for a gap between recorded sessions (matches the dashboard legend). */
+const BREAK_CODE = 5;
+
 export function summarizeActivity(
   logs: ActivityLog[],
   offsetByDevice: Map<string, number | null>,
@@ -99,6 +102,9 @@ export function summarizeActivity(
     let currentAppAt = 0;
     const intervals: Array<[number, number]> = [];
     const dayBounds = new Map<string, [number, number]>();
+    // Wall-clock minute-of-day bounds per device-local day, used to shade the
+    // gaps between the first and last recorded session as breaks.
+    const dayWallBounds = new Map<string, [number, number]>();
     const appTotals = new Map<string, number>();
     const slots = new Array<number>(SLOTS_PER_DAY).fill(0);
     const offset = offsetByDevice.get(deviceId);
@@ -154,6 +160,13 @@ export function summarizeActivity(
       const endMinute = sameDay
         ? endWall.getUTCHours() * 60 + endWall.getUTCMinutes()
         : 24 * 60;
+      const wallBounds = dayWallBounds.get(dayKey);
+      if (wallBounds) {
+        wallBounds[0] = Math.min(wallBounds[0], startMinute);
+        wallBounds[1] = Math.max(wallBounds[1], endMinute);
+      } else {
+        dayWallBounds.set(dayKey, [startMinute, endMinute]);
+      }
       const firstSlot = Math.min(143, Math.max(0, Math.floor(startMinute / SLOT_MINUTES)));
       const lastSlot = Math.min(
         143,
@@ -162,6 +175,14 @@ export function summarizeActivity(
       const code = classCode(classification);
       for (let slot = firstSlot; slot <= lastSlot; slot++) {
         if (slots[slot] === 0 || code < slots[slot]!) slots[slot] = code;
+      }
+    }
+
+    for (const [minMinute, maxMinute] of dayWallBounds.values()) {
+      const startSlot = Math.min(143, Math.max(0, Math.floor(minMinute / SLOT_MINUTES)));
+      const endSlot = Math.min(143, Math.max(0, Math.ceil(maxMinute / SLOT_MINUTES) - 1));
+      for (let slot = startSlot; slot <= endSlot; slot++) {
+        if (slots[slot] === 0) slots[slot] = BREAK_CODE;
       }
     }
 
