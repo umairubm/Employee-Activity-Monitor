@@ -76,6 +76,13 @@ For development only, manually choose `windows_unsigned_dev`. The workflow
 uploads an `UNSIGNED-DEVELOPMENT` Actions artifact, never a GitHub release and
 never an automatic rollout. It cannot pass the new remote verification gate.
 
+When only Git/SSH access is available, push a unique `windows-test-*` tag to
+run the separate **Build unsigned Windows test installer** workflow. It needs
+no Azure configuration and uploads the regular installer as
+`windows-UNSIGNED-DEVELOPMENT-not-for-rollout` for seven days. It has read-only
+repository permissions and cannot publish a release. Install it manually for
+testing; production signing and updater verification remain unchanged.
+
 ## One-time migration and subsequent updates
 
 An existing **unsigned** agent cannot establish a trusted publisher.
