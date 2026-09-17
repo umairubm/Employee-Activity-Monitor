@@ -18,3 +18,15 @@ server address to a loopback fixture before starting the signed agent. This
 keeps production untouched without replacing the consent flow. Require native
 evidence for the exact release bytes; Linux fixture checks are not Windows
 certification. Reset the disposable VM instead of deleting existing profiles.
+
+Check post-relaunch background probes as well as the installer itself when a
+user reports a console window during updates.
+
+**Why:** a windowed PyInstaller parent does not suppress the console of child
+PowerShell processes. System inventory and repeated browser URL probes can
+cause flashes after an otherwise silent install; installer-only tests miss
+this. Windows also ignores CREATE_NO_WINDOW when combined with DETACHED_PROCESS.
+
+**How to apply:** verify native process-creation options and observe the actual
+agent after relaunch. Keep consent, tray notices, and OS security prompts
+separate from these unintended command consoles.

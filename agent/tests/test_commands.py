@@ -298,6 +298,8 @@ class DurableResultJournal(unittest.TestCase):
 
         agent1.api.download_file.return_value = DownloadResponse()
         with mock.patch.object(sys, "platform", "win32"), \
+             mock.patch("agent.agent.subprocess.CREATE_NO_WINDOW", 0x08000000, create=True), \
+             mock.patch("agent.agent.subprocess.DETACHED_PROCESS", 0x00000008, create=True), \
              mock.patch.object(
                  MonitoringAgent,
                  "_finish_command",
@@ -322,6 +324,11 @@ class DurableResultJournal(unittest.TestCase):
             agent1._handle_command(update)
 
         popen.assert_called_once()
+        self.assertEqual(popen.call_args.kwargs["creationflags"], 0x08000000)
+        self.assertFalse(
+            popen.call_args.kwargs["creationflags"] & 0x00000008,
+            "DETACHED_PROCESS would cause Windows to ignore CREATE_NO_WINDOW",
+        )
         self.assertEqual(
             popen.call_args.args[0][1:],
             ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-"],

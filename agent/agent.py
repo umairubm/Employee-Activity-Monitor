@@ -56,7 +56,7 @@ else:
     from .telemetry.durable_queue import DurableActivityQueue
     from .telemetry.interval_journal import IntervalJournal
 
-AGENT_VERSION = "1.2.17"
+AGENT_VERSION = "1.2.18"
 POLL_SECONDS = 15
 # Activity batching. The server caps a batch at 500 rows; we additionally cap
 # serialized bytes well under its JSON body limit so a backlog of rich
@@ -554,9 +554,9 @@ class MonitoringAgent:
             creationflags = 0
             startupinfo = None
             if sys.platform.startswith("win"):
-                creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(
-                    subprocess, "DETACHED_PROCESS", 0
-                )
+                # Windows ignores CREATE_NO_WINDOW if DETACHED_PROCESS is also
+                # set. Popen children can outlive this agent without that flag.
+                creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
                 startupinfo = subprocess.STARTUPINFO()
                 startupinfo.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 1)
                 startupinfo.wShowWindow = 0

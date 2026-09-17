@@ -100,6 +100,12 @@ def _run(cmd: list[str], timeout: int = 6) -> Optional[str]:
             text=True,
             timeout=timeout,
             check=False,
+            # Startup inventory runs again after an update/relaunch. Keep the
+            # command's console separate from the agent's visible tray/consent.
+            creationflags=(
+                getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                if sys.platform.startswith("win") else 0
+            ),
         )
         val = (out.stdout or "").strip()
         return val or None

@@ -102,6 +102,10 @@ foreach ($edit in $edits) {{
             capture_output=True,
             text=True,
             timeout=2,
+            # A windowed PyInstaller parent does not automatically suppress a
+            # console for its PowerShell children. Prevent each URL probe from
+            # stealing focus or appearing in screenshots.
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except Exception:
         return None
