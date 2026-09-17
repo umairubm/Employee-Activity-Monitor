@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 import subprocess
 import sys
+import time
 from typing import Optional, Tuple
 from urllib.parse import urlsplit
 
