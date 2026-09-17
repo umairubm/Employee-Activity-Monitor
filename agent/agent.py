@@ -52,7 +52,7 @@ else:
     from .telemetry.durable_queue import DurableActivityQueue
     from .telemetry.interval_journal import IntervalJournal
 
-AGENT_VERSION = "1.2.15"
+AGENT_VERSION = "1.2.16"
 POLL_SECONDS = 15
 # Activity batching. The server caps a batch at 500 rows; we additionally cap
 # serialized bytes well under its JSON body limit so a backlog of rich
@@ -498,11 +498,6 @@ class MonitoringAgent:
         if not version or not file_name:
             self._finish_command(cid, "failed", "missing update payload")
             return
-        if self.tray:
-            self.tray.notify(
-                "An authorized agent update is about to install silently in the background.",
-                "Workforce Analytics",
-            )
         # Already acknowledged by _handle_command before dispatch.
         release = self.api.command_download_url(cid)
         download_url = str(release.get("downloadUrl") or "").strip()
@@ -510,11 +505,6 @@ class MonitoringAgent:
         if not download_url.startswith(("http://", "https://")):
             self._finish_command(cid, "failed", "unsupported update source")
             return
-        if self.tray:
-            self.tray.notify(
-                f"Authorized update for version {version} is downloading silently.",
-                "Workforce Analytics",
-            )
         # Let an ack failure propagate: _handle_command's outer handler acks
         # "failed" (a legal transition even if the server already committed
         # "downloading" and only the response was lost), so the command never
@@ -560,7 +550,12 @@ class MonitoringAgent:
                 startupinfo.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 1)
                 startupinfo.wShowWindow = 0
             subprocess.Popen(
-                [temp_path, "/S"],
+                [
+                    temp_path,
+                    "/VERYSILENT",
+                    "/SUPPRESSMSGBOXES",
+                    "/NORESTART",
+                ],
                 cwd=os.path.dirname(temp_path) or None,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,

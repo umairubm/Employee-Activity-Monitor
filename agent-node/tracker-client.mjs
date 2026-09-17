@@ -49,7 +49,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const IS_WIN = process.platform === "win32";
 const IS_MAC = process.platform === "darwin";
 
-const AGENT_VERSION = "2.0.3-node";
+const AGENT_VERSION = "2.0.4-node";
 
 // ── Where we persist credentials + offline data (per-user, stable across runs) ─
 const CONFIG_DIR = path.join(os.homedir(), ".active-tracker");
@@ -915,11 +915,15 @@ async function downloadInstaller(downloadUrl, fileName) {
 // the first heartbeat from the new build completes the update server-side.
 async function launchInstaller(installerPath) {
   const child = await new Promise((resolve, reject) => {
-    const spawned = spawn(installerPath, ["/S"], {
+    const spawned = spawn(
+      installerPath,
+      ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
+      {
       detached: true,
       windowsHide: true,
       stdio: "ignore",
-    });
+      },
+    );
     spawned.once("error", reject);
     spawned.once("spawn", () => resolve(spawned));
   });
