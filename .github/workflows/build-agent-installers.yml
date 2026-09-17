@@ -44,6 +44,7 @@ jobs:
       - name: Run monitor behavior and startup smoke tests
         run: |
           python -m unittest agent.tests.test_monitor agent.tests.test_startup_smoke agent.tests.test_commands agent.tests.test_windows_installer_verification agent.packaging.windows.test_installer_contracts agent.packaging.windows.test_release_signing_contract
+          python -m unittest discover -s agent/packaging/windows/smoke -p "test_*.py"
 
       - uses: actions/setup-node@v4
         with:
@@ -128,6 +129,12 @@ jobs:
           choco install innosetup -y --no-progress
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" windows\WorkforceAgent.iss
 
+      - name: Retain unsigned installer only as a negative test fixture
+        if: ${{ !inputs.windows_unsigned_dev }}
+        shell: pwsh
+        run: |
+          Copy-Item agent/packaging/dist/WorkforceAgent-Setup-windows.exe agent/packaging/dist/WorkforceAgent-Setup-UNSIGNED-SMOKE-ONLY.exe
+
       - name: Sign final installer
         if: ${{ !inputs.windows_unsigned_dev }}
         uses: azure/artifact-signing-action@v2
@@ -155,6 +162,17 @@ jobs:
             agent/packaging/dist/WorkforceAgent-Setup-windows.exe.sha256
           if-no-files-found: error
 
+      - name: Upload native smoke inputs (not release assets)
+        if: ${{ !inputs.windows_unsigned_dev }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-native-smoke-inputs
+          retention-days: 3
+          path: |
+            agent/packaging/dist/WorkforceAgent.exe
+            agent/packaging/dist/WorkforceAgent-Setup-UNSIGNED-SMOKE-ONLY.exe
+          if-no-files-found: error
+
       - name: Label unsigned development installer
         if: ${{ inputs.windows_unsigned_dev }}
         shell: pwsh
@@ -168,14 +186,106 @@ jobs:
           path: agent/packaging/dist/WorkforceAgent-Setup-UNSIGNED-DEVELOPMENT.exe
           if-no-files-found: error
 
+  windows-native-smoke:
+    if: ${{ !inputs.windows_unsigned_dev }}
+    needs: windows
+    # A service/session-0 or elevated hosted runner cannot test normal-user GUI
+    # setup/UAC. Provision a disposable, unlocked desktop per SIGNING.md.
+    runs-on: [self-hosted, Windows, X64, workforce-smoke]
+    environment: windows-smoke
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    concurrency:
+      group: windows-native-smoke-desktop
+      cancel-in-progress: false
+    env:
+      WINDOWS_PUBLISHER_SUBJECT: ${{ vars.WINDOWS_PUBLISHER_SUBJECT }}
+      WINDOWS_SMOKE_BASELINE_INSTALLER: ${{ vars.WINDOWS_SMOKE_BASELINE_INSTALLER }}
+      WINDOWS_SMOKE_BASELINE_VERSION: ${{ vars.WINDOWS_SMOKE_BASELINE_VERSION }}
+      WINDOWS_SMOKE_WRONG_PUBLISHER_INSTALLER: ${{ vars.WINDOWS_SMOKE_WRONG_PUBLISHER_INSTALLER }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-installer-signed
+          path: native-smoke-inputs
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-native-smoke-inputs
+          path: native-smoke-inputs
+      - name: Install native smoke dependencies
+        run: python -m pip install pywinauto==0.6.9 psutil==7.0.0
+      - name: Exercise signed normal-user install and upgrade
+        shell: pwsh
+        run: |
+          $source = Get-Content -Raw agent/agent.py
+          if ($source -notmatch '(?m)^AGENT_VERSION\s*=\s*"([^"]+)"') {
+            throw 'Cannot determine candidate agent version.'
+          }
+          & ./agent/packaging/windows/smoke-upgrade.ps1 `
+            -BaselineInstaller $env:WINDOWS_SMOKE_BASELINE_INSTALLER `
+            -BaselineVersion $env:WINDOWS_SMOKE_BASELINE_VERSION `
+            -CandidateInstaller ./native-smoke-inputs/WorkforceAgent-Setup-windows.exe `
+            -CandidateAgent ./native-smoke-inputs/WorkforceAgent.exe `
+            -CandidateVersion $Matches[1] `
+            -UnsignedInstaller ./native-smoke-inputs/WorkforceAgent-Setup-UNSIGNED-SMOKE-ONLY.exe `
+            -WrongPublisherInstaller $env:WINDOWS_SMOKE_WRONG_PUBLISHER_INSTALLER `
+            -ExpectedPublisher $env:WINDOWS_PUBLISHER_SUBJECT `
+            -OutputDirectory ./native-smoke-results
+      - name: Upload sanitized native smoke evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-native-smoke-evidence
+          path: native-smoke-results/*.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  windows-publish:
+    if: ${{ !inputs.windows_unsigned_dev }}
+    needs: [windows, windows-native-smoke]
+    runs-on: windows-latest
+    environment: windows-signing
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-installer-signed
+          path: signed-release
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-native-smoke-evidence
+          path: native-smoke-evidence
+      - name: Reverify exact tested release bytes
+        shell: pwsh
+        env:
+          WINDOWS_PUBLISHER_SUBJECT: ${{ vars.WINDOWS_PUBLISHER_SUBJECT }}
+        run: |
+          & ./agent/packaging/windows/verify-release.ps1 -Path ./signed-release/WorkforceAgent-Setup-windows.exe -ExpectedPublisher $env:WINDOWS_PUBLISHER_SUBJECT -VerifyChecksum
+          $evidence = Get-Content -Raw ./native-smoke-evidence/smoke.json | ConvertFrom-Json
+          $preflight = Get-Content -Raw ./native-smoke-evidence/preflight.json | ConvertFrom-Json
+          $hash = (Get-FileHash ./signed-release/WorkforceAgent-Setup-windows.exe -Algorithm SHA256).Hash
+          if ($evidence.status -ne 'passed' -or $preflight.status -ne 'passed' -or
+              $evidence.candidate_sha256 -ine $hash -or $preflight.candidateSha256 -ine $hash) {
+            throw 'Passing native evidence for these exact signed installer bytes is required.'
+          }
       - name: Publish to release
-        if: ${{ !inputs.windows_unsigned_dev }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.version || github.ref_name }}
+          fail_on_unmatched_files: true
           files: |
-            agent/packaging/dist/WorkforceAgent-Setup-windows.exe
-            agent/packaging/dist/WorkforceAgent-Setup-windows.exe.sha256
+            signed-release/WorkforceAgent-Setup-windows.exe
+            signed-release/WorkforceAgent-Setup-windows.exe.sha256
 
   macos:
     if: ${{ !inputs.windows_unsigned_dev }}

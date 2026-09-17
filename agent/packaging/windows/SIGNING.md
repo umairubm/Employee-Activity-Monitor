@@ -60,8 +60,14 @@ version, or push an `agent-v*` tag after reviewing the release:
 4. Package the **regular** `WorkforceAgent.iss` installer, retaining the signed
    EXE inside it.
 5. Sign/timestamp and verify the final installer separately.
-6. Generate its SHA-256 sidecar **after signing**, then attach both files to the
-   GitHub release. A failed signing/verification step prevents publication.
+6. Generate its SHA-256 sidecar **after signing** and retain both files as
+   Actions artifacts, not yet as release assets.
+7. Run the native install/upgrade smoke gate on the dedicated Windows desktop.
+8. In a separate publication job, reverify signature, timestamp, checksum, and
+   passing smoke evidence for the **exact installer hash**, then attach the
+   signed installer and sidecar to the release. Missing signing configuration,
+   a missing runner, or failed/missing smoke evidence prevents Windows
+   publication. The macOS/Linux jobs remain independent.
 
 The SHA-256 sidecar is for administrator integrity checking; runtime trust is
 provided by Authenticode, not by an unsigned checksum supplied alongside a file.
@@ -103,9 +109,116 @@ removed automatically; IT should review and remove obsolete exceptions.
 
 ## Validation boundary
 
-Local tests use mocked Windows trust responses and static installer contracts.
-They do not compile Inno Setup or exercise UAC/Defender on a real endpoint.
-Before broad rollout, build a signed installer in Windows CI, verify the actual
-signature, and test GUI setup and a subsequent signed silent upgrade on a
-Windows test machine. Confirm the new heartbeat, settings retention, and no
-duplicate agent process.
+Linux checks still use mocked Windows trust responses, static installer
+contracts, and tests of the smoke fixture. They do **not** establish that a
+native Windows run passed. A successful `windows-native-smoke` job and its
+`windows-native-smoke-evidence` artifact are required evidence; adding the
+harness alone is not a signed-release certification.
+
+### Native Windows smoke runner
+
+Provision an isolated, disposable Windows 11 x64 VM with an unlocked English
+desktop. Start a GitHub Actions self-hosted runner **interactively as a normal,
+non-elevated test user**, not as a Windows service or in session 0. Give it the
+labels `self-hosted`, `Windows`, `X64`, `workforce-smoke`. A hosted Windows build
+runner's elevated context is not a substitute for this normal-user test.
+PowerShell 7, Windows PowerShell 5.1, Node, Python, UAC, and Microsoft Defender
+real-time protection must be available. The workflow installs pinned
+`pywinauto`/`psutil` test dependencies; it never disables security controls.
+
+Protect the `windows-smoke` GitHub environment with release approvals and
+restrict this runner to trusted release code. Do not run pull-request code
+from untrusted contributors on it. The test intentionally installs software
+and starts monitoring with synthetic consent; use no personal/work data on
+this VM. Reset the VM to a clean snapshot **after every run**, including
+failures. The harness refuses existing enrollment/installations rather than
+deleting or reusing them. It stops test-owned processes, but deliberately does
+not erase the user profile or installation.
+
+Set these non-secret environment variables in `windows-smoke`:
+
+| Variable | Value |
+| --- | --- |
+| `WINDOWS_PUBLISHER_SUBJECT` | Same verified full publisher subject as `windows-signing` |
+| `WINDOWS_SMOKE_BASELINE_INSTALLER` | Absolute local path to a known, older, signed **regular** installer |
+| `WINDOWS_SMOKE_BASELINE_VERSION` | Actual baseline agent version, e.g. `1.2.17` |
+| `WINDOWS_SMOKE_WRONG_PUBLISHER_INSTALLER` | Absolute path to a vetted, trusted, benign EXE installer from a different publisher |
+
+Provision the two fixture files in the clean VM image. The wrong-publisher
+fixture must have a genuinely `Valid` Windows signature, not a tampered file
+or an untrusted self-signed certificate; never install test trust roots to
+make it pass. The test must reject it before launch. Only use an installer
+safe for the disposable VM even if a regression unexpectedly launches it.
+The unsigned negative fixture is a copy of the **real candidate installer
+before signing**, retained for three days as a separately named
+`windows-native-smoke-inputs` Actions artifact, never a release asset.
+
+The baseline must already enforce trusted Windows remote updates and the
+regular installer consent contract. Both versions must be stable `x.y.z`
+versions and the candidate must be strictly newer. For the first signed
+bootstrap, prepare a signed regular baseline in the protected signing process
+and keep it as a test fixture; do not publish an unsigned release or pretend
+a same-version reinstall proves an upgrade.
+
+### What the native gate exercises
+
+`smoke-upgrade.ps1` verifies real Authenticode trust, publisher, timestamps,
+and the candidate's post-signing checksum before executing any installer.
+It also exercises the Node verifier against real signed/unsigned files,
+without a mocked signature reader or publisher override. The packaged Python
+agent's own verifier is exercised through its actual remote-update path.
+
+The Python harness:
+
+1. Attempts a fresh `/VERYSILENT` install and requires rejection without
+   enrollment or an installed agent.
+2. Drives the regular installer's GUI, checking empty enrollment fields and
+   unchecked-consent blocking before explicitly submitting synthetic consent.
+3. Unchecks the **Launch the agent now** option. Only after the real installer
+   writes its consent seed does the harness redirect that seed's `server_url`
+   to a loopback-only test service. It does not pre-create an enrolled config,
+   alter the signed installer, bypass consent, or contact production.
+4. Starts the real signed baseline, observes authenticated enrollment and a
+   baseline heartbeat, then delivers the real signed candidate through the
+   regular download/verify/silent-install/relaunch protocol.
+5. Requires retained device identity, secret, consent and non-default settings,
+   replaced executable bytes, a new-version authenticated heartbeat after
+   `installing`, one running **logical agent process tree**, no visible setup
+   or UAC prompt, and unchanged boot time. PyInstaller one-file normally uses
+   a parent and child process; counting both as two agents is incorrect.
+6. Delivers unsigned and trusted wrong-publisher installers and requires
+   verification-specific failure before `installing`, with unchanged running
+   agent and installed bytes.
+
+The local service disables capture using the ordinary server configuration
+and discards any activity/screenshot payloads without storing their content.
+Only sanitized JSON reports are uploaded; do not upload raw agent logs,
+enrollment files, config, screenshots, or the whole test-user profile.
+
+The heartbeat report is explicitly a **protocol-fixture observation**, not
+proof of a production database transition. Existing API tests cover the
+server's completion logic. This normal-user happy-path smoke also does not
+certify SmartScreen reputation, every enterprise policy image, or upgrades
+of legacy elevated/service deployments. A UAC/security prompt or a pending
+restart causes failure; the harness never accepts a prompt, forces a reboot,
+or modifies Defender/UAC/firewall policy to proceed.
+
+For an approved manual run on the same disposable image:
+
+```powershell
+./agent/packaging/windows/smoke-upgrade.ps1 `
+  -BaselineInstaller C:\Fixtures\WorkforceAgent-previous.exe `
+  -BaselineVersion 1.2.17 `
+  -CandidateInstaller C:\Candidate\WorkforceAgent-Setup-windows.exe `
+  -CandidateAgent C:\Candidate\WorkforceAgent.exe `
+  -CandidateVersion 1.2.18 `
+  -UnsignedInstaller C:\Candidate\WorkforceAgent-Setup-UNSIGNED-SMOKE-ONLY.exe `
+  -WrongPublisherInstaller C:\Fixtures\OtherPublisher-Setup.exe `
+  -ExpectedPublisher '<actual verified full certificate subject>' `
+  -OutputDirectory C:\SmokeResults
+```
+
+The candidate installer must have its matching `.exe.sha256` sidecar. Example
+versions above illustrate ordering; use the actual built versions. Only a
+zero exit code plus `passed` preflight and smoke JSON for the candidate hash
+qualifies as success.
