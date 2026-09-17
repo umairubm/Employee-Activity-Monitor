@@ -22,4 +22,9 @@ export interface DownloadItem {
   updatedAt?: Date | null;
   /** @nullable */
   downloadUrl?: string | null;
+  /**
+   * Explanation when a build is unavailable or its lookup failed.
+   * @nullable
+   */
+  availabilityMessage?: string | null;
 }

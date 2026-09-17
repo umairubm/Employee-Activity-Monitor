@@ -12,4 +12,6 @@ export type DownloadItemPlatform =
 export const DownloadItemPlatform = {
   windows: "windows",
   macos: "macos",
+  linux: "linux",
+  "windows-test": "windows-test",
 } as const;

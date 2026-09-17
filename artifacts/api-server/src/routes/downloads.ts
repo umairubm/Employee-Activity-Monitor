@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { logger } from "../lib/logger";
+import { getUnsignedWindowsTestBuild } from "../lib/github-test-builds";
 import {
   getReleases,
   findPlatformAsset,
@@ -21,6 +22,15 @@ const VALID_PLATFORMS = new Set<string>(PLATFORMS.map((p) => p.platform));
 // the mount in routes/index.ts). Returns metadata per platform; the actual
 // bytes are served by GET /api/downloads/:platform.
 router.get("/", async (_req, res) => {
+  const testBuildPromise = getUnsignedWindowsTestBuild()
+    .then((build) => ({
+      build,
+      message: build ? null : "No unexpired unsigned test build is available. Run a new unsigned Windows test build in GitHub Actions.",
+    }))
+    .catch((err) => {
+      logger.warn({ err }, "unsigned Windows test-build lookup failed");
+      return { build: null, message: "Could not check GitHub for test builds. Try Refresh; the repository must be publicly accessible for this lookup." };
+    });
   let releases: LatestRelease[] = [];
   try {
     releases = await getReleases();
@@ -45,7 +55,21 @@ router.get("/", async (_req, res) => {
     };
   });
 
-  res.json({ items });
+  const { build, message } = await testBuildPromise;
+  res.json({
+    items: [...items, {
+      platform: "windows-test",
+      label: "Windows — unsigned test",
+      extension: ".zip",
+      available: Boolean(build),
+      fileName: build?.fileName ?? null,
+      sizeBytes: build?.sizeBytes ?? null,
+      version: build?.version ?? null,
+      updatedAt: build?.updatedAt ?? null,
+      downloadUrl: build?.downloadUrl ?? null,
+      availabilityMessage: message,
+    }],
+  });
 });
 
 // GET /api/downloads/:platform - stream the installer bytes for a platform.

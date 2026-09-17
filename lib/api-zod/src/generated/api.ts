@@ -1129,7 +1129,7 @@ export const AcknowledgeDeviceAlertResponse = zod.object({
 export const ListDownloadsResponse = zod.object({
   items: zod.array(
     zod.object({
-      platform: zod.enum(["windows", "macos"]),
+      platform: zod.enum(["windows", "macos", "linux", "windows-test"]),
       label: zod.string(),
       extension: zod.string(),
       available: zod.boolean(),
@@ -1138,6 +1138,12 @@ export const ListDownloadsResponse = zod.object({
       version: zod.string().nullish(),
       updatedAt: zod.coerce.date().nullish(),
       downloadUrl: zod.string().nullish(),
+      availabilityMessage: zod
+        .string()
+        .nullish()
+        .describe(
+          "Explanation when a build is unavailable or its lookup failed.",
+        ),
     }),
   ),
 });

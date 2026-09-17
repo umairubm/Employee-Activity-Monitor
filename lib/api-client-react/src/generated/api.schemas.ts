@@ -1747,6 +1747,8 @@ export type DownloadItemPlatform =
 export const DownloadItemPlatform = {
   windows: "windows",
   macos: "macos",
+  linux: "linux",
+  "windows-test": "windows-test",
 } as const;
 
 export interface DownloadItem {
@@ -1764,6 +1766,11 @@ export interface DownloadItem {
   updatedAt?: string | null;
   /** @nullable */
   downloadUrl?: string | null;
+  /**
+   * Explanation when a build is unavailable or its lookup failed.
+   * @nullable
+   */
+  availabilityMessage?: string | null;
 }
 
 export interface DownloadList {

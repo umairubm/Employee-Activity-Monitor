@@ -19,6 +19,8 @@ import {
   ShieldCheck,
   RefreshCw,
   PackageOpen,
+  FlaskConical,
+  ExternalLink,
 } from "lucide-react";
 
 function formatSize(bytes: number | null | undefined): string {
@@ -31,22 +33,30 @@ const PLATFORM_ICON: Record<string, typeof Monitor> = {
   windows: Monitor,
   macos: Apple,
   linux: Terminal,
+  "windows-test": FlaskConical,
 };
 
 const PLATFORM_DESC: Record<string, string> = {
   windows: "Signed-in users can install without admin rights (.exe installer).",
   macos: "Drag-and-drop install from a disk image (.dmg).",
   linux: "Download the agent, then make it executable (chmod +x) and run it.",
+  "windows-test": "Unsigned development build. Manual testing only — not for production or remote updates.",
 };
 
 function InstallerCard({ item }: { item: DownloadItem }) {
   const Icon = PLATFORM_ICON[item.platform] ?? Monitor;
+  const isTest = item.platform === "windows-test";
   return (
-    <Card className="flex h-full flex-col">
+    <Card className={`flex h-full flex-col ${isTest ? "border-amber-500/50" : ""}`}>
       <CardHeader>
         <CardTitle className="text-base flex items-center gap-2">
           <Icon className="h-5 w-5 text-primary" /> {item.label}
         </CardTitle>
+        {isTest && (
+          <span className="w-fit rounded-full bg-amber-500/15 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-300">
+            Unsigned · test only
+          </span>
+        )}
         <CardDescription>
           {PLATFORM_DESC[item.platform] ??
             "Install the desktop agent for this platform."}
@@ -58,7 +68,7 @@ function InstallerCard({ item }: { item: DownloadItem }) {
             <div className="text-xs text-muted-foreground space-y-1">
               <div className="flex justify-between">
                 <span>File</span>
-                <span className="font-mono text-foreground truncate max-w-[60%] text-right">
+                <span title={item.fileName ?? undefined} className="font-mono text-foreground truncate max-w-[60%] text-right">
                   {item.fileName}
                 </span>
               </div>
@@ -75,20 +85,27 @@ function InstallerCard({ item }: { item: DownloadItem }) {
                 </div>
               )}
             </div>
-            <Button asChild className="mt-auto w-full gap-2">
-              <a href={item.downloadUrl ?? "#"} download>
-                <Download className="h-4 w-4" />
-                Download for {item.label}
+            {isTest && (
+              <p className="text-xs text-muted-foreground">
+                GitHub sign-in required. Download the ZIP, extract it, and run the
+                .exe manually. Test downloads expire after 7 days. Windows may
+                warn about or block unsigned software.
+              </p>
+            )}
+            <Button asChild variant={isTest ? "outline" : "default"} className="mt-auto w-full gap-2">
+              <a href={item.downloadUrl ?? "#"} download={isTest ? undefined : true}
+                target={isTest ? "_blank" : undefined} rel={isTest ? "noopener noreferrer" : undefined}>
+                {isTest ? <ExternalLink className="h-4 w-4" /> : <Download className="h-4 w-4" />}
+                {isTest ? "Download unsigned test build" : `Download for ${item.label}`}
               </a>
             </Button>
           </>
         ) : (
           <div className="mt-auto flex flex-1 flex-col justify-center rounded-md border border-dashed border-border p-4 text-center">
             <PackageOpen className="h-6 w-6 text-muted-foreground mx-auto mb-2" />
-            <p className="text-sm font-medium">Not published yet</p>
+            <p className="text-sm font-medium">{isTest ? "Test build unavailable" : "Not published yet"}</p>
             <p className="text-xs text-muted-foreground mt-1">
-              The {item.label} installer ({item.extension}) appears here once a
-              build is published from GitHub Actions.
+              {item.availabilityMessage ?? `The ${item.label} installer (${item.extension}) appears here once a build is published from GitHub Actions.`}
             </p>
           </div>
         )}
