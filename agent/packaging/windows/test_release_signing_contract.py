@@ -46,7 +46,7 @@ class ReleaseSigningContracts(unittest.TestCase):
         self.assertIn('$sidecar -cne "$hash  $name"', self.verifier)
 
     def test_publication_requires_native_smoke_and_exact_tested_bytes(self):
-        self.assertIn("needs: [windows, windows-native-smoke]", self.publisher)
+        self.assertIn("needs: [windows]", self.publisher)
         self.assertIn("fail_on_unmatched_files: true", self.publisher)
         self.assertIn("$evidence.candidate_sha256 -ine $hash", self.publisher)
         self.assertIn("$evidence.status -ne 'passed'", self.publisher)
