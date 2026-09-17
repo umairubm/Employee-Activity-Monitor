@@ -23,7 +23,26 @@ permissions:
   contents: write
 
 jobs:
+  release-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install agent dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r agent/requirements.txt
+
+      - name: Run monitor behavior and startup smoke tests
+        run: |
+          python -m unittest agent.tests.test_monitor agent.tests.test_startup_smoke
+
   windows:
+    needs: release-checks
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -62,6 +81,7 @@ jobs:
           files: agent/packaging/dist/WorkforceAgent-Setup-windows.exe
 
   macos:
+    needs: release-checks
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -125,6 +145,7 @@ jobs:
             agent/packaging/dist/WorkforceAgent-macos-*.app.zip
 
   linux:
+    needs: release-checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

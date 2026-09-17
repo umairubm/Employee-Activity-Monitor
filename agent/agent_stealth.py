@@ -29,6 +29,10 @@ if __package__ in (None, ""):
     from agent import monitor as monitor_mod
     from agent import screenshot as screenshot_mod
     from agent import system_info as system_info_mod
+    from agent.telemetry.interval_journal import IntervalJournal
+    from agent.telemetry.durable_queue import DurableActivityQueue
+    from agent.telemetry.activity_state import ConnectivityState
+else:
     from . import api as api_mod
     from . import config as config_mod
     from . import identity as identity_mod
@@ -36,8 +40,7 @@ if __package__ in (None, ""):
     from . import screenshot as screenshot_mod
     from . import system_info as system_info_mod
     from .telemetry.interval_journal import IntervalJournal
-    from .telemetry.durable_queue import DurableQueue
-    from .telemetry.clock import Clock
+    from .telemetry.durable_queue import DurableActivityQueue
     from .telemetry.activity_state import ConnectivityState
 
 AGENT_VERSION = "1.2.15"
@@ -71,8 +74,12 @@ class StealthMonitoringAgent:
         self._lock = threading.Lock()
         
         db_path = config_mod.config_dir() / "stealth_logs.sqlite3"
-        self._queue = DurableQueue(str(db_path))
-        self._journal = IntervalJournal(self._queue, Clock())
+        self._queue = DurableActivityQueue(db_path)
+        self._journal = IntervalJournal(
+            self._queue,
+            passive_threshold_seconds=max(1, cfg.idle_threshold_seconds),
+            idle_threshold_seconds=max(300, cfg.idle_threshold_seconds + 60),
+        )
         
         self._last_screenshot = 0.0
         self._next_screenshot_gap = self._screenshot_gap()
