@@ -1,0 +1,59 @@
+name: Windows signed upgrade smoke
+
+on:
+  pull_request:
+    paths:
+      - "agent/packaging/windows/**"
+      - ".github/workflows/windows-upgrade-smoke.yml"
+  workflow_dispatch:
+
+# This workflow only uploads the JSON/text test report.  It does not publish
+# installers, fixture executables, or certificates.
+permissions:
+  contents: read
+
+jobs:
+  native-smoke:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    env:
+      CI: "true"
+      GITHUB_ACTIONS: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install UI automation dependency
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pywinauto
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install Inno Setup compiler
+        shell: pwsh
+        run: choco install innosetup -y --no-progress
+
+      - name: Build and run native installer smoke
+        shell: pwsh
+        run: |
+          $report = Join-Path $env:RUNNER_TEMP 'workforce-windows-upgrade-smoke.json'
+          & "$env:GITHUB_WORKSPACE\agent\packaging\windows\smoke\run-smoke.ps1" `
+            -ReportPath $report
+
+      - name: Upload smoke report and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-upgrade-smoke-report
+          path: |
+            ${{ runner.temp }}/workforce-windows-upgrade-smoke.json
+            ${{ runner.temp }}/workforce-agent-smoke-*/reports/*.json
+            ${{ runner.temp }}/workforce-agent-smoke-*/reports/*.txt
+          if-no-files-found: warn
