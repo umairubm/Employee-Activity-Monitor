@@ -1,0 +1,112 @@
+# -*- mode: python ; coding: utf-8 -*-
+"""PyInstaller spec for WorkforceTrack desktop agent.
+
+Builds a windowed (no console) binary that keeps all transparency features:
+the consent dialog, the always-visible tray icon, and the pre-screenshot
+notice. Run from the `agent/packaging` directory:
+
+    pyinstaller --noconfirm WorkforceAgent-SystemService.spec
+
+Windows  -> dist/WorkforceTrack.exe  (packaged by Inno Setup into a Setup.exe)
+macOS    -> dist/WorkforceTrack.app  (packaged by build_dmg.sh into a .dmg)
+"""
+
+import sys
+from pathlib import Path
+
+SPEC_DIR = Path(SPECPATH)
+AGENT_DIR = SPEC_DIR.parent
+REPO_ROOT = AGENT_DIR.parent
+
+is_win = sys.platform.startswith("win")
+is_mac = sys.platform == "darwin"
+
+# ── Naming ───────────────────────────────────────────────────────────────────
+EXE_NAME    = "WorkforceTrack"
+BUNDLE_NAME = "WorkforceTrack.app"
+
+icon_path = None
+if is_win:
+    p = SPEC_DIR / "icons" / "icon.ico"
+    icon_path = str(p) if p.exists() else None
+elif is_mac:
+    p = SPEC_DIR / "icons" / "icon.icns"
+    icon_path = str(p) if p.exists() else None
+
+datas = []
+png = SPEC_DIR / "icons" / "icon.png"
+if png.exists():
+    datas.append((str(png), "agent_assets"))
+
+hiddenimports = [
+    "agent",
+    "agent.agent",
+    "agent.agent_system_service",
+    "agent.agent_stealth",
+    "agent.telemetry",
+    "agent.telemetry.interval_journal",
+    "agent.telemetry.durable_queue",
+    "agent.telemetry.activity_state",
+    "agent.telemetry.clock",
+    "agent.api",
+    "agent.config",
+    "agent.consent",
+    "agent.identity",
+    "agent.monitor",
+    "agent.screenshot",
+    "agent.tray",
+    "PIL._tkinter_finder",
+]
+if is_win:
+    hiddenimports.append("pystray._win32")
+elif is_mac:
+    hiddenimports.append("pystray._darwin")
+
+a = Analysis(
+    [str(SPEC_DIR / "launcher-system-service.py")],
+    pathex=[str(REPO_ROOT)],
+    binaries=[
+        ("C:\\Windows\\System32\\vcruntime140.dll", "."),
+        ("C:\\Windows\\System32\\vcruntime140_1.dll", ".")
+    ] if is_win else [],
+    datas=datas,
+    hiddenimports=hiddenimports,
+    hookspath=[],
+    runtime_hooks=[],
+    excludes=[],
+    noarchive=False,
+)
+
+pyz = PYZ(a.pure)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    a.binaries,
+    a.datas,
+    [],
+    name=EXE_NAME,
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=False,
+    runtime_tmpdir=None,
+    console=False,
+    icon=icon_path,
+)
+
+if is_mac:
+    app = BUNDLE(
+        exe,
+        name=BUNDLE_NAME,
+        icon=icon_path,
+        bundle_identifier="com.ubmtechnologies.workforcetrack",
+        info_plist={
+            "LSUIElement": True,
+            "NSHighResolutionCapable": True,
+            "CFBundleDisplayName": "WorkforceTrack",
+            "CFBundleName": "WorkforceTrack",
+            "CFBundleShortVersionString": "1.2.11",
+            "NSHumanReadableCopyright": "Copyright © Ubm Technologies Ltd",
+        },
+    )
