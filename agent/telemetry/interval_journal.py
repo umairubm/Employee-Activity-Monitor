@@ -90,6 +90,11 @@ class IntervalJournal:
                 split_reason = "engagement_changed"
                 
         if split_reason:
+            if self.current_segment:
+                self.current_segment["endedAt"] = now
+                curr_mono = self.clock.monotonic()
+                self.current_segment["elapsedMilliseconds"] = int((curr_mono - self.current_segment["_start_mono"]) * 1000)
+                self.current_segment["durationSeconds"] = int(curr_mono - self.current_segment["_start_mono"])
             self._close_current_segment(now)
             self._open_new_segment(
                 process_name, 

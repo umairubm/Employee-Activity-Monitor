@@ -13,6 +13,23 @@ import sys
 import time
 from typing import Tuple
 
+_last_input_time = time.time()
+_has_pynput = False
+
+def _on_activity(*args, **kwargs):
+    global _last_input_time
+    _last_input_time = time.time()
+
+try:
+    from pynput import mouse, keyboard
+    _mouse_listener = mouse.Listener(on_move=_on_activity, on_click=_on_activity, on_scroll=_on_activity)
+    _keyboard_listener = keyboard.Listener(on_press=_on_activity, on_release=_on_activity)
+    _mouse_listener.start()
+    _keyboard_listener.start()
+    _has_pynput = True
+except Exception:
+    pass
+
 
 
 
@@ -30,6 +47,10 @@ def get_active_window() -> Tuple[str, str, str]:
 
 def get_idle_seconds() -> int:
     """Seconds since the last user input. Falls back to 0 if undetectable."""
+    global _has_pynput, _last_input_time
+    if _has_pynput:
+        return int(time.time() - _last_input_time)
+        
     try:
         if sys.platform.startswith("win"):
             return _idle_windows()
