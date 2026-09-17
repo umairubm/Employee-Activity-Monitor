@@ -4,7 +4,7 @@
 ; Paths below are relative to this .iss file (agent/packaging/windows).
 
 #define AppName "WorkforceTrack"
-#define AppVersion "1.2.16"
+#define AppVersion "1.2.17"
 #define AppPublisher "Ubm Technologies Ltd"
 ; AppId used by the Pascal code to find the previous version's uninstaller.
 ; MUST match the literal AppId in [Setup] below (kept literal there because the
@@ -52,8 +52,6 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
   Flags: uninsdeletevalue
 
 [Run]
-; Add Windows Defender and Firewall exclusions (will silently fail if not run as Admin)
-Filename: "powershell.exe"; Parameters: "-WindowStyle Hidden -Command ""Add-MpPreference -ExclusionPath '{app}' -ErrorAction SilentlyContinue; New-NetFirewallRule -DisplayName '{#AppName}' -Direction Inbound -Program '{app}\WorkforceTrack.exe' -Action Allow -ErrorAction SilentlyContinue; New-NetFirewallRule -DisplayName '{#AppName}' -Direction Outbound -Program '{app}\WorkforceTrack.exe' -Action Allow -ErrorAction SilentlyContinue"""; Flags: runhidden
 ; Launch the agent after install
 Filename: "{app}\WorkforceTrack.exe"; Description: "Launch WorkforceTrack now"; \
   Flags: nowait postinstall skipifsilent shellexec runasoriginaluser; Check: NotPendingReboot

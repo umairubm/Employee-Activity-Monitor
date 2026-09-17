@@ -303,6 +303,10 @@ class DurableResultJournal(unittest.TestCase):
                  "_finish_command",
                  wraps=agent1._finish_command,
              ), \
+             mock.patch(
+                 "agent.agent.verify_windows_installer",
+                 return_value={"status": "Valid", "subject": "CN=Workforce Analytics"},
+             ), \
              mock.patch.object(
                  __import__("agent.agent", fromlist=["subprocess"]).subprocess,
                  "STARTUPINFO",
@@ -320,7 +324,7 @@ class DurableResultJournal(unittest.TestCase):
         popen.assert_called_once()
         self.assertEqual(
             popen.call_args.args[0][1:],
-            ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
+            ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-"],
         )
         self.assertEqual(agent1._command_results[CMD_ID]["status"], "failed")
         self.assertEqual(agent1.api.download_file.call_count, 1)
@@ -330,6 +334,42 @@ class DurableResultJournal(unittest.TestCase):
         agent2.api.command_download_url.assert_not_called()
         agent2.api.download_file.assert_not_called()
         self.assertEqual(agent2.api.ack_command.call_args.args[1], "failed")
+
+    def test_untrusted_windows_update_is_rejected_before_install_launch(self):
+        update = command(
+            commandType="update_agent",
+            payload='{"version":"1.2.1","fileName":"agent.exe"}',
+        )
+        agent = make_agent()
+        agent.api.command_download_url.return_value = {
+            "downloadUrl": "https://example.test/agent.exe",
+            "fileName": "agent.exe",
+        }
+
+        class DownloadResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def iter_content(self, chunk_size):
+                yield b"unsigned-installer"
+
+        agent.api.download_file.return_value = DownloadResponse()
+        with mock.patch.object(sys, "platform", "win32"), mock.patch(
+            "agent.agent.verify_windows_installer",
+            side_effect=ValueError(
+                "downloaded Windows installer is unsigned or not trusted"
+            ),
+        ), mock.patch("agent.agent.subprocess.Popen") as popen:
+            agent._handle_command(update)
+
+        popen.assert_not_called()
+        statuses = [call.args[1] for call in agent.api.ack_command.call_args_list]
+        self.assertEqual(statuses, ["acknowledged", "downloading", "failed"])
+        self.assertNotIn("installing", statuses)
+        self.assertIn("unsigned", agent._command_results[CMD_ID]["message"])
 
 
 class MacOsUpdateContract(unittest.TestCase):

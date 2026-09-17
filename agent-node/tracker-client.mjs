@@ -43,13 +43,14 @@ import { createWriteStream } from "fs";
 import { Readable } from "stream";
 import { fileURLToPath } from "url";
 import { createCommandRunner } from "./command-runner.mjs";
+import { verifyWindowsInstaller } from "./windows-installer-verification.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const IS_WIN = process.platform === "win32";
 const IS_MAC = process.platform === "darwin";
 
-const AGENT_VERSION = "2.0.4-node";
+const AGENT_VERSION = "2.0.5-node";
 
 // ── Where we persist credentials + offline data (per-user, stable across runs) ─
 const CONFIG_DIR = path.join(os.homedir(), ".active-tracker");
@@ -914,14 +915,17 @@ async function downloadInstaller(downloadUrl, fileName) {
 // Launch the silent installer detached; the installer replaces this agent and
 // the first heartbeat from the new build completes the update server-side.
 async function launchInstaller(installerPath) {
+  // Keep the launch boundary safe even if another caller reaches this helper
+  // without going through command-runner's lifecycle verification.
+  if (IS_WIN) await verifyWindowsInstaller(installerPath);
   const child = await new Promise((resolve, reject) => {
     const spawned = spawn(
       installerPath,
-      ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
+      ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-"],
       {
-      detached: true,
-      windowsHide: true,
-      stdio: "ignore",
+        detached: true,
+        windowsHide: true,
+        stdio: "ignore",
       },
     );
     spawned.once("error", reject);
@@ -1140,6 +1144,7 @@ const commandRunner = createCommandRunner({
     resetWindowsPassword(os.userInfo().username, newPassword),
   setUsbBlock,
   downloadInstaller,
+  verifyInstaller: (installerPath) => verifyWindowsInstaller(installerPath),
   launchInstaller,
   applyMacUpdate,
   removeFile: (p) => fs.unlinkSync(p),

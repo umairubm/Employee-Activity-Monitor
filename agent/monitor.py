@@ -11,26 +11,8 @@ from __future__ import annotations
 import re
 import subprocess
 import sys
-import time
 from typing import Optional, Tuple
 from urllib.parse import urlsplit
-
-_last_input_time = time.time()
-_has_pynput = False
-
-def _on_activity(*args, **kwargs):
-    global _last_input_time
-    _last_input_time = time.time()
-
-try:
-    from pynput import mouse, keyboard
-    _mouse_listener = mouse.Listener(on_move=_on_activity, on_click=_on_activity, on_scroll=_on_activity)
-    _keyboard_listener = keyboard.Listener(on_press=_on_activity, on_release=_on_activity)
-    _mouse_listener.start()
-    _keyboard_listener.start()
-    _has_pynput = True
-except Exception:
-    pass
 
 
 def get_active_window() -> Tuple[str, str, Optional[str]]:
@@ -46,11 +28,10 @@ def get_active_window() -> Tuple[str, str, Optional[str]]:
 
 
 def get_idle_seconds() -> int:
-    """Seconds since the last user input. Falls back to 0 if undetectable."""
-    global _has_pynput, _last_input_time
-    if _has_pynput:
-        return int(time.time() - _last_input_time)
-        
+    """Use OS idle counters without installing global keyboard/mouse hooks.
+
+    Retains the existing zero-idle fallback when a platform probe is unavailable.
+    """
     try:
         if sys.platform.startswith("win"):
             return _idle_windows()
@@ -167,8 +148,10 @@ def _idle_windows() -> int:
     info.cbSize = ctypes.sizeof(info)
     if not ctypes.windll.user32.GetLastInputInfo(ctypes.byref(info)):
         return 0
-    millis = ctypes.windll.kernel32.GetTickCount() - info.dwTime
-    return max(0, millis // 1000)
+    # Both counters are DWORD values. ctypes may expose GetTickCount as signed,
+    # and the counter wraps every ~49.7 days; subtraction must stay unsigned.
+    millis = (ctypes.windll.kernel32.GetTickCount() - info.dwTime) & 0xFFFFFFFF
+    return millis // 1000
 
 
 # --- macOS -------------------------------------------------------------------

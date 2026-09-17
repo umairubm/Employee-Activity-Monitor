@@ -18,6 +18,10 @@ on:
         description: "Release tag to create/publish (e.g. agent-v0.1.0)"
         required: true
         default: "agent-v0.1.0"
+      windows_unsigned_dev:
+        description: "Windows-only UNSIGNED development artifact (never publish)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -39,13 +43,42 @@ jobs:
 
       - name: Run monitor behavior and startup smoke tests
         run: |
-          python -m unittest agent.tests.test_monitor agent.tests.test_startup_smoke
+          python -m unittest agent.tests.test_monitor agent.tests.test_startup_smoke agent.tests.test_commands agent.tests.test_windows_installer_verification agent.packaging.windows.test_installer_contracts agent.packaging.windows.test_release_signing_contract
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Verify Node update contracts
+        run: node --test agent-node/test/command-runner.test.mjs agent-node/test/windows-installer-verification.test.mjs
 
   windows:
     needs: release-checks
     runs-on: windows-latest
+    environment: windows-signing
+    permissions:
+      contents: write
+      id-token: write
+    env:
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      SIGNING_ENDPOINT: ${{ vars.SIGNING_ENDPOINT }}
+      SIGNING_ACCOUNT: ${{ vars.SIGNING_ACCOUNT }}
+      SIGNING_PROFILE: ${{ vars.SIGNING_PROFILE }}
+      WINDOWS_PUBLISHER_SUBJECT: ${{ vars.WINDOWS_PUBLISHER_SUBJECT }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Require production signing configuration
+        if: ${{ !inputs.windows_unsigned_dev }}
+        shell: pwsh
+        run: |
+          foreach ($name in @('AZURE_CLIENT_ID','AZURE_TENANT_ID','AZURE_SUBSCRIPTION_ID','SIGNING_ENDPOINT','SIGNING_ACCOUNT','SIGNING_PROFILE','WINDOWS_PUBLISHER_SUBJECT')) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+              throw "Missing $name. Configure windows-signing as described in agent/packaging/windows/SIGNING.md. No unsigned release will be published."
+            }
+          }
 
       - uses: actions/setup-python@v5
         with:
@@ -63,24 +96,89 @@ jobs:
         working-directory: agent/packaging
         run: pyinstaller --noconfirm WorkforceAgent.spec
 
+      - name: Azure login with workload identity
+        if: ${{ !inputs.windows_unsigned_dev }}
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sign agent before packaging
+        if: ${{ !inputs.windows_unsigned_dev }}
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.SIGNING_PROFILE }}
+          files: ${{ github.workspace }}\agent\packaging\dist\WorkforceAgent.exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Verify signed agent
+        if: ${{ !inputs.windows_unsigned_dev }}
+        shell: pwsh
+        run: |
+          & ./agent/packaging/windows/verify-release.ps1 -Path ./agent/packaging/dist/WorkforceAgent.exe -ExpectedPublisher $env:WINDOWS_PUBLISHER_SUBJECT
+
       - name: Build installer (Inno Setup)
         working-directory: agent/packaging
         run: |
           choco install innosetup -y --no-progress
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" windows\WorkforceAgent.iss
 
-      - uses: actions/upload-artifact@v4
+      - name: Sign final installer
+        if: ${{ !inputs.windows_unsigned_dev }}
+        uses: azure/artifact-signing-action@v2
         with:
-          name: windows-installer
-          path: agent/packaging/dist/WorkforceAgent-Setup-windows.exe
+          endpoint: ${{ vars.SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.SIGNING_PROFILE }}
+          files: ${{ github.workspace }}\agent\packaging\dist\WorkforceAgent-Setup-windows.exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Verify final signature and write checksum
+        if: ${{ !inputs.windows_unsigned_dev }}
+        shell: pwsh
+        run: |
+          & ./agent/packaging/windows/verify-release.ps1 -Path ./agent/packaging/dist/WorkforceAgent-Setup-windows.exe -ExpectedPublisher $env:WINDOWS_PUBLISHER_SUBJECT -WriteChecksum
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !inputs.windows_unsigned_dev }}
+        with:
+          name: windows-installer-signed
+          path: |
+            agent/packaging/dist/WorkforceAgent-Setup-windows.exe
+            agent/packaging/dist/WorkforceAgent-Setup-windows.exe.sha256
+          if-no-files-found: error
+
+      - name: Label unsigned development installer
+        if: ${{ inputs.windows_unsigned_dev }}
+        shell: pwsh
+        run: |
+          Rename-Item agent/packaging/dist/WorkforceAgent-Setup-windows.exe WorkforceAgent-Setup-UNSIGNED-DEVELOPMENT.exe
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ inputs.windows_unsigned_dev }}
+        with:
+          name: windows-UNSIGNED-DEVELOPMENT-not-for-rollout
+          path: agent/packaging/dist/WorkforceAgent-Setup-UNSIGNED-DEVELOPMENT.exe
+          if-no-files-found: error
 
       - name: Publish to release
+        if: ${{ !inputs.windows_unsigned_dev }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.version || github.ref_name }}
-          files: agent/packaging/dist/WorkforceAgent-Setup-windows.exe
+          files: |
+            agent/packaging/dist/WorkforceAgent-Setup-windows.exe
+            agent/packaging/dist/WorkforceAgent-Setup-windows.exe.sha256
 
   macos:
+    if: ${{ !inputs.windows_unsigned_dev }}
     needs: release-checks
     runs-on: macos-latest
     steps:
@@ -145,6 +243,7 @@ jobs:
             agent/packaging/dist/WorkforceAgent-macos-*.app.zip
 
   linux:
+    if: ${{ !inputs.windows_unsigned_dev }}
     needs: release-checks
     runs-on: ubuntu-latest
     steps:

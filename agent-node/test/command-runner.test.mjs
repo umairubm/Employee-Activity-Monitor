@@ -33,6 +33,7 @@ function makeDeps(overrides = {}) {
     resetPassword: async () => ({ ok: true, message: null }),
     setUsbBlock: async () => true,
     downloadInstaller: async () => "/tmp/fake-installer.exe",
+    verifyInstaller: async () => {},
     launchInstaller: async () => {},
     removeFile: () => {},
     exitProcess: () => {
@@ -288,6 +289,34 @@ test("update download failure reports failed and cleans up the temp file", async
   const last = calls.acks.at(-1);
   assert.equal(last.status, "failed");
   assert.match(last.message, /Download failed/);
+});
+
+test("untrusted Windows update is rejected before installing or launch", async () => {
+  const order = [];
+  const { deps, calls } = makeDeps({
+    downloadInstaller: async () => {
+      order.push("download");
+      return "/tmp/i.exe";
+    },
+    verifyInstaller: async () => {
+      order.push("verify");
+      throw new Error("downloaded Windows installer is unsigned or not trusted");
+    },
+    launchInstaller: async () => order.push("launch"),
+  });
+  await createCommandRunner(deps).executeCommand(
+    cmd({
+      commandType: "update_agent",
+      payload: JSON.stringify({ version: "1.2.1", fileName: "agent.exe" }),
+    }),
+  );
+  assert.deepEqual(order, ["download", "verify"]);
+  assert.deepEqual(
+    calls.acks.map((a) => a.status),
+    ["acknowledged", "downloading", "failed"],
+  );
+  assert.equal(calls.exited, undefined);
+  assert.match(calls.acks.at(-1).message, /unsigned/);
 });
 
 test("update on a non-Windows host fails as unsupported before downloading", async () => {

@@ -3,10 +3,56 @@
 from __future__ import annotations
 
 import unittest
+import ctypes
+import importlib
+import sys
 from types import SimpleNamespace
 from unittest import mock
 
 from agent.monitor import _active_window_macos, _normalise_browser_url
+from agent import monitor
+
+
+class NativeIdleDetectionTests(unittest.TestCase):
+    def test_import_never_loads_global_input_hook_library(self):
+        with mock.patch.dict(sys.modules, {"pynput": None}):
+            importlib.reload(monitor)
+        self.assertFalse(hasattr(monitor, "_keyboard_listener"))
+        self.assertFalse(hasattr(monitor, "_mouse_listener"))
+
+    def test_idle_detection_uses_native_platform_probe(self):
+        for platform, probe in [
+            ("win32", "_idle_windows"),
+            ("darwin", "_idle_macos"),
+            ("linux", "_idle_linux"),
+        ]:
+            with self.subTest(platform=platform), \
+                 mock.patch.object(sys, "platform", platform), \
+                 mock.patch.object(monitor, probe, return_value=123) as native:
+                self.assertEqual(monitor.get_idle_seconds(), 123)
+                native.assert_called_once_with()
+
+    def test_unavailable_native_probe_keeps_existing_fallback(self):
+        with mock.patch.object(sys, "platform", "win32"), \
+             mock.patch.object(monitor, "_idle_windows", side_effect=OSError):
+            self.assertEqual(monitor.get_idle_seconds(), 0)
+
+    def test_windows_idle_handles_unsigned_counter_and_rollover(self):
+        for now, last_input, expected in [
+            (12000, 2000, 10),
+            (-2147482000, 2147480296, 5),
+            (2000, 4294964296, 5),
+        ]:
+            with self.subTest(now=now):
+                def populate(info):
+                    info._obj.dwTime = last_input
+                    return True
+                windows = SimpleNamespace(
+                    user32=SimpleNamespace(GetLastInputInfo=populate),
+                    kernel32=SimpleNamespace(GetTickCount=lambda: now),
+                )
+                with mock.patch.object(ctypes, "windll", windows, create=True):
+                    self.assertEqual(monitor._idle_windows(), expected)
 
 
 class BrowserUrlNormalizationTests(unittest.TestCase):

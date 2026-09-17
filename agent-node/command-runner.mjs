@@ -63,6 +63,7 @@ const safeMessage = (value, fallback) => {
  * @param {(newPassword: string) => Promise<{ok: boolean, message?: string|null}>} deps.resetPassword
  * @param {(enabled: boolean) => Promise<boolean>} deps.setUsbBlock
  * @param {(url: string, fileName: string) => Promise<string>} deps.downloadInstaller
+ * @param {(installerPath: string) => Promise<void>} deps.verifyInstaller
  * @param {(installerPath: string) => Promise<void>} deps.launchInstaller
  * @param {(archivePath: string, targetVersion: string) => Promise<void>} [deps.applyMacUpdate]
  * @param {(path: string) => void} deps.removeFile
@@ -137,6 +138,15 @@ export function createCommandRunner(deps) {
 
       await deps.ackCommand(cmd.id, "downloading");
       installerPath = await deps.downloadInstaller(downloadUrl, fileName);
+      // Verify before the installing transition and before any process launch.
+      // This keeps an unsigned, untrusted, or wrong-publisher download from
+      // being mistaken for an installation in progress.
+      if (typeof deps.verifyInstaller !== "function") {
+        throw new Error(
+          "Windows installer verification is unavailable; install the signed WorkforceAgent.exe manually",
+        );
+      }
+      await deps.verifyInstaller(installerPath);
       await deps.ackCommand(cmd.id, "installing");
       await deps.launchInstaller(installerPath);
       // The installer replaces this agent; the first heartbeat from the new

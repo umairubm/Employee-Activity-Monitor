@@ -38,6 +38,9 @@ if __package__ in (None, ""):
     from agent import screenshot as screenshot_mod
     from agent import system_info as system_info_mod
     from agent import tray as tray_mod
+    from agent.windows_installer_verification import (
+        verify_windows_installer,
+    )
     from agent.telemetry.durable_queue import DurableActivityQueue
     from agent.telemetry.interval_journal import IntervalJournal
 else:
@@ -49,10 +52,11 @@ else:
     from . import screenshot as screenshot_mod
     from . import system_info as system_info_mod
     from . import tray as tray_mod
+    from .windows_installer_verification import verify_windows_installer
     from .telemetry.durable_queue import DurableActivityQueue
     from .telemetry.interval_journal import IntervalJournal
 
-AGENT_VERSION = "1.2.16"
+AGENT_VERSION = "1.2.17"
 POLL_SECONDS = 15
 # Activity batching. The server caps a batch at 500 rows; we additionally cap
 # serialized bytes well under its JSON body limit so a backlog of rich
@@ -537,6 +541,13 @@ class MonitoringAgent:
                     except OSError:
                         pass
                 return
+            # Never launch a downloaded Windows executable before Authenticode
+            # validation. The verifier pins the candidate's publisher subject
+            # to the installed signed WorkforceAgent.exe, allowing normal
+            # certificate renewal but rejecting unsigned/tampered/foreign
+            # installers. An interpreter or unsigned legacy agent receives an
+            # actionable failure asking for one manual signed bootstrap.
+            verify_windows_installer(temp_path, installed_executable=sys.executable)
             # Same as "downloading" above: propagate ack failures so the outer
             # handler resolves the command to "failed" instead of stranding it.
             self.api.ack_command(cid, "installing")
@@ -555,6 +566,7 @@ class MonitoringAgent:
                     "/VERYSILENT",
                     "/SUPPRESSMSGBOXES",
                     "/NORESTART",
+                    "/SP-",
                 ],
                 cwd=os.path.dirname(temp_path) or None,
                 stdin=subprocess.DEVNULL,
@@ -572,10 +584,10 @@ class MonitoringAgent:
                     os.unlink(temp_path)
                 except OSError:
                     pass
-            try:
-                self.api.ack_command(cid, "failed", "update failed")
-            except Exception:
-                pass
+            # Let _handle_command's outer handler record the original
+            # verification/download/launch error. In particular, do not send
+            # a generic "update failed" first: that can hide an actionable
+            # Authenticode rejection from the administrator.
             raise exc
 
     # macOS remote update ------------------------------------------------

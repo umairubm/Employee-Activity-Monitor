@@ -15,4 +15,12 @@ macOS remote updates are Developer ID signed/notarized `.app.zip` installers. Tr
 
 **Why:** a syntactically valid signature alone can belong to another developer; accepting a different bundle version strands completion; deleting the backup after `open` succeeds loses recovery if Gatekeeper blocks or the app crashes; stopping only the worker leaves the tray process alive and prevents every swap.
 
-**How to apply:** platform, kind, and version must travel through release→command→download resolver. macOS archives target only macOS devices; Windows installer behavior stays unchanged. Exact suffixed/prerelease heartbeats complete exact targets, while numeric versions may still supersede older numeric update commands.
+**How to apply:** platform, kind, and version must travel through release→command→download resolver. macOS archives target only macOS devices. Exact suffixed/prerelease heartbeats complete exact targets, while numeric versions may still supersede older numeric update commands.
+
+## Windows update trust and migration
+
+Silent upgrades must retain the normal product identity and original enrollment consent, not replace the agent with a disguised monitoring product. Do not reduce Defender or firewall protection to obtain silent behavior.
+
+**Why:** The intended product behavior is visible initial installation followed by authorized unattended maintenance, not Microsoft impersonation or security bypass. Installer flags cannot bypass UAC, enterprise policy, or establish publisher trust.
+
+**How to apply:** Keep Windows signing as a prerequisite for trusted unattended releases. Legacy unsigned agents require a one-time manual signed bootstrap; do not add an unsigned fallback or treat a generic signed Python/Node interpreter as the vendor's trust anchor. A successful source push is not proof that Windows installers were built, signed, published, or installed.

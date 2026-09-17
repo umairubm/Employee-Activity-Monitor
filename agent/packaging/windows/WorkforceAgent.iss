@@ -4,7 +4,10 @@
 ; Paths below are relative to this .iss file (agent/packaging/windows).
 
 #define AppName "Workforce Analytics Agent"
-#define AppVersion "1.2.3"
+; Keep this in lockstep with AGENT_VERSION in agent.py. The Windows workflow
+; builds the executable before invoking ISCC, but does not currently pass a
+; version macro to ISCC, so this is intentionally the current source version.
+#define AppVersion "1.2.17"
 #define AppPublisher "Workforce Analytics"
 ; AppId used by the Pascal code to find the previous version's uninstaller.
 ; MUST match the literal AppId in [Setup] below (kept literal there because the
@@ -57,7 +60,7 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 
 [Run]
 Filename: "{app}\WorkforceAgent.exe"; Description: "Launch the agent now"; \
-  Flags: nowait postinstall skipifsilent; Check: NotPendingReboot
+  Flags: nowait postinstall runasoriginaluser; Check: ShouldLaunchAgent
 
 [UninstallDelete]
 ; Remove any executables we had to set aside during a locked-file upgrade.
@@ -81,6 +84,8 @@ var
   { Set when the old .exe could not be killed and had to be renamed aside, so
     the stale process keeps running until the machine restarts. }
   gPendingReboot: Boolean;
+
+function IsAgentEnrolled(): Boolean; forward;
 
 procedure InitializeWizard();
 var
@@ -154,6 +159,15 @@ begin
   end;
 end;
 
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  { Re-running the GUI installer over an enrolled device is maintenance, not a
+    request to enroll it again. A first install still visits both pages and
+    cannot proceed without the name, token, and explicit consent. }
+  Result := IsAgentEnrolled() and
+    ((PageID = EnrollPage.ID) or (PageID = ConsentPage.ID));
+end;
+
 function JsonEsc(S: String): String;
 begin
   StringChangeEx(S, '\', '\\', True);
@@ -190,7 +204,11 @@ end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
-  if CurStep = ssPostInstall then
+  { A seed is an explicit GUI enrollment hand-off. Never create one from a
+    silent invocation: a silent install is authorized only when an existing
+    config proves this is an upgrade. }
+  if (CurStep = ssPostInstall) and (not WizardSilent()) and
+     (not IsAgentEnrolled()) then
     WriteEnrollSeed();
 end;
 
@@ -209,6 +227,14 @@ end;
   the stale old process is still running, so launching the new one would leave
   two agents active until reboot. }
 function NotPendingReboot(): Boolean;
+begin
+  Result := not gPendingReboot;
+end;
+
+{ Relaunch the agent exactly once after a successful install or upgrade. Do not
+  launch it while the old image is still running from a rename-aside file; Inno
+  will report the pending restart instead. }
+function ShouldLaunchAgent(): Boolean;
 begin
   Result := not gPendingReboot;
 end;
@@ -247,6 +273,13 @@ begin
   Result := S;
 end;
 
+function IsAgentEnrolled(): Boolean;
+begin
+  { The transparent agent's durable settings and enrollment identity live here.
+    Keep this path stable across installer upgrades. }
+  Result := FileExists(ExpandConstant('{userappdata}\WorkforceAgent\config.json'));
+end;
+
 { Run the previous version's uninstaller silently and wait for it to finish.
   The Inno uninstaller relaunches itself from %TEMP% and returns early, so we
   poll until the old executable is actually gone. The agent's data in
@@ -282,13 +315,31 @@ var
 begin
   NeedsRestart := False;
   gPendingReboot := False;
+
+  { A silent invocation is an authorized maintenance operation, never an
+    unattended first install. In particular, do this before writing files or
+    a seed so /VERYSILENT cannot enroll a new device without consent. }
+  if WizardSilent() and (not IsAgentEnrolled()) then
+  begin
+    Result :=
+      'Silent installation is only supported for an already enrolled device.' + #13#10 + #13#10 +
+      'Run this installer without /SILENT or /VERYSILENT ' +
+      'to review the ' +
+      'monitoring disclosure, enter an enrollment token, and give consent.';
+    exit;
+  end;
+
   ExePath := ExpandConstant('{app}\WorkforceAgent.exe');
 
   { Sweep away any leftovers from a previous rename-aside upgrade. }
   CleanupOldExes();
 
   KillRunningAgent();
-  UninstallPreviousVersion();
+  { Never execute an old uninstaller during a silent update. Older uninstallers
+    may require elevation, remove settings, or relaunch the old agent. The
+    silent path replaces the image in place and starts it once below. }
+  if not WizardSilent() then
+    UninstallPreviousVersion();
 
   { Re-kill on every pass (autostart or the uninstaller may relaunch it) and try
     to delete the old executable ourselves until its file lock is released. }
