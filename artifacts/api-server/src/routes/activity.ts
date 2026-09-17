@@ -7,7 +7,7 @@ import {
   enrollmentTokensTable,
   usersTable,
 } from "@workspace/db";
-import { and, asc, desc, eq, gte, ilike, inArray, lt, or } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ilike, inArray, lt, or, sql } from "drizzle-orm";
 import { getCompanyId } from "../middlewares/tenant";
 import { visibleDeviceIdsSubquery } from "../lib/deviceScope";
 import { getGlobalSettings } from "../lib/attendance";
@@ -153,7 +153,7 @@ router.get("/summary", async (req, res) => {
                 ilike(devicesTable.hardwareHash, searchPattern),
                 ilike(devicesTable.deviceGroup, searchPattern),
                 ilike(devicesTable.region, searchPattern),
-                ilike(devicesTable.osType, searchPattern),
+                sql`${devicesTable.osType}::text ILIKE ${searchPattern}`,
                 inArray(
                   devicesTable.enrolledViaTokenId,
                   db
@@ -196,16 +196,29 @@ router.get("/summary", async (req, res) => {
         )
       : undefined;
     const [logs, devices, categories, settings] = await Promise.all([
-      db.query.activityLogsTable.findMany({
-        where: and(
-          eq(activityLogsTable.companyId, companyId),
-          gte(activityLogsTable.startedAt, from),
-          lt(activityLogsTable.startedAt, to),
-          inArray(activityLogsTable.deviceId, matchingIds),
-          groupCondition,
+      db
+        .select({
+          deviceId: activityLogsTable.deviceId,
+          segmentId: activityLogsTable.segmentId,
+          processName: activityLogsTable.processName,
+          categoryId: activityLogsTable.categoryId,
+          engagementState: activityLogsTable.engagementState,
+          sessionState: activityLogsTable.sessionState,
+          startedAt: activityLogsTable.startedAt,
+          endedAt: activityLogsTable.endedAt,
+          durationSeconds: activityLogsTable.durationSeconds,
+          idleSeconds: activityLogsTable.idleSeconds,
+        })
+        .from(activityLogsTable)
+        .where(
+          and(
+            eq(activityLogsTable.companyId, companyId),
+            gte(activityLogsTable.startedAt, from),
+            lt(activityLogsTable.startedAt, to),
+            inArray(activityLogsTable.deviceId, matchingIds),
+            groupCondition,
+          ),
         ),
-        orderBy: [asc(activityLogsTable.startedAt)],
-      }),
       db
         .select({ id: devicesTable.id, tzOffsetMinutes: devicesTable.tzOffsetMinutes })
         .from(devicesTable)

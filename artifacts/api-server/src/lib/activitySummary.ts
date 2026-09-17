@@ -17,6 +17,20 @@ export interface ActivitySummary {
   slots: number[];
 }
 
+export type SummaryActivityLog = Pick<
+  ActivityLog,
+  | "deviceId"
+  | "segmentId"
+  | "processName"
+  | "categoryId"
+  | "engagementState"
+  | "sessionState"
+  | "startedAt"
+  | "endedAt"
+  | "durationSeconds"
+  | "idleSeconds"
+>;
+
 function zoneOffsetMinutes(zone: string, at: Date): number {
   try {
     const parts = new Intl.DateTimeFormat("en-US", {
@@ -78,12 +92,12 @@ function classCode(value: ProductivityClass): number {
 const BREAK_CODE = 5;
 
 export function summarizeActivity(
-  logs: ActivityLog[],
+  logs: SummaryActivityLog[],
   offsetByDevice: Map<string, number | null>,
   classById: Map<string, ProductivityClass>,
   fallbackZone: string,
 ): ActivitySummary[] {
-  const byDevice = new Map<string, ActivityLog[]>();
+  const byDevice = new Map<string, SummaryActivityLog[]>();
   for (const log of logs) {
     const rows = byDevice.get(log.deviceId);
     if (rows) rows.push(log);
