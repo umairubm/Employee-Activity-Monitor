@@ -40,7 +40,7 @@ else:
     from .telemetry.durable_queue import DurableActivityQueue
     from .telemetry.activity_state import ConnectivityState
 
-AGENT_VERSION = "1.2.17"
+AGENT_VERSION = "1.2.19"
 POLL_SECONDS = 15
 
 
