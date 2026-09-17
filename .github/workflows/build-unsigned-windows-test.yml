@@ -28,8 +28,33 @@ jobs:
           python -m pip install -r agent/requirements.txt pyinstaller
 
       - name: Check installer and update trust contracts
+        shell: python
         run: |
-          python -m unittest agent.tests.test_windows_installer_verification agent.tests.test_background_processes agent.tests.test_commands agent.packaging.windows.test_installer_contracts
+          import sys
+          import unittest
+
+          # This job runs on Windows. MacOsUpdateContract assumes POSIX paths;
+          # it remains in the full Linux release-checks suite, not this job.
+          names = [
+              "agent.tests.test_windows_installer_verification",
+              "agent.tests.test_background_processes",
+              "agent.tests.test_commands.HandleCommandContract",
+              "agent.tests.test_commands.DurableResultJournal",
+              "agent.tests.test_commands.ParsePayload",
+              "agent.packaging.windows.test_installer_contracts",
+          ]
+          # GitHub executes this script from a temporary file, so explicitly
+          # put the checked-out repository on Python's import path.
+          import os
+          sys.path.insert(0, os.getcwd())
+          result = unittest.TextTestRunner(verbosity=2).run(
+              unittest.defaultTestLoader.loadTestsFromNames(names)
+          )
+          for test, detail in result.failures + result.errors:
+              text = f"{test.id()}\n{detail}"
+              text = text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+              print(f"::error title=Windows contract test failed::{text}")
+          sys.exit(0 if result.wasSuccessful() else 1)
 
       - name: Generate icons
         run: python agent/packaging/make_icons.py
