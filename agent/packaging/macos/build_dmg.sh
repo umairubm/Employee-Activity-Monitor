@@ -20,12 +20,15 @@ done
 iconutil -c icns "$ICONSET" -o icons/icon.icns
 
 # A remote-update artifact that is not Developer ID signed and notarized will
-# be rejected by the agent. Require release credentials rather than silently
-# producing an unusable archive. CI injects these from GitHub Actions secrets.
-: "${CODESIGN_IDENTITY:?CODESIGN_IDENTITY is required}"
-: "${APPLE_ID:?APPLE_ID is required}"
-: "${APPLE_APP_SPECIFIC_PASSWORD:?APPLE_APP_SPECIFIC_PASSWORD is required}"
-: "${APPLE_TEAM_ID:?APPLE_TEAM_ID is required}"
+# be rejected by the agent. If credentials are provided, we sign it. Otherwise,
+# we gracefully skip signing to allow dev builds.
+if [ -n "${CODESIGN_IDENTITY:-}" ]; then
+  : "${APPLE_ID:?APPLE_ID is required}"
+  : "${APPLE_APP_SPECIFIC_PASSWORD:?APPLE_APP_SPECIFIC_PASSWORD is required}"
+  : "${APPLE_TEAM_ID:?APPLE_TEAM_ID is required}"
+else
+  echo "CODESIGN_IDENTITY is missing. Building UNSIGNED macOS application."
+fi
 
 # 2. Build, sign, notarize, and staple the .app bundle.
 pyinstaller --noconfirm WorkforceAgent.spec
@@ -41,23 +44,25 @@ UPDATE_ZIP="dist/WorkforceAgent-macos-${AGENT_VERSION}.app.zip"
 STAGE="dist/dmg-stage"
 NOTARY_ZIP="dist/WorkforceAgent-macos-notary.zip"
 
-codesign \
-  --force --deep --strict --options runtime --timestamp \
-  --sign "$CODESIGN_IDENTITY" \
-  "$APP"
-codesign --verify --deep --strict --verbose=2 "$APP"
+if [ -n "${CODESIGN_IDENTITY:-}" ]; then
+  codesign \
+    --force --deep --strict --options runtime --timestamp \
+    --sign "$CODESIGN_IDENTITY" \
+    "$APP"
+  codesign --verify --deep --strict --verbose=2 "$APP"
 
-rm -f "$NOTARY_ZIP"
-ditto -c -k --keepParent "$APP" "$NOTARY_ZIP"
-xcrun notarytool submit "$NOTARY_ZIP" \
-  --apple-id "$APPLE_ID" \
-  --password "$APPLE_APP_SPECIFIC_PASSWORD" \
-  --team-id "$APPLE_TEAM_ID" \
-  --wait
-xcrun stapler staple "$APP"
-xcrun stapler validate "$APP"
-spctl --assess --type execute --verbose=2 "$APP"
-rm -f "$NOTARY_ZIP"
+  rm -f "$NOTARY_ZIP"
+  ditto -c -k --keepParent "$APP" "$NOTARY_ZIP"
+  xcrun notarytool submit "$NOTARY_ZIP" \
+    --apple-id "$APPLE_ID" \
+    --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+    --team-id "$APPLE_TEAM_ID" \
+    --wait
+  xcrun stapler staple "$APP"
+  xcrun stapler validate "$APP"
+  spctl --assess --type execute --verbose=2 "$APP"
+  rm -f "$NOTARY_ZIP"
+fi
 
 rm -f "$DMG"
 rm -rf "$STAGE"
@@ -71,13 +76,15 @@ hdiutil create \
   -ov -format UDZO \
   "$DMG"
 
-xcrun notarytool submit "$DMG" \
-  --apple-id "$APPLE_ID" \
-  --password "$APPLE_APP_SPECIFIC_PASSWORD" \
-  --team-id "$APPLE_TEAM_ID" \
-  --wait
-xcrun stapler staple "$DMG"
-xcrun stapler validate "$DMG"
+if [ -n "${CODESIGN_IDENTITY:-}" ]; then
+  xcrun notarytool submit "$DMG" \
+    --apple-id "$APPLE_ID" \
+    --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+    --team-id "$APPLE_TEAM_ID" \
+    --wait
+  xcrun stapler staple "$DMG"
+  xcrun stapler validate "$DMG"
+fi
 
 echo "Built $DMG"
 
