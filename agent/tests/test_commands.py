@@ -524,10 +524,8 @@ class MacOsUpdateContract(unittest.TestCase):
     def test_remote_update_quit_stops_tray_loop_so_parent_can_exit(self):
         agent = make_agent()
         agent._stop = mock.Mock()
-        agent.tray = mock.Mock()
         agent.quit()
         agent._stop.set.assert_called_once()
-        agent.tray.stop.assert_called_once()
 
 
 class ParsePayload(unittest.TestCase):
