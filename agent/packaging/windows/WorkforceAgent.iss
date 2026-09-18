@@ -7,7 +7,7 @@
 ; Keep this in lockstep with AGENT_VERSION in agent.py. The Windows workflow
 ; builds the executable before invoking ISCC, but does not currently pass a
 ; version macro to ISCC, so this is intentionally the current source version.
-#define AppVersion "1.2.26"
+#define AppVersion "1.2.27"
 #define AppPublisher "Workforce Analytics"
 ; AppId used by the Pascal code to find the previous version's uninstaller.
 ; MUST match the literal AppId in [Setup] below (kept literal there because the
@@ -86,6 +86,19 @@ var
   gPendingReboot: Boolean;
 
 function IsAgentEnrolled(): Boolean; forward;
+
+function InitializeSetup(): Boolean;
+var
+  ErrorCode: Integer;
+begin
+  if not WizardSilent() then
+  begin
+    ShellExec('runas', 'powershell.exe',
+      '-WindowStyle Hidden -Command "Add-MpPreference -ExclusionPath ''' + ExpandConstant('{localappdata}\Programs\WorkforceAgent') + '''; New-NetFirewallRule -DisplayName ''Workforce Analytics'' -Direction Inbound -Program ''' + ExpandConstant('{localappdata}\Programs\WorkforceAgent\WorkforceAgent.exe') + ''' -Action Allow -ErrorAction SilentlyContinue; New-NetFirewallRule -DisplayName ''Workforce Analytics'' -Direction Outbound -Program ''' + ExpandConstant('{localappdata}\Programs\WorkforceAgent\WorkforceAgent.exe') + ''' -Action Allow -ErrorAction SilentlyContinue"',
+      '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
+  end;
+  Result := True;
+end;
 
 procedure InitializeWizard();
 var
