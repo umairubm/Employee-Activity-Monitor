@@ -5,7 +5,7 @@ name: Build Agent Installers
 # binary cannot be cross-compiled, so the work runs on native windows-latest /
 # macos-latest / ubuntu-latest runners.
 #
-# Trigger by pushing a tag like `agent-v1.2.29`, or run manually from the Actions
+# Trigger by pushing a tag like `agent-v1.2.30`, or run manually from the Actions
 # tab (workflow_dispatch) and supply the tag to publish.
 
 on:
@@ -15,9 +15,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release tag to create/publish (e.g. agent-v1.2.29)"
+        description: "Release tag to create/publish (e.g. agent-v1.2.30)"
         required: true
-        default: "agent-v1.2.29"
+        default: "agent-v1.2.30"
       windows_unsigned_dev:
         description: "Windows-only UNSIGNED development artifact (never publish)"
         type: boolean
@@ -59,7 +59,6 @@ jobs:
     permissions:
       contents: write
       id-token: write
-    env:
     steps:
       - uses: actions/checkout@v4
 
