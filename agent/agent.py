@@ -26,7 +26,6 @@ if __package__ in (None, ""):
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from agent import api as api_mod
     from agent import config as config_mod
-    from agent import consent as consent_mod
     from agent import identity as identity_mod
     from agent import monitor as monitor_mod
     from agent import screenshot as screenshot_mod
@@ -39,7 +38,6 @@ if __package__ in (None, ""):
 else:
     from . import api as api_mod
     from . import config as config_mod
-    from . import consent as consent_mod
     from . import identity as identity_mod
     from . import monitor as monitor_mod
     from . import screenshot as screenshot_mod
@@ -48,7 +46,7 @@ else:
     from .telemetry.durable_queue import DurableActivityQueue
     from .telemetry.interval_journal import IntervalJournal
 
-AGENT_VERSION = "1.2.25"
+AGENT_VERSION = "1.2.26"
 POLL_SECONDS = 15
 # Activity batching. The server caps a batch at 500 rows; we additionally cap
 # serialized bytes well under its JSON body limit so a backlog of rich
