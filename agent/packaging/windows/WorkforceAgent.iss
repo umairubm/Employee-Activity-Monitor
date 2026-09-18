@@ -7,7 +7,7 @@
 ; Keep this in lockstep with AGENT_VERSION in agent.py. The Windows workflow
 ; builds the executable before invoking ISCC, but does not currently pass a
 ; version macro to ISCC, so this is intentionally the current source version.
-#define AppVersion "1.2.24"
+#define AppVersion "1.2.25"
 #define AppPublisher "Workforce Analytics"
 ; AppId used by the Pascal code to find the previous version's uninstaller.
 ; MUST match the literal AppId in [Setup] below (kept literal there because the
@@ -212,14 +212,14 @@ begin
     WriteEnrollSeed();
 end;
 
-{ Force-close any running agent (parent + child processes) so its .exe unlocks.
-  Call taskkill.exe directly (not via cmd) so it always runs, and terminate the
-  whole process tree (/T) forcefully (/F). }
+{ Force-close any running agent so its .exe unlocks.
+  Call taskkill.exe directly (not via cmd) so it always runs, and terminate it
+  forcefully (/F). Do not use /T, as the installer is a child of the agent! }
 procedure KillRunningAgent();
 var
   ResultCode: Integer;
 begin
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM WorkforceAgent.exe', '',
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM WorkforceAgent.exe', '',
     SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
