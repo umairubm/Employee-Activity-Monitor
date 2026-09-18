@@ -331,7 +331,7 @@ class DurableResultJournal(unittest.TestCase):
         )
         self.assertEqual(
             popen.call_args.args[0][1:],
-            ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-"],
+            ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/FORCECLOSEAPPLICATIONS"],
         )
         self.assertEqual(agent1._command_results[CMD_ID]["status"], "failed")
         self.assertEqual(agent1.api.download_file.call_count, 1)

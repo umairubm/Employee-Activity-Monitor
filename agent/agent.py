@@ -48,7 +48,7 @@ else:
     from .telemetry.durable_queue import DurableActivityQueue
     from .telemetry.interval_journal import IntervalJournal
 
-AGENT_VERSION = "1.2.23"
+AGENT_VERSION = "1.2.24"
 POLL_SECONDS = 15
 # Activity batching. The server caps a batch at 500 rows; we additionally cap
 # serialized bytes well under its JSON body limit so a backlog of rich
@@ -544,6 +544,7 @@ class MonitoringAgent:
                     "/SUPPRESSMSGBOXES",
                     "/NORESTART",
                     "/SP-",
+                    "/FORCECLOSEAPPLICATIONS",
                 ],
                 cwd=os.path.dirname(temp_path) or None,
                 stdin=subprocess.DEVNULL,
