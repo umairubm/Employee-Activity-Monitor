@@ -1,11 +1,5 @@
 """Workforce Analytics monitoring agent — transparent entry point.
 
-Design principles (non-negotiable):
-  * No covert behavior. A tray icon is visible the whole time.
-  * Monitoring only begins after the user acknowledges the consent dialog.
-  * Screenshots fire a visible notification each time.
-  * The user can pause monitoring or quit at any moment.
-
 Run:  python -m agent.agent      (from the repo root)
   or: python agent/agent.py
 """
