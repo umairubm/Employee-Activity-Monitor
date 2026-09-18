@@ -46,7 +46,7 @@ else:
     from .telemetry.durable_queue import DurableActivityQueue
     from .telemetry.interval_journal import IntervalJournal
 
-AGENT_VERSION = "1.2.27"
+AGENT_VERSION = "1.2.28"
 POLL_SECONDS = 15
 # Activity batching. The server caps a batch at 500 rows; we additionally cap
 # serialized bytes well under its JSON body limit so a backlog of rich
