@@ -56,7 +56,7 @@ else:
     from .telemetry.durable_queue import DurableActivityQueue
     from .telemetry.interval_journal import IntervalJournal
 
-AGENT_VERSION = "1.2.21"
+AGENT_VERSION = "1.2.22"
 POLL_SECONDS = 15
 # Activity batching. The server caps a batch at 500 rows; we additionally cap
 # serialized bytes well under its JSON body limit so a backlog of rich
@@ -187,10 +187,6 @@ class MonitoringAgent:
             return
         self._last_screenshot = time.time()
         self._next_screenshot_gap = self._screenshot_gap()
-        # Visible notice BEFORE capture — transparency requirement.
-        if self.tray:
-            self.tray.notify("Taking a screenshot now…", "Workforce Analytics")
-        time.sleep(1.0)
         try:
             img = screenshot_mod.capture_webp_bytes()
             self.api.upload_screenshot(img, _now_iso(), content_type="image/webp")
