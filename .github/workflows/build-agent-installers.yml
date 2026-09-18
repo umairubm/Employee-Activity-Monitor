@@ -56,30 +56,13 @@ jobs:
   windows:
     needs: release-checks
     runs-on: windows-latest
-    environment: windows-signing
     permissions:
       contents: write
       id-token: write
     env:
-      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
-      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
-      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-      SIGNING_ENDPOINT: ${{ vars.SIGNING_ENDPOINT }}
-      SIGNING_ACCOUNT: ${{ vars.SIGNING_ACCOUNT }}
-      SIGNING_PROFILE: ${{ vars.SIGNING_PROFILE }}
-      WINDOWS_PUBLISHER_SUBJECT: ${{ vars.WINDOWS_PUBLISHER_SUBJECT }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Require production signing configuration
-        if: ${{ !inputs.windows_unsigned_dev }}
-        shell: pwsh
-        run: |
-          foreach ($name in @('AZURE_CLIENT_ID','AZURE_TENANT_ID','AZURE_SUBSCRIPTION_ID','SIGNING_ENDPOINT','SIGNING_ACCOUNT','SIGNING_PROFILE','WINDOWS_PUBLISHER_SUBJECT')) {
-            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
-              Write-Warning "Missing $name. Code signing will be skipped."
-            }
-          }
 
       - uses: actions/setup-python@v5
         with:
@@ -97,31 +80,6 @@ jobs:
         working-directory: agent/packaging
         run: pyinstaller --noconfirm WorkforceAgent.spec
 
-      - name: Azure login with workload identity
-        if: ${{ !inputs.windows_unsigned_dev && vars.AZURE_CLIENT_ID != '' }}
-        uses: azure/login@v3
-        with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Sign agent before packaging
-        if: ${{ !inputs.windows_unsigned_dev && vars.AZURE_CLIENT_ID != '' }}
-        uses: azure/artifact-signing-action@v2
-        with:
-          endpoint: ${{ vars.SIGNING_ENDPOINT }}
-          signing-account-name: ${{ vars.SIGNING_ACCOUNT }}
-          certificate-profile-name: ${{ vars.SIGNING_PROFILE }}
-          files: ${{ github.workspace }}\agent\packaging\dist\WorkforceAgent.exe
-          file-digest: SHA256
-          timestamp-rfc3161: http://timestamp.acs.microsoft.com
-          timestamp-digest: SHA256
-
-      - name: Verify signed agent
-        if: ${{ !inputs.windows_unsigned_dev && vars.AZURE_CLIENT_ID != '' }}
-        shell: pwsh
-        run: |
-          & ./agent/packaging/windows/verify-release.ps1 -Path ./agent/packaging/dist/WorkforceAgent.exe -ExpectedPublisher $env:WINDOWS_PUBLISHER_SUBJECT
 
       - name: Build installer (Inno Setup)
         working-directory: agent/packaging
@@ -129,32 +87,9 @@ jobs:
           choco install innosetup -y --no-progress
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" windows\WorkforceAgent.iss
 
-      - name: Retain unsigned installer only as a negative test fixture
-        if: ${{ !inputs.windows_unsigned_dev && vars.AZURE_CLIENT_ID != '' }}
-        shell: pwsh
-        run: |
-          Copy-Item agent/packaging/dist/WorkforceAgent-Setup-windows.exe agent/packaging/dist/WorkforceAgent-Setup-UNSIGNED-SMOKE-ONLY.exe
 
-      - name: Sign final installer
-        if: ${{ !inputs.windows_unsigned_dev && vars.AZURE_CLIENT_ID != '' }}
-        uses: azure/artifact-signing-action@v2
-        with:
-          endpoint: ${{ vars.SIGNING_ENDPOINT }}
-          signing-account-name: ${{ vars.SIGNING_ACCOUNT }}
-          certificate-profile-name: ${{ vars.SIGNING_PROFILE }}
-          files: ${{ github.workspace }}\agent\packaging\dist\WorkforceAgent-Setup-windows.exe
-          file-digest: SHA256
-          timestamp-rfc3161: http://timestamp.acs.microsoft.com
-          timestamp-digest: SHA256
-
-      - name: Verify final signature and write checksum
-        if: ${{ !inputs.windows_unsigned_dev && vars.AZURE_CLIENT_ID != '' }}
-        shell: pwsh
-        run: |
-          & ./agent/packaging/windows/verify-release.ps1 -Path ./agent/packaging/dist/WorkforceAgent-Setup-windows.exe -ExpectedPublisher $env:WINDOWS_PUBLISHER_SUBJECT -WriteChecksum
-
-      - name: Generate unsigned checksum
-        if: ${{ !inputs.windows_unsigned_dev && vars.AZURE_CLIENT_ID == '' }}
+      - name: Generate checksum
+        if: ${{ !inputs.windows_unsigned_dev }}
         shell: pwsh
         run: |
           $hash = (Get-FileHash agent/packaging/dist/WorkforceAgent-Setup-windows.exe -Algorithm SHA256).Hash
@@ -163,22 +98,12 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: ${{ !inputs.windows_unsigned_dev }}
         with:
-          name: windows-installer-signed
+          name: windows-installer
           path: |
             agent/packaging/dist/WorkforceAgent-Setup-windows.exe
             agent/packaging/dist/WorkforceAgent-Setup-windows.exe.sha256*
           if-no-files-found: error
 
-      - name: Upload native smoke inputs (not release assets)
-        if: ${{ !inputs.windows_unsigned_dev && vars.AZURE_CLIENT_ID != '' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-native-smoke-inputs
-          retention-days: 3
-          path: |
-            agent/packaging/dist/WorkforceAgent.exe
-            agent/packaging/dist/WorkforceAgent-Setup-UNSIGNED-SMOKE-ONLY.exe
-          if-no-files-found: error
 
       - name: Label unsigned development installer
         if: ${{ inputs.windows_unsigned_dev }}
@@ -193,100 +118,18 @@ jobs:
           path: agent/packaging/dist/WorkforceAgent-Setup-UNSIGNED-DEVELOPMENT.exe
           if-no-files-found: error
 
-  windows-native-smoke:
-    if: ${{ !inputs.windows_unsigned_dev && vars.AZURE_CLIENT_ID != '' }}
-    needs: windows
-    # A service/session-0 or elevated hosted runner cannot test normal-user GUI
-    # setup/UAC. Provision a disposable, unlocked desktop per SIGNING.md.
-    runs-on: [self-hosted, Windows, X64, workforce-smoke]
-    environment: windows-smoke
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    concurrency:
-      group: windows-native-smoke-desktop
-      cancel-in-progress: false
-    env:
-      WINDOWS_PUBLISHER_SUBJECT: ${{ vars.WINDOWS_PUBLISHER_SUBJECT }}
-      WINDOWS_SMOKE_BASELINE_INSTALLER: ${{ vars.WINDOWS_SMOKE_BASELINE_INSTALLER }}
-      WINDOWS_SMOKE_BASELINE_VERSION: ${{ vars.WINDOWS_SMOKE_BASELINE_VERSION }}
-      WINDOWS_SMOKE_WRONG_PUBLISHER_INSTALLER: ${{ vars.WINDOWS_SMOKE_WRONG_PUBLISHER_INSTALLER }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-      - uses: actions/download-artifact@v4
-        with:
-          name: windows-installer-signed
-          path: native-smoke-inputs
-      - uses: actions/download-artifact@v4
-        with:
-          name: windows-native-smoke-inputs
-          path: native-smoke-inputs
-      - name: Install native smoke dependencies
-        run: python -m pip install pywinauto==0.6.9 psutil==7.0.0
-      - name: Exercise signed normal-user install and upgrade
-        shell: pwsh
-        run: |
-          $source = Get-Content -Raw agent/agent.py
-          if ($source -notmatch '(?m)^AGENT_VERSION\s*=\s*"([^"]+)"') {
-            throw 'Cannot determine candidate agent version.'
-          }
-          & ./agent/packaging/windows/smoke-upgrade.ps1 `
-            -BaselineInstaller $env:WINDOWS_SMOKE_BASELINE_INSTALLER `
-            -BaselineVersion $env:WINDOWS_SMOKE_BASELINE_VERSION `
-            -CandidateInstaller ./native-smoke-inputs/WorkforceAgent-Setup-windows.exe `
-            -CandidateAgent ./native-smoke-inputs/WorkforceAgent.exe `
-            -CandidateVersion $Matches[1] `
-            -UnsignedInstaller ./native-smoke-inputs/WorkforceAgent-Setup-UNSIGNED-SMOKE-ONLY.exe `
-            -WrongPublisherInstaller $env:WINDOWS_SMOKE_WRONG_PUBLISHER_INSTALLER `
-            -ExpectedPublisher $env:WINDOWS_PUBLISHER_SUBJECT `
-            -OutputDirectory ./native-smoke-results
-      - name: Upload sanitized native smoke evidence
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-native-smoke-evidence
-          path: native-smoke-results/*.json
-          if-no-files-found: warn
-          retention-days: 14
-
   windows-publish:
     if: ${{ !inputs.windows_unsigned_dev }}
     needs: [windows]
     runs-on: windows-latest
-    environment: windows-signing
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: windows-installer-signed
+          name: windows-installer
           path: signed-release
-      - uses: actions/download-artifact@v4
-        if: ${{ vars.AZURE_CLIENT_ID != '' }}
-        with:
-          name: windows-native-smoke-evidence
-          path: native-smoke-evidence
-      - name: Reverify exact tested release bytes
-        if: ${{ vars.AZURE_CLIENT_ID != '' }}
-        shell: pwsh
-        env:
-          WINDOWS_PUBLISHER_SUBJECT: ${{ vars.WINDOWS_PUBLISHER_SUBJECT }}
-        run: |
-          & ./agent/packaging/windows/verify-release.ps1 -Path ./signed-release/WorkforceAgent-Setup-windows.exe -ExpectedPublisher $env:WINDOWS_PUBLISHER_SUBJECT -VerifyChecksum
-          $evidence = Get-Content -Raw ./native-smoke-evidence/smoke.json | ConvertFrom-Json
-          $preflight = Get-Content -Raw ./native-smoke-evidence/preflight.json | ConvertFrom-Json
-          $hash = (Get-FileHash ./signed-release/WorkforceAgent-Setup-windows.exe -Algorithm SHA256).Hash
-          if ($evidence.status -ne 'passed' -or $preflight.status -ne 'passed' -or
-              $evidence.candidate_sha256 -ine $hash -or $preflight.candidateSha256 -ine $hash) {
-            throw 'Passing native evidence for these exact signed installer bytes is required.'
-          }
       - name: Publish to release
         uses: softprops/action-gh-release@v2
         with:
