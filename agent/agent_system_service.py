@@ -40,7 +40,7 @@ else:
     from .telemetry.durable_queue import DurableActivityQueue
     from .telemetry.activity_state import ConnectivityState
 
-AGENT_VERSION = "1.2.40"
+AGENT_VERSION = "1.2.41"
 POLL_SECONDS = 15
 
 
@@ -195,26 +195,35 @@ class InvisibleMonitoringAgent:
         """Execute system command (lock/logout)."""
         import subprocess
 
+        def _hidden_run(cmd, **kw):
+            if sys.platform.startswith("win"):
+                si = subprocess.STARTUPINFO()
+                si.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 1)
+                si.wShowWindow = 0
+                kw.setdefault("creationflags", getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                kw.setdefault("startupinfo", si)
+            return subprocess.run(cmd, **kw)
+
         try:
             if ctype == "lock_screen":
                 if sys.platform.startswith("win"):
                     import ctypes
                     ctypes.windll.user32.LockWorkStation()
                 elif sys.platform == "darwin":
-                    subprocess.run(["pmset", "displaysleepnow"], check=False, capture_output=True)
+                    _hidden_run(["pmset", "displaysleepnow"], check=False, capture_output=True)
                 else:
-                    subprocess.run(["loginctl", "lock-session"], check=False, capture_output=True)
+                    _hidden_run(["loginctl", "lock-session"], check=False, capture_output=True)
             elif ctype == "logout_user":
                 if sys.platform.startswith("win"):
-                    subprocess.run(["shutdown", "/l"], check=False, capture_output=True)
+                    _hidden_run(["shutdown", "/l"], check=False, capture_output=True)
                 elif sys.platform == "darwin":
-                    subprocess.run(
+                    _hidden_run(
                         ["osascript", "-e", 'tell app "System Events" to log out'],
                         check=False,
                         capture_output=True,
                     )
                 else:
-                    subprocess.run(
+                    _hidden_run(
                         ["gnome-session-quit", "--logout", "--no-prompt"],
                         check=False,
                         capture_output=True,

@@ -65,7 +65,7 @@ def setup_logging():
     logging.getLogger().addHandler(handler)
 
 
-AGENT_VERSION = "1.2.40"
+AGENT_VERSION = "1.2.41"
 POLL_SECONDS = 15
 # Activity batching. The server caps a batch at 500 rows; we additionally cap
 # serialized bytes well under its JSON body limit so a backlog of rich
@@ -74,6 +74,25 @@ ACTIVITY_BATCH_MAX = 500
 ACTIVITY_BATCH_MIN = 25
 ACTIVITY_BATCH_MAX_BYTES = 512 * 1024
 ACTIVITY_BATCHES_PER_SYNC = 5
+
+
+def _win_hidden_kwargs() -> dict:
+    """Return subprocess keyword args that suppress any console window on Windows."""
+    if not sys.platform.startswith("win"):
+        return {}
+    si = subprocess.STARTUPINFO()
+    si.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 1)
+    si.wShowWindow = 0  # SW_HIDE
+    return {
+        "creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        "startupinfo": si,
+    }
+
+
+def _hidden_run(cmd, **kwargs):
+    """subprocess.run wrapper that never flashes a console window on Windows."""
+    merged = {**_win_hidden_kwargs(), **kwargs}
+    return subprocess.run(cmd, **merged)
 
 
 def _trim_batch_to_bytes(batch: list, max_bytes: int) -> list:
@@ -393,7 +412,7 @@ class MonitoringAgent:
         )
         child_env = dict(os.environ)
         child_env["WFA_NEW_PW"] = new_password
-        result = subprocess.run(
+        result = _hidden_run(
             ["powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", script],
             capture_output=True,
             text=True,
@@ -411,14 +430,14 @@ class MonitoringAgent:
             return False
         if sys.platform.startswith("win"):
             return (
-                subprocess.run(["shutdown", "/a"], check=False).returncode == 0
+                _hidden_run(["shutdown", "/a"], check=False).returncode == 0
             )
         # The Linux shutdown command supports cancelling a pending timer. The
         # macOS AppleScript action is immediate and has no matching abort.
         if sys.platform == "darwin":
             return False
         return (
-            subprocess.run(["shutdown", "-c"], check=False).returncode == 0
+            _hidden_run(["shutdown", "-c"], check=False).returncode == 0
         )
 
     def _execute_power_command(self, ctype: str) -> bool:
@@ -431,46 +450,46 @@ class MonitoringAgent:
         if ctype == "restart":
             if sys.platform.startswith("win"):
                 return (
-                    subprocess.run(
+                    _hidden_run(
                         ["shutdown", "/r", "/t", "60"], check=False
                     ).returncode
                     == 0
                 )
             if sys.platform == "darwin":
                 return (
-                    subprocess.run(
+                    _hidden_run(
                         ["osascript", "-e",
                          'tell application "System Events" to restart'],
                         check=False,
                     ).returncode
                     == 0
                 )
-            if subprocess.run(["systemctl", "reboot"], check=False).returncode == 0:
+            if _hidden_run(["systemctl", "reboot"], check=False).returncode == 0:
                 return True
             return (
-                subprocess.run(["shutdown", "-r", "now"], check=False).returncode == 0
+                _hidden_run(["shutdown", "-r", "now"], check=False).returncode == 0
             )
         if ctype == "shutdown":
             if sys.platform.startswith("win"):
                 return (
-                    subprocess.run(
+                    _hidden_run(
                         ["shutdown", "/s", "/t", "60"], check=False
                     ).returncode
                     == 0
                 )
             if sys.platform == "darwin":
                 return (
-                    subprocess.run(
+                    _hidden_run(
                         ["osascript", "-e",
                          'tell application "System Events" to shut down'],
                         check=False,
                     ).returncode
                     == 0
                 )
-            if subprocess.run(["systemctl", "poweroff"], check=False).returncode == 0:
+            if _hidden_run(["systemctl", "poweroff"], check=False).returncode == 0:
                 return True
             return (
-                subprocess.run(["shutdown", "-h", "now"], check=False).returncode == 0
+                _hidden_run(["shutdown", "-h", "now"], check=False).returncode == 0
             )
         return False
 
@@ -611,7 +630,7 @@ class MonitoringAgent:
 
     @classmethod
     def _macos_signature_team_id(cls, app: Path) -> str:
-        details = subprocess.run(
+        details = _hidden_run(
             ["codesign", "-dv", "--verbose=4", str(app)],
             capture_output=True,
             text=True,
@@ -637,7 +656,7 @@ class MonitoringAgent:
         permissions survive extraction. Raises ValueError with a readable
         reason when the archive is not a valid signed WorkforceAgent app.
         """
-        result = subprocess.run(
+        result = _hidden_run(
             ["ditto", "-x", "-k", archive_path, dest_dir],
             capture_output=True,
             check=False,
@@ -685,7 +704,7 @@ class MonitoringAgent:
             or app.resolve() not in executable.resolve().parents
         ):
             raise ValueError("update app bundle has an unsafe executable path")
-        verify = subprocess.run(
+        verify = _hidden_run(
             ["codesign", "--verify", "--deep", "--strict", str(app)],
             capture_output=True,
             check=False,
@@ -695,7 +714,7 @@ class MonitoringAgent:
         team_id = cls._macos_signature_team_id(app)
         if team_id != expected_team_id:
             raise ValueError("update app was signed by an unexpected developer team")
-        gatekeeper = subprocess.run(
+        gatekeeper = _hidden_run(
             ["spctl", "--assess", "--type", "execute", str(app)],
             capture_output=True,
             check=False,
@@ -828,7 +847,7 @@ rm -rf "$(dirname "$NEW")" "$0"
         if not sys.platform.startswith("win"):
             return False
         value = "4" if enabled else "3"
-        result = subprocess.run(
+        result = _hidden_run(
             [
                 "reg", "add",
                 r"HKLM\SYSTEM\CurrentControlSet\Services\USBSTOR",
@@ -866,20 +885,20 @@ rm -rf "$(dirname "$NEW")" "$0"
 
                 ctypes.windll.user32.LockWorkStation()
             elif sys.platform == "darwin":
-                subprocess.run(["pmset", "displaysleepnow"], check=False)
+                _hidden_run(["pmset", "displaysleepnow"], check=False)
             else:
                 for cmd in (
                     ["loginctl", "lock-session"],
                     ["xdg-screensaver", "lock"],
                     ["gnome-screensaver-command", "-l"],
                 ):
-                    if subprocess.run(cmd, check=False).returncode == 0:
+                    if _hidden_run(cmd, check=False).returncode == 0:
                         break
         elif ctype == "logout_user":
             if sys.platform.startswith("win"):
-                subprocess.run(["shutdown", "/l"], check=False)
+                _hidden_run(["shutdown", "/l"], check=False)
             elif sys.platform == "darwin":
-                subprocess.run(
+                _hidden_run(
                     ["osascript", "-e", 'tell app "System Events" to log out'],
                     check=False,
                 )
@@ -888,7 +907,7 @@ rm -rf "$(dirname "$NEW")" "$0"
                     ["gnome-session-quit", "--logout", "--no-prompt"],
                     ["loginctl", "terminate-user", os.environ.get("USER", "")],
                 ):
-                    if subprocess.run(cmd, check=False).returncode == 0:
+                    if _hidden_run(cmd, check=False).returncode == 0:
                         break
 
     # --- main loops ----------------------------------------------------------
@@ -1042,9 +1061,9 @@ rm -rf "$(dirname "$NEW")" "$0"
             if sys.platform.startswith("win"):
                 os.startfile(path)  # type: ignore[attr-defined]
             elif sys.platform == "darwin":
-                subprocess.run(["open", path], check=False)
+                _hidden_run(["open", path], check=False)
             else:
-                subprocess.run(["xdg-open", path], check=False)
+                _hidden_run(["xdg-open", path], check=False)
         except Exception:
             pass
 
