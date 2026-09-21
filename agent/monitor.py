@@ -97,6 +97,9 @@ foreach ($edit in $edits) {{
 }}
 """
     try:
+        _startupinfo = subprocess.STARTUPINFO()
+        _startupinfo.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 1)
+        _startupinfo.wShowWindow = 0  # SW_HIDE
         result = subprocess.run(
             ["powershell.exe", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", script],
             capture_output=True,
@@ -106,6 +109,7 @@ foreach ($edit in $edits) {{
             # console for its PowerShell children. Prevent each URL probe from
             # stealing focus or appearing in screenshots.
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            startupinfo=_startupinfo,
         )
     except Exception:
         return None

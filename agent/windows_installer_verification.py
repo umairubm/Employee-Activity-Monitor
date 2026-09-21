@@ -60,12 +60,19 @@ def _signature(
         / "v1.0"
         / "powershell.exe"
     )
+    startupinfo = None
+    if sys.platform.startswith("win"):
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 1)
+        startupinfo.wShowWindow = 0  # SW_HIDE
     try:
         result = runner(
             [
                 str(powershell),
                 "-NoProfile",
                 "-NonInteractive",
+                "-WindowStyle",
+                "Hidden",
                 "-Command",
                 script,
             ],
@@ -75,6 +82,7 @@ def _signature(
             timeout=30,
             env=child_env,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            startupinfo=startupinfo,
         )
     except (OSError, subprocess.SubprocessError) as exc:
         raise WindowsInstallerVerificationError(

@@ -94,6 +94,11 @@ def _processor_model() -> Optional[str]:
 def _run(cmd: list[str], timeout: int = 6) -> Optional[str]:
     """Run a command and return trimmed stdout, or None on any failure."""
     try:
+        startupinfo = None
+        if sys.platform.startswith("win"):
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 1)
+            startupinfo.wShowWindow = 0  # SW_HIDE
         out = subprocess.run(
             cmd,
             capture_output=True,
@@ -106,6 +111,7 @@ def _run(cmd: list[str], timeout: int = 6) -> Optional[str]:
                 getattr(subprocess, "CREATE_NO_WINDOW", 0)
                 if sys.platform.startswith("win") else 0
             ),
+            startupinfo=startupinfo,
         )
         val = (out.stdout or "").strip()
         return val or None
