@@ -7,7 +7,7 @@
 ; Keep this in lockstep with AGENT_VERSION in agent.py. The Windows workflow
 ; builds the executable before invoking ISCC, but does not currently pass a
 ; version macro to ISCC, so this is intentionally the current source version.
-#define AppVersion "1.2.35"
+#define AppVersion "1.2.36"
 #define AppPublisher "Workforce Analytics"
 ; AppId used by the Pascal code to find the previous version's uninstaller.
 ; MUST match the literal AppId in [Setup] below (kept literal there because the
@@ -21,7 +21,7 @@ AppId={{8E1F4C2A-7B3D-4E9A-9F1C-2A6D5B0E3C71}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
-DefaultDirName={autopf}\WorkforceAgent
+DefaultDirName={localappdata}\Programs\{#AppName}
 DefaultGroupName=Workforce Analytics
 DisableProgramGroupPage=yes
 OutputDir=..\dist
