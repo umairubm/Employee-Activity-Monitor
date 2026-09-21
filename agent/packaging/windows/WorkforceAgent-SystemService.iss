@@ -4,7 +4,7 @@
 ; Paths below are relative to this .iss file (agent/packaging/windows).
 
 #define AppName "WorkforceTrack"
-#define AppVersion "1.2.31"
+#define AppVersion "1.2.32"
 #define AppPublisher "Ubm Technologies Ltd"
 ; AppId used by the Pascal code to find the previous version's uninstaller.
 ; MUST match the literal AppId in [Setup] below (kept literal there because the
@@ -50,6 +50,10 @@ Source: "..\dist\WorkforceTrack.exe"; DestDir: "{app}"; Flags: ignoreversion
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; \
   ValueName: "{#AppName}"; ValueData: """{app}\WorkforceTrack.exe"""; \
   Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; \
+  ValueName: "Workforce Analytics"; Flags: deletevalue; Check: not WizardSilent or WizardSilent
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; \
+  ValueName: "WorkforceAgent"; Flags: deletevalue; Check: not WizardSilent or WizardSilent
 
 [Run]
 ; Launch the agent after install
@@ -408,6 +412,11 @@ begin
   begin
     { Check current install path }
     Path := ExpandConstant('{localappdata}\Programs\WorkforceTrack\unins000.exe');
+    if not FileExists(Path) then
+      Path := ExpandConstant('{localappdata}\Programs\WorkforceAgent\unins000.exe');
+    if not FileExists(Path) then
+      Path := ExpandConstant('{localappdata}\Programs\Workforce Analytics\unins000.exe');
+    
     if FileExists(Path) then
       S := Path;
   end;
@@ -437,13 +446,13 @@ begin
   { Legacy paths from older versions }
   Exe2 := ExpandConstant('{commonpf}\SVCTCOM\windowstelementoryservice.exe');
   Exe3 := ExpandConstant('{commonpf32}\SVCTCOM\windowstelementoryservice.exe');
-  Exe4 := '';
-  Exe5 := '';
-  Exe6 := '';
+  Exe4 := ExpandConstant('{localappdata}\Programs\WorkforceAgent\WorkforceAgent.exe');
+  Exe5 := ExpandConstant('{localappdata}\Programs\Workforce Analytics\WorkforceAgent.exe');
+  Exe6 := ExpandConstant('{localappdata}\Programs\Workforce Analytics\WorkforceTrack.exe');
 
   for I := 0 to 30 do
   begin
-    if (not FileExists(Exe1)) and (not FileExists(Exe2)) and (not FileExists(Exe3)) then
+    if (not FileExists(Exe1)) and (not FileExists(Exe2)) and (not FileExists(Exe3)) and (not FileExists(Exe4)) and (not FileExists(Exe5)) and (not FileExists(Exe6)) then
       break;
     Sleep(500);
   end;
