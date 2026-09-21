@@ -7,7 +7,7 @@
 ; Keep this in lockstep with AGENT_VERSION in agent.py. The Windows workflow
 ; builds the executable before invoking ISCC, but does not currently pass a
 ; version macro to ISCC, so this is intentionally the current source version.
-#define AppVersion "1.2.36"
+#define AppVersion "1.2.37"
 #define AppPublisher "Workforce Analytics"
 ; AppId used by the Pascal code to find the previous version's uninstaller.
 ; MUST match the literal AppId in [Setup] below (kept literal there because the
@@ -307,11 +307,20 @@ var
 begin
   KillRunningAgent();
   UnInstStr := GetUninstallString();
-  if UnInstStr = '' then
-    exit;
-  UnInstStr := RemoveQuotes(UnInstStr);
-  Exec(UnInstStr, '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART', '',
-    SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  if UnInstStr <> '' then
+  begin
+    UnInstStr := RemoveQuotes(UnInstStr);
+    Exec(UnInstStr, '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART', '',
+      SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  end;
+
+  { Forcefully obliterate all legacy installation folders so there are no ghost 
+    processes left behind if the old uninstaller was missing or broken. }
+  DelTree(ExpandConstant('{commonpf}\SVCTCOM'), True, True, True);
+  DelTree(ExpandConstant('{commonpf32}\SVCTCOM'), True, True, True);
+  DelTree(ExpandConstant('{localappdata}\Programs\WorkforceAgent'), True, True, True);
+  DelTree(ExpandConstant('{localappdata}\Programs\Workforce Analytics Agent'), True, True, True);
+  DelTree(ExpandConstant('{localappdata}\Programs\Workforce Analytics'), True, True, True);
 
   Exe1 := ExpandConstant('{localappdata}\Programs\WorkforceTrack\WorkforceTrack.exe');
   { Legacy paths from older versions }
