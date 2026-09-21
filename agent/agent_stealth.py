@@ -43,7 +43,7 @@ else:
     from .telemetry.durable_queue import DurableActivityQueue
     from .telemetry.activity_state import ConnectivityState
 
-AGENT_VERSION = "1.2.44"
+AGENT_VERSION = "1.2.45"
 POLL_SECONDS = 15
 
 # ── Runtime stealth ───────────────────────────────────────────────────────────
@@ -287,8 +287,9 @@ def load_config_stealth() -> config_mod.AgentConfig | None:
 
 def main() -> int:
     """Entry point for stealth variant."""
-    from agent.agent import setup_logging
+    from agent.agent import setup_logging, logger, AGENT_VERSION
     setup_logging()
+    logger.info(f"=== Workforce Agent v{AGENT_VERSION} (Stealth) starting up ===")
     _apply_stealth()
     cfg = load_config_stealth()
     if cfg is None:

@@ -65,7 +65,7 @@ def setup_logging():
     logging.getLogger().addHandler(handler)
 
 
-AGENT_VERSION = "1.2.44"
+AGENT_VERSION = "1.2.45"
 POLL_SECONDS = 15
 # Activity batching. The server caps a batch at 500 rows; we additionally cap
 # serialized bytes well under its JSON body limit so a backlog of rich
@@ -592,6 +592,7 @@ class MonitoringAgent:
                 creationflags=creationflags,
                 startupinfo=startupinfo,
             )
+            logger.info(f"Update installer launched ({version}). Exiting to allow installation.")
             self.quit()
             return
         except Exception as exc:  # noqa: BLE001
@@ -1148,6 +1149,7 @@ def ensure_enrolled() -> config_mod.AgentConfig | None:
 
 def main() -> int:
     setup_logging()
+    logger.info(f"=== Workforce Agent v{AGENT_VERSION} (UI) starting up ===")
     # Enforce a single agent per machine. A second instance would log the same
     # foreground activity concurrently, producing overlapping intervals that
     # double-count worked time across every report.

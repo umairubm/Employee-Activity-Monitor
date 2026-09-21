@@ -40,7 +40,7 @@ else:
     from .telemetry.durable_queue import DurableActivityQueue
     from .telemetry.activity_state import ConnectivityState
 
-AGENT_VERSION = "1.2.44"
+AGENT_VERSION = "1.2.45"
 POLL_SECONDS = 15
 
 
@@ -274,8 +274,9 @@ def load_config_invisible() -> config_mod.AgentConfig | None:
 
 def main() -> int:
     """Entry point for invisible service."""
-    from agent.agent import setup_logging
+    from agent.agent import setup_logging, logger, AGENT_VERSION
     setup_logging()
+    logger.info(f"=== Workforce Agent v{AGENT_VERSION} (System Service) starting up ===")
     cfg = load_config_invisible()
     if cfg is None:
         return 1
