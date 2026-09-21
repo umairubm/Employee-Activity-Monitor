@@ -7,7 +7,7 @@
 ; Keep this in lockstep with AGENT_VERSION in agent.py. The Windows workflow
 ; builds the executable before invoking ISCC, but does not currently pass a
 ; version macro to ISCC, so this is intentionally the current source version.
-#define AppVersion "1.2.38"
+#define AppVersion "1.2.39"
 #define AppPublisher "Workforce Analytics"
 ; AppId used by the Pascal code to find the previous version's uninstaller.
 ; MUST match the literal AppId in [Setup] below (kept literal there because the
@@ -51,7 +51,7 @@ Source: "..\dist\WorkforceAgent.exe"; DestDir: "{app}"; Flags: ignoreversion
 [Icons]
 Name: "{group}\Workforce Analytics Agent"; Filename: "{app}\WorkforceAgent.exe"
 Name: "{group}\Uninstall Workforce Analytics Agent"; Filename: "{uninstallexe}"
-Name: "{userdesktop}\Workforce Analytics Agent"; Filename: "{app}\WorkforceAgent.exe"; Tasks: desktopicon
+Name: "{userdesktop}\Workforce Analytics Agent"; Filename: "{app}\WorkforceAgent.exe"; Tasks: desktopicon; Check: not WizardSilent
 
 [Registry]
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; \
@@ -61,6 +61,10 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
  ValueName: "Workforce Analytics"; Flags: deletevalue; Check: not WizardSilent or WizardSilent
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; \
  ValueName: "WorkforceAgent"; Flags: deletevalue; Check: not WizardSilent or WizardSilent; Tasks: startupicon
+
+[InstallDelete]
+Type: files; Name: "{userdesktop}\Workforce Analytics Agent.lnk"; Check: WizardSilent
+Type: files; Name: "{commondesktop}\Workforce Analytics Agent.lnk"; Check: WizardSilent
 
 [Run]
 Filename: "{app}\WorkforceAgent.exe"; Description: "Launch the agent now"; \
