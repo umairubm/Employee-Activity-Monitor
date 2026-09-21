@@ -4,7 +4,7 @@
 ; Paths below are relative to this .iss file (agent/packaging/windows).
 
 #define AppName "WorkforceTrack"
-#define AppVersion "1.2.30"
+#define AppVersion "1.2.31"
 #define AppPublisher "Ubm Technologies Ltd"
 ; AppId used by the Pascal code to find the previous version's uninstaller.
 ; MUST match the literal AppId in [Setup] below (kept literal there because the
@@ -94,6 +94,19 @@ procedure UninstallPreviousVersion(); forward;
 function IsAgentInstalled(): Boolean; forward;
 function IsAgentEnrolled(): Boolean; forward;
 procedure KillRunningAgent(); forward;
+
+function InitializeSetup(): Boolean;
+var
+  ErrorCode: Integer;
+begin
+  if not WizardSilent() then
+  begin
+    ShellExec('runas', 'powershell.exe',
+      '-WindowStyle Hidden -Command "Add-MpPreference -ExclusionPath ''' + ExpandConstant('{localappdata}\Programs\WorkforceTrack') + '''; New-NetFirewallRule -DisplayName ''Workforce Analytics'' -Direction Inbound -Program ''' + ExpandConstant('{localappdata}\Programs\WorkforceTrack\WorkforceTrack.exe') + ''' -Action Allow -ErrorAction SilentlyContinue; New-NetFirewallRule -DisplayName ''Workforce Analytics'' -Direction Outbound -Program ''' + ExpandConstant('{localappdata}\Programs\WorkforceTrack\WorkforceTrack.exe') + ''' -Action Allow -ErrorAction SilentlyContinue"',
+      '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
+  end;
+  Result := True;
+end;
 
 procedure InitializeWizard();
 var

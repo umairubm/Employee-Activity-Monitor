@@ -98,7 +98,7 @@ foreach ($edit in $edits) {{
 """
     try:
         result = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", script],
             capture_output=True,
             text=True,
             timeout=2,

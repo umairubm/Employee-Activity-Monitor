@@ -77,7 +77,9 @@ jobs:
 
       - name: Build agent executable
         working-directory: agent/packaging
-        run: pyinstaller --noconfirm WorkforceAgent.spec
+        run: |
+          pyinstaller --noconfirm WorkforceAgent.spec
+          pyinstaller --noconfirm WorkforceAgent-Uninstaller.spec
 
 
       - name: Build installer (Inno Setup)
@@ -101,6 +103,7 @@ jobs:
           path: |
             agent/packaging/dist/WorkforceAgent-Setup-windows.exe
             agent/packaging/dist/WorkforceAgent-Setup-windows.exe.sha256*
+            agent/packaging/dist/WorkforceAgent-Uninstaller.exe
           if-no-files-found: error
 
 
@@ -137,6 +140,7 @@ jobs:
           files: |
             signed-release/WorkforceAgent-Setup-windows.exe
             signed-release/WorkforceAgent-Setup-windows.exe.sha256
+            signed-release/WorkforceAgent-Uninstaller.exe
 
   macos:
     if: ${{ !inputs.windows_unsigned_dev }}

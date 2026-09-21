@@ -116,7 +116,7 @@ def _run(cmd: list[str], timeout: int = 6) -> Optional[str]:
 def _ps(command: str, timeout: int = 6) -> Optional[str]:
     """Run a PowerShell command (Windows) and return trimmed stdout."""
     return _run(
-        ["powershell", "-NoProfile", "-NonInteractive", "-Command", command],
+        ["powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", command],
         timeout=timeout,
     )
 
