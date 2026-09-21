@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import getpass
 import json
+import logging
+import logging.handlers
 import os
 import plistlib
 import random
@@ -45,8 +47,25 @@ else:
     from .windows_installer_verification import verify_windows_installer
     from .telemetry.durable_queue import DurableActivityQueue
     from .telemetry.interval_journal import IntervalJournal
+logger = logging.getLogger("agent")
 
-AGENT_VERSION = "1.2.39"
+def setup_logging():
+    log_dir = config_mod.config_path().parent
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir / "agent.log"
+    
+    handler = logging.handlers.RotatingFileHandler(
+        log_file, maxBytes=5 * 1024 * 1024, backupCount=1, encoding="utf-8"
+    )
+    formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+    handler.setFormatter(formatter)
+    
+    # Configure root logger and agent logger
+    logging.getLogger().setLevel(logging.INFO)
+    logging.getLogger().addHandler(handler)
+
+
+AGENT_VERSION = "1.2.40"
 POLL_SECONDS = 15
 # Activity batching. The server caps a batch at 500 rows; we additionally cap
 # serialized bytes well under its JSON body limit so a backlog of rich
@@ -179,8 +198,9 @@ class MonitoringAgent:
         try:
             img = screenshot_mod.capture_webp_bytes()
             self.api.upload_screenshot(img, _now_iso(), content_type="image/webp")
+            logger.debug("Screenshot captured and uploaded")
         except Exception as exc:  # noqa: BLE001 — best-effort, never crash agent
-            print(f"[agent] screenshot failed: {exc}", file=sys.stderr)
+            logger.error(f"screenshot failed: {exc}")
 
     # --- commands ------------------------------------------------------------
 
@@ -189,8 +209,9 @@ class MonitoringAgent:
         cid = command.get("id")
         # Validate the delivered command before acting on it.
         if not isinstance(cid, str) or not cid or not isinstance(ctype, str) or not ctype:
-            print("[agent] ignoring malformed command delivery", file=sys.stderr)
+            logger.warning("ignoring malformed command delivery")
             return
+        logger.info(f"Received command: {ctype} ({cid})")
         # Redelivery guard: never execute the same command twice in one
         # session, even if the server re-sends it after a lost ack.
         if cid in self._handled_command_ids:
@@ -208,7 +229,7 @@ class MonitoringAgent:
                 )
             except Exception as exc:  # noqa: BLE001
                 self._handled_command_ids.discard(cid)
-                print(f"[agent] could not re-ack command result: {exc}", file=sys.stderr)
+                logger.error(f"could not re-ack command result: {exc}")
             return
 
         reason = command.get("reason") or "Authorized IT action"
@@ -223,7 +244,7 @@ class MonitoringAgent:
             self.api.ack_command(cid, "acknowledged")
         except Exception as exc:  # noqa: BLE001
             self._handled_command_ids.discard(cid)
-            print(f"[agent] could not acknowledge command {ctype}: {exc}", file=sys.stderr)
+            logger.error(f"could not acknowledge command {ctype}: {exc}")
             return
 
         try:
@@ -284,7 +305,7 @@ class MonitoringAgent:
                 if ctype == "reset_password"
                 else str(exc)[:200]
             )
-            print(f"[agent] command {ctype} failed: {detail}", file=sys.stderr)
+            logger.error(f"command {ctype} failed: {detail}")
             try:
                 self._finish_command(cid, "failed", detail)
             except Exception:
@@ -314,7 +335,7 @@ class MonitoringAgent:
             with open(path, "w", encoding="utf-8") as fh:
                 json.dump(self._command_results, fh)
         except Exception as exc:  # noqa: BLE001 — never block the ack on disk IO
-            print(f"[agent] could not persist command result: {exc}", file=sys.stderr)
+            logger.error(f"could not persist command result: {exc}")
 
     def _finish_command(self, cid: str, status: str, message=None) -> None:
         """Journal the terminal result to disk FIRST, then ack it.
@@ -329,7 +350,7 @@ class MonitoringAgent:
         try:
             self.api.ack_command(cid, status, message)
         except Exception as exc:  # noqa: BLE001
-            print(f"[agent] could not report command result: {exc}", file=sys.stderr)
+            logger.error(f"could not report command result: {exc}")
 
     @staticmethod
     def _parse_payload(raw: object) -> dict:
@@ -836,7 +857,7 @@ rm -rf "$(dirname "$NEW")" "$0"
         try:
             self._execute_os_command("lock_screen")
         except Exception as exc:  # noqa: BLE001 — never crash the poll loop
-            print(f"[agent] re-lock failed: {exc}", file=sys.stderr)
+            logger.error(f"re-lock failed: {exc}")
 
     def _execute_os_command(self, ctype: str) -> None:
         if ctype == "lock_screen":
@@ -884,7 +905,7 @@ rm -rf "$(dirname "$NEW")" "$0"
                     last_sync = time.time()
                     self._sync()
             except Exception as exc:  # noqa: BLE001
-                print(f"[agent] worker error: {exc}", file=sys.stderr)
+                logger.error(f"worker error: {exc}")
             self._stop.wait(POLL_SECONDS)
         # Final flush on shutdown.
         self._flush_segment()
@@ -955,15 +976,16 @@ rm -rf "$(dirname "$NEW")" "$0"
                         file=sys.stderr,
                     )
                 else:
-                    print(f"[agent] activity sync failed: {exc}", file=sys.stderr)
+                    logger.error(f"activity sync failed: {exc}")
                 return
             except Exception as exc:  # noqa: BLE001
                 # Rows remain in SQLite until the server explicitly
                 # acknowledges their stable segment IDs.
-                print(f"[agent] activity sync failed: {exc}", file=sys.stderr)
+                logger.error(f"activity sync failed: {exc}")
                 return
 
     def _sync(self) -> None:
+        logger.debug("Starting sync cycle")
         # Close the current state interval and send the oldest durable batch.
         self._flush_segment()
         self._drain_activity_queue()
@@ -1000,7 +1022,7 @@ rm -rf "$(dirname "$NEW")" "$0"
                 try:
                     self._cancel_power_command(ctype)
                 except Exception as exc:  # noqa: BLE001
-                    print(f"[agent] power cancellation failed: {exc}", file=sys.stderr)
+                    logger.error(f"power cancellation failed: {exc}")
 
     # --- callbacks -----------------------------------------------------------
 
@@ -1093,22 +1115,20 @@ def ensure_enrolled() -> config_mod.AgentConfig | None:
         if consent_ok and token and name:
             try:
                 cfg = _perform_enrollment(cfg, server_url, token, name)
-                print("[agent] enrolled successfully from installer details.")
+                logger.info("enrolled successfully from installer details.")
                 return cfg
             except Exception as exc:  # noqa: BLE001
-                print(
-                    f"[agent] silent enrollment failed ({exc}).",
-                    file=sys.stderr,
-                )
+                logger.error(f"silent enrollment failed ({exc}).")
 
-    print("[agent] no valid silent enrollment details; exiting without monitoring.")
+    logger.info("no valid silent enrollment details; exiting without monitoring.")
     return None
     config_mod.clear_enroll_seed()
-    print("[agent] enrolled successfully.")
+    logger.info("enrolled successfully.")
     return cfg
 
 
 def main() -> int:
+    setup_logging()
     # Enforce a single agent per machine. A second instance would log the same
     # foreground activity concurrently, producing overlapping intervals that
     # double-count worked time across every report.
