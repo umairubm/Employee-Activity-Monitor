@@ -69,54 +69,48 @@ def _active_window_windows() -> Tuple[str, str, Optional[str]]:
 
 
 def _browser_url_windows(hwnd: int, process: str) -> Optional[str]:
-    """Read a browser's accessible address-bar value when Windows exposes it."""
+    """Read a browser's accessible address-bar value using UIAutomation COM (no subprocess)."""
     browser_names = {"chrome", "msedge", "firefox", "brave", "opera", "vivaldi"}
     process_name = process.lower().removesuffix(".exe")
     if process_name not in browser_names:
         return None
-
-    script = f"""
-$ErrorActionPreference = 'Stop'
-Add-Type -AssemblyName UIAutomationClient
-Add-Type -AssemblyName UIAutomationTypes
-$root = [System.Windows.Automation.AutomationElement]::FromHandle([IntPtr]::new({int(hwnd)}))
-$condition = New-Object System.Windows.Automation.PropertyCondition(
-  [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
-  [System.Windows.Automation.ControlType]::Edit
-)
-$edits = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition)
-foreach ($edit in $edits) {{
-  try {{
-    $pattern = $edit.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
-    $value = [string]$pattern.Current.Value
-    if ($value -match '^https?://') {{
-      Write-Output $value
-      break
-    }}
-  }} catch {{ }}
-}}
-"""
     try:
-        _startupinfo = subprocess.STARTUPINFO()
-        _startupinfo.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 1)
-        _startupinfo.wShowWindow = 0  # SW_HIDE
-        result = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", script],
-            capture_output=True,
-            text=True,
-            timeout=2,
-            # A windowed PyInstaller parent does not automatically suppress a
-            # console for its PowerShell children. Prevent each URL probe from
-            # stealing focus or appearing in screenshots.
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            startupinfo=_startupinfo,
-        )
+        return _uia_url_from_hwnd(hwnd)
     except Exception:
         return None
-    for line in result.stdout.splitlines():
-        value = _normalise_browser_url(line)
-        if value is not None:
-            return value
+
+
+def _uia_url_from_hwnd(hwnd: int) -> Optional[str]:
+    """Use the `uiautomation` library (already a dep) to read the address-bar value.
+
+    Runs entirely in-process — no subprocess, no console flash.
+    """
+    try:
+        import uiautomation as auto  # type: ignore
+        ctrl = auto.ControlFromHandle(hwnd)
+        if ctrl is None:
+            return None
+        # Walk all Edit descendants and return the first one that looks like a URL.
+        for edit in ctrl.GetChildren():
+            try:
+                if edit.ControlType == auto.ControlType.EditControl:
+                    val = edit.GetValuePattern().Value
+                    result = _normalise_browser_url(val)
+                    if result:
+                        return result
+            except Exception:
+                continue
+        # Broader search if shallow walk didn't find it
+        for edit in ctrl.GetDescendants(auto.ControlType.EditControl):
+            try:
+                val = edit.GetValuePattern().Value
+                result = _normalise_browser_url(val)
+                if result:
+                    return result
+            except Exception:
+                continue
+    except Exception:
+        pass
     return None
 
 
