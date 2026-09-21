@@ -4,7 +4,7 @@
 ; Paths below are relative to this .iss file (agent/packaging/windows).
 
 #define AppName "WorkforceTrack"
-#define AppVersion "1.2.34"
+#define AppVersion "1.2.35"
 #define AppPublisher "Ubm Technologies Ltd"
 ; AppId used by the Pascal code to find the previous version's uninstaller.
 ; MUST match the literal AppId in [Setup] below (kept literal there because the
@@ -475,8 +475,7 @@ begin
   CleanupOldExes();
 
   KillRunningAgent();
-  if not WizardSilent() then
-    UninstallPreviousVersion();
+  UninstallPreviousVersion();
 
   { Re-kill on every pass (autostart or the uninstaller may relaunch it) and try
     to delete the old executable ourselves until its file lock is released. }

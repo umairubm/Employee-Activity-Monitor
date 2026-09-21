@@ -7,7 +7,7 @@
 ; Keep this in lockstep with AGENT_VERSION in agent.py. The Windows workflow
 ; builds the executable before invoking ISCC, but does not currently pass a
 ; version macro to ISCC, so this is intentionally the current source version.
-#define AppVersion "1.2.34"
+#define AppVersion "1.2.35"
 #define AppPublisher "Workforce Analytics"
 ; AppId used by the Pascal code to find the previous version's uninstaller.
 ; MUST match the literal AppId in [Setup] below (kept literal there because the
@@ -290,13 +290,6 @@ begin
   Result := S;
 end;
 
-function IsAgentEnrolled(): Boolean;
-begin
-  { The transparent agent's durable settings and enrollment identity live here.
-    Keep this path stable across installer upgrades. }
-  Result := FileExists(ExpandConstant('{userappdata}\WorkforceAgent\config.json'));
-end;
-
 { Run the previous version's uninstaller silently and wait for it to finish.
   The Inno uninstaller relaunches itself from %TEMP% and returns early, so we
   poll until the old executable is actually gone. The agent's data in
@@ -307,6 +300,7 @@ var
   UnInstStr, Exe1, Exe2, Exe3, Exe4, Exe5, Exe6: String;
   ResultCode, I: Integer;
 begin
+  KillRunningAgent();
   UnInstStr := GetUninstallString();
   if UnInstStr = '' then
     exit;
@@ -348,24 +342,28 @@ begin
   if WizardSilent() and (not IsAgentEnrolled()) then
   begin
     Result :=
-      'Silent installation is only supported for an already enrolled device.' + #13#10 + #13#10 +
-      'Run this installer without /SILENT or /VERYSILENT ' +
-      'to review the ' +
-      'monitoring disclosure, enter an enrollment token, and give consent.';
+      'Silent installation aborted. The /VERYSILENT flag is reserved for updating ' +
+      'already enrolled devices. To enroll a new device, run the installer interactively.';
     exit;
   end;
 
-  ExePath := ExpandConstant('{app}\WorkforceAgent.exe');
+  ExePath := ExpandConstant('{app}\WorkforceTrack.exe');
+  OldExe := ExpandConstant('{app}\WorkforceAgent.exe');
+
+  if FileExists(OldExe) and (not FileExists(ExePath)) then
+  begin
+    KillRunningAgent();
+    RenameFile(OldExe, ExePath);
+  end;
+
+  KillRunningAgent();
+  { Run old uninstaller unconditionally to remove legacy directories, Windows Services,
+    and legacy Run keys. If we skip this during silent updates, the old agent keeps running
+    and flip-flops with the new agent. }
+  UninstallPreviousVersion();
 
   { Sweep away any leftovers from a previous rename-aside upgrade. }
   CleanupOldExes();
-
-  KillRunningAgent();
-  { Never execute an old uninstaller during a silent update. Older uninstallers
-    may require elevation, remove settings, or relaunch the old agent. The
-    silent path replaces the image in place and starts it once below. }
-  if not WizardSilent() then
-    UninstallPreviousVersion();
 
   { Re-kill on every pass (autostart or the uninstaller may relaunch it) and try
     to delete the old executable ourselves until its file lock is released. }
