@@ -86,11 +86,6 @@ class AgentStartupSmokeTests(unittest.TestCase):
                 "config_dir",
                 return_value=Path(temp_dir),
             ),
-            mock.patch.object(
-                entry_point.InvisibleMonitoringAgent,
-                "_get_log_file",
-                return_value=str(Path(temp_dir) / "service.log"),
-            ),
             mock.patch.object(entry_point.InvisibleMonitoringAgent, "run") as run,
         ):
             self.assertEqual(entry_point.main(), 0)
