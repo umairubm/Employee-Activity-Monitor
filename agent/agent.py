@@ -65,7 +65,7 @@ def setup_logging():
     logging.getLogger().addHandler(handler)
 
 
-AGENT_VERSION = "1.2.41"
+AGENT_VERSION = "1.2.42"
 POLL_SECONDS = 15
 # Activity batching. The server caps a batch at 500 rows; we additionally cap
 # serialized bytes well under its JSON body limit so a backlog of rich
@@ -78,7 +78,7 @@ ACTIVITY_BATCHES_PER_SYNC = 5
 
 def _win_hidden_kwargs() -> dict:
     """Return subprocess keyword args that suppress any console window on Windows."""
-    if not sys.platform.startswith("win"):
+    if not sys.platform.startswith("win") or not hasattr(subprocess, "STARTUPINFO"):
         return {}
     si = subprocess.STARTUPINFO()
     si.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 1)
