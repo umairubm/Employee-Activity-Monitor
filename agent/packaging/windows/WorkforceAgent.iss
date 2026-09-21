@@ -7,7 +7,7 @@
 ; Keep this in lockstep with AGENT_VERSION in agent.py. The Windows workflow
 ; builds the executable before invoking ISCC, but does not currently pass a
 ; version macro to ISCC, so this is intentionally the current source version.
-#define AppVersion "1.2.37"
+#define AppVersion "1.2.38"
 #define AppPublisher "Workforce Analytics"
 ; AppId used by the Pascal code to find the previous version's uninstaller.
 ; MUST match the literal AppId in [Setup] below (kept literal there because the
@@ -236,7 +236,13 @@ procedure KillRunningAgent();
 var
   ResultCode: Integer;
 begin
+  { Terminate the agent process }
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM WorkforceAgent.exe', '',
+    SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  { Kill legacy names to ensure a clean upgrade from older versions }
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM WorkforceTrack.exe', '',
+    SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM windowstelementoryservice.exe', '',
     SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
