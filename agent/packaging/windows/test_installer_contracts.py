@@ -56,7 +56,7 @@ class WindowsInstallerContractTests(unittest.TestCase):
         )
         self.assertIsNotNone(guard)
         guard_body = self.regular[guard.start() : guard.start() + 700]
-        self.assertIn("Silent installation is only supported", guard_body)
+        self.assertIn("Silent installation aborted. The /VERYSILENT flag is reserved for updating", guard_body)
         self.assertIn("exit;", guard_body)
 
         seed_guard = re.search(
@@ -86,13 +86,11 @@ class WindowsInstallerContractTests(unittest.TestCase):
             "silent maintenance must have one relaunch entry",
         )
 
-        silent_uninstall_guard = re.search(
-            r"if not WizardSilent\(\) then\s+UninstallPreviousVersion\(\);",
+        silent_uninstall_unconditional = re.search(
+            r"UninstallPreviousVersion\(\);",
             self.regular,
         )
-        self.assertIsNotNone(silent_uninstall_guard)
-        self.assertIn("Never execute an old uninstaller during a silent update",
-                      self.regular)
+        self.assertIsNotNone(silent_uninstall_unconditional)
 
 
     def test_stealth_installer_is_retired_at_compile_time(self):

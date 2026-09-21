@@ -277,6 +277,11 @@ begin
   end;
 end;
 
+function IsAgentEnrolled(): Boolean;
+begin
+  Result := FileExists(ExpandConstant('{userappdata}\WorkforceAgent\config.json'));
+end;
+
 { Look up the previous version's uninstaller from the registry (per-user first,
   then machine-wide). Returns '' when no prior install is registered. }
 function GetUninstallString(): String;
