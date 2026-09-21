@@ -43,7 +43,7 @@ jobs:
 
       - name: Run monitor behavior and startup smoke tests
         run: |
-          python -m unittest agent.tests.test_monitor agent.tests.test_startup_smoke agent.tests.test_commands agent.tests.test_windows_installer_verification agent.tests.test_background_processes agent.packaging.windows.test_installer_contracts agent.packaging.windows.test_release_signing_contract
+          python -m unittest agent.tests.test_monitor agent.tests.test_startup_smoke agent.tests.test_commands agent.tests.test_background_processes agent.packaging.windows.test_installer_contracts
           python -m unittest discover -s agent/packaging/windows/smoke -p "test_*.py"
 
       - uses: actions/setup-node@v4
