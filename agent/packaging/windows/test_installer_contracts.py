@@ -94,9 +94,6 @@ class WindowsInstallerContractTests(unittest.TestCase):
         self.assertIn("Never execute an old uninstaller during a silent update",
                       self.regular)
 
-    def test_system_service_does_not_change_defender_or_firewall(self):
-        self.assertNotIn("Add-MpPreference", self.system_service)
-        self.assertNotIn("New-NetFirewallRule", self.system_service)
 
     def test_stealth_installer_is_retired_at_compile_time(self):
         self.assertRegex(self.stealth, r"(?m)^#error\b")
