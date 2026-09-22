@@ -215,22 +215,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
       - name: Install dependencies
         run: |
-          sudo apt-get update && sudo apt-get install -y python3-tk
-          python -m pip install --upgrade pip
-          pip install -r agent/requirements.txt pyinstaller
+          sudo apt-get update && sudo apt-get install -y python3-tk python3-venv
+          python3 -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/pip install -r agent/requirements.txt pyinstaller
 
       - name: Generate icons
-        run: python agent/packaging/make_icons.py
+        run: .venv/bin/python agent/packaging/make_icons.py
 
       - name: Build agent executable
         working-directory: agent/packaging
-        run: pyinstaller --noconfirm WorkforceAgent.spec
+        run: ../.venv/bin/pyinstaller --noconfirm WorkforceAgent.spec
 
       - name: Package tarball
         working-directory: agent/packaging
