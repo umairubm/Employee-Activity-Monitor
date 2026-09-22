@@ -240,36 +240,142 @@ def _idle_macos() -> int:
 
 
 def _active_window_linux() -> Tuple[str, str, Optional[str]]:
-    title = subprocess.run(
-        ["xdotool", "getactivewindow", "getwindowname"],
-        capture_output=True,
-        text=True,
-        timeout=5,
-    ).stdout.strip()
-    pid_out = subprocess.run(
-        ["xdotool", "getactivewindow", "getwindowpid"],
-        capture_output=True,
-        text=True,
-        timeout=5,
-    ).stdout.strip()
-    process = "unknown"
-    if pid_out.isdigit():
-        try:
-            import psutil
+    """Detect active window on Linux — supports both X11 and Wayland."""
+    # Try X11 path first (xdotool) — works on X11 and XWayland sessions.
+    title, process = _active_window_linux_x11()
+    if process and process != "unknown":
+        return (process, title, None)
 
-            process = psutil.Process(int(pid_out)).name()
-        except Exception:
-            pass
-    return (process, title, None)
+    # Wayland fallback 1: GNOME Shell D-Bus via gdbus.
+    title2, process2 = _active_window_linux_gdbus()
+    if process2 and process2 != "unknown":
+        return (process2, title2, None)
+
+    # Wayland fallback 2: xprop on _NET_ACTIVE_WINDOW (works on XWayland).
+    title3, process3 = _active_window_linux_xprop()
+    if process3 and process3 != "unknown":
+        return (process3, title3, None)
+
+    return (process or "unknown", title or "", None)
+
+
+def _active_window_linux_x11() -> Tuple[str, str]:
+    """X11 path via xdotool."""
+    try:
+        title = subprocess.run(
+            ["xdotool", "getactivewindow", "getwindowname"],
+            capture_output=True, text=True, timeout=3,
+        ).stdout.strip()
+        pid_out = subprocess.run(
+            ["xdotool", "getactivewindow", "getwindowpid"],
+            capture_output=True, text=True, timeout=3,
+        ).stdout.strip()
+        process = "unknown"
+        if pid_out.isdigit():
+            try:
+                import psutil
+                process = psutil.Process(int(pid_out)).name()
+            except Exception:
+                pass
+        return (title, process)
+    except Exception:
+        return ("", "unknown")
+
+
+def _active_window_linux_gdbus() -> Tuple[str, str]:
+    """GNOME Shell D-Bus API — works natively on Wayland GNOME desktops."""
+    try:
+        result = subprocess.run(
+            [
+                "gdbus", "call", "--session",
+                "--dest", "org.gnome.Shell",
+                "--object-path", "/org/gnome/Shell",
+                "--method", "org.gnome.Shell.Eval",
+                "global.display.focus_window ? "
+                "[global.display.focus_window.get_title(), "
+                "global.display.focus_window.get_wm_class()] : ['','']",
+            ],
+            capture_output=True, text=True, timeout=3,
+        )
+        if result.returncode == 0 and "true" in result.stdout:
+            import ast
+            # gdbus returns: (true, "['Title', 'WmClass']")
+            raw = result.stdout.strip()
+            inner = raw.split(",", 1)[-1].strip().rstrip(")")
+            inner = inner.strip().strip("'\"")
+            parts = ast.literal_eval(inner)
+            if isinstance(parts, list) and len(parts) >= 2:
+                title = str(parts[0])
+                wm_class = str(parts[1])
+                process = wm_class.split(".")[0] if wm_class else "unknown"
+                if process:
+                    return (title, process)
+    except Exception:
+        pass
+    return ("", "unknown")
+
+
+def _active_window_linux_xprop() -> Tuple[str, str]:
+    """xprop fallback — reads _NET_ACTIVE_WINDOW and _NET_WM_PID from X server."""
+    try:
+        id_result = subprocess.run(
+            ["xprop", "-root", "_NET_ACTIVE_WINDOW"],
+            capture_output=True, text=True, timeout=3,
+        )
+        if id_result.returncode != 0:
+            return ("", "unknown")
+        parts = id_result.stdout.strip().split()
+        win_id = parts[-1] if parts else ""
+        if not win_id or win_id in ("0x0", "0x00"):
+            return ("", "unknown")
+        info = subprocess.run(
+            ["xprop", "-id", win_id, "WM_NAME", "_NET_WM_PID"],
+            capture_output=True, text=True, timeout=3,
+        ).stdout
+        title, pid_str = "", ""
+        for line in info.splitlines():
+            if "WM_NAME" in line and "=" in line:
+                title = line.split("=", 1)[-1].strip().strip('"')
+            if "_NET_WM_PID" in line and "=" in line:
+                pid_str = line.split("=", 1)[-1].strip()
+        process = "unknown"
+        if pid_str.isdigit():
+            try:
+                import psutil
+                process = psutil.Process(int(pid_str)).name()
+            except Exception:
+                pass
+        return (title, process)
+    except Exception:
+        return ("", "unknown")
 
 
 def _idle_linux() -> int:
-    out = subprocess.run(
-        ["xprintidle"],
-        capture_output=True,
-        text=True,
-        timeout=5,
-    ).stdout.strip()
-    if out.isdigit():
-        return int(out) // 1000
+    """Return idle seconds on Linux — supports X11 and Wayland."""
+    # xprintidle works on X11/XWayland.
+    try:
+        out = subprocess.run(
+            ["xprintidle"], capture_output=True, text=True, timeout=3,
+        ).stdout.strip()
+        if out.isdigit():
+            return int(out) // 1000
+    except Exception:
+        pass
+    # Wayland fallback: GNOME Mutter idle monitor via D-Bus.
+    try:
+        result = subprocess.run(
+            [
+                "gdbus", "call", "--session",
+                "--dest", "org.gnome.Mutter.IdleMonitor",
+                "--object-path", "/org/gnome/Mutter/IdleMonitor/Core",
+                "--method", "org.gnome.Mutter.IdleMonitor.GetIdletime",
+            ],
+            capture_output=True, text=True, timeout=3,
+        )
+        if result.returncode == 0:
+            raw = result.stdout.strip().strip("()").split()[0].replace(",", "")
+            if raw.isdigit():
+                return int(raw) // 1000
+    except Exception:
+        pass
     return 0
