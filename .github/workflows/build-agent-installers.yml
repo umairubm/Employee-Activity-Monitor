@@ -233,7 +233,9 @@ jobs:
         working-directory: agent/packaging
         run: |
           chmod +x dist/WorkforceAgent
-          tar -czf dist/WorkforceAgent-linux.tar.gz -C dist WorkforceAgent
+          cp linux/install.sh dist/install.sh
+          chmod +x dist/install.sh
+          tar -czf dist/WorkforceAgent-linux.tar.gz -C dist WorkforceAgent install.sh
 
       - uses: actions/upload-artifact@v4
         with:
