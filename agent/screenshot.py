@@ -18,71 +18,103 @@ import tempfile
 # a typical desktop screenshot from a multi-MB PNG to a few hundred KB.
 WEBP_QUALITY = 60
 
-# On Wayland, mss captures a black XWayland root window. We detect this by
-# checking if the image brightness is near zero (mean < threshold).
-_LINUX_BLACK_THRESHOLD = 5  # mean pixel value 0–255; below this = black image
+# Mean brightness below this threshold = solid black / nearly-black image.
+_LINUX_BLACK_THRESHOLD = 5
 
 
 def _image_is_black(img) -> bool:
     """Return True if the image is essentially a black screen."""
     try:
-        grey = img.convert("L")
-        # Fast path: extrema check (min, max)
-        lo, hi = grey.getextrema()
-        if hi <= _LINUX_BLACK_THRESHOLD:
-            return True
-        # Slower path: mean brightness (catches near-black with a few bright pixels)
-        import struct
-        total = sum(struct.unpack("B" * len(b := grey.tobytes()), b))
-        mean = total / max(1, len(b))
-        return mean < _LINUX_BLACK_THRESHOLD
+        lo, hi = img.convert("L").getextrema()
+        return hi <= _LINUX_BLACK_THRESHOLD
     except Exception:
         return False
 
 
-def _capture_linux_wayland():
-    """Try Wayland-native and CLI screenshot tools.
+def _capture_via_xdg_portal(tmp_path: str) -> bool:
+    """Use the XDG Desktop Portal screenshot API (Wayland-safe for background processes).
 
-    Tries tools in order of reliability for GNOME/KDE Wayland desktops.
-    Returns a PIL Image on success, or None if all tools fail.
+    This is the only method guaranteed to work for background services on
+    Wayland — it goes through the compositor's security portal.
+    Returns True if the file was written successfully.
+    """
+    try:
+        result = subprocess.run(
+            [
+                "gdbus", "call", "--session",
+                "--dest", "org.freedesktop.portal.Desktop",
+                "--object-path", "/org/freedesktop/portal/desktop",
+                "--method", "org.freedesktop.portal.Screenshot.Screenshot",
+                "",  # parent window handle (empty = no parent)
+                "{'interactive': <false>, 'handle_token': <'wfa1'>}",
+            ],
+            capture_output=True, text=True, timeout=15, check=False,
+        )
+        if result.returncode != 0:
+            return False
+        # Response contains the URI of the saved screenshot, e.g.:
+        # ({'uri': <'file:///tmp/screenshot.png'>},)
+        import re
+        match = re.search(r"file://([^\\'\"]+)", result.stdout)
+        if not match:
+            return False
+        src_path = match.group(1).strip()
+        if os.path.exists(src_path) and os.path.getsize(src_path) > 2000:
+            import shutil
+            shutil.copy2(src_path, tmp_path)
+            try:
+                os.unlink(src_path)
+            except OSError:
+                pass
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _capture_linux_wayland():
+    """Try multiple screenshot methods for Linux (Wayland + X11).
+
+    Returns a PIL Image on success, or None if all methods fail.
     """
     from PIL import Image
 
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
         tmp_path = tmp.name
 
-    # (command, args) — {path} is replaced with the temp file path.
-    # Ordered from most-reliable Wayland-native to X11-fallback.
-    tools = [
-        # GNOME Wayland native (Ubuntu default)
-        ["gnome-screenshot", "--file={path}"],
-        # wlroots-based compositors (Sway, etc.)
-        ["grim", "{path}"],
-        # KDE Wayland
-        ["spectacle", "-b", "-o", "{path}"],
-        # X11 / XWayland fallback
-        ["scrot", "{path}"],
-        ["import", "-window", "root", "{path}"],
-    ]
-
     try:
+        # Method 1: XDG Desktop Portal (works for background services on Wayland)
+        if _capture_via_xdg_portal(tmp_path):
+            if os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 2000:
+                img = Image.open(tmp_path)
+                img.load()
+                result = img.copy()
+                if not _image_is_black(result):
+                    return result
+
+        # Method 2: CLI tools (ordered by Wayland compatibility)
+        tools = [
+            ["gnome-screenshot", "--file={path}"],   # GNOME Wayland
+            ["grim", "{path}"],                       # wlroots Wayland (Sway etc.)
+            ["spectacle", "-b", "-o", "{path}"],      # KDE Wayland
+            ["scrot", "{path}"],                      # X11
+            ["import", "-window", "root", "{path}"],  # ImageMagick X11
+        ]
+
         for template in tools:
             cmd = [part.replace("{path}", tmp_path) for part in template]
             try:
                 env = dict(os.environ)
-                # Ensure DISPLAY is set for X11 tools running under XWayland
                 if "DISPLAY" not in env:
                     env["DISPLAY"] = ":0"
-                result = subprocess.run(
-                    cmd,
-                    timeout=10,
+                res = subprocess.run(
+                    cmd, timeout=10,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
-                    check=False,
-                    env=env,
+                    check=False, env=env,
                 )
                 if (
-                    result.returncode == 0
+                    res.returncode == 0
                     and os.path.exists(tmp_path)
                     and os.path.getsize(tmp_path) > 2000
                 ):
@@ -104,12 +136,7 @@ def _capture_linux_wayland():
 
 
 def capture_webp_bytes(quality: int = WEBP_QUALITY) -> bytes:
-    """Grab the primary monitor and return lossy WebP-encoded bytes.
-
-    Lossy WebP is far smaller than PNG for full-screen captures, which cuts
-    upload bandwidth and object-storage cost. ``method=6`` spends more CPU for
-    the best size at a given quality.
-    """
+    """Grab the primary monitor and return lossy WebP-encoded bytes."""
     import mss
     from PIL import Image
 
@@ -117,7 +144,6 @@ def capture_webp_bytes(quality: int = WEBP_QUALITY) -> bytes:
 
     try:
         with mss.mss() as sct:
-            # monitors[1] is the primary physical monitor in mss.
             monitor = sct.monitors[1] if len(sct.monitors) > 1 else sct.monitors[0]
             raw = sct.grab(monitor)
             img = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
@@ -125,16 +151,15 @@ def capture_webp_bytes(quality: int = WEBP_QUALITY) -> bytes:
         img = None
 
     if sys.platform.startswith("linux"):
-        # On Wayland mss captures the XWayland root which is solid black.
-        # Fall back to Wayland-native CLI tools whenever the captured image
-        # looks black (or mss failed entirely).
+        # mss grabs the XWayland root (solid black) on Wayland sessions.
+        # Fall back to Wayland-compatible methods whenever the image is black.
         if img is None or _image_is_black(img):
             cli_img = _capture_linux_wayland()
             if cli_img is not None:
                 img = cli_img
 
     if img is None:
-        raise RuntimeError("All screenshot methods failed")
+        raise RuntimeError("All screenshot methods failed on this system")
 
     buf = io.BytesIO()
     img.save(buf, format="WEBP", quality=quality, method=6)
