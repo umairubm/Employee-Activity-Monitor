@@ -92,11 +92,30 @@ def _capture_linux_wayland():
                 if not _image_is_black(result):
                     return result
 
-        # Method 2: CLI tools (ordered by Wayland compatibility)
+        # Method 2: GNOME DBus directly (works on older GNOME/Ubuntu without prompt)
+        try:
+            dbus_cmd = [
+                "gdbus", "call", "--session",
+                "--dest", "org.gnome.Shell.Screenshot",
+                "--object-path", "/org/gnome/Shell/Screenshot",
+                "--method", "org.gnome.Shell.Screenshot.Screenshot",
+                "false", "false", f"'{tmp_path}'"
+            ]
+            res = subprocess.run(dbus_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10, check=False)
+            if res.returncode == 0 and os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 2000:
+                img = Image.open(tmp_path)
+                img.load()
+                captured = img.copy()
+                if not _image_is_black(captured):
+                    return captured
+        except Exception:
+            pass
+
+        # Method 3: CLI tools (ordered by Wayland compatibility)
         tools = [
-            ["gnome-screenshot", "--file={path}"],   # GNOME Wayland
+            ["gnome-screenshot", "-f", "{path}"],     # GNOME Wayland
             ["grim", "{path}"],                       # wlroots Wayland (Sway etc.)
-            ["spectacle", "-b", "-o", "{path}"],      # KDE Wayland
+            ["spectacle", "-b", "-n", "-o", "{path}"],# KDE Wayland (no notify)
             ["scrot", "{path}"],                      # X11
             ["import", "-window", "root", "{path}"],  # ImageMagick X11
         ]
