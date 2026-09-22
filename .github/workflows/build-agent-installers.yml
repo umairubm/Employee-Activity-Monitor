@@ -227,7 +227,7 @@ jobs:
 
       - name: Build agent executable
         working-directory: agent/packaging
-        run: ../.venv/bin/pyinstaller --noconfirm WorkforceAgent.spec
+        run: ${{ github.workspace }}/.venv/bin/pyinstaller --noconfirm WorkforceAgent.spec
 
       - name: Package tarball
         working-directory: agent/packaging
