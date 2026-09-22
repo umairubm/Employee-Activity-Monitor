@@ -254,7 +254,7 @@ class DurableResultJournal(unittest.TestCase):
         journal_dir = tempfile.mkdtemp()
         update = command(
             commandType="update_agent",
-            payload='{"version":"1.2.1","fileName":"agent.exe"}',
+            payload='{"version":"9.9.9","fileName":"agent.exe"}',
         )
         agent1 = make_agent(journal_dir)
         agent1.api.command_download_url.return_value = {
@@ -278,7 +278,7 @@ class DurableResultJournal(unittest.TestCase):
         journal_dir = tempfile.mkdtemp()
         update = command(
             commandType="update_agent",
-            payload='{"version":"1.2.1","fileName":"agent.exe"}',
+            payload='{"version":"9.9.9","fileName":"agent.exe"}',
         )
         agent1 = make_agent(journal_dir)
         agent1.api.command_download_url.return_value = {
@@ -345,7 +345,7 @@ class DurableResultJournal(unittest.TestCase):
     def test_untrusted_windows_update_is_rejected_before_install_launch(self):
         update = command(
             commandType="update_agent",
-            payload='{"version":"1.2.1","fileName":"agent.exe"}',
+            payload='{"version":"9.9.9","fileName":"agent.exe"}',
         )
         agent = make_agent()
         agent.api.command_download_url.return_value = {
