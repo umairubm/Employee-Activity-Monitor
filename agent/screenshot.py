@@ -18,42 +18,82 @@ import tempfile
 # a typical desktop screenshot from a multi-MB PNG to a few hundred KB.
 WEBP_QUALITY = 60
 
+# On Wayland, mss captures a black XWayland root window. We detect this by
+# checking if the image brightness is near zero (mean < threshold).
+_LINUX_BLACK_THRESHOLD = 5  # mean pixel value 0–255; below this = black image
 
-def _capture_linux_cli():
-    """Try CLI screenshot tools available on Linux (Wayland-compatible).
 
-    Tries gnome-screenshot, scrot, spectacle and ImageMagick import in order.
+def _image_is_black(img) -> bool:
+    """Return True if the image is essentially a black screen."""
+    try:
+        grey = img.convert("L")
+        # Fast path: extrema check (min, max)
+        lo, hi = grey.getextrema()
+        if hi <= _LINUX_BLACK_THRESHOLD:
+            return True
+        # Slower path: mean brightness (catches near-black with a few bright pixels)
+        import struct
+        total = sum(struct.unpack("B" * len(b := grey.tobytes()), b))
+        mean = total / max(1, len(b))
+        return mean < _LINUX_BLACK_THRESHOLD
+    except Exception:
+        return False
+
+
+def _capture_linux_wayland():
+    """Try Wayland-native and CLI screenshot tools.
+
+    Tries tools in order of reliability for GNOME/KDE Wayland desktops.
     Returns a PIL Image on success, or None if all tools fail.
     """
     from PIL import Image
 
-    # Each entry: command template where {path} is replaced with the tmp file.
-    tools = [
-        ["gnome-screenshot", "--file={path}"],
-        ["scrot", "{path}"],
-        ["spectacle", "-b", "-o", "{path}"],
-        ["import", "-window", "root", "{path}"],
-    ]
-
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
         tmp_path = tmp.name
+
+    # (command, args) — {path} is replaced with the temp file path.
+    # Ordered from most-reliable Wayland-native to X11-fallback.
+    tools = [
+        # GNOME Wayland native (Ubuntu default)
+        ["gnome-screenshot", "--file={path}"],
+        # wlroots-based compositors (Sway, etc.)
+        ["grim", "{path}"],
+        # KDE Wayland
+        ["spectacle", "-b", "-o", "{path}"],
+        # X11 / XWayland fallback
+        ["scrot", "{path}"],
+        ["import", "-window", "root", "{path}"],
+    ]
 
     try:
         for template in tools:
             cmd = [part.replace("{path}", tmp_path) for part in template]
             try:
+                env = dict(os.environ)
+                # Ensure DISPLAY is set for X11 tools running under XWayland
+                if "DISPLAY" not in env:
+                    env["DISPLAY"] = ":0"
                 result = subprocess.run(
                     cmd,
                     timeout=10,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     check=False,
+                    env=env,
                 )
-                if result.returncode == 0 and os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 1000:
+                if (
+                    result.returncode == 0
+                    and os.path.exists(tmp_path)
+                    and os.path.getsize(tmp_path) > 2000
+                ):
                     img = Image.open(tmp_path)
                     img.load()
-                    return img.copy()
+                    captured = img.copy()
+                    if not _image_is_black(captured):
+                        return captured
             except (FileNotFoundError, subprocess.TimeoutExpired):
+                continue
+            except Exception:
                 continue
     finally:
         try:
@@ -73,21 +113,28 @@ def capture_webp_bytes(quality: int = WEBP_QUALITY) -> bytes:
     import mss
     from PIL import Image
 
-    with mss.mss() as sct:
-        # monitors[1] is the primary physical monitor in mss.
-        monitor = sct.monitors[1] if len(sct.monitors) > 1 else sct.monitors[0]
-        raw = sct.grab(monitor)
-        img = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
+    img = None
+
+    try:
+        with mss.mss() as sct:
+            # monitors[1] is the primary physical monitor in mss.
+            monitor = sct.monitors[1] if len(sct.monitors) > 1 else sct.monitors[0]
+            raw = sct.grab(monitor)
+            img = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
+    except Exception:
+        img = None
 
     if sys.platform.startswith("linux"):
-        # mss returns a solid black image on Wayland (the XWayland root window
-        # is empty). Detect this and fall back to CLI screenshot tools which
-        # have Wayland portal support.
-        extrema = img.convert("L").getextrema()
-        if extrema == (0, 0):
-            cli_img = _capture_linux_cli()
+        # On Wayland mss captures the XWayland root which is solid black.
+        # Fall back to Wayland-native CLI tools whenever the captured image
+        # looks black (or mss failed entirely).
+        if img is None or _image_is_black(img):
+            cli_img = _capture_linux_wayland()
             if cli_img is not None:
                 img = cli_img
+
+    if img is None:
+        raise RuntimeError("All screenshot methods failed")
 
     buf = io.BytesIO()
     img.save(buf, format="WEBP", quality=quality, method=6)
