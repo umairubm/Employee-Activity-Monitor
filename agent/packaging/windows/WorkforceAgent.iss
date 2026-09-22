@@ -55,7 +55,7 @@ Name: "{userdesktop}\Workforce Analytics Agent"; Filename: "{app}\WorkforceAgent
 
 [Registry]
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; \
- ValueName: "{#AppName}"; ValueData: """{app}\WorkforceTrack.exe"""; \
+ ValueName: "{#AppName}"; ValueData: """{app}\WorkforceAgent.exe"""; \
  Flags: uninsdeletevalue
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; \
  ValueName: "Workforce Analytics"; Flags: deletevalue; Check: not WizardSilent or WizardSilent
@@ -371,7 +371,7 @@ begin
     exit;
   end;
 
-  ExePath := ExpandConstant('{app}\WorkforceTrack.exe');
+  ExePath := ExpandConstant('{app}\WorkforceAgent.exe.old-' + GetDateTimeString('yyyymmddhhnnss', '-', ':'));
   OldExe := ExpandConstant('{app}\WorkforceAgent.exe');
 
   if FileExists(OldExe) and (not FileExists(ExePath)) then
