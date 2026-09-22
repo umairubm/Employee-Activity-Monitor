@@ -28,6 +28,8 @@ class IntervalJournal:
             idle_threshold_seconds, passive_threshold_seconds + 1
         )
         self.current: dict[str, Any] | None = None
+        self._last_tick_wall: float | None = None
+        self._last_tick_monotonic: float | None = None
 
     def set_thresholds(
         self, passive_threshold_seconds: int, idle_threshold_seconds: int
@@ -49,6 +51,25 @@ class IntervalJournal:
     ) -> None:
         wall_now = time.time()
         monotonic_now = time.monotonic()
+
+        # Detect system sleep or massive process suspension. If the agent loop
+        # hasn't run for more than 60 seconds (wall clock), the computer was
+        # likely asleep. Close the current segment at the LAST known tick time
+        # so the massive gap is not falsely attributed to the last active app.
+        if (
+            self.current
+            and self._last_tick_wall is not None
+            and self._last_tick_monotonic is not None
+            and (wall_now - self._last_tick_wall) > 60.0
+        ):
+            self.close_current(
+                wall_now=self._last_tick_wall,
+                monotonic_now=self._last_tick_monotonic,
+            )
+
+        self._last_tick_wall = wall_now
+        self._last_tick_monotonic = monotonic_now
+
         session_state = (
             "monitoring_paused"
             if monitoring_paused
