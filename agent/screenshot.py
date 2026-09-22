@@ -31,6 +31,20 @@ def capture_webp_bytes(quality: int = WEBP_QUALITY) -> bytes:
         raw = sct.grab(monitor)
         img = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
 
+    import sys
+    if sys.platform.startswith("linux"):
+        # Wayland typically returns a solid black 1x1 or full-screen image
+        # because the XWayland root window is empty.
+        extrema = img.convert("L").getextrema()
+        if extrema == (0, 0):
+            try:
+                from PIL import ImageGrab
+                alt_img = ImageGrab.grab(all_screens=True)
+                if alt_img:
+                    img = alt_img
+            except Exception:
+                pass
+
     buf = io.BytesIO()
     img.save(buf, format="WEBP", quality=quality, method=6)
     return buf.getvalue()
