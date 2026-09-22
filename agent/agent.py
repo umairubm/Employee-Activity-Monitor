@@ -65,7 +65,7 @@ def setup_logging():
     logging.getLogger().addHandler(handler)
 
 
-AGENT_VERSION = "1.2.58"
+AGENT_VERSION = "1.2.59"
 POLL_SECONDS = 15
 # Activity batching. The server caps a batch at 500 rows; we additionally cap
 # serialized bytes well under its JSON body limit so a backlog of rich
@@ -826,7 +826,14 @@ rm -rf "$(dirname "$NEW")" "$0"
                 pass
 
         try:
-            current_exe = sys.executable
+            # On Linux PyInstaller bundles, sys.executable is the Python
+            # interpreter *inside* the bundle, not the outer WorkforceAgent
+            # binary. Use /proc/self/exe (most reliable) or sys.argv[0]
+            # resolved to an absolute path to get the real binary.
+            try:
+                current_exe = os.path.realpath("/proc/self/exe")
+            except Exception:
+                current_exe = os.path.abspath(sys.argv[0])
             if not os.access(current_exe, os.W_OK) or not os.access(
                 os.path.dirname(current_exe), os.W_OK
             ):

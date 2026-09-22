@@ -8,11 +8,59 @@ screenshot was taken. We capture the primary monitor only.
 from __future__ import annotations
 
 import io
+import os
+import subprocess
+import sys
+import tempfile
 
 
 # Lossy WebP quality (0-100). ~60 keeps on-screen text legible while shrinking
 # a typical desktop screenshot from a multi-MB PNG to a few hundred KB.
 WEBP_QUALITY = 60
+
+
+def _capture_linux_cli():
+    """Try CLI screenshot tools available on Linux (Wayland-compatible).
+
+    Tries gnome-screenshot, scrot, spectacle and ImageMagick import in order.
+    Returns a PIL Image on success, or None if all tools fail.
+    """
+    from PIL import Image
+
+    # Each entry: command template where {path} is replaced with the tmp file.
+    tools = [
+        ["gnome-screenshot", "--file={path}"],
+        ["scrot", "{path}"],
+        ["spectacle", "-b", "-o", "{path}"],
+        ["import", "-window", "root", "{path}"],
+    ]
+
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+        tmp_path = tmp.name
+
+    try:
+        for template in tools:
+            cmd = [part.replace("{path}", tmp_path) for part in template]
+            try:
+                result = subprocess.run(
+                    cmd,
+                    timeout=10,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                )
+                if result.returncode == 0 and os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 1000:
+                    img = Image.open(tmp_path)
+                    img.load()
+                    return img.copy()
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                continue
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+    return None
 
 
 def capture_webp_bytes(quality: int = WEBP_QUALITY) -> bytes:
@@ -31,19 +79,15 @@ def capture_webp_bytes(quality: int = WEBP_QUALITY) -> bytes:
         raw = sct.grab(monitor)
         img = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
 
-    import sys
     if sys.platform.startswith("linux"):
-        # Wayland typically returns a solid black 1x1 or full-screen image
-        # because the XWayland root window is empty.
+        # mss returns a solid black image on Wayland (the XWayland root window
+        # is empty). Detect this and fall back to CLI screenshot tools which
+        # have Wayland portal support.
         extrema = img.convert("L").getextrema()
         if extrema == (0, 0):
-            try:
-                from PIL import ImageGrab
-                alt_img = ImageGrab.grab(all_screens=True)
-                if alt_img:
-                    img = alt_img
-            except Exception:
-                pass
+            cli_img = _capture_linux_cli()
+            if cli_img is not None:
+                img = cli_img
 
     buf = io.BytesIO()
     img.save(buf, format="WEBP", quality=quality, method=6)
