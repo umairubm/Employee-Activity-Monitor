@@ -211,7 +211,7 @@ jobs:
   linux:
     if: ${{ !inputs.windows_unsigned_dev }}
     needs: release-checks
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 
