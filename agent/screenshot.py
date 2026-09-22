@@ -78,13 +78,17 @@ def _capture_linux_wayland():
     Returns a PIL Image on success, or None if all methods fail.
     """
     from PIL import Image
+    from agent import env_resolver
+
+    env = env_resolver.get_active_env()
+    is_wayland = env.get("XDG_SESSION_TYPE") == "wayland" or "WAYLAND_DISPLAY" in env
 
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
         tmp_path = tmp.name
 
     try:
         # Method 1: XDG Desktop Portal (works for background services on Wayland)
-        if _capture_via_xdg_portal(tmp_path):
+        if is_wayland and _capture_via_xdg_portal(tmp_path):
             if os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 2000:
                 img = Image.open(tmp_path)
                 img.load()
@@ -123,9 +127,6 @@ def _capture_linux_wayland():
         for template in tools:
             cmd = [part.replace("{path}", tmp_path) for part in template]
             try:
-                env = dict(os.environ)
-                if "DISPLAY" not in env:
-                    env["DISPLAY"] = ":0"
                 res = subprocess.run(
                     cmd, timeout=10,
                     stdout=subprocess.DEVNULL,

@@ -11,7 +11,11 @@ from __future__ import annotations
 import re
 import subprocess
 import sys
+import threading
+import time
 from typing import Optional, Tuple
+
+from agent import env_resolver
 from urllib.parse import urlsplit
 
 
@@ -260,9 +264,7 @@ def _active_window_linux() -> Tuple[str, str, Optional[str]]:
 
 
 def _run_linux_cmd(cmd: list, timeout: int = 3) -> subprocess.CompletedProcess:
-    env = dict(os.environ)
-    if "DISPLAY" not in env:
-        env["DISPLAY"] = ":0"
+    env = env_resolver.get_active_env()
     return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=env)
 
 def _active_window_linux_x11() -> Tuple[str, str]:
