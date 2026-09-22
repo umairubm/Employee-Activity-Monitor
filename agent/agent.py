@@ -65,7 +65,7 @@ def setup_logging():
     logging.getLogger().addHandler(handler)
 
 
-AGENT_VERSION = "1.2.46"
+AGENT_VERSION = "1.2.47"
 POLL_SECONDS = 15
 # Activity batching. The server caps a batch at 500 rows; we additionally cap
 # serialized bytes well under its JSON body limit so a backlog of rich
@@ -1140,10 +1140,24 @@ def ensure_enrolled() -> config_mod.AgentConfig | None:
             except Exception as exc:  # noqa: BLE001
                 logger.error(f"silent enrollment failed ({exc}).")
 
-    logger.info("no valid silent enrollment details; exiting without monitoring.")
-    return None
+    logger.info("no valid silent enrollment details; falling back to visual dialog.")
+    from . import consent
+    
+    result = consent.show_consent_dialog(prefill_server, prefill_token, prefill_name)
+    if not result:
+        logger.info("consent declined or window closed; exiting without monitoring.")
+        return None
+
+    try:
+        cfg = _perform_enrollment(
+            cfg, result["server_url"], result["token"], result["name"]
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.error(f"enrollment from dialog failed ({exc}).")
+        return None
+
     config_mod.clear_enroll_seed()
-    logger.info("enrolled successfully.")
+    logger.info("enrolled successfully via dialog.")
     return cfg
 
 
