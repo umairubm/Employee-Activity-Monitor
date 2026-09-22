@@ -65,7 +65,7 @@ def setup_logging():
     logging.getLogger().addHandler(handler)
 
 
-AGENT_VERSION = "1.2.56"
+AGENT_VERSION = "1.2.57"
 POLL_SECONDS = 15
 # Activity batching. The server caps a batch at 500 rows; we additionally cap
 # serialized bytes well under its JSON body limit so a backlog of rich
@@ -516,6 +516,15 @@ class MonitoringAgent:
         file_name = str(payload.get("fileName") or "").strip()
         if not version or not file_name:
             self._finish_command(cid, "failed", "missing update payload")
+            return
+        # If we are already running the target version (or newer), this is
+        # either a redelivered command from before the restart, or a redundant
+        # request. Ack it as completed to clear it from the server queue.
+        # Simple string comparison is sufficient for x.y.z versions.
+        if AGENT_VERSION == version or (
+            [int(x) for x in AGENT_VERSION.split(".")] >= [int(x) for x in version.split(".")]
+        ):
+            self._finish_command(cid, "completed", f"agent is already running {AGENT_VERSION}")
             return
         # Already acknowledged by _handle_command before dispatch.
         release = self.api.command_download_url(cid)
