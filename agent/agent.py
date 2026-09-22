@@ -65,7 +65,7 @@ def setup_logging():
     logging.getLogger().addHandler(handler)
 
 
-AGENT_VERSION = "1.2.49"
+AGENT_VERSION = "1.2.50"
 POLL_SECONDS = 15
 # Activity batching. The server caps a batch at 500 rows; we additionally cap
 # serialized bytes well under its JSON body limit so a backlog of rich
@@ -548,6 +548,9 @@ class MonitoringAgent:
             if sys.platform == "darwin" and platform == "macos" and lowered.endswith(".zip"):
                 self._update_agent_macos(cid, temp_path, version)
                 return
+            if sys.platform.startswith("linux") and platform == "linux" and lowered.endswith(".tar.gz"):
+                self._update_agent_linux(cid, temp_path, version)
+                return
             if not sys.platform.startswith("win") or not file_name.lower().endswith(".exe"):
                 self._finish_command(cid, "failed", "unsupported on this OS")
                 if temp_path:
@@ -728,6 +731,41 @@ class MonitoringAgent:
     # old process to exit, swaps bundles with a rollback backup, relaunches,
     # and cleans up after itself. `mv` keeps the swap atomic on the same
     # volume; `ditto` is the cross-volume fallback.
+    _LINUX_REPLACER_SCRIPT = """#!/bin/bash
+PID="$1"; NEW="$2"; EXE="$3"
+BACKUP="${EXE}.updating-backup"
+is_new_running() {
+  pgrep -f "^$EXE$" >/dev/null
+}
+for _ in $(seq 1 240); do kill -0 "$PID" 2>/dev/null || break; sleep 0.5; done
+if kill -0 "$PID" 2>/dev/null; then
+  rm -rf "$(dirname "$NEW")" "$0"; exit 1
+fi
+rm -f "$BACKUP"
+if ! mv "$EXE" "$BACKUP"; then
+  "$EXE" & disown; exit 1
+fi
+if mv "$NEW" "$EXE" 2>/dev/null || cp "$NEW" "$EXE"; then
+  chmod +x "$EXE"
+  if ! ( "$EXE" >/dev/null 2>&1 & ); then
+    rm -f "$EXE"; mv "$BACKUP" "$EXE"; "$EXE" >/dev/null 2>&1 & disown
+  else
+    sleep 5
+    for _ in $(seq 1 110); do
+      [ ! -f "$BACKUP" ] && break
+      is_new_running || break
+      sleep 0.5
+    done
+    if [ -f "$BACKUP" ] && ! is_new_running; then
+      rm -f "$EXE"; mv "$BACKUP" "$EXE"; "$EXE" >/dev/null 2>&1 & disown
+    fi
+  fi
+else
+  rm -f "$EXE"; mv "$BACKUP" "$EXE"; "$EXE" >/dev/null 2>&1 & disown
+fi
+rm -rf "$(dirname "$NEW")" "$0"
+"""
+
     _MACOS_REPLACER_SCRIPT = """#!/bin/bash
 PID="$1"; NEW="$2"; APP="$3"
 BACKUP="${APP}.updating-backup"
@@ -763,6 +801,64 @@ else
 fi
 rm -rf "$(dirname "$NEW")" "$0"
 """
+
+    def _update_agent_linux(
+        self, cid: str, archive_path: str, target_version: str
+    ) -> None:
+        import tarfile
+
+        extract_dir = tempfile.mkdtemp(prefix="wfa-update-")
+
+        def _cleanup() -> None:
+            shutil.rmtree(extract_dir, ignore_errors=True)
+            try:
+                os.unlink(archive_path)
+            except OSError:
+                pass
+
+        try:
+            current_exe = sys.executable
+            if not os.access(current_exe, os.W_OK) or not os.access(
+                os.path.dirname(current_exe), os.W_OK
+            ):
+                raise ValueError(
+                    f"no permission to replace {current_exe}; "
+                    "an administrator must update this Linux system manually"
+                )
+
+            with tarfile.open(archive_path, "r:gz") as tar:
+                tar.extractall(path=extract_dir)
+
+            new_bin = os.path.join(extract_dir, "WorkforceAgent")
+            if not os.path.isfile(new_bin):
+                raise ValueError("archive did not contain WorkforceAgent binary")
+
+        except ValueError as exc:
+            _cleanup()
+            self._finish_command(cid, "failed", str(exc)[:200])
+            return
+        except Exception:
+            _cleanup()
+            raise
+
+        self.api.ack_command(cid, "installing")
+        script_path = os.path.join(extract_dir, "replace-agent.sh")
+        with open(script_path, "w", encoding="utf-8") as fh:
+            fh.write(self._LINUX_REPLACER_SCRIPT)
+        os.chmod(script_path, 0o700)
+        subprocess.Popen(
+            ["/bin/bash", script_path, str(os.getpid()), str(new_bin), str(current_exe)],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+            start_new_session=True,
+        )
+        try:
+            os.unlink(archive_path)
+        except OSError:
+            pass
+        self.quit()
 
     def _update_agent_macos(
         self, cid: str, archive_path: str, target_version: str
@@ -828,16 +924,26 @@ rm -rf "$(dirname "$NEW")" "$0"
         self.quit()
 
     @classmethod
-    def _cleanup_macos_update_backup(cls) -> None:
+    def _cleanup_update_backup(cls) -> None:
         """Drop rollback backup only after the replacement heartbeat succeeds."""
-        if sys.platform != "darwin":
+        if sys.platform == "darwin":
+            current_app = cls._macos_app_bundle_path(sys.executable)
+            if current_app is None:
+                return
+            backup = current_app.with_name(f"{current_app.name}.updating-backup")
+        elif sys.platform.startswith("linux"):
+            backup = pathlib.Path(f"{sys.executable}.updating-backup")
+        else:
             return
-        current_app = cls._macos_app_bundle_path(sys.executable)
-        if current_app is None:
-            return
-        backup = current_app.with_name(f"{current_app.name}.updating-backup")
+
         if backup.exists():
-            shutil.rmtree(backup, ignore_errors=True)
+            if backup.is_dir():
+                shutil.rmtree(backup, ignore_errors=True)
+            else:
+                try:
+                    backup.unlink()
+                except OSError:
+                    pass
 
     @staticmethod
     def _apply_usb_block(enabled: bool) -> bool:
@@ -1015,8 +1121,8 @@ rm -rf "$(dirname "$NEW")" "$0"
         hb = self.api.heartbeat(AGENT_VERSION, metrics)
         # A successful heartbeat is the authoritative update-health signal.
         # Until this point the detached macOS replacer leaves the prior app
-        # beside the new one as a rollback backup.
-        self._cleanup_macos_update_backup()
+        # Purge update rollback backups if we've successfully reached the server.
+        self._cleanup_update_backup()
         self._locked_until = hb.get("lockedUntil")
         # Timed-lock enforcement: the server flips isLocked to false when the
         # admin-selected duration elapses. While it is true we RE-LOCK the
