@@ -259,17 +259,17 @@ def _active_window_linux() -> Tuple[str, str, Optional[str]]:
     return (process or "unknown", title or "", None)
 
 
+def _run_linux_cmd(cmd: list, timeout: int = 3) -> subprocess.CompletedProcess:
+    env = dict(os.environ)
+    if "DISPLAY" not in env:
+        env["DISPLAY"] = ":0"
+    return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=env)
+
 def _active_window_linux_x11() -> Tuple[str, str]:
     """X11 path via xdotool."""
     try:
-        title = subprocess.run(
-            ["xdotool", "getactivewindow", "getwindowname"],
-            capture_output=True, text=True, timeout=3,
-        ).stdout.strip()
-        pid_out = subprocess.run(
-            ["xdotool", "getactivewindow", "getwindowpid"],
-            capture_output=True, text=True, timeout=3,
-        ).stdout.strip()
+        title = _run_linux_cmd(["xdotool", "getactivewindow", "getwindowname"]).stdout.strip()
+        pid_out = _run_linux_cmd(["xdotool", "getactivewindow", "getwindowpid"]).stdout.strip()
         process = "unknown"
         if pid_out.isdigit():
             try:
@@ -285,18 +285,15 @@ def _active_window_linux_x11() -> Tuple[str, str]:
 def _active_window_linux_gdbus() -> Tuple[str, str]:
     """GNOME Shell D-Bus API — works natively on Wayland GNOME desktops."""
     try:
-        result = subprocess.run(
-            [
-                "gdbus", "call", "--session",
-                "--dest", "org.gnome.Shell",
-                "--object-path", "/org/gnome/Shell",
-                "--method", "org.gnome.Shell.Eval",
-                "global.display.focus_window ? "
-                "[global.display.focus_window.get_title(), "
-                "global.display.focus_window.get_wm_class()] : ['','']",
-            ],
-            capture_output=True, text=True, timeout=3,
-        )
+        result = _run_linux_cmd([
+            "gdbus", "call", "--session",
+            "--dest", "org.gnome.Shell",
+            "--object-path", "/org/gnome/Shell",
+            "--method", "org.gnome.Shell.Eval",
+            "global.display.focus_window ? "
+            "[global.display.focus_window.get_title(), "
+            "global.display.focus_window.get_wm_class()] : ['','']"
+        ])
         if result.returncode == 0 and "true" in result.stdout:
             import ast
             # gdbus returns: (true, "['Title', 'WmClass']")
@@ -318,20 +315,14 @@ def _active_window_linux_gdbus() -> Tuple[str, str]:
 def _active_window_linux_xprop() -> Tuple[str, str]:
     """xprop fallback — reads _NET_ACTIVE_WINDOW and _NET_WM_PID from X server."""
     try:
-        id_result = subprocess.run(
-            ["xprop", "-root", "_NET_ACTIVE_WINDOW"],
-            capture_output=True, text=True, timeout=3,
-        )
+        id_result = _run_linux_cmd(["xprop", "-root", "_NET_ACTIVE_WINDOW"])
         if id_result.returncode != 0:
             return ("", "unknown")
         parts = id_result.stdout.strip().split()
         win_id = parts[-1] if parts else ""
         if not win_id or win_id in ("0x0", "0x00"):
             return ("", "unknown")
-        info = subprocess.run(
-            ["xprop", "-id", win_id, "WM_NAME", "_NET_WM_PID"],
-            capture_output=True, text=True, timeout=3,
-        ).stdout
+        info = _run_linux_cmd(["xprop", "-id", win_id, "WM_NAME", "_NET_WM_PID"]).stdout
         title, pid_str = "", ""
         for line in info.splitlines():
             if "WM_NAME" in line and "=" in line:
@@ -354,24 +345,19 @@ def _idle_linux() -> int:
     """Return idle seconds on Linux — supports X11 and Wayland."""
     # xprintidle works on X11/XWayland.
     try:
-        out = subprocess.run(
-            ["xprintidle"], capture_output=True, text=True, timeout=3,
-        ).stdout.strip()
+        out = _run_linux_cmd(["xprintidle"]).stdout.strip()
         if out.isdigit():
             return int(out) // 1000
     except Exception:
         pass
     # Wayland fallback: GNOME Mutter idle monitor via D-Bus.
     try:
-        result = subprocess.run(
-            [
-                "gdbus", "call", "--session",
-                "--dest", "org.gnome.Mutter.IdleMonitor",
-                "--object-path", "/org/gnome/Mutter/IdleMonitor/Core",
-                "--method", "org.gnome.Mutter.IdleMonitor.GetIdletime",
-            ],
-            capture_output=True, text=True, timeout=3,
-        )
+        result = _run_linux_cmd([
+            "gdbus", "call", "--session",
+            "--dest", "org.gnome.Mutter.IdleMonitor",
+            "--object-path", "/org/gnome/Mutter/IdleMonitor/Core",
+            "--method", "org.gnome.Mutter.IdleMonitor.GetIdletime"
+        ])
         if result.returncode == 0:
             raw = result.stdout.strip().strip("()").split()[0].replace(",", "")
             if raw.isdigit():
