@@ -68,7 +68,8 @@ def show_consent_dialog(
     width, height = 640, 760
     root.update_idletasks()
     sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
-    root.geometry(f"{width}x{height}+{(sw - width) // 2}+{max(0, (sh - height) // 2)}")
+    actual_height = min(height, sh - 80)
+    root.geometry(f"{width}x{actual_height}+{(sw - width) // 2}+{max(0, (sh - actual_height) // 2)}")
 
     fam = "Segoe UI" if sys.platform.startswith("win") else (
         "Helvetica Neue" if sys.platform == "darwin" else "DejaVu Sans"
@@ -81,8 +82,37 @@ def show_consent_dialog(
 
     result: dict[str, Optional[ConsentResult]] = {"value": None}
 
+    # ---- Scrollable Container ----------------------------------------------
+    canvas = tk.Canvas(root, bg=WHITE, highlightthickness=0)
+    scrollbar = tk.Scrollbar(root, orient="vertical", command=canvas.yview)
+    scrollable_frame = tk.Frame(canvas, bg=WHITE)
+
+    scrollable_frame.bind(
+        "<Configure>",
+        lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+    )
+
+    # Make the frame the exact width of the canvas, minus the scrollbar
+    canvas.create_window((0, 0), window=scrollable_frame, anchor="nw", width=width - 20)
+    canvas.configure(yscrollcommand=scrollbar.set)
+
+    canvas.pack(side="left", fill="both", expand=True)
+    scrollbar.pack(side="right", fill="y")
+
+    def _on_mousewheel(event):
+        if event.num == 4:
+            canvas.yview_scroll(-1, "units")
+        elif event.num == 5:
+            canvas.yview_scroll(1, "units")
+        else:
+            canvas.yview_scroll(-1 * (event.delta // 120), "units")
+
+    root.bind_all("<MouseWheel>", _on_mousewheel)
+    root.bind_all("<Button-4>", _on_mousewheel)
+    root.bind_all("<Button-5>", _on_mousewheel)
+
     # ---- Header banner -----------------------------------------------------
-    header = tk.Frame(root, bg=BLUE, height=104)
+    header = tk.Frame(scrollable_frame, bg=BLUE, height=104)
     header.pack(fill="x")
     header.pack_propagate(False)
     hwrap = tk.Frame(header, bg=BLUE)
@@ -112,7 +142,7 @@ def show_consent_dialog(
         bg=BLUE,
     ).pack(anchor="w")
 
-    body = tk.Frame(root, bg=WHITE)
+    body = tk.Frame(scrollable_frame, bg=WHITE)
     body.pack(fill="both", expand=True, padx=24, pady=18)
 
     def card(parent, title, color):
@@ -188,7 +218,7 @@ def show_consent_dialog(
     error_label.pack(anchor="w", pady=(2, 0))
 
     # ---- Buttons -----------------------------------------------------------
-    btns = tk.Frame(root, bg=WHITE)
+    btns = tk.Frame(scrollable_frame, bg=WHITE)
     btns.pack(fill="x", padx=24, pady=(0, 20))
 
     def on_decline():
