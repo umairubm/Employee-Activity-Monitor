@@ -90,7 +90,7 @@ exe = EXE(
     strip=False,
     upx=False,
     runtime_tmpdir=None,
-    console=False,
+    console=not is_win,
     icon=icon_path,
 )
 
