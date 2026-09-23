@@ -233,8 +233,8 @@ jobs:
       - name: Verify PyGObject packaging
         working-directory: agent/packaging
         run: |
-          echo 'import sys; import gi; gi.require_version("GLib", "2.0"); gi.require_version("Gst", "1.0"); from gi.repository import GLib, Gio, Gst; Gst.init(None); pipe = Gst.parse_launch("pipewiresrc ! videoconvert ! appsink name=sink"); sink = pipe.get_by_name("sink"); sys.exit(0 if sink else 1)' > test_gi.py
-          ${{ github.workspace }}/.venv/bin/pyinstaller --noconfirm --onefile --hidden-import gi.repository.Gio --hidden-import gi.repository.GLib --hidden-import gi.repository.Gst test_gi.py
+          echo 'import sys; import gi; gi.require_version("GLib", "2.0"); gi.require_version("Gst", "1.0"); gi.require_version("GstApp", "1.0"); from gi.repository import GLib, Gio, Gst, GstApp; Gst.init(None); pipe = Gst.parse_launch("pipewiresrc ! videoconvert ! appsink name=sink"); sink = pipe.get_by_name("sink"); sink.try_pull_sample(0); sys.exit(0 if sink else 1)' > test_gi.py
+          ${{ github.workspace }}/.venv/bin/pyinstaller --noconfirm --onefile --hidden-import gi.repository.Gio --hidden-import gi.repository.GLib --hidden-import gi.repository.Gst --hidden-import gi.repository.GstApp test_gi.py
           ./dist/test_gi
 
 

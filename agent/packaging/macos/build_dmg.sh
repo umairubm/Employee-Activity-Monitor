@@ -38,7 +38,7 @@ pyinstaller --noconfirm WorkforceAgent.spec
 APP="dist/WorkforceAgent.app"
 DMG="dist/WorkforceAgent-macos.dmg"
 AGENT_VERSION="$(
-  python -c 'import pathlib,re; s=pathlib.Path("../agent.py").read_text(); print(re.search(r"^AGENT_VERSION\\s*=\\s*\"([^\"]+)\"", s, re.M).group(1))'
+  python -c 'import pathlib,re; s=pathlib.Path("../agent.py").read_text(encoding="utf-8"); print(re.search(r"AGENT_VERSION\s*=\s*\"([^\"]+)\"", s).group(1))'
 )"
 UPDATE_ZIP="dist/WorkforceAgent-macos-${AGENT_VERSION}.app.zip"
 STAGE="dist/dmg-stage"

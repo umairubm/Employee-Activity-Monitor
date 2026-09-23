@@ -45,11 +45,13 @@ class WaylandScreencastManager:
 
     def __init__(self):
         self._is_running = False
-        self._intended_state = False
+        self._generation = 0
         self._pipeline = None
         self._appsink = None
         self._bus = None
         self._session_handle = None
+        self._glib_loop = None
+        self._glib_thread = None
 
     @classmethod
     def get_instance(cls):
@@ -58,7 +60,16 @@ class WaylandScreencastManager:
                 cls._instance = WaylandScreencastManager()
             return cls._instance
 
-    def _portal_request(self, method, *args):
+
+    def _ensure_glib_loop(self):
+        if self._glib_loop is None:
+            from gi.repository import GLib, Gio
+            self._bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+            self._glib_loop = GLib.MainLoop()
+            import threading
+            self._glib_thread = threading.Thread(target=self._glib_loop.run, daemon=True)
+            self._glib_thread.start()
+    def _portal_request(self, method, *args, generation=None):
         from gi.repository import GLib, Gio
         sender_name = self._bus.get_unique_name()[1:].replace(".", "_")
         token = f"wfa_sc_{int(time.time() * 1000)}"
@@ -87,14 +98,15 @@ class WaylandScreencastManager:
         
         result_code = None
         results = None
-        loop = GLib.MainLoop()
+        import threading
+        event = threading.Event()
 
         def on_signal(connection, sender, path, iface, signal, params, user_data):
             nonlocal result_code, results
             if path == req_path and signal == "Response":
                 result_code = params.get_child_value(0).get_uint32()
                 results = params.get_child_value(1)
-                loop.quit()
+                event.set()
 
         sub_id = self._bus.signal_subscribe(
             "org.freedesktop.portal.Desktop",
@@ -118,8 +130,15 @@ class WaylandScreencastManager:
             self._bus.signal_unsubscribe(sub_id)
             raise RuntimeError(f"Portal request {method} failed: {e}")
 
-        GLib.timeout_add_seconds(60, lambda: loop.quit() or False)
-        loop.run()
+        import time
+        start_time = time.time()
+        while not event.wait(0.5):
+            if generation is not None and self._generation != generation:
+                self._bus.signal_unsubscribe(sub_id)
+                raise RuntimeError("ScreenCast start aborted (agent paused/stopped).")
+            if time.time() - start_time > 60:
+                break
+
         self._bus.signal_unsubscribe(sub_id)
 
         if result_code is None:
@@ -131,19 +150,18 @@ class WaylandScreencastManager:
 
         return results
 
-    def _setup_pipeline(self):
+    def _setup_pipeline(self, generation=None):
         from gi.repository import Gio, GLib, Gst
-        self._bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
 
         # 1. CreateSession
-        res = self._portal_request("CreateSession", {"session_handle_token": GLib.Variant("s", f"session_{int(time.time())}")})
+        res = self._portal_request("CreateSession", {"session_handle_token": GLib.Variant("s", f"session_{int(time.time())}")}, generation=generation)
         self._session_handle = res.lookup_value("session_handle", None).get_string()
 
         # 2. SelectSources (types=1 for Monitor)
         self._portal_request("SelectSources", self._session_handle, {"types": GLib.Variant("u", 1), "multiple": GLib.Variant("b", False)})
 
         # 3. Start
-        res = self._portal_request("Start", self._session_handle, "", {})
+        res = self._portal_request("Start", self._session_handle, "", {}, generation=generation)
         streams = res.lookup_value("streams", None)
         if not streams or streams.n_children() == 0:
             raise RuntimeError("No streams returned by ScreenCast portal")
@@ -199,34 +217,33 @@ class WaylandScreencastManager:
                 self.stop()
         gst_bus.connect("message", on_gst_message)
 
-        if not self._intended_state:
-            logger.info("ScreenCast start aborted (agent paused/stopped).")
-            self.stop()
-            return
-
         self._pipeline.set_state(Gst.State.PLAYING)
         self._is_running = True
 
     def start_async(self):
-        self._intended_state = True
+        self._generation += 1
+        gen = self._generation
         if self._is_running:
             return
         import threading
-        t = threading.Thread(target=self.start, daemon=True)
+        t = threading.Thread(target=self.start, args=(gen,), daemon=True)
         t.start()
 
-    def start(self):
-        self._intended_state = True
+    def start(self, generation=None):
+        if generation is None:
+            self._generation += 1
+            generation = self._generation
         if self._is_running:
             return
         try:
-            self._setup_pipeline()
+            self._ensure_glib_loop()
+            self._setup_pipeline(generation)
         except Exception as e:
             logger.error(f"Failed to start Screencast: {e}")
             self.stop()
 
     def stop(self):
-        self._intended_state = False
+        self._generation += 1
         self._is_running = False
         if self._pipeline:
             try:
@@ -278,6 +295,19 @@ class WaylandScreencastManager:
                 sample = next_sample
             else:
                 break
+                
+        # Validate timestamp freshness
+        buffer = sample.get_buffer()
+        if buffer.pts != Gst.CLOCK_TIME_NONE:
+            pipeline_clock = self._pipeline.get_clock()
+            if pipeline_clock:
+                current_time = pipeline_clock.get_time()
+                base_time = self._pipeline.get_base_time()
+                pipeline_running_time = current_time - base_time
+                diff_ns = pipeline_running_time - buffer.pts
+                if diff_ns > 3 * Gst.SECOND:
+                    logger.warning(f"Dropping stale frame (age: {diff_ns / Gst.SECOND:.2f}s)")
+                    return None
 
         buffer = sample.get_buffer()
         caps = sample.get_caps()
@@ -297,11 +327,12 @@ class WaylandScreencastManager:
         return None
 
 
-def start_wayland_screencast():
+def start_wayland_screencast(intended=True):
     from agent import env_resolver
     env = env_resolver.get_active_env()
     if env.get("XDG_SESSION_TYPE") == "wayland" or "WAYLAND_DISPLAY" in env:
-        WaylandScreencastManager.get_instance().start_async()
+        if intended:
+            WaylandScreencastManager.get_instance().start_async()
 
 def stop_wayland_screencast():
     WaylandScreencastManager.get_instance().stop()
