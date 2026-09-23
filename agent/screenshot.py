@@ -98,7 +98,6 @@ class WaylandScreencastManager:
         
         result_code = None
         results = None
-        import threading
         event = threading.Event()
 
         def on_signal(connection, sender, path, iface, signal, params, user_data):
@@ -130,7 +129,6 @@ class WaylandScreencastManager:
             self._bus.signal_unsubscribe(sub_id)
             raise RuntimeError(f"Portal request {method} failed: {e}")
 
-        import time
         start_time = time.time()
         while not event.wait(0.5):
             if generation is not None and self._generation != generation:
@@ -151,17 +149,26 @@ class WaylandScreencastManager:
         return results
 
     def _setup_pipeline(self, generation=None):
-        from gi.repository import Gio, GLib, Gst
+        from gi.repository import Gio, GLib, Gst, GstApp
+        
+        if generation is not None and self._generation != generation:
+            raise RuntimeError("ScreenCast start aborted (agent paused/stopped).")
 
         # 1. CreateSession
         res = self._portal_request("CreateSession", {"session_handle_token": GLib.Variant("s", f"session_{int(time.time())}")}, generation=generation)
         self._session_handle = res.lookup_value("session_handle", None).get_string()
 
         # 2. SelectSources (types=1 for Monitor)
-        self._portal_request("SelectSources", self._session_handle, {"types": GLib.Variant("u", 1), "multiple": GLib.Variant("b", False)})
+        self._portal_request("SelectSources", self._session_handle, {"types": GLib.Variant("u", 1), "multiple": GLib.Variant("b", False)}, generation=generation)
+
+        if generation is not None and self._generation != generation:
+            raise RuntimeError("ScreenCast start aborted (agent paused/stopped).")
 
         # 3. Start
         res = self._portal_request("Start", self._session_handle, "", {}, generation=generation)
+        if generation is not None and self._generation != generation:
+            raise RuntimeError("ScreenCast start aborted (agent paused/stopped).")
+            
         streams = res.lookup_value("streams", None)
         if not streams or streams.n_children() == 0:
             raise RuntimeError("No streams returned by ScreenCast portal")
@@ -184,6 +191,8 @@ class WaylandScreencastManager:
         
         # Subscribe to session closure
         def on_session_closed(*args):
+            if generation is not None and self._generation != generation:
+                return
             logger.info("ScreenCast session closed by portal.")
             self.stop()
             
@@ -217,6 +226,9 @@ class WaylandScreencastManager:
                 self.stop()
         gst_bus.connect("message", on_gst_message)
 
+        if generation is not None and self._generation != generation:
+            raise RuntimeError("ScreenCast start aborted (agent paused/stopped).")
+
         self._pipeline.set_state(Gst.State.PLAYING)
         self._is_running = True
 
@@ -234,6 +246,8 @@ class WaylandScreencastManager:
             self._generation += 1
             generation = self._generation
         if self._is_running:
+            return
+        if self._generation != generation:
             return
         try:
             self._ensure_glib_loop()
@@ -283,7 +297,7 @@ class WaylandScreencastManager:
         if not self._is_running or not self._appsink:
             return None
 
-        from gi.repository import Gst
+        from gi.repository import Gst, GstApp
         sample = self._appsink.try_pull_sample(Gst.SECOND * 2)
         if not sample:
             return None
