@@ -205,30 +205,63 @@ class WaylandScreencastManager:
             None
         )
 
-        # 5. Build GStreamer pipeline
-        Gst.init(None)
-        pipe_str = f"pipewiresrc fd={fd} path={node_id} always-copy=true ! videoconvert ! video/x-raw,format=RGB ! appsink name=sink max-buffers=1 drop=true"
-        self._pipeline = Gst.parse_launch(pipe_str)
-        self._appsink = self._pipeline.get_by_name("sink")
+        # 5. Build GStreamer pipeline using subprocess to avoid PyInstaller/PyGI segfaults
+        cmd = [
+            "gst-launch-1.0", "-q",
+            "pipewiresrc", f"fd={fd}", f"path={node_id}", "always-copy=true", "!",
+            "videorate", "!", "video/x-raw,framerate=1/1", "!",
+            "videoconvert", "!",
+            "jpegenc", "quality=80", "!",
+            "fdsink", "fd=1"
+        ]
         
-        # GStreamer error handling
-        gst_bus = self._pipeline.get_bus()
-        gst_bus.add_signal_watch()
-        def on_gst_message(bus, msg):
-            if msg.type == Gst.MessageType.ERROR:
-                err, debug = msg.parse_error()
-                logger.error(f"GStreamer Error: {err}, {debug}")
-                self.stop(generation=generation)
-            elif msg.type == Gst.MessageType.EOS:
-                logger.info("GStreamer EOS")
-                self.stop(generation=generation)
-        gst_bus.connect("message", on_gst_message)
+        import subprocess
+        self._proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            pass_fds=(fd,)
+        )
+        
+        # Close the FD in the parent process since the child now owns it
+        try:
+            import os
+            os.close(fd)
+        except Exception:
+            pass
 
-        if generation is not None and self._generation != generation:
-            raise RuntimeError("ScreenCast start aborted (agent paused/stopped).")
-
-        self._pipeline.set_state(Gst.State.PLAYING)
         self._is_running = True
+        self._latest_jpeg = None
+
+        def _read_mjpeg():
+            buffer = b""
+            while self._is_running and self._proc and self._proc.poll() is None:
+                try:
+                    chunk = self._proc.stdout.read(8192)
+                    if not chunk:
+                        break
+                    buffer += chunk
+                    start = buffer.rfind(b"\xff\xd8")
+                    if start != -1:
+                        end = buffer.find(b"\xff\xd9", start)
+                        if end != -1:
+                            jpeg_data = buffer[start:end+2]
+                            with self._lock:
+                                self._latest_jpeg = jpeg_data
+                            buffer = buffer[end+2:]
+                        else:
+                            buffer = buffer[start:]
+                    else:
+                        buffer = buffer[-1:] if buffer else b""
+                except Exception as e:
+                    logger.error(f"Error reading MJPEG stream: {e}")
+                    break
+            logger.info("ScreenCast MJPEG stream ended.")
+            self.stop(generation=generation)
+
+        import threading
+        self._mjpeg_thread = threading.Thread(target=_read_mjpeg, daemon=True)
+        self._mjpeg_thread.start()
 
     def start_async(self):
         self._generation += 1
@@ -259,14 +292,16 @@ class WaylandScreencastManager:
             return
         self._generation += 1
         self._is_running = False
-        if self._pipeline:
+        if hasattr(self, '_proc') and self._proc:
             try:
-                from gi.repository import Gst
-                self._pipeline.set_state(Gst.State.NULL)
+                self._proc.terminate()
+                self._proc.wait(timeout=1.0)
             except Exception:
-                pass
-            self._pipeline = None
-            self._appsink = None
+                try:
+                    self._proc.kill()
+                except Exception:
+                    pass
+            self._proc = None
 
         if hasattr(self, '_closed_sub_id') and self._bus and self._closed_sub_id:
             try:
@@ -294,51 +329,20 @@ class WaylandScreencastManager:
             self._session_handle = None
             
     def get_frame(self) -> Image.Image:
-        if not self._is_running or not self._appsink:
+        if not self._is_running or not hasattr(self, '_latest_jpeg') or not self._latest_jpeg:
             return None
 
-        from gi.repository import Gst, GstApp
-        sample = self._appsink.try_pull_sample(Gst.SECOND * 2)
-        if not sample:
+        with self._lock:
+            jpeg_data = self._latest_jpeg
+
+        if not jpeg_data:
             return None
 
-        # Drain the queue to ensure we have the freshest frame
-        while True:
-            next_sample = self._appsink.try_pull_sample(0)
-            if next_sample:
-                sample = next_sample
-            else:
-                break
-                
-        # Validate timestamp freshness
-        buffer = sample.get_buffer()
-        if buffer.pts != Gst.CLOCK_TIME_NONE:
-            pipeline_clock = self._pipeline.get_clock()
-            if pipeline_clock:
-                current_time = pipeline_clock.get_time()
-                base_time = self._pipeline.get_base_time()
-                pipeline_running_time = current_time - base_time
-                diff_ns = pipeline_running_time - buffer.pts
-                if diff_ns > 3 * Gst.SECOND:
-                    logger.warning(f"Dropping stale frame (age: {diff_ns / Gst.SECOND:.2f}s)")
-                    return None
-
-        buffer = sample.get_buffer()
-        caps = sample.get_caps()
-        struct = caps.get_structure(0)
-        width = struct.get_value("width")
-        height = struct.get_value("height")
-
-        success, map_info = buffer.map(Gst.MapFlags.READ)
-        if success:
-            try:
-                # Calculate stride assuming 3 bytes per pixel for RGB, but use actual buffer size
-                stride = map_info.size // height
-                img = Image.frombytes("RGB", (width, height), map_info.data, "raw", "RGB", stride, 1)
-                return img
-            finally:
-                buffer.unmap(map_info)
-        return None
+        try:
+            return Image.open(io.BytesIO(jpeg_data)).convert("RGB")
+        except Exception as e:
+            logger.error(f"Failed to decode MJPEG frame: {e}")
+            return None
 
 
 def start_wayland_screencast(intended=True):
