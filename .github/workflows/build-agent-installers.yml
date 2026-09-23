@@ -38,6 +38,7 @@ jobs:
 
       - name: Install agent dependencies
         run: |
+          sudo apt-get update && sudo apt-get install -y python3-dev pkg-config libcairo2-dev libgirepository1.0-dev
           python -m pip install --upgrade pip
           pip install -r agent/requirements.txt
 
