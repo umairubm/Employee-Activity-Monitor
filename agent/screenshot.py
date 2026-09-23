@@ -12,6 +12,11 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
+import time
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 # Lossy WebP quality (0-100). ~60 keeps on-screen text legible while shrinking
@@ -40,6 +45,7 @@ class WaylandScreencastManager:
 
     def __init__(self):
         self._is_running = False
+        self._intended_state = False
         self._pipeline = None
         self._appsink = None
         self._bus = None
@@ -145,7 +151,7 @@ class WaylandScreencastManager:
         node_id = streams.get_child_value(0).get_child_value(0).get_uint32()
 
         # 4. OpenPipeWireRemote (Synchronous)
-        ret = self._bus.call_sync(
+        ret, out_fd_list = self._bus.call_with_unix_fd_list_sync(
             "org.freedesktop.portal.Desktop",
             "/org/freedesktop/portal/desktop",
             "org.freedesktop.portal.ScreenCast",
@@ -153,21 +159,56 @@ class WaylandScreencastManager:
             GLib.Variant("(oa{sv})", (self._session_handle, {})),
             GLib.VariantType("(h)"),
             Gio.DBusCallFlags.NONE,
-            -1, None
+            -1, None, None
         )
-        fd_list = ret.get_unix_fd_list()
         fd_index = ret.get_child_value(0).get_handle()
-        fd = fd_list.get(fd_index)
+        fd = out_fd_list.get(fd_index)
         
+        # Subscribe to session closure
+        def on_session_closed(*args):
+            logger.info("ScreenCast session closed by portal.")
+            self.stop()
+            
+        self._closed_sub_id = self._bus.signal_subscribe(
+            "org.freedesktop.portal.Desktop",
+            "org.freedesktop.portal.Session",
+            "Closed",
+            self._session_handle,
+            None,
+            Gio.DBusSignalFlags.NONE,
+            on_session_closed,
+            None
+        )
+
         # 5. Build GStreamer pipeline
         Gst.init(None)
         pipe_str = f"pipewiresrc fd={fd} path={node_id} always-copy=true ! videoconvert ! video/x-raw,format=RGB ! appsink name=sink max-buffers=1 drop=true"
         self._pipeline = Gst.parse_launch(pipe_str)
         self._appsink = self._pipeline.get_by_name("sink")
+        
+        # GStreamer error handling
+        gst_bus = self._pipeline.get_bus()
+        gst_bus.add_signal_watch()
+        def on_gst_message(bus, msg):
+            if msg.type == Gst.MessageType.ERROR:
+                err, debug = msg.parse_error()
+                logger.error(f"GStreamer Error: {err}, {debug}")
+                self.stop()
+            elif msg.type == Gst.MessageType.EOS:
+                logger.info("GStreamer EOS")
+                self.stop()
+        gst_bus.connect("message", on_gst_message)
+
+        if not self._intended_state:
+            logger.info("ScreenCast start aborted (agent paused/stopped).")
+            self.stop()
+            return
+
         self._pipeline.set_state(Gst.State.PLAYING)
         self._is_running = True
 
     def start_async(self):
+        self._intended_state = True
         if self._is_running:
             return
         import threading
@@ -175,6 +216,7 @@ class WaylandScreencastManager:
         t.start()
 
     def start(self):
+        self._intended_state = True
         if self._is_running:
             return
         try:
@@ -182,9 +224,9 @@ class WaylandScreencastManager:
         except Exception as e:
             logger.error(f"Failed to start Screencast: {e}")
             self.stop()
-            raise
 
     def stop(self):
+        self._intended_state = False
         self._is_running = False
         if self._pipeline:
             try:
@@ -194,6 +236,13 @@ class WaylandScreencastManager:
                 pass
             self._pipeline = None
             self._appsink = None
+
+        if hasattr(self, '_closed_sub_id') and self._bus and self._closed_sub_id:
+            try:
+                self._bus.signal_unsubscribe(self._closed_sub_id)
+            except Exception:
+                pass
+            self._closed_sub_id = None
 
         if self._bus and self._session_handle:
             try:
@@ -222,6 +271,14 @@ class WaylandScreencastManager:
         if not sample:
             return None
 
+        # Drain the queue to ensure we have the freshest frame
+        while True:
+            next_sample = self._appsink.try_pull_sample(0)
+            if next_sample:
+                sample = next_sample
+            else:
+                break
+
         buffer = sample.get_buffer()
         caps = sample.get_caps()
         struct = caps.get_structure(0)
@@ -231,7 +288,9 @@ class WaylandScreencastManager:
         success, map_info = buffer.map(Gst.MapFlags.READ)
         if success:
             try:
-                img = Image.frombytes("RGB", (width, height), map_info.data, "raw", "RGB")
+                # Calculate stride assuming 3 bytes per pixel for RGB, but use actual buffer size
+                stride = map_info.size // height
+                img = Image.frombytes("RGB", (width, height), map_info.data, "raw", "RGB", stride, 1)
                 return img
             finally:
                 buffer.unmap(map_info)
