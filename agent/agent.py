@@ -65,7 +65,7 @@ def setup_logging():
     logging.getLogger().addHandler(handler)
 
 
-AGENT_VERSION = "1.2.71"
+AGENT_VERSION = "1.2.72"
 POLL_SECONDS = 15
 # Activity batching. The server caps a batch at 500 rows; we additionally cap
 # serialized bytes well under its JSON body limit so a backlog of rich
@@ -944,7 +944,7 @@ rm -rf "$(dirname "$NEW")" "$0"
                 return
             backup = current_app.with_name(f"{current_app.name}.updating-backup")
         elif sys.platform.startswith("linux"):
-            backup = pathlib.Path(f"{sys.executable}.updating-backup")
+            backup = Path(f"{sys.executable}.updating-backup")
         else:
             return
 

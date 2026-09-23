@@ -38,89 +38,105 @@ def _capture_via_xdg_portal(tmp_path: str) -> bool:
     Wayland — it goes through the compositor's security portal.
     Returns True if the file was written successfully.
     """
+    try:
+        from gi.repository import Gio, GLib
+    except ImportError:
+        raise RuntimeError("gi.repository not available; cannot use proper D-Bus client")
+        
     import time
-    import select
-    
-    token = f"wfa_{int(time.time())}"
-    monitor = None
+    import urllib.parse
+    import os
+    import shutil
     
     try:
-        # Start monitoring for the async Response signal
-        monitor = subprocess.Popen(
-            [
-                "dbus-monitor", "--session",
-                "type='signal',interface='org.freedesktop.portal.Request',member='Response'"
-            ],
-            stdout=subprocess.PIPE, text=True
-        )
+        bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+    except Exception as e:
+        raise RuntimeError(f"Could not connect to session bus: {e}")
         
-        result = subprocess.run(
-            [
-                "gdbus", "call", "--session",
-                "--dest", "org.freedesktop.portal.Desktop",
-                "--object-path", "/org/freedesktop/portal/desktop",
-                "--method", "org.freedesktop.portal.Screenshot.Screenshot",
-                "",  # parent window handle (empty = no parent)
-                f"{{'interactive': <false>, 'handle_token': <'{token}'>}}",
-            ],
-            capture_output=True, text=True, timeout=5, check=False,
-        )
+    token = f"wfa_{int(time.time())}"
+    unique_name = bus.get_unique_name()
+    if not unique_name:
+        raise RuntimeError("Could not determine unique D-Bus name")
         
-        if result.returncode != 0:
-            raise RuntimeError(f"gdbus call failed with code {result.returncode}: {result.stderr}")
-            
-        import re
-        import urllib.parse
-        
-        path_match = re.search(r"'(/?org/freedesktop/portal/desktop/request/[^']+)'", result.stdout)
-        if not path_match:
-            raise RuntimeError(f"Could not parse request path from gdbus output: {result.stdout}")
-        req_path = path_match.group(1)
-        
-        uri = None
-        end_time = time.time() + 10
-        matched_req = False
-        
-        while time.time() < end_time:
-            ready, _, _ = select.select([monitor.stdout], [], [], 1.0)
-            if ready:
-                line = monitor.stdout.readline()
-                if not line:
-                    break
-                    
-                if line.startswith("signal"):
-                    matched_req = req_path in line
-                    
-                if matched_req:
-                    if "uint32 1" in line or "uint32 2" in line:
-                        raise RuntimeError("Portal request was cancelled or failed")
-                        
-                    if "uri" in line or "file://" in line:
-                        match = re.search(r"file://([^\\'\"]+)", line)
-                        if match:
-                            uri_raw = match.group(1).strip()
-                            uri = urllib.parse.unquote(uri_raw)
-                            break
-                        
-        if uri and os.path.exists(uri) and os.path.getsize(uri) > 2000:
-            import shutil
-            shutil.copy2(uri, tmp_path)
+    sender_name = unique_name[1:].replace(".", "_")
+    req_path = f"/org/freedesktop/portal/desktop/request/{sender_name}/{token}"
+    
+    result_code = None
+    result_uri = None
+    
+    loop = GLib.MainLoop()
+    
+    def on_signal(connection, sender_name, object_path, interface_name, signal_name, parameters, user_data):
+        nonlocal result_code, result_uri
+        if object_path == req_path and signal_name == "Response":
             try:
-                os.unlink(uri)
+                code = parameters.get_child_value(0).get_uint32()
+                results = parameters.get_child_value(1)
+                
+                result_code = code
+                if "uri" in results.keys():
+                    result_uri = results.lookup_value("uri", None).get_string()
+            except Exception:
+                pass
+            finally:
+                loop.quit()
+
+    sub_id = bus.signal_subscribe(
+        "org.freedesktop.portal.Desktop",
+        "org.freedesktop.portal.Request",
+        "Response",
+        req_path,
+        None,
+        Gio.DBusSignalFlags.NONE,
+        on_signal,
+        None
+    )
+    
+    try:
+        bus.call_sync(
+            "org.freedesktop.portal.Desktop",
+            "/org/freedesktop/portal/desktop",
+            "org.freedesktop.portal.Screenshot",
+            "Screenshot",
+            GLib.Variant("(sa{sv})", ("", {"interactive": GLib.Variant("b", False), "handle_token": GLib.Variant("s", token)})),
+            GLib.VariantType("(o)"),
+            Gio.DBusCallFlags.NONE,
+            -1,
+            None
+        )
+    except Exception as e:
+        bus.signal_unsubscribe(sub_id)
+        raise RuntimeError(f"Portal request failed: {e}")
+        
+    def on_timeout():
+        loop.quit()
+        return False
+        
+    GLib.timeout_add_seconds(10, on_timeout)
+    loop.run()
+    
+    bus.signal_unsubscribe(sub_id)
+    
+    if result_code is None:
+        raise RuntimeError("Portal request timed out")
+    if result_code == 1:
+        raise RuntimeError("Portal request cancelled by user")
+    if result_code != 0:
+        raise RuntimeError(f"Portal request failed with code {result_code}")
+        
+    if result_uri:
+        uri_path = urllib.parse.unquote(result_uri.replace("file://", ""))
+        if os.path.exists(uri_path) and os.path.getsize(uri_path) > 2000:
+            shutil.copy2(uri_path, tmp_path)
+            try:
+                os.unlink(uri_path)
             except OSError:
                 pass
             return True
         else:
-            raise RuntimeError("XDG portal timed out or returned invalid URI")
-            
-    except Exception as e:
-        raise RuntimeError(f"XDG portal capture error: {e}")
-    finally:
-        if monitor:
-            monitor.kill()
-            monitor.wait()
-            
-    return False
+            raise RuntimeError("XDG portal returned an invalid or empty URI")
+    
+    raise RuntimeError("XDG portal returned no URI")
 
 
 def _capture_linux_wayland():
@@ -134,96 +150,104 @@ def _capture_linux_wayland():
     env = env_resolver.get_active_env()
     is_wayland = env.get("XDG_SESSION_TYPE") == "wayland" or "WAYLAND_DISPLAY" in env
 
-    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-        tmp_path = tmp.name
+    tool_env = env.copy()
+    original = tool_env.pop("LD_LIBRARY_PATH_ORIG", None)
+    if original:
+        tool_env["LD_LIBRARY_PATH"] = original
+    else:
+        tool_env.pop("LD_LIBRARY_PATH", None)
 
     errors = []
 
-    try:
-        # Method 1: XDG Desktop Portal (works for background services on Wayland)
-        if is_wayland:
-            try:
-                if _capture_via_xdg_portal(tmp_path):
-                    if os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 2000:
-                        img = Image.open(tmp_path)
-                        img.load()
-                        result = img.copy()
-                        if not _image_is_black(result):
-                            return result
-                        else:
-                            errors.append("XDG portal captured a black image")
-                    else:
-                        errors.append("XDG portal did not write a valid image")
-            except Exception as e:
-                errors.append(str(e))
-        else:
-            errors.append("Skipped XDG portal (not Wayland session)")
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = os.path.join(tmp_dir, "capture.png")
 
-        # Method 2: GNOME DBus directly (works on older GNOME/Ubuntu without prompt)
         try:
-            dbus_cmd = [
-                "gdbus", "call", "--session",
-                "--dest", "org.gnome.Shell.Screenshot",
-                "--object-path", "/org/gnome/Shell/Screenshot",
-                "--method", "org.gnome.Shell.Screenshot.Screenshot",
-                "false", "false", f"'{tmp_path}'"
-            ]
-            res = subprocess.run(dbus_cmd, capture_output=True, text=True, timeout=10, check=False)
-            if res.returncode == 0 and os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 2000:
-                img = Image.open(tmp_path)
-                img.load()
-                captured = img.copy()
-                if not _image_is_black(captured):
-                    return captured
-                else:
-                    errors.append("GNOME shell captured a black image")
+            # Method 1: XDG Desktop Portal (works for background services on Wayland)
+            if is_wayland:
+                try:
+                    if _capture_via_xdg_portal(tmp_path):
+                        if os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 2000:
+                            img = Image.open(tmp_path)
+                            img.load()
+                            result = img.copy()
+                            if not _image_is_black(result):
+                                return result
+                            else:
+                                errors.append("XDG portal captured a black image")
+                        else:
+                            errors.append("XDG portal did not write a valid image")
+                except Exception as e:
+                    errors.append(str(e))
             else:
-                errors.append(f"GNOME shell dbus failed (code {res.returncode}): {res.stderr.strip() if res.stderr else 'No output'}")
-        except Exception as e:
-            errors.append(f"GNOME shell method error: {e}")
+                errors.append("Skipped XDG portal (not Wayland session)")
 
-        # Method 3: CLI tools (ordered by Wayland compatibility)
-        tools = [
-            ["gnome-screenshot", "-f", "{path}"],     # GNOME Wayland
-            ["grim", "{path}"],                       # wlroots Wayland (Sway etc.)
-            ["spectacle", "-b", "-n", "-o", "{path}"],# KDE Wayland (no notify)
-            ["scrot", "{path}"],                      # X11
-            ["import", "-window", "root", "{path}"],  # ImageMagick X11
-        ]
-
-        for template in tools:
-            cmd = [part.replace("{path}", tmp_path) for part in template]
+            # Method 2: GNOME DBus directly (works on older GNOME/Ubuntu without prompt)
             try:
-                res = subprocess.run(
-                    cmd, timeout=10,
-                    capture_output=True, text=True,
-                    check=False, env=env,
-                )
-                if (
-                    res.returncode == 0
-                    and os.path.exists(tmp_path)
-                    and os.path.getsize(tmp_path) > 2000
-                ):
+                dbus_cmd = [
+                    "gdbus", "call", "--session",
+                    "--dest", "org.gnome.Shell.Screenshot",
+                    "--object-path", "/org/gnome/Shell/Screenshot",
+                    "--method", "org.gnome.Shell.Screenshot.Screenshot",
+                    "false", "false", f"'{tmp_path}'"
+                ]
+                res = subprocess.run(dbus_cmd, capture_output=True, text=True, timeout=10, check=False, env=tool_env)
+                if res.returncode == 0 and os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 2000:
                     img = Image.open(tmp_path)
                     img.load()
                     captured = img.copy()
                     if not _image_is_black(captured):
                         return captured
                     else:
-                        errors.append(f"{template[0]} captured a black image")
+                        errors.append("GNOME shell captured a black image")
                 else:
-                    errors.append(f"{template[0]} failed (code {res.returncode}): {res.stderr.strip() if res.stderr else 'No output'}")
-            except (FileNotFoundError, subprocess.TimeoutExpired) as e:
-                errors.append(f"{template[0]} failed to run: {e}")
-                continue
+                    errors.append(f"GNOME shell dbus failed (code {res.returncode}): {res.stderr.strip() if res.stderr else 'No output'}")
             except Exception as e:
-                errors.append(f"{template[0]} unexpected error: {e}")
-                continue
-    finally:
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
+                errors.append(f"GNOME shell method error: {e}")
+
+            # Method 3: CLI tools (ordered by Wayland compatibility)
+            tools = [
+                ["gnome-screenshot", "-f", "{path}"],     # GNOME Wayland
+                ["grim", "{path}"],                       # wlroots Wayland (Sway etc.)
+                ["spectacle", "-b", "-n", "-o", "{path}"],# KDE Wayland (no notify)
+                ["scrot", "{path}"],                      # X11
+                ["import", "-window", "root", "{path}"],  # ImageMagick X11
+            ]
+
+            for template in tools:
+                cmd = [part.replace("{path}", tmp_path) for part in template]
+                try:
+                    res = subprocess.run(
+                        cmd, timeout=10,
+                        capture_output=True, text=True,
+                        check=False, env=tool_env,
+                    )
+                    if (
+                        res.returncode == 0
+                        and os.path.exists(tmp_path)
+                        and os.path.getsize(tmp_path) > 2000
+                    ):
+                        img = Image.open(tmp_path)
+                        img.load()
+                        captured = img.copy()
+                        if not _image_is_black(captured):
+                            return captured
+                        else:
+                            errors.append(f"{template[0]} captured a black image")
+                    else:
+                        errors.append(f"{template[0]} failed (code {res.returncode}): {res.stderr.strip() if res.stderr else 'No output'}")
+                except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+                    errors.append(f"{template[0]} failed to run: {e}")
+                    continue
+                except Exception as e:
+                    errors.append(f"{template[0]} unexpected error: {e}")
+                    continue
+        finally:
+            try:
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+            except OSError:
+                pass
             
     raise RuntimeError(f"All Linux fallback capture methods failed. Details: {'; '.join(errors)}")
 
