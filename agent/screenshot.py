@@ -70,8 +70,16 @@ def _capture_via_xdg_portal(tmp_path: str) -> bool:
             raise RuntimeError(f"gdbus call failed with code {result.returncode}: {result.stderr}")
             
         import re
+        import urllib.parse
+        
+        path_match = re.search(r"'(/?org/freedesktop/portal/desktop/request/[^']+)'", result.stdout)
+        if not path_match:
+            raise RuntimeError(f"Could not parse request path from gdbus output: {result.stdout}")
+        req_path = path_match.group(1)
+        
         uri = None
         end_time = time.time() + 10
+        matched_req = False
         
         while time.time() < end_time:
             ready, _, _ = select.select([monitor.stdout], [], [], 1.0)
@@ -79,11 +87,20 @@ def _capture_via_xdg_portal(tmp_path: str) -> bool:
                 line = monitor.stdout.readline()
                 if not line:
                     break
-                if "uri" in line or "file://" in line:
-                    match = re.search(r"file://([^\\'\"]+)", line)
-                    if match:
-                        uri = match.group(1).strip()
-                        break
+                    
+                if line.startswith("signal"):
+                    matched_req = req_path in line
+                    
+                if matched_req:
+                    if "uint32 1" in line or "uint32 2" in line:
+                        raise RuntimeError("Portal request was cancelled or failed")
+                        
+                    if "uri" in line or "file://" in line:
+                        match = re.search(r"file://([^\\'\"]+)", line)
+                        if match:
+                            uri_raw = match.group(1).strip()
+                            uri = urllib.parse.unquote(uri_raw)
+                            break
                         
         if uri and os.path.exists(uri) and os.path.getsize(uri) > 2000:
             import shutil

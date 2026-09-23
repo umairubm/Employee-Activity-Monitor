@@ -36,11 +36,11 @@ def get_active_env() -> dict:
                             k, v = item.split(b'=', 1)
                             k_str = k.decode('utf-8', errors='ignore')
                             v_str = v.decode('utf-8', errors='ignore')
-                            if k_str == "DISPLAY" and "DISPLAY" not in env:
+                            if k_str == "DISPLAY" and ("DISPLAY" not in env or os.environ.get("WFA_ENV_GUESSED")):
                                 env["DISPLAY"] = v_str
                                 os.environ["DISPLAY"] = v_str
                                 found_display = True
-                            elif k_str == "XAUTHORITY" and "XAUTHORITY" not in env:
+                            elif k_str == "XAUTHORITY" and ("XAUTHORITY" not in env or os.environ.get("WFA_ENV_GUESSED")):
                                 env["XAUTHORITY"] = v_str
                                 os.environ["XAUTHORITY"] = v_str
                                 found_xauth = True
