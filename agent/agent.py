@@ -65,7 +65,7 @@ def setup_logging():
     logging.getLogger().addHandler(handler)
 
 
-AGENT_VERSION = "1.2.72"
+AGENT_VERSION = "1.2.73"
 POLL_SECONDS = 15
 # Activity batching. The server caps a batch at 500 rows; we additionally cap
 # serialized bytes well under its JSON body limit so a backlog of rich
@@ -216,10 +216,11 @@ class MonitoringAgent:
         self._next_screenshot_gap = self._screenshot_gap()
         try:
             img = screenshot_mod.capture_webp_bytes()
+            logger.info("Screenshot capture completed, upload started.")
             self.api.upload_screenshot(img, _now_iso(), content_type="image/webp")
-            logger.debug("Screenshot captured and uploaded")
+            logger.info("Screenshot upload succeeded.")
         except Exception as exc:  # noqa: BLE001 — best-effort, never crash agent
-            logger.error(f"screenshot failed: {exc}")
+            logger.exception(f"Screenshot upload failed: {exc}")
 
     # --- commands ------------------------------------------------------------
 
@@ -515,6 +516,7 @@ class MonitoringAgent:
         version = str(payload.get("version") or "").strip()
         file_name = str(payload.get("fileName") or "").strip()
         if not version or not file_name:
+            logger.info("Update command failed: missing payload")
             self._finish_command(cid, "failed", "missing update payload")
             return
         # If we are already running the target version (or newer), this is
@@ -524,6 +526,7 @@ class MonitoringAgent:
         if AGENT_VERSION == version or (
             [int(x) for x in AGENT_VERSION.split(".")] >= [int(x) for x in version.split(".")]
         ):
+            logger.info("Update command skipped (already up-to-date)")
             self._finish_command(cid, "completed", f"agent is already running {AGENT_VERSION}")
             return
         # Already acknowledged by _handle_command before dispatch.
@@ -531,6 +534,7 @@ class MonitoringAgent:
         download_url = str(release.get("downloadUrl") or "").strip()
         file_name = str(release.get("fileName") or file_name).strip()
         if not download_url.startswith(("http://", "https://")):
+            logger.info("Update command failed: unsupported source")
             self._finish_command(cid, "failed", "unsupported update source")
             return
         # Let an ack failure propagate: _handle_command's outer handler acks
@@ -605,9 +609,11 @@ class MonitoringAgent:
                 startupinfo=startupinfo,
             )
             logger.info(f"Update installer launched ({version}). Exiting to allow installation.")
+            logger.info("Update command completed.")
             self.quit()
             return
         except Exception as exc:  # noqa: BLE001
+            logger.exception(f"Update command failed with exception: {exc}")
             if temp_path:
                 try:
                     os.unlink(temp_path)

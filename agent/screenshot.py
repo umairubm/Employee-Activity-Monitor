@@ -117,14 +117,21 @@ def _capture_via_xdg_portal(tmp_path: str) -> bool:
     
     bus.signal_unsubscribe(sub_id)
     
+    import logging
+    logger = logging.getLogger(__name__)
+    
     if result_code is None:
+        logger.info("Portal response timed out")
         raise RuntimeError("Portal request timed out")
     if result_code == 1:
+        logger.info("Portal response cancelled")
         raise RuntimeError("Portal request cancelled by user")
     if result_code != 0:
+        logger.info(f"Portal response failed with code {result_code}")
         raise RuntimeError(f"Portal request failed with code {result_code}")
         
     if result_uri:
+        logger.info("Portal response received")
         uri_path = urllib.parse.unquote(result_uri.replace("file://", ""))
         if os.path.exists(uri_path) and os.path.getsize(uri_path) > 2000:
             shutil.copy2(uri_path, tmp_path)
@@ -156,6 +163,10 @@ def _capture_linux_wayland():
         tool_env["LD_LIBRARY_PATH"] = original
     else:
         tool_env.pop("LD_LIBRARY_PATH", None)
+
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info("Capture started and backend selected: Linux fallback sequence")
 
     errors = []
 
@@ -256,37 +267,58 @@ def capture_webp_bytes(quality: int = WEBP_QUALITY) -> bytes:
     """Grab the primary monitor and return lossy WebP-encoded bytes."""
     import mss
     from PIL import Image
+    import logging
+    import threading
+    import sys
+    import traceback
+    
+    logger = logging.getLogger(__name__)
+
+    def _watchdog_thread(done_event):
+        if not done_event.wait(30.0):
+            logger.error("Capture stalled for >30s. Thread stack dump:")
+            for thread_id, frame in sys._current_frames().items():
+                logger.error(f"Thread {thread_id}:")
+                logger.error("".join(traceback.format_stack(frame)))
+
+    done_event = threading.Event()
+    watchdog = threading.Thread(target=_watchdog_thread, args=(done_event,), daemon=True)
+    watchdog.start()
 
     img = None
-
     capture_errors = []
 
     try:
-        with mss.mss() as sct:
-            monitor = sct.monitors[1] if len(sct.monitors) > 1 else sct.monitors[0]
-            raw = sct.grab(monitor)
-            img = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
-    except Exception as e:
-        capture_errors.append(f"mss failed: {e}")
-        img = None
-
-    if sys.platform.startswith("linux"):
-        # mss grabs the XWayland root (solid black) on Wayland sessions.
-        # Fall back to Wayland-compatible methods whenever the image is black.
-        if img is None or _image_is_black(img):
-            if img is not None:
-                capture_errors.append("mss returned a black image (likely Wayland)")
-            try:
-                cli_img = _capture_linux_wayland()
-                if cli_img is not None:
-                    img = cli_img
-            except RuntimeError as e:
-                capture_errors.append(str(e))
-                img = None
-
-    if img is None:
-        raise RuntimeError(f"All screenshot methods failed on this system. Errors: {' | '.join(capture_errors)}")
-
-    buf = io.BytesIO()
-    img.save(buf, format="WEBP", quality=quality, method=6)
-    return buf.getvalue()
+        try:
+            with mss.mss() as sct:
+                monitor = sct.monitors[1] if len(sct.monitors) > 1 else sct.monitors[0]
+                raw = sct.grab(monitor)
+                img = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
+        except Exception as e:
+            capture_errors.append(f"mss failed: {e}")
+            img = None
+    
+        if sys.platform.startswith("linux"):
+            # mss grabs the XWayland root (solid black) on Wayland sessions.
+            # Fall back to Wayland-compatible methods whenever the image is black.
+            if img is None or _image_is_black(img):
+                if img is not None:
+                    capture_errors.append("mss returned a black image (likely Wayland)")
+                try:
+                    cli_img = _capture_linux_wayland()
+                    if cli_img is not None:
+                        img = cli_img
+                except RuntimeError as e:
+                    capture_errors.append(str(e))
+                    img = None
+    
+        if img is None:
+            raise RuntimeError(f"All screenshot methods failed on this system. Errors: {' | '.join(capture_errors)}")
+    
+        buf = io.BytesIO()
+        img.save(buf, format="WEBP", quality=quality, method=6)
+        
+        logger.info("Capture completed.")
+        return buf.getvalue()
+    finally:
+        done_event.set()
