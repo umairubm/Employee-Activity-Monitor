@@ -69,6 +69,25 @@ class WaylandScreencastManager:
         self._session_handle = None
         self._glib_loop = None
         self._glib_thread = None
+        
+        # Diagnostics
+        self._bytes_read = 0
+        self._jpegs_found = 0
+        self._frames_decoded = 0
+        self._first_byte_time = None
+        
+    def get_diagnostics(self):
+        age_str = "None"
+        if hasattr(self, '_latest_jpeg') and self._latest_jpeg:
+            age_str = f"{time.time() - self._latest_jpeg[0]:.2f}s"
+            
+        return {
+            "bytes_read": self._bytes_read,
+            "first_byte_time": self._first_byte_time,
+            "jpegs_found": self._jpegs_found,
+            "frames_decoded": self._frames_decoded,
+            "last_frame_age": age_str
+        }
 
     @classmethod
     def get_instance(cls):
@@ -171,6 +190,11 @@ class WaylandScreencastManager:
         if generation is not None and self._generation != generation:
             raise RuntimeError("ScreenCast start aborted (agent paused/stopped).")
 
+        self._bytes_read = 0
+        self._jpegs_found = 0
+        self._frames_decoded = 0
+        self._first_byte_time = None
+        
         # 1. CreateSession
         logger.info("Portal: Creating Session...")
         res = self._portal_request("CreateSession", {"session_handle_token": GLib.Variant("s", f"session_{int(time.time())}")}, generation=generation)
@@ -285,35 +309,62 @@ class WaylandScreencastManager:
                     break
 
         def _read_mjpeg():
-            buffer = b""
-            while getattr(self, 'state', ScreencastState.STOPPED) in (ScreencastState.STARTING, ScreencastState.READY) and self._proc and self._proc.poll() is None:
+            proc = self._proc
+            buffer = bytearray()
+            while getattr(self, 'state', ScreencastState.STOPPED) in (ScreencastState.STARTING, ScreencastState.READY) and proc and proc.poll() is None:
                 try:
-                    chunk = self._proc.stdout.read(8192)
+                    chunk = proc.stdout.read1(8192)
                     if not chunk:
                         break
-                    buffer += chunk
-                    start = buffer.rfind(b"\xff\xd8")
-                    if start != -1:
+                        
+                    if self._first_byte_time is None:
+                        self._first_byte_time = time.time()
+                    self._bytes_read += len(chunk)
+                        
+                    buffer.extend(chunk)
+                    
+                    # Prevent unbounded memory growth (limit to 5MB)
+                    if len(buffer) > 5 * 1024 * 1024:
+                        logger.warning("MJPEG buffer exceeded 5MB; truncating.")
+                        buffer = buffer[-8192:]
+                        continue
+
+                    # Extract all complete JPEGs in this read
+                    while True:
+                        start = buffer.find(b"\xff\xd8")
+                        if start == -1:
+                            buffer = buffer[-1:] if buffer else bytearray()
+                            break
+                            
                         end = buffer.find(b"\xff\xd9", start)
-                        if end != -1:
-                            jpeg_data = buffer[start:end+2]
-                            with self._lock:
-                                self._latest_jpeg = (time.time(), jpeg_data)
-                                if self.state == ScreencastState.STARTING:
-                                    self.state = ScreencastState.READY
-                            buffer = buffer[end+2:]
-                        else:
+                        if end == -1:
                             buffer = buffer[start:]
-                    else:
-                        buffer = buffer[-1:] if buffer else b""
+                            break
+                            
+                        self._jpegs_found += 1
+                        jpeg_data = bytes(buffer[start:end+2])
+                        buffer = buffer[end+2:]
+                        
+                        try:
+                            image = Image.open(io.BytesIO(jpeg_data))
+                            image.load()
+                            self._frames_decoded += 1
+                            
+                            with self._lock:
+                                if self._generation == generation:
+                                    self._latest_jpeg = (time.time(), jpeg_data)
+                                    if self.state == ScreencastState.STARTING:
+                                        self.state = ScreencastState.READY
+                        except Exception as decode_err:
+                            logger.error(f"Failed to decode MJPEG frame: {decode_err}")
+                            
                 except Exception as e:
                     logger.error(f"Error reading MJPEG stream: {e}")
                     break
             
-            exit_code = self._proc.poll() if self._proc else None
+            exit_code = proc.poll() if proc else None
             logger.info(f"ScreenCast MJPEG stream ended (exit code {exit_code}).")
-            # If it exited unexpectedly without us asking to stop, mark failed
-            if getattr(self, 'state', ScreencastState.STOPPED) in (ScreencastState.STARTING, ScreencastState.READY):
+            if getattr(self, 'state', ScreencastState.STOPPED) in (ScreencastState.STARTING, ScreencastState.READY) and self._generation == generation:
                 self.stop(generation=generation, new_state=ScreencastState.FAILED)
             else:
                 self.stop(generation=generation)
@@ -362,7 +413,8 @@ class WaylandScreencastManager:
                 time.sleep(0.5)
                 
             if getattr(self, 'state', ScreencastState.STOPPED) == ScreencastState.STARTING and self._generation == generation:
-                logger.error("ScreenCast start timed out waiting for the first frame.")
+                diag = self.get_diagnostics()
+                logger.error(f"ScreenCast start timed out waiting for the first frame. Diagnostics: {diag}")
                 timeout = True
                 
             if timeout:

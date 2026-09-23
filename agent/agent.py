@@ -65,7 +65,7 @@ def setup_logging():
     logging.getLogger().addHandler(handler)
 
 
-AGENT_VERSION = "1.2.87"
+AGENT_VERSION = "1.2.88"
 POLL_SECONDS = 15
 # Activity batching. The server caps a batch at 500 rows; we additionally cap
 # serialized bytes well under its JSON body limit so a backlog of rich
@@ -221,6 +221,7 @@ class MonitoringAgent:
             logger.info("Screenshot upload succeeded.")
             
             # Success: reset backoff and advance normal schedule
+            self._screencast_fail_count = 0
             self._last_screenshot = now
             self._screencast_backoff = 5.0
             self._next_screenshot_gap = self._screenshot_gap()
@@ -1064,8 +1065,14 @@ rm -rf "$(dirname "$NEW")" "$0"
                 if is_active and sys.platform.startswith("linux") and (os.environ.get("XDG_SESSION_TYPE") == "wayland" or "WAYLAND_DISPLAY" in os.environ):
                     state = screenshot_mod.get_wayland_screencast_state()
                     if state == screenshot_mod.ScreencastState.FAILED:
-                        logger.warning("ScreenCast failed unexpectedly; restarting.")
-                        screenshot_mod.start_wayland_screencast()
+                        self._screencast_fail_count = getattr(self, '_screencast_fail_count', 0) + 1
+                        if self._screencast_fail_count > 3:
+                            logger.error(f"ScreenCast failed repeatedly ({self._screencast_fail_count} times). Pausing monitoring automatically.")
+                            self.toggle_pause()
+                            is_active = False
+                        else:
+                            logger.warning(f"ScreenCast failed unexpectedly (attempt {self._screencast_fail_count}); restarting.")
+                            screenshot_mod.start_wayland_screencast()
                     elif state == screenshot_mod.ScreencastState.USER_STOPPED:
                         logger.warning("ScreenCast was closed by the user. Pausing monitoring.")
                         self.toggle_pause()
