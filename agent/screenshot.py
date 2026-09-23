@@ -225,6 +225,13 @@ class WaylandScreencastManager:
             env["LD_LIBRARY_PATH"] = env["LD_LIBRARY_PATH_ORIG"]
         else:
             env.pop("LD_LIBRARY_PATH", None)
+            
+        # PyInstaller's GStreamer hook also sets GST_PLUGIN_PATH and GST_PLUGIN_SYSTEM_PATH
+        # which causes the system gst-launch-1.0 to scan the PyInstaller temp dir for plugins,
+        # resulting in noisy "Failed to load plugin" warnings. Strip them.
+        for k in list(env.keys()):
+            if k.startswith("GST_"):
+                env.pop(k)
 
         self._proc = subprocess.Popen(
             cmd,
