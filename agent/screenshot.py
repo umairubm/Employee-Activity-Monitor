@@ -149,7 +149,7 @@ class WaylandScreencastManager:
         return results
 
     def _setup_pipeline(self, generation=None):
-        from gi.repository import Gio, GLib, Gst, GstApp
+        from gi.repository import Gio, GLib
         
         if generation is not None and self._generation != generation:
             raise RuntimeError("ScreenCast start aborted (agent paused/stopped).")
