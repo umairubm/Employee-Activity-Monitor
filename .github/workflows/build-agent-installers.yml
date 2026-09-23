@@ -38,7 +38,7 @@ jobs:
 
       - name: Install agent dependencies
         run: |
-          sudo apt-get update && sudo apt-get install -y python3-dev pkg-config libcairo2-dev libgirepository1.0-dev gstreamer1.0-pipewire gstreamer1.0-plugins-base gstreamer1.0-plugins-good gir1.2-gst-1.0 python3-gst-1.0
+          sudo apt-get update && sudo apt-get install -y python3-dev pkg-config libcairo2-dev libgirepository1.0-dev gstreamer1.0-pipewire gstreamer1.0-plugins-base gstreamer1.0-plugins-good gir1.2-gstreamer-1.0 python3-gst-1.0
           python -m pip install --upgrade pip
           pip install -r agent/requirements.txt
 
@@ -218,7 +218,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update && sudo apt-get install -y python3-tk python3-venv python3-dev pkg-config libcairo2-dev libgirepository1.0-dev gstreamer1.0-pipewire gstreamer1.0-plugins-base gstreamer1.0-plugins-good gir1.2-gst-1.0 python3-gst-1.0
+          sudo apt-get update && sudo apt-get install -y python3-tk python3-venv python3-dev pkg-config libcairo2-dev libgirepository1.0-dev gstreamer1.0-pipewire gstreamer1.0-plugins-base gstreamer1.0-plugins-good gir1.2-gstreamer-1.0 python3-gst-1.0
           python3 -m venv .venv
           .venv/bin/python -m pip install --upgrade pip
           .venv/bin/pip install -r agent/requirements.txt pyinstaller
