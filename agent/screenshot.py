@@ -60,6 +60,7 @@ class WaylandScreencastManager:
     _lock = threading.Lock()
 
     def __init__(self):
+        self.state = ScreencastState.STOPPED
         self._is_running = False
         self._generation = 0
         self._pipeline = None
@@ -322,8 +323,9 @@ class WaylandScreencastManager:
     def start_async(self):
         self._generation += 1
         gen = self._generation
-        if self._is_running:
+        if getattr(self, 'state', ScreencastState.STOPPED) in (ScreencastState.STARTING, ScreencastState.READY):
             return
+        self.state = ScreencastState.STARTING
         import threading
         t = threading.Thread(target=self.start, args=(gen,), daemon=True)
         t.start()
@@ -341,12 +343,14 @@ class WaylandScreencastManager:
             self._setup_pipeline(generation)
         except Exception as e:
             logger.error(f"Failed to start Screencast: {e}")
-            self.stop(generation=generation)
+            self.stop(generation=generation, new_state=ScreencastState.FAILED)
 
-    def stop(self, generation=None):
+    def stop(self, generation=None, new_state=ScreencastState.STOPPED):
         if generation is not None and self._generation != generation:
             return
         self._generation += 1
+        if getattr(self, 'state', ScreencastState.STOPPED) not in (ScreencastState.USER_STOPPED, ScreencastState.FAILED):
+            self.state = new_state
         self._is_running = False
         if hasattr(self, '_proc') and self._proc:
             try:
