@@ -31,196 +31,256 @@ def _image_is_black(img) -> bool:
         return False
 
 
-def _capture_via_xdg_portal(tmp_path: str) -> bool:
-    """Use the XDG Desktop Portal screenshot API (Wayland-safe for background processes).
+from PIL import Image
 
-    This is the only method guaranteed to work for background services on
-    Wayland — it goes through the compositor's security portal.
-    Returns True if the file was written successfully.
-    """
-    try:
-        from gi.repository import Gio, GLib
-    except ImportError:
-        raise RuntimeError("gi.repository not available; cannot use proper D-Bus client")
+
+class WaylandScreencastManager:
+    _instance = None
+    _lock = threading.Lock()
+
+    def __init__(self):
+        self._is_running = False
+        self._pipeline = None
+        self._appsink = None
+        self._bus = None
+        self._session_handle = None
+
+    @classmethod
+    def get_instance(cls):
+        with cls._lock:
+            if cls._instance is None:
+                cls._instance = WaylandScreencastManager()
+            return cls._instance
+
+    def _portal_request(self, method, *args):
+        from gi.repository import GLib, Gio
+        sender_name = self._bus.get_unique_name()[1:].replace(".", "_")
+        token = f"wfa_sc_{int(time.time() * 1000)}"
+        req_path = f"/org/freedesktop/portal/desktop/request/{sender_name}/{token}"
+
+        # Insert handle_token into options
+        options = args[-1]
+        options["handle_token"] = GLib.Variant("s", token)
         
-    import time
-    import urllib.parse
-    import os
-    import shutil
-    
-    try:
-        bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
-    except Exception as e:
-        raise RuntimeError(f"Could not connect to session bus: {e}")
+        sig = []
+        variant_args = []
+        for a in args[:-1]:
+            if isinstance(a, str):
+                if a.startswith("/org/"):
+                    sig.append("o")
+                else:
+                    sig.append("s")
+            else:
+                sig.append("u") # assuming uint
+            variant_args.append(a)
+            
+        sig.append("a{sv}")
+        variant_args.append(options)
         
-    token = f"wfa_{int(time.time())}"
-    unique_name = bus.get_unique_name()
-    if not unique_name:
-        raise RuntimeError("Could not determine unique D-Bus name")
+        signature = f"({''.join(sig)})"
         
-    sender_name = unique_name[1:].replace(".", "_")
-    req_path = f"/org/freedesktop/portal/desktop/request/{sender_name}/{token}"
-    
-    result_code = None
-    result_uri = None
-    
-    loop = GLib.MainLoop()
-    
-    def on_signal(connection, sender_name, object_path, interface_name, signal_name, parameters, user_data):
-        nonlocal result_code, result_uri
-        if object_path == req_path and signal_name == "Response":
-            try:
-                code = parameters.get_child_value(0).get_uint32()
-                results = parameters.get_child_value(1)
-                
-                result_code = code
-                if "uri" in results.keys():
-                    result_uri = results.lookup_value("uri", None).get_string()
-            except Exception:
-                pass
-            finally:
+        result_code = None
+        results = None
+        loop = GLib.MainLoop()
+
+        def on_signal(connection, sender, path, iface, signal, params, user_data):
+            nonlocal result_code, results
+            if path == req_path and signal == "Response":
+                result_code = params.get_child_value(0).get_uint32()
+                results = params.get_child_value(1)
                 loop.quit()
 
-    sub_id = bus.signal_subscribe(
-        "org.freedesktop.portal.Desktop",
-        "org.freedesktop.portal.Request",
-        "Response",
-        req_path,
-        None,
-        Gio.DBusSignalFlags.NONE,
-        on_signal,
-        None
-    )
-    
-    try:
-        bus.call_sync(
+        sub_id = self._bus.signal_subscribe(
+            "org.freedesktop.portal.Desktop",
+            "org.freedesktop.portal.Request",
+            "Response",
+            req_path, None, Gio.DBusSignalFlags.NONE, on_signal, None
+        )
+
+        try:
+            self._bus.call_sync(
+                "org.freedesktop.portal.Desktop",
+                "/org/freedesktop/portal/desktop",
+                "org.freedesktop.portal.ScreenCast",
+                method,
+                GLib.Variant(signature, tuple(variant_args)),
+                GLib.VariantType("(o)"),
+                Gio.DBusCallFlags.NONE,
+                -1, None
+            )
+        except Exception as e:
+            self._bus.signal_unsubscribe(sub_id)
+            raise RuntimeError(f"Portal request {method} failed: {e}")
+
+        GLib.timeout_add_seconds(60, lambda: loop.quit() or False)
+        loop.run()
+        self._bus.signal_unsubscribe(sub_id)
+
+        if result_code is None:
+            raise RuntimeError(f"{method} timed out")
+        if result_code == 1:
+            raise RuntimeError(f"{method} cancelled by user")
+        if result_code != 0:
+            raise RuntimeError(f"{method} failed with code {result_code}")
+
+        return results
+
+    def _setup_pipeline(self):
+        from gi.repository import Gio, GLib, Gst
+        self._bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+
+        # 1. CreateSession
+        res = self._portal_request("CreateSession", {"session_handle_token": GLib.Variant("s", f"session_{int(time.time())}")})
+        self._session_handle = res.lookup_value("session_handle", None).get_string()
+
+        # 2. SelectSources (types=1 for Monitor)
+        self._portal_request("SelectSources", self._session_handle, {"types": GLib.Variant("u", 1), "multiple": GLib.Variant("b", False)})
+
+        # 3. Start
+        res = self._portal_request("Start", self._session_handle, "", {})
+        streams = res.lookup_value("streams", None)
+        if not streams or streams.n_children() == 0:
+            raise RuntimeError("No streams returned by ScreenCast portal")
+        
+        node_id = streams.get_child_value(0).get_child_value(0).get_uint32()
+
+        # 4. OpenPipeWireRemote (Synchronous)
+        ret = self._bus.call_sync(
             "org.freedesktop.portal.Desktop",
             "/org/freedesktop/portal/desktop",
-            "org.freedesktop.portal.Screenshot",
-            "Screenshot",
-            GLib.Variant("(sa{sv})", ("", {"interactive": GLib.Variant("b", False), "handle_token": GLib.Variant("s", token)})),
-            GLib.VariantType("(o)"),
+            "org.freedesktop.portal.ScreenCast",
+            "OpenPipeWireRemote",
+            GLib.Variant("(oa{sv})", (self._session_handle, {})),
+            GLib.VariantType("(h)"),
             Gio.DBusCallFlags.NONE,
-            -1,
-            None
+            -1, None
         )
-    except Exception as e:
-        bus.signal_unsubscribe(sub_id)
-        raise RuntimeError(f"Portal request failed: {e}")
+        fd_list = ret.get_unix_fd_list()
+        fd_index = ret.get_child_value(0).get_handle()
+        fd = fd_list.get(fd_index)
         
-    def on_timeout():
-        loop.quit()
-        return False
-        
-    GLib.timeout_add_seconds(10, on_timeout)
-    loop.run()
-    
-    bus.signal_unsubscribe(sub_id)
-    
-    import logging
-    logger = logging.getLogger(__name__)
-    
-    if result_code is None:
-        logger.info("Portal response timed out")
-        raise RuntimeError("Portal request timed out")
-    if result_code == 1:
-        logger.info("Portal response cancelled")
-        raise RuntimeError("Portal request cancelled by user")
-    if result_code != 0:
-        logger.info(f"Portal response failed with code {result_code}")
-        raise RuntimeError(f"Portal request failed with code {result_code}")
-        
-    if result_uri:
-        logger.info("Portal response received")
-        uri_path = urllib.parse.unquote(result_uri.replace("file://", ""))
-        if os.path.exists(uri_path) and os.path.getsize(uri_path) > 2000:
-            shutil.copy2(uri_path, tmp_path)
+        # 5. Build GStreamer pipeline
+        Gst.init(None)
+        pipe_str = f"pipewiresrc fd={fd} path={node_id} always-copy=true ! videoconvert ! video/x-raw,format=RGB ! appsink name=sink max-buffers=1 drop=true"
+        self._pipeline = Gst.parse_launch(pipe_str)
+        self._appsink = self._pipeline.get_by_name("sink")
+        self._pipeline.set_state(Gst.State.PLAYING)
+        self._is_running = True
+
+    def start_async(self):
+        if self._is_running:
+            return
+        import threading
+        t = threading.Thread(target=self.start, daemon=True)
+        t.start()
+
+    def start(self):
+        if self._is_running:
+            return
+        try:
+            self._setup_pipeline()
+        except Exception as e:
+            logger.error(f"Failed to start Screencast: {e}")
+            self.stop()
+            raise
+
+    def stop(self):
+        self._is_running = False
+        if self._pipeline:
             try:
-                os.unlink(uri_path)
-            except OSError:
+                from gi.repository import Gst
+                self._pipeline.set_state(Gst.State.NULL)
+            except Exception:
                 pass
-            return True
-        else:
-            raise RuntimeError("XDG portal returned an invalid or empty URI")
-    
-    raise RuntimeError("XDG portal returned no URI")
+            self._pipeline = None
+            self._appsink = None
+
+        if self._bus and self._session_handle:
+            try:
+                from gi.repository import Gio, GLib
+                # Optional: call Close on session_handle
+                self._bus.call_sync(
+                    "org.freedesktop.portal.Desktop",
+                    self._session_handle,
+                    "org.freedesktop.portal.Session",
+                    "Close",
+                    GLib.Variant("()", ()),
+                    None,
+                    Gio.DBusCallFlags.NONE,
+                    -1, None
+                )
+            except Exception:
+                pass
+            self._session_handle = None
+            
+    def get_frame(self) -> Image.Image:
+        if not self._is_running or not self._appsink:
+            return None
+
+        from gi.repository import Gst
+        sample = self._appsink.try_pull_sample(Gst.SECOND * 2)
+        if not sample:
+            return None
+
+        buffer = sample.get_buffer()
+        caps = sample.get_caps()
+        struct = caps.get_structure(0)
+        width = struct.get_value("width")
+        height = struct.get_value("height")
+
+        success, map_info = buffer.map(Gst.MapFlags.READ)
+        if success:
+            try:
+                img = Image.frombytes("RGB", (width, height), map_info.data, "raw", "RGB")
+                return img
+            finally:
+                buffer.unmap(map_info)
+        return None
+
+
+def start_wayland_screencast():
+    from agent import env_resolver
+    env = env_resolver.get_active_env()
+    if env.get("XDG_SESSION_TYPE") == "wayland" or "WAYLAND_DISPLAY" in env:
+        WaylandScreencastManager.get_instance().start_async()
+
+def stop_wayland_screencast():
+    WaylandScreencastManager.get_instance().stop()
 
 
 def _capture_linux_wayland():
-    """Try multiple screenshot methods for Linux (Wayland + X11).
-
-    Returns a PIL Image on success, or None if all methods fail.
-    """
+    """Capture using PipeWire on Wayland or fall back to CLI tools on X11."""
+    import tempfile
+    import subprocess
+    import os
     from PIL import Image
     from agent import env_resolver
+    import logging
+    logger = logging.getLogger(__name__)
 
     env = env_resolver.get_active_env()
     is_wayland = env.get("XDG_SESSION_TYPE") == "wayland" or "WAYLAND_DISPLAY" in env
 
+    if is_wayland:
+        logger.info("Using quiet Wayland ScreenCast capture.")
+        mgr = WaylandScreencastManager.get_instance()
+        if not mgr._is_running:
+            raise RuntimeError("ScreenCast session is not active")
+        img = mgr.get_frame()
+        if img:
+            return img
+        raise RuntimeError("Quiet capture unavailable (no frame from PipeWire)")
+
+    # X11 fallback
     tool_env = env.copy()
-    original = tool_env.pop("LD_LIBRARY_PATH_ORIG", None)
-    if original:
-        tool_env["LD_LIBRARY_PATH"] = original
-    else:
-        tool_env.pop("LD_LIBRARY_PATH", None)
-
-    import logging
-    logger = logging.getLogger(__name__)
-    logger.info("Capture started and backend selected: Linux fallback sequence")
-
     errors = []
-
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_path = os.path.join(tmp_dir, "capture.png")
-
         try:
-            # Method 1: XDG Desktop Portal (works for background services on Wayland)
-            if is_wayland:
-                try:
-                    if _capture_via_xdg_portal(tmp_path):
-                        if os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 2000:
-                            img = Image.open(tmp_path)
-                            img.load()
-                            result = img.copy()
-                            if not _image_is_black(result):
-                                return result
-                            else:
-                                errors.append("XDG portal captured a black image")
-                        else:
-                            errors.append("XDG portal did not write a valid image")
-                except Exception as e:
-                    errors.append(str(e))
-            else:
-                errors.append("Skipped XDG portal (not Wayland session)")
-
-            # Method 2: GNOME DBus directly (works on older GNOME/Ubuntu without prompt)
-            try:
-                dbus_cmd = [
-                    "gdbus", "call", "--session",
-                    "--dest", "org.gnome.Shell.Screenshot",
-                    "--object-path", "/org/gnome/Shell/Screenshot",
-                    "--method", "org.gnome.Shell.Screenshot.Screenshot",
-                    "false", "false", f"'{tmp_path}'"
-                ]
-                res = subprocess.run(dbus_cmd, capture_output=True, text=True, timeout=10, check=False, env=tool_env)
-                if res.returncode == 0 and os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 2000:
-                    img = Image.open(tmp_path)
-                    img.load()
-                    captured = img.copy()
-                    if not _image_is_black(captured):
-                        return captured
-                    else:
-                        errors.append("GNOME shell captured a black image")
-                else:
-                    errors.append(f"GNOME shell dbus failed (code {res.returncode}): {res.stderr.strip() if res.stderr else 'No output'}")
-            except Exception as e:
-                errors.append(f"GNOME shell method error: {e}")
-
-            # Method 3: CLI tools (ordered by Wayland compatibility)
             tools = [
-                ["gnome-screenshot", "-f", "{path}"],     # GNOME Wayland
-                ["grim", "{path}"],                       # wlroots Wayland (Sway etc.)
-                ["spectacle", "-b", "-n", "-o", "{path}"],# KDE Wayland (no notify)
+                ["gnome-screenshot", "-f", "{path}"],     # GNOME Wayland fallback (if any)
+                ["grim", "{path}"],                       # wlroots Wayland
+                ["spectacle", "-b", "-n", "-o", "{path}"],# KDE Wayland
                 ["scrot", "{path}"],                      # X11
                 ["import", "-window", "root", "{path}"],  # ImageMagick X11
             ]
@@ -233,11 +293,7 @@ def _capture_linux_wayland():
                         capture_output=True, text=True,
                         check=False, env=tool_env,
                     )
-                    if (
-                        res.returncode == 0
-                        and os.path.exists(tmp_path)
-                        and os.path.getsize(tmp_path) > 2000
-                    ):
+                    if res.returncode == 0 and os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 2000:
                         img = Image.open(tmp_path)
                         img.load()
                         captured = img.copy()

@@ -57,6 +57,12 @@ hiddenimports = [
     "agent.telemetry.interval_journal",
     "PIL._tkinter_finder",
 ]
+if is_linux:
+    hiddenimports.extend([
+        "gi.repository.GLib",
+        "gi.repository.Gio",
+        "gi.repository.Gst",
+    ])
 if is_win:
     hiddenimports.append("pystray._win32")
 elif is_mac:

@@ -38,7 +38,7 @@ jobs:
 
       - name: Install agent dependencies
         run: |
-          sudo apt-get update && sudo apt-get install -y python3-dev pkg-config libcairo2-dev libgirepository1.0-dev
+          sudo apt-get update && sudo apt-get install -y python3-dev pkg-config libcairo2-dev libgirepository1.0-dev gstreamer1.0-pipewire gstreamer1.0-plugins-base gstreamer1.0-plugins-good gir1.2-gst-1.0 python3-gst-1.0
           python -m pip install --upgrade pip
           pip install -r agent/requirements.txt
 
@@ -218,7 +218,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update && sudo apt-get install -y python3-tk python3-venv python3-dev pkg-config libcairo2-dev libgirepository1.0-dev
+          sudo apt-get update && sudo apt-get install -y python3-tk python3-venv python3-dev pkg-config libcairo2-dev libgirepository1.0-dev gstreamer1.0-pipewire gstreamer1.0-plugins-base gstreamer1.0-plugins-good gir1.2-gst-1.0 python3-gst-1.0
           python3 -m venv .venv
           .venv/bin/python -m pip install --upgrade pip
           .venv/bin/pip install -r agent/requirements.txt pyinstaller
@@ -233,8 +233,8 @@ jobs:
       - name: Verify PyGObject packaging
         working-directory: agent/packaging
         run: |
-          echo 'import gi; gi.require_version("GLib", "2.0"); from gi.repository import GLib, Gio; print("GI OK")' > test_gi.py
-          ${{ github.workspace }}/.venv/bin/pyinstaller --noconfirm --onefile --hidden-import gi.repository.Gio --hidden-import gi.repository.GLib test_gi.py
+          echo 'import gi; gi.require_version("GLib", "2.0"); gi.require_version("Gst", "1.0"); from gi.repository import GLib, Gio, Gst; Gst.init(None); print("GI OK")' > test_gi.py
+          ${{ github.workspace }}/.venv/bin/pyinstaller --noconfirm --onefile --hidden-import gi.repository.Gio --hidden-import gi.repository.GLib --hidden-import gi.repository.Gst test_gi.py
           ./dist/test_gi
 
 

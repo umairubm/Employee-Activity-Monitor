@@ -65,7 +65,7 @@ def setup_logging():
     logging.getLogger().addHandler(handler)
 
 
-AGENT_VERSION = "1.2.73"
+AGENT_VERSION = "1.2.74"
 POLL_SECONDS = 15
 # Activity batching. The server caps a batch at 500 rows; we additionally cap
 # serialized bytes well under its JSON body limit so a backlog of rich
@@ -1039,10 +1039,18 @@ rm -rf "$(dirname "$NEW")" "$0"
 
     def _worker(self) -> None:
         last_sync = 0.0
+        was_active = False
         while not self._stop.is_set():
             try:
+                is_active = self.is_active()
+                if is_active and not was_active:
+                    screenshot_mod.start_wayland_screencast()
+                elif not is_active and was_active:
+                    screenshot_mod.stop_wayland_screencast()
+                was_active = is_active
+
                 self._observe()
-                if self.is_active():
+                if is_active:
                     self._maybe_screenshot()
 
                 if time.time() - last_sync >= self.cfg.sync_interval_seconds:
@@ -1051,6 +1059,8 @@ rm -rf "$(dirname "$NEW")" "$0"
             except Exception as exc:  # noqa: BLE001
                 logger.error(f"worker error: {exc}")
             self._stop.wait(POLL_SECONDS)
+        
+        screenshot_mod.stop_wayland_screencast()
         # Final flush on shutdown.
         self._flush_segment()
         try:
