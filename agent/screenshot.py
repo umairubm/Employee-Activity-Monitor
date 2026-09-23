@@ -18,6 +18,22 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+import enum
+
+class CaptureNotReadyError(Exception):
+    pass
+
+class ScreencastState(enum.Enum):
+    STOPPED = 1
+    STARTING = 2
+    READY = 3
+    FAILED = 4
+    USER_STOPPED = 5
+
+def get_wayland_screencast_state() -> ScreencastState:
+    mgr = WaylandScreencastManager.get_instance()
+    return mgr.state
+
 
 # Lossy WebP quality (0-100). ~60 keeps on-screen text legible while shrinking
 # a typical desktop screenshot from a multi-MB PNG to a few hundred KB.
@@ -192,7 +208,7 @@ class WaylandScreencastManager:
         # Subscribe to session closure
         def on_session_closed(*args):
             logger.info("ScreenCast session closed by portal.")
-            self.stop(generation=generation)
+            self.stop(generation=generation, new_state=ScreencastState.USER_STOPPED)
             
         self._closed_sub_id = self._bus.signal_subscribe(
             "org.freedesktop.portal.Desktop",
@@ -247,11 +263,11 @@ class WaylandScreencastManager:
         except Exception:
             pass
 
-        self._is_running = True
         self._latest_jpeg = None
+        # State transitions to READY on first frame in _read_mjpeg
 
         def _read_stderr():
-            while self._is_running and self._proc and self._proc.poll() is None:
+            while getattr(self, 'state', ScreencastState.STOPPED) in (ScreencastState.STARTING, ScreencastState.READY) and self._proc and self._proc.poll() is None:
                 try:
                     line = self._proc.stderr.readline()
                     if not line:
@@ -264,7 +280,7 @@ class WaylandScreencastManager:
 
         def _read_mjpeg():
             buffer = b""
-            while self._is_running and self._proc and self._proc.poll() is None:
+            while getattr(self, 'state', ScreencastState.STOPPED) in (ScreencastState.STARTING, ScreencastState.READY) and self._proc and self._proc.poll() is None:
                 try:
                     chunk = self._proc.stdout.read(8192)
                     if not chunk:
@@ -277,6 +293,8 @@ class WaylandScreencastManager:
                             jpeg_data = buffer[start:end+2]
                             with self._lock:
                                 self._latest_jpeg = (time.time(), jpeg_data)
+                                if self.state == ScreencastState.STARTING:
+                                    self.state = ScreencastState.READY
                             buffer = buffer[end+2:]
                         else:
                             buffer = buffer[start:]
@@ -288,7 +306,11 @@ class WaylandScreencastManager:
             
             exit_code = self._proc.poll() if self._proc else None
             logger.info(f"ScreenCast MJPEG stream ended (exit code {exit_code}).")
-            self.stop(generation=generation)
+            # If it exited unexpectedly without us asking to stop, mark failed
+            if getattr(self, 'state', ScreencastState.STOPPED) in (ScreencastState.STARTING, ScreencastState.READY):
+                self.stop(generation=generation, new_state=ScreencastState.FAILED)
+            else:
+                self.stop(generation=generation)
 
         import threading
         self._stderr_thread = threading.Thread(target=_read_stderr, daemon=True)
@@ -363,7 +385,7 @@ class WaylandScreencastManager:
             self._session_handle = None
             
     def get_frame(self) -> Image.Image:
-        if not self._is_running or not hasattr(self, '_latest_jpeg') or not self._latest_jpeg:
+        if getattr(self, 'state', ScreencastState.STOPPED) != ScreencastState.READY or not hasattr(self, '_latest_jpeg') or not self._latest_jpeg:
             return None
 
         with self._lock:
@@ -411,12 +433,21 @@ def _capture_linux_wayland():
     if is_wayland:
         logger.info("Using quiet Wayland ScreenCast capture.")
         mgr = WaylandScreencastManager.get_instance()
-        if not mgr._is_running:
-            raise RuntimeError("ScreenCast session is not active")
+        
+        state = getattr(mgr, 'state', ScreencastState.STOPPED)
+        if state == ScreencastState.STARTING:
+            raise CaptureNotReadyError("ScreenCast is still starting")
+        elif state == ScreencastState.USER_STOPPED:
+            raise RuntimeError("ScreenCast session was stopped by the user")
+        elif state == ScreencastState.FAILED:
+            raise RuntimeError("ScreenCast subprocess failed unexpectedly")
+        elif state != ScreencastState.READY:
+            raise RuntimeError(f"ScreenCast session is not ready (state: {state})")
+            
         img = mgr.get_frame()
         if img:
             return img
-        raise RuntimeError("Quiet capture unavailable (no frame from PipeWire)")
+        raise RuntimeError("Quiet capture unavailable (no fresh frame from PipeWire)")
 
     # X11 fallback
     tool_env = env.copy()
