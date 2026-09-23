@@ -44,26 +44,26 @@ if command -v apt-get &>/dev/null; then
     # Debian / Ubuntu
     echo "  Detected: apt-get (Debian/Ubuntu)"
     sudo apt-get update -qq
-    sudo apt-get install -y -qq $PACKAGES 2>/dev/null || true
+    sudo apt-get install -y -qq $PACKAGES gstreamer1.0-tools gstreamer1.0-pipewire gstreamer1.0-plugins-good 2>/dev/null || true
     sudo apt-get install -y -qq $OPTIONAL_PACKAGES 2>/dev/null || true
 elif command -v dnf &>/dev/null; then
     # Fedora / RHEL
     echo "  Detected: dnf (Fedora/RHEL)"
-    sudo dnf install -y -q $PACKAGES 2>/dev/null || true
+    sudo dnf install -y -q $PACKAGES gstreamer1-tools gstreamer1-plugins-good gstreamer1-plugin-pipewire 2>/dev/null || true
     sudo dnf install -y -q $OPTIONAL_PACKAGES 2>/dev/null || true
 elif command -v pacman &>/dev/null; then
     # Arch Linux
     echo "  Detected: pacman (Arch Linux)"
-    sudo pacman -Sy --noconfirm --quiet $PACKAGES 2>/dev/null || true
+    sudo pacman -Sy --noconfirm --quiet $PACKAGES gstreamer gst-plugins-good gst-plugin-pipewire 2>/dev/null || true
     sudo pacman -Sy --noconfirm --quiet $OPTIONAL_PACKAGES 2>/dev/null || true
 elif command -v zypper &>/dev/null; then
     # openSUSE
     echo "  Detected: zypper (openSUSE)"
-    sudo zypper install -y -q $PACKAGES 2>/dev/null || true
+    sudo zypper install -y -q $PACKAGES gstreamer-utils gst-plugins-good gstreamer-plugin-pipewire 2>/dev/null || true
     sudo zypper install -y -q $OPTIONAL_PACKAGES 2>/dev/null || true
 else
     echo "  ⚠ Could not detect package manager — skipping dependency install."
-    echo "    Please manually install: $PACKAGES"
+    echo "    Please manually install: $PACKAGES and gstreamer tools/plugins"
 fi
 
 echo "  ✓ Dependencies installed."

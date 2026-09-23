@@ -215,23 +215,45 @@ class WaylandScreencastManager:
             "fdsink", "fd=1"
         ]
         
+        import os
         import subprocess
+        
+        env = os.environ.copy()
+        # PyInstaller overrides LD_LIBRARY_PATH. Restore the original for the subprocess
+        # so it loads system GStreamer plugins instead of the bundled agent libraries.
+        if "LD_LIBRARY_PATH_ORIG" in env:
+            env["LD_LIBRARY_PATH"] = env["LD_LIBRARY_PATH_ORIG"]
+        else:
+            env.pop("LD_LIBRARY_PATH", None)
+
         self._proc = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            env=env,
             pass_fds=(fd,)
         )
         
         # Close the FD in the parent process since the child now owns it
         try:
-            import os
             os.close(fd)
         except Exception:
             pass
 
         self._is_running = True
         self._latest_jpeg = None
+
+        def _read_stderr():
+            while self._is_running and self._proc and self._proc.poll() is None:
+                try:
+                    line = self._proc.stderr.readline()
+                    if not line:
+                        break
+                    line_str = line.decode('utf-8', errors='replace').strip()
+                    if line_str:
+                        logger.error(f"gst-launch-1.0: {line_str}")
+                except Exception:
+                    break
 
         def _read_mjpeg():
             buffer = b""
@@ -247,7 +269,7 @@ class WaylandScreencastManager:
                         if end != -1:
                             jpeg_data = buffer[start:end+2]
                             with self._lock:
-                                self._latest_jpeg = jpeg_data
+                                self._latest_jpeg = (time.time(), jpeg_data)
                             buffer = buffer[end+2:]
                         else:
                             buffer = buffer[start:]
@@ -256,10 +278,15 @@ class WaylandScreencastManager:
                 except Exception as e:
                     logger.error(f"Error reading MJPEG stream: {e}")
                     break
-            logger.info("ScreenCast MJPEG stream ended.")
+            
+            exit_code = self._proc.poll() if self._proc else None
+            logger.info(f"ScreenCast MJPEG stream ended (exit code {exit_code}).")
             self.stop(generation=generation)
 
         import threading
+        self._stderr_thread = threading.Thread(target=_read_stderr, daemon=True)
+        self._stderr_thread.start()
+        
         self._mjpeg_thread = threading.Thread(target=_read_mjpeg, daemon=True)
         self._mjpeg_thread.start()
 
@@ -333,9 +360,14 @@ class WaylandScreencastManager:
             return None
 
         with self._lock:
-            jpeg_data = self._latest_jpeg
+            jpeg_tuple = self._latest_jpeg
 
-        if not jpeg_data:
+        if not jpeg_tuple:
+            return None
+
+        timestamp, jpeg_data = jpeg_tuple
+        if time.time() - timestamp > 3.0:
+            logger.warning(f"Dropping stale MJPEG frame (age: {time.time() - timestamp:.2f}s)")
             return None
 
         try:
