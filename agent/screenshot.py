@@ -191,10 +191,8 @@ class WaylandScreencastManager:
         
         # Subscribe to session closure
         def on_session_closed(*args):
-            if generation is not None and self._generation != generation:
-                return
             logger.info("ScreenCast session closed by portal.")
-            self.stop()
+            self.stop(generation=generation)
             
         self._closed_sub_id = self._bus.signal_subscribe(
             "org.freedesktop.portal.Desktop",
@@ -220,10 +218,10 @@ class WaylandScreencastManager:
             if msg.type == Gst.MessageType.ERROR:
                 err, debug = msg.parse_error()
                 logger.error(f"GStreamer Error: {err}, {debug}")
-                self.stop()
+                self.stop(generation=generation)
             elif msg.type == Gst.MessageType.EOS:
                 logger.info("GStreamer EOS")
-                self.stop()
+                self.stop(generation=generation)
         gst_bus.connect("message", on_gst_message)
 
         if generation is not None and self._generation != generation:
@@ -254,9 +252,11 @@ class WaylandScreencastManager:
             self._setup_pipeline(generation)
         except Exception as e:
             logger.error(f"Failed to start Screencast: {e}")
-            self.stop()
+            self.stop(generation=generation)
 
-    def stop(self):
+    def stop(self, generation=None):
+        if generation is not None and self._generation != generation:
+            return
         self._generation += 1
         self._is_running = False
         if self._pipeline:
