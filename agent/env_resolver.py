@@ -9,7 +9,7 @@ def get_active_env() -> dict:
     """Return the current environment, augmented with the active GUI session's DISPLAY and XAUTHORITY.
     It also injects these directly into os.environ so native libraries like mss can use them."""
     env = dict(os.environ)
-    if "DISPLAY" in env and "XAUTHORITY" in env:
+    if "DISPLAY" in env and "XAUTHORITY" in env and not os.environ.get("WFA_ENV_GUESSED"):
         return env
         
     if not sys.platform.startswith("linux"):
@@ -52,6 +52,7 @@ def get_active_env() -> dict:
                                 os.environ["WAYLAND_DISPLAY"] = v_str
                     if found_display and found_xauth:
                         logger.info(f"env_resolver: Extracted from PID {pid} -> DISPLAY={env.get('DISPLAY')} XAUTH={env.get('XAUTHORITY')}")
+                        os.environ.pop("WFA_ENV_GUESSED", None)
                         break
             except Exception:
                 continue
@@ -60,15 +61,21 @@ def get_active_env() -> dict:
         pass
         
     # Final fallbacks if missing
+    guessed = False
     if "DISPLAY" not in env:
         env["DISPLAY"] = ":0"
         os.environ["DISPLAY"] = ":0"
         logger.info("env_resolver: DISPLAY fallback to :0")
+        guessed = True
     if "XAUTHORITY" not in env:
         uid = os.getuid() if hasattr(os, "getuid") else 1000
         auth_path = f"/run/user/{uid}/gdm/Xauthority"
         env["XAUTHORITY"] = auth_path
         os.environ["XAUTHORITY"] = auth_path
         logger.info(f"env_resolver: XAUTHORITY fallback to {auth_path}")
+        guessed = True
         
+    if guessed:
+        os.environ["WFA_ENV_GUESSED"] = "1"
+
     return env

@@ -38,7 +38,22 @@ def _capture_via_xdg_portal(tmp_path: str) -> bool:
     Wayland — it goes through the compositor's security portal.
     Returns True if the file was written successfully.
     """
+    import time
+    import select
+    
+    token = f"wfa_{int(time.time())}"
+    monitor = None
+    
     try:
+        # Start monitoring for the async Response signal
+        monitor = subprocess.Popen(
+            [
+                "dbus-monitor", "--session",
+                "type='signal',interface='org.freedesktop.portal.Request',member='Response'"
+            ],
+            stdout=subprocess.PIPE, text=True
+        )
+        
         result = subprocess.run(
             [
                 "gdbus", "call", "--session",
@@ -46,29 +61,48 @@ def _capture_via_xdg_portal(tmp_path: str) -> bool:
                 "--object-path", "/org/freedesktop/portal/desktop",
                 "--method", "org.freedesktop.portal.Screenshot.Screenshot",
                 "",  # parent window handle (empty = no parent)
-                "{'interactive': <false>, 'handle_token': <'wfa1'>}",
+                f"{{'interactive': <false>, 'handle_token': <'{token}'>}}",
             ],
-            capture_output=True, text=True, timeout=15, check=False,
+            capture_output=True, text=True, timeout=5, check=False,
         )
+        
         if result.returncode != 0:
-            return False
-        # Response contains the URI of the saved screenshot, e.g.:
-        # ({'uri': <'file:///tmp/screenshot.png'>},)
+            raise RuntimeError(f"gdbus call failed with code {result.returncode}: {result.stderr}")
+            
         import re
-        match = re.search(r"file://([^\\'\"]+)", result.stdout)
-        if not match:
-            return False
-        src_path = match.group(1).strip()
-        if os.path.exists(src_path) and os.path.getsize(src_path) > 2000:
+        uri = None
+        end_time = time.time() + 10
+        
+        while time.time() < end_time:
+            ready, _, _ = select.select([monitor.stdout], [], [], 1.0)
+            if ready:
+                line = monitor.stdout.readline()
+                if not line:
+                    break
+                if "uri" in line or "file://" in line:
+                    match = re.search(r"file://([^\\'\"]+)", line)
+                    if match:
+                        uri = match.group(1).strip()
+                        break
+                        
+        if uri and os.path.exists(uri) and os.path.getsize(uri) > 2000:
             import shutil
-            shutil.copy2(src_path, tmp_path)
+            shutil.copy2(uri, tmp_path)
             try:
-                os.unlink(src_path)
+                os.unlink(uri)
             except OSError:
                 pass
             return True
-    except Exception:
-        pass
+        else:
+            raise RuntimeError("XDG portal timed out or returned invalid URI")
+            
+    except Exception as e:
+        raise RuntimeError(f"XDG portal capture error: {e}")
+    finally:
+        if monitor:
+            monitor.kill()
+            monitor.wait()
+            
     return False
 
 
@@ -86,15 +120,27 @@ def _capture_linux_wayland():
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
         tmp_path = tmp.name
 
+    errors = []
+
     try:
         # Method 1: XDG Desktop Portal (works for background services on Wayland)
-        if is_wayland and _capture_via_xdg_portal(tmp_path):
-            if os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 2000:
-                img = Image.open(tmp_path)
-                img.load()
-                result = img.copy()
-                if not _image_is_black(result):
-                    return result
+        if is_wayland:
+            try:
+                if _capture_via_xdg_portal(tmp_path):
+                    if os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 2000:
+                        img = Image.open(tmp_path)
+                        img.load()
+                        result = img.copy()
+                        if not _image_is_black(result):
+                            return result
+                        else:
+                            errors.append("XDG portal captured a black image")
+                    else:
+                        errors.append("XDG portal did not write a valid image")
+            except Exception as e:
+                errors.append(str(e))
+        else:
+            errors.append("Skipped XDG portal (not Wayland session)")
 
         # Method 2: GNOME DBus directly (works on older GNOME/Ubuntu without prompt)
         try:
@@ -105,15 +151,19 @@ def _capture_linux_wayland():
                 "--method", "org.gnome.Shell.Screenshot.Screenshot",
                 "false", "false", f"'{tmp_path}'"
             ]
-            res = subprocess.run(dbus_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10, check=False)
+            res = subprocess.run(dbus_cmd, capture_output=True, text=True, timeout=10, check=False)
             if res.returncode == 0 and os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 2000:
                 img = Image.open(tmp_path)
                 img.load()
                 captured = img.copy()
                 if not _image_is_black(captured):
                     return captured
-        except Exception:
-            pass
+                else:
+                    errors.append("GNOME shell captured a black image")
+            else:
+                errors.append(f"GNOME shell dbus failed (code {res.returncode}): {res.stderr.strip() if res.stderr else 'No output'}")
+        except Exception as e:
+            errors.append(f"GNOME shell method error: {e}")
 
         # Method 3: CLI tools (ordered by Wayland compatibility)
         tools = [
@@ -129,8 +179,7 @@ def _capture_linux_wayland():
             try:
                 res = subprocess.run(
                     cmd, timeout=10,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
+                    capture_output=True, text=True,
                     check=False, env=env,
                 )
                 if (
@@ -143,16 +192,23 @@ def _capture_linux_wayland():
                     captured = img.copy()
                     if not _image_is_black(captured):
                         return captured
-            except (FileNotFoundError, subprocess.TimeoutExpired):
+                    else:
+                        errors.append(f"{template[0]} captured a black image")
+                else:
+                    errors.append(f"{template[0]} failed (code {res.returncode}): {res.stderr.strip() if res.stderr else 'No output'}")
+            except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+                errors.append(f"{template[0]} failed to run: {e}")
                 continue
-            except Exception:
+            except Exception as e:
+                errors.append(f"{template[0]} unexpected error: {e}")
                 continue
     finally:
         try:
             os.unlink(tmp_path)
         except OSError:
             pass
-    return None
+            
+    raise RuntimeError(f"All Linux fallback capture methods failed. Details: {'; '.join(errors)}")
 
 
 def capture_webp_bytes(quality: int = WEBP_QUALITY) -> bytes:
@@ -162,24 +218,33 @@ def capture_webp_bytes(quality: int = WEBP_QUALITY) -> bytes:
 
     img = None
 
+    capture_errors = []
+
     try:
         with mss.mss() as sct:
             monitor = sct.monitors[1] if len(sct.monitors) > 1 else sct.monitors[0]
             raw = sct.grab(monitor)
             img = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
-    except Exception:
+    except Exception as e:
+        capture_errors.append(f"mss failed: {e}")
         img = None
 
     if sys.platform.startswith("linux"):
         # mss grabs the XWayland root (solid black) on Wayland sessions.
         # Fall back to Wayland-compatible methods whenever the image is black.
         if img is None or _image_is_black(img):
-            cli_img = _capture_linux_wayland()
-            if cli_img is not None:
-                img = cli_img
+            if img is not None:
+                capture_errors.append("mss returned a black image (likely Wayland)")
+            try:
+                cli_img = _capture_linux_wayland()
+                if cli_img is not None:
+                    img = cli_img
+            except RuntimeError as e:
+                capture_errors.append(str(e))
+                img = None
 
     if img is None:
-        raise RuntimeError("All screenshot methods failed on this system")
+        raise RuntimeError(f"All screenshot methods failed on this system. Errors: {' | '.join(capture_errors)}")
 
     buf = io.BytesIO()
     img.save(buf, format="WEBP", quality=quality, method=6)
