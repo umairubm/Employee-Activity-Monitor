@@ -172,16 +172,19 @@ class WaylandScreencastManager:
             raise RuntimeError("ScreenCast start aborted (agent paused/stopped).")
 
         # 1. CreateSession
+        logger.info("Portal: Creating Session...")
         res = self._portal_request("CreateSession", {"session_handle_token": GLib.Variant("s", f"session_{int(time.time())}")}, generation=generation)
         self._session_handle = res.lookup_value("session_handle", None).get_string()
 
         # 2. SelectSources (types=1 for Monitor)
+        logger.info(f"Portal: Selecting Sources for session {self._session_handle}...")
         self._portal_request("SelectSources", self._session_handle, {"types": GLib.Variant("u", 1), "multiple": GLib.Variant("b", False)}, generation=generation)
 
         if generation is not None and self._generation != generation:
             raise RuntimeError("ScreenCast start aborted (agent paused/stopped).")
 
         # 3. Start
+        logger.info("Portal: Starting Session...")
         res = self._portal_request("Start", self._session_handle, "", {}, generation=generation)
         if generation is not None and self._generation != generation:
             raise RuntimeError("ScreenCast start aborted (agent paused/stopped).")
@@ -193,6 +196,7 @@ class WaylandScreencastManager:
         node_id = streams.get_child_value(0).get_child_value(0).get_uint32()
 
         # 4. OpenPipeWireRemote (Synchronous)
+        logger.info("Portal: Opening PipeWire Remote...")
         ret, out_fd_list = self._bus.call_with_unix_fd_list_sync(
             "org.freedesktop.portal.Desktop",
             "/org/freedesktop/portal/desktop",
@@ -231,6 +235,7 @@ class WaylandScreencastManager:
             "jpegenc", "quality=80", "!",
             "fdsink", "fd=1"
         ]
+        logger.info("Launching GStreamer pipeline: " + " ".join(cmd))
         
         import os
         import subprocess
@@ -345,6 +350,24 @@ class WaylandScreencastManager:
         try:
             self._ensure_glib_loop()
             self._setup_pipeline(generation)
+            
+            # Wait for first frame (up to 15 seconds)
+            start_time = time.time()
+            timeout = False
+            while time.time() - start_time < 15.0:
+                if getattr(self, 'state', ScreencastState.STOPPED) != ScreencastState.STARTING:
+                    break
+                if self._generation != generation:
+                    break
+                time.sleep(0.5)
+                
+            if getattr(self, 'state', ScreencastState.STOPPED) == ScreencastState.STARTING and self._generation == generation:
+                logger.error("ScreenCast start timed out waiting for the first frame.")
+                timeout = True
+                
+            if timeout:
+                self.stop(generation=generation, new_state=ScreencastState.FAILED)
+                
         except Exception as e:
             logger.error(f"Failed to start Screencast: {e}")
             self.stop(generation=generation, new_state=ScreencastState.FAILED)
