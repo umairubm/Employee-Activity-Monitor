@@ -6,3 +6,4 @@ psutil>=5.9
 uiautomation>=2.0.18
 pyobjc-framework-Cocoa; sys_platform == 'darwin'
 pyobjc-framework-Quartz; sys_platform == 'darwin'
+PyGObject; sys_platform == 'linux'

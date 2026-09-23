@@ -63,6 +63,7 @@ elif is_mac:
     hiddenimports.append("pystray._darwin")
 elif is_linux:
     hiddenimports.append("pystray._xorg")
+    hiddenimports.extend(["gi.repository.Gio", "gi.repository.GLib"])
 
 a = Analysis(
     [str(SPEC_DIR / "launcher.py")],
