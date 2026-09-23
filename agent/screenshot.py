@@ -296,10 +296,10 @@ class WaylandScreencastManager:
         self._latest_jpeg = None
         # State transitions to READY on first frame in _read_mjpeg
 
-        def _read_stderr():
-            while getattr(self, 'state', ScreencastState.STOPPED) in (ScreencastState.STARTING, ScreencastState.READY) and self._proc and self._proc.poll() is None:
+        def _read_stderr(proc):
+            while getattr(self, 'state', ScreencastState.STOPPED) in (ScreencastState.STARTING, ScreencastState.READY) and proc and proc.poll() is None:
                 try:
-                    line = self._proc.stderr.readline()
+                    line = proc.stderr.readline()
                     if not line:
                         break
                     line_str = line.decode('utf-8', errors='replace').strip()
@@ -308,8 +308,7 @@ class WaylandScreencastManager:
                 except Exception:
                     break
 
-        def _read_mjpeg():
-            proc = self._proc
+        def _read_mjpeg(proc):
             buffer = bytearray()
             while getattr(self, 'state', ScreencastState.STOPPED) in (ScreencastState.STARTING, ScreencastState.READY) and proc and proc.poll() is None:
                 try:
@@ -370,10 +369,11 @@ class WaylandScreencastManager:
                 self.stop(generation=generation)
 
         import threading
-        self._stderr_thread = threading.Thread(target=_read_stderr, daemon=True)
+        current_proc = self._proc
+        self._stderr_thread = threading.Thread(target=_read_stderr, args=(current_proc,), daemon=True)
         self._stderr_thread.start()
         
-        self._mjpeg_thread = threading.Thread(target=_read_mjpeg, daemon=True)
+        self._mjpeg_thread = threading.Thread(target=_read_mjpeg, args=(current_proc,), daemon=True)
         self._mjpeg_thread.start()
 
     def start_async(self):
