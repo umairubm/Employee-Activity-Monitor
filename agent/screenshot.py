@@ -321,23 +321,27 @@ class WaylandScreencastManager:
         self._mjpeg_thread.start()
 
     def start_async(self):
-        self._generation += 1
-        gen = self._generation
-        if getattr(self, 'state', ScreencastState.STOPPED) in (ScreencastState.STARTING, ScreencastState.READY):
-            return
-        self.state = ScreencastState.STARTING
+        with self._lock:
+            if getattr(self, 'state', ScreencastState.STOPPED) in (ScreencastState.STARTING, ScreencastState.READY):
+                return
+            self._generation += 1
+            gen = self._generation
+            self.state = ScreencastState.STARTING
         import threading
         t = threading.Thread(target=self.start, args=(gen,), daemon=True)
         t.start()
 
     def start(self, generation=None):
-        if generation is None:
-            self._generation += 1
-            generation = self._generation
-        if self._is_running:
-            return
-        if self._generation != generation:
-            return
+        with self._lock:
+            if generation is None:
+                if getattr(self, 'state', ScreencastState.STOPPED) in (ScreencastState.STARTING, ScreencastState.READY):
+                    return
+                self._generation += 1
+                generation = self._generation
+                self.state = ScreencastState.STARTING
+            
+            if self._generation != generation:
+                return
         try:
             self._ensure_glib_loop()
             self._setup_pipeline(generation)
