@@ -56,6 +56,7 @@ const AGENT_VERSION = "2.0.5-node";
 const CONFIG_DIR = path.join(os.homedir(), ".active-tracker");
 const CREDS_FILE = path.join(CONFIG_DIR, "credentials.json");
 const OFFLINE_DB_FILE = path.join(CONFIG_DIR, "offline-queue.json");
+const REJECTED_DB_FILE = path.join(CONFIG_DIR, "rejected-queue.json");
 const LOCAL_CONFIG_FILE = path.join(__dirname, "tracker.config.json");
 const LOCK_FILE = path.join(CONFIG_DIR, "agent.lock");
 
@@ -167,6 +168,20 @@ const clientState = {
   isOfflineSince: null,
   // Two os.cpus() samples, one heartbeat apart, give us a real CPU% reading.
   lastCpuSample: null,
+  // Monotonic reference for sleep/gap detection.
+  // We pair a Date.now() wall-clock reading with a process.hrtime.bigint()
+  // monotonic reading so we can detect when the wall clock jumps more than
+  // the monotonic elapsed time (clock change) or when the monotonic clock
+  // jumps more than expected (sleep/suspend).
+  _lastObserveWall: null,       // ms since epoch
+  _lastObserveHrtime: null,     // BigInt nanoseconds
+  // Current open segment (not yet persisted to the offline queue).
+  _currentSegment: null,
+  // Sequence counter for this session.
+  _nextSequence: 1,
+  _sequenceNamespace: null,
+  // Whether we were locked on the previous heartbeat.
+  _wasLocked: false,
 };
 
 function getSyncDate() {
@@ -231,12 +246,87 @@ function saveCreds() {
 }
 
 // ── Persistent offline queue (activity logs only) ─────────────────────────────
+// Each record includes a stable segmentId and sequence number so retries are
+// idempotent and the server can deduplicate. Records are persisted to disk
+// BEFORE any upload attempt and removed only after the server explicitly
+// acknowledges them.  A separate rejected queue holds records the server
+// rejected (e.g. 422 / bad schema) so one malformed record cannot block others.
 const offlineQueue = {
   logs: [],
+  _seqNs: null,       // sequence namespace UUID (stable across restarts)
+  _nextSeq: 1,
   load() {
     try {
       if (fs.existsSync(OFFLINE_DB_FILE)) {
         const raw = JSON.parse(fs.readFileSync(OFFLINE_DB_FILE, "utf-8"));
+        this.logs = Array.isArray(raw.logs) ? raw.logs : [];
+        if (typeof raw.sequenceNamespace === "string") this._seqNs = raw.sequenceNamespace;
+        if (typeof raw.nextSequence === "number") this._nextSeq = raw.nextSequence;
+      }
+    } catch {
+      this.logs = [];
+    }
+    if (!this._seqNs) {
+      this._seqNs = crypto.randomUUID();
+    }
+  },
+  save() {
+    // Atomic write: write to a temp file then rename so a crash during write
+    // cannot corrupt the queue file.  fs.renameSync is atomic on Linux/macOS
+    // when src and dst are on the same filesystem (which ~/.active-tracker is).
+    const tmp = `${OFFLINE_DB_FILE}.tmp`;
+    try {
+      fs.writeFileSync(
+        tmp,
+        JSON.stringify({ logs: this.logs, sequenceNamespace: this._seqNs, nextSequence: this._nextSeq }, null, 2),
+      );
+      fs.renameSync(tmp, OFFLINE_DB_FILE);
+    } catch (e) {
+      console.error("❌ Failed to save offline queue:", e.message);
+      try { fs.unlinkSync(tmp); } catch { /* best-effort cleanup */ }
+    }
+  },
+  nextSeq() {
+    const s = this._nextSeq++;
+    return s;
+  },
+  seqNamespace() {
+    return this._seqNs;
+  },
+  add(log) {
+    this.logs.push(log);
+    if (this.logs.length > 5000) this.logs = this.logs.slice(-5000);
+    this.save();
+  },
+  acknowledge(segmentIds) {
+    if (!segmentIds || !segmentIds.length) return;
+    const idSet = new Set(segmentIds);
+    this.logs = this.logs.filter((l) => !idSet.has(l.segmentId));
+    this.save();
+  },
+  quarantine(segmentIds, reason = "") {
+    if (!segmentIds || !segmentIds.length) return;
+    const idSet = new Set(segmentIds);
+    const rejected = [];
+    this.logs = this.logs.filter((l) => {
+      if (idSet.has(l.segmentId)) { rejected.push(l); return false; }
+      return true;
+    });
+    if (rejected.length) {
+      rejectedQueue.addAll(rejected, reason);
+    }
+    this.save();
+  },
+};
+offlineQueue.load();
+
+// Rejected segments — kept for operator diagnosis, never re-submitted.
+const rejectedQueue = {
+  logs: [],
+  load() {
+    try {
+      if (fs.existsSync(REJECTED_DB_FILE)) {
+        const raw = JSON.parse(fs.readFileSync(REJECTED_DB_FILE, "utf-8"));
         this.logs = Array.isArray(raw.logs) ? raw.logs : [];
       }
     } catch {
@@ -245,22 +335,204 @@ const offlineQueue = {
   },
   save() {
     try {
-      fs.writeFileSync(OFFLINE_DB_FILE, JSON.stringify({ logs: this.logs }, null, 2));
+      fs.writeFileSync(REJECTED_DB_FILE, JSON.stringify({ logs: this.logs }, null, 2));
     } catch (e) {
-      console.error("❌ Failed to save offline queue:", e.message);
+      console.error("❌ Failed to save rejected queue:", e.message);
     }
   },
-  add(log) {
-    this.logs.push(log);
-    if (this.logs.length > 5000) this.logs = this.logs.slice(-5000);
+  addAll(items, reason) {
+    const now = new Date().toISOString();
+    for (const item of items) {
+      this.logs.push({ ...item, _rejectionReason: reason, _rejectedAt: now });
+    }
+    if (this.logs.length > 2000) this.logs = this.logs.slice(-2000);
     this.save();
   },
 };
-offlineQueue.load();
+rejectedQueue.load();
 
 // Timer handles
 let syncTimer = null;
 let screenshotTimer = null;
+let uploadTimer = null;
+
+// ── Sleep / gap detection constants ──────────────────────────────────────────
+// If the elapsed hrtime (monotonic) between two observations exceeds this
+// threshold the process was almost certainly suspended (sleep/hibernate).  In
+// that case we close the current segment at the LAST known wall-clock time
+// so the gap is not labelled as active time.
+const SLEEP_GAP_THRESHOLD_MS = 60_000;
+// Periodically finalize segments even when nothing has changed (every ~45s).
+const MAX_SEGMENT_MS = 45_000;
+
+// ── Segment helpers ───────────────────────────────────────────────────────────
+function _nowIso() {
+  return new Date(Date.now() + (clientState.serverClockOffset || 0)).toISOString();
+}
+
+function _openSegment(wallMs) {
+  const startedAt = new Date(wallMs + (clientState.serverClockOffset || 0)).toISOString();
+  const sessionState = clientState.isLocked ? "locked" : "unlocked";
+  const idleSec = clientState.idleSecondsCounter;
+  const passiveThr = configState.idleThresholdSeconds * 0.5;
+  let engagementState;
+  if (sessionState !== "unlocked" || idleSec >= configState.idleThresholdSeconds) {
+    engagementState = "idle";
+  } else if (idleSec >= passiveThr) {
+    engagementState = "passive";
+  } else {
+    engagementState = "active";
+  }
+  return {
+    segmentId: crypto.randomUUID(),
+    sequenceNamespace: offlineQueue.seqNamespace(),
+    sequence: offlineQueue.nextSeq(),
+    processName: clientState.activeApp || "System",
+    windowTitle: clientState.windowTitle || "",
+    url: clientState.activeUrl || undefined,
+    engagementState,
+    sessionState,
+    connectivityState: "online",
+    startedAt,
+    endedAt: startedAt,
+    elapsedMilliseconds: 0,
+    durationSeconds: 0,
+    idleSeconds: 0,
+    _startWallMs: wallMs,
+    _startHrtime: process.hrtime.bigint(),
+  };
+}
+
+function _finalizeSegment(seg, endWallMs, idleSeconds) {
+  // Use the hrtime elapsed from when the segment was opened for the duration
+  // so wall-clock changes don’t produce negative or inflated durations.
+  const elapsedHr = process.hrtime.bigint() - seg._startHrtime;
+  const elapsedMs = Math.max(0, Number(elapsedHr / 1_000_000n));
+  const durationSeconds = Math.round(elapsedMs / 1000);
+  const endedAt = new Date(endWallMs + (clientState.serverClockOffset || 0)).toISOString();
+  const clampedIdle = Math.max(0, Math.min(idleSeconds ?? 0, durationSeconds));
+  const { _startWallMs, _startHrtime, ...payload } = seg;
+  return {
+    ...payload,
+    endedAt,
+    elapsedMilliseconds: elapsedMs,
+    durationSeconds,
+    idleSeconds: clampedIdle,
+  };
+}
+
+function _closeCurrentSegment(endWallMs) {
+  const seg = clientState._currentSegment;
+  if (!seg) return;
+  clientState._currentSegment = null;
+  const idleSec = clientState.idleSecondsCounter;
+  const payload = _finalizeSegment(seg, endWallMs, idleSec);
+  if (payload.elapsedMilliseconds > 0) {
+    offlineQueue.add(payload);
+  }
+}
+
+function getSuspendInclusiveSeconds() {
+  // On Linux, /proc/uptime provides seconds since boot, including suspend time.
+  // This avoids false positives from NTP wall-clock jumps.
+  if (os.platform() === "linux") {
+    try {
+      const parts = fs.readFileSync("/proc/uptime", "utf8").split(" ");
+      return parseFloat(parts[0]);
+    } catch (e) {
+      // fallback if /proc/uptime is unavailable
+    }
+  }
+  // On macOS/Windows, the wall clock is the best available suspend-inclusive clock.
+  return Date.now() / 1000;
+}
+
+function getMonoSeconds() {
+  return Number(process.hrtime.bigint() / 1_000_000n) / 1000;
+}
+
+function _observeSegment() {
+  const wallMs = Date.now();
+  const hrNow = process.hrtime.bigint();
+  const bootSecs = getSuspendInclusiveSeconds();
+  const monoSecs = getMonoSeconds();
+
+  // ── Sleep/gap detection ────────────────────────────────────────────────
+  if (clientState._currentSegment !== null &&
+      clientState._lastObserveWall !== null &&
+      clientState._lastBootSecs !== undefined &&
+      clientState._lastMonoSecs !== undefined) {
+    const prevDelta = clientState._lastBootSecs - clientState._lastMonoSecs;
+    const nowDelta = bootSecs - monoSecs;
+    const suspendSecs = Math.max(0, nowDelta - prevDelta);
+    
+    if (suspendSecs > SLEEP_GAP_THRESHOLD_MS / 1000) {
+      // The difference between suspend-inclusive (boot/wall) and suspend-exclusive (mono)
+      // clocks grew by more than the threshold. The process was suspended.
+      // Close the segment at the LAST known wall-clock time, not at wallMs.
+      _closeCurrentSegment(clientState._lastObserveWall);
+      console.warn(
+        `⚠️ Sleep/suspension detected (${Math.round(suspendSecs)}s gap). ` +
+        "Segment closed at last observation time."
+      );
+    } else {
+      // ── Periodic segment rotation ──────────────────────────────────────
+      const elapsedHr = hrNow - clientState._currentSegment._startHrtime;
+      const elapsedMs = Number(elapsedHr / 1_000_000n);
+      if (elapsedMs >= MAX_SEGMENT_MS) {
+        _closeCurrentSegment(wallMs);
+        // Re-open a new segment immediately so observation is continuous.
+      }
+    }
+  }
+
+  clientState._lastObserveWall = wallMs;
+  clientState._lastObserveHrtime = hrNow;
+  clientState._lastBootSecs = bootSecs;
+  clientState._lastMonoSecs = monoSecs;
+
+  // ── Session / engagement classification ───────────────────────────────
+  const sessionState = clientState.isLocked ? "locked" : "unlocked";
+  const idleSec = clientState.idleSecondsCounter;
+  const passiveThr = configState.idleThresholdSeconds * 0.5;
+  let engagementState;
+  if (sessionState !== "unlocked" || idleSec >= configState.idleThresholdSeconds) {
+    engagementState = "idle";
+  } else if (idleSec >= passiveThr) {
+    engagementState = "passive";
+  } else {
+    engagementState = "active";
+  }
+
+  const identity = [
+    clientState.activeApp || "System",
+    clientState.windowTitle || "",
+    clientState.activeUrl || null,
+    engagementState,
+    sessionState,
+  ].join("\x00");
+
+  const cur = clientState._currentSegment;
+  if (!cur || cur._identity !== identity) {
+    // State changed — close old segment, open a new one.
+    if (cur) _closeCurrentSegment(wallMs);
+    const seg = _openSegment(wallMs);
+    seg._identity = identity;
+    seg.engagementState = engagementState;
+    seg.sessionState = sessionState;
+    clientState._currentSegment = seg;
+  }
+  // Update running totals on the open segment.
+  const elapsedHr = hrNow - clientState._currentSegment._startHrtime;
+  const elapsedMs = Math.max(0, Number(elapsedHr / 1_000_000n));
+  clientState._currentSegment.endedAt =
+    new Date(wallMs + (clientState.serverClockOffset || 0)).toISOString();
+  clientState._currentSegment.elapsedMilliseconds = elapsedMs;
+  clientState._currentSegment.durationSeconds = Math.round(elapsedMs / 1000);
+  clientState._currentSegment.idleSeconds = Math.max(
+    0, Math.min(idleSec, Math.round(elapsedMs / 1000))
+  );
+}
 
 // ── Low-level HTTP (JSON requests and raw image-byte POSTs to our API) ────────
 function httpRequest(method, urlString, { headers = {}, body = null } = {}) {
@@ -275,7 +547,9 @@ function httpRequest(method, urlString, { headers = {}, body = null } = {}) {
         res.on("data", (c) => chunks.push(c));
         res.on("end", () => {
           const text = Buffer.concat(chunks).toString("utf-8");
-          resolve({ status: res.statusCode, text });
+          // Surface statusCode and response headers so callers can read
+          // Retry-After and other metadata from error responses.
+          resolve({ status: res.statusCode, text, headers: res.headers });
         });
       }
     );
@@ -303,7 +577,7 @@ async function apiPost(syncPath, json, { auth = true } = {}) {
     "Content-Length": Buffer.byteLength(body),
     ...(auth ? authHeaders() : {}),
   };
-  const { status, text } = await httpRequest("POST", `${SYNC_BASE}${syncPath}`, {
+  const { status, text, headers: resHeaders } = await httpRequest("POST", `${SYNC_BASE}${syncPath}`, {
     headers,
     body,
   });
@@ -311,7 +585,11 @@ async function apiPost(syncPath, json, { auth = true } = {}) {
     clientState.isOfflineSince = null;
     return text ? JSON.parse(text) : { ok: true };
   }
-  throw new Error(`POST ${syncPath} -> ${status}: ${text}`);
+  // Throw a structured error so callers can inspect status and headers.
+  const err = new Error(`POST ${syncPath} -> ${status}: ${text}`);
+  err.statusCode = status;
+  err.headers = resHeaders || {};
+  throw err;
 }
 
 // POST raw image bytes to a sync endpoint. The server stages the bytes and
@@ -1475,38 +1753,149 @@ async function captureAndUploadScreenshot() {
   }
 }
 
-// ── Sync cycle: heartbeat (+ config/commands) then activity batch ─────────────
+// ── Upload worker: drain the offline queue independently of tracking ───────────
+//
+// Server response contract (batchId path):
+//   { batchId, acceptedSegmentIds: string[], rejected: Array<{segmentId?, reason?}> }
+//
+// Error handling:
+//   413  – batch too large; halve limit
+//   429  – rate-limited; retain records, back off per Retry-After header
+//   401/403 – auth failure; retain records, log and wait
+//   Other 4xx – retain records and log (do NOT quarantine)
+//   response.rejected entries – quarantine only those specific records
+let _uploadBatchSize = 500;
+let _uploadBackoffUntil = 0;  // epoch ms
+
+async function drainUploadQueue() {
+  if (!clientState.deviceId) return;
+  if (!offlineQueue.logs.length) return;
+  if (Date.now() < _uploadBackoffUntil) return;
+
+  const batch = offlineQueue.logs.slice(0, _uploadBatchSize);
+  const batchId = crypto.randomUUID();
+  try {
+    const systemInfo = await getSystemInfo();
+    const res = await apiPost("/activity", { batchId, logs: batch, systemInfo });
+
+    // ── Server response contract ───────────────────────────────────────
+    // { batchId, acceptedSegmentIds: [str], rejected: [{segmentId?,reason?}] }
+    // Acknowledge ONLY explicitly accepted IDs; do not assume the rest.
+    const accepted = Array.isArray(res?.acceptedSegmentIds)
+      ? res.acceptedSegmentIds.filter((id) => typeof id === "string")
+      : [];
+    if (accepted.length) offlineQueue.acknowledge(accepted);
+
+    // Per-record rejections: quarantine only the explicitly rejected segments.
+    const rawRejected = Array.isArray(res?.rejected) ? res.rejected : [];
+    if (rawRejected.length) {
+      const rejectedIds = [];
+      for (const entry of rawRejected) {
+        if (typeof entry === "string" && entry) {
+          rejectedIds.push(entry);
+        } else if (entry && typeof entry === "object") {
+          const sid = entry.segmentId || entry.id;
+          if (typeof sid === "string" && sid) {
+            rejectedIds.push(sid);
+            console.warn(
+              `⚠️ Segment ${sid} rejected by server: ${entry.reason || "unknown"}`
+            );
+          }
+        }
+      }
+      if (rejectedIds.length) offlineQueue.quarantine(rejectedIds, "server_rejected");
+    }
+
+    // If the server returned no ack lists (legacy path without batchId),
+    // fall back to acknowledging the entire batch.
+    if (!accepted.length && !rawRejected.length && (res?.accepted != null || res?.ok)) {
+      offlineQueue.acknowledge(batch.map((l) => l.segmentId));
+    }
+
+    // Grow batch size on success.
+    _uploadBatchSize = Math.min(500, _uploadBatchSize * 2);
+
+    const queueSize = offlineQueue.logs.length;
+    const oldest = offlineQueue.logs[0]?.startedAt ?? null;
+    console.log(
+      `📝 Activity upload: accepted=${accepted.length} rejected=${rawRejected.length} ` +
+      `queue=${queueSize} oldest=${oldest ?? "none"}`
+    );
+    if (clientState.isOfflineSince) {
+      console.log(`✅ Reconnected. Pending records remaining: ${queueSize}`);
+      clientState.isOfflineSince = null;
+    }
+  } catch (err) {
+    const status = err?.statusCode ?? err?.status;
+    if (status === 413) {
+      if (_uploadBatchSize <= 1) {
+        // Already at minimum batch size; quarantine the stuck record so later
+        // records can proceed rather than retrying this one forever.
+        const stuck = offlineQueue.logs[0];
+        if (stuck) {
+          console.error(`❌ Single record still 413 at min batch size; quarantining ${stuck.segmentId}`);
+          offlineQueue.quarantine([stuck.segmentId], "oversized_413");
+        }
+      } else {
+        // Payload too large – split the batch.
+        _uploadBatchSize = Math.max(1, Math.floor(_uploadBatchSize / 2));
+        console.warn(`⚠️ Activity batch too large (413); retrying with ${_uploadBatchSize} records`);
+      }
+    } else if (status === 429) {
+      // Rate limited – retain all records and back off.
+      // Honour the server Retry-After header (delay-seconds or HTTP-date).
+      const serverDelay = _parseRetryAfter(err?.headers);
+      const backoff = serverDelay !== null ? Math.max(5, serverDelay) : 60;
+      _uploadBackoffUntil = Date.now() + backoff * 1000;
+      console.warn(`⏸️ Activity rate-limited (429); backing off ${backoff}s`);
+    } else if (status === 401 || status === 403) {
+      // Auth failure – the records are valid; the credential is not.
+      // Retain everything and log for the operator to resolve.
+      console.error(`❌ Activity upload auth failure (${status}); retaining records. Check device credentials.`);
+    } else if (status != null) {
+      // Other HTTP error – retain records and log.
+      console.error(`❌ Activity sync HTTP ${status}; retaining ${batch.length} records.`);
+    } else {
+      // Network error.
+      if (!clientState.isOfflineSince) {
+        clientState.isOfflineSince = Date.now();
+        console.warn("📉 Server unreachable. Activity cached locally. Queue:", offlineQueue.logs.length);
+      } else {
+        console.warn("⏸️ Activity upload failed; still offline. Queue:", offlineQueue.logs.length);
+      }
+    }
+  }
+}
+
+// ── Sync cycle: heartbeat (+ config/commands) ─────────────────────────────────
 async function syncTelemetry() {
   // 1. Heartbeat — liveness + config + lock state + pending commands.
   try {
-    // Wall-clock offset (minutes) between what the device user sees on their
-    // clock and the (server-corrected) UTC instants we report. Includes any
-    // local clock error on top of the timezone offset, so the dashboard can
-    // reproduce the exact wall time the user saw.
     const tzOffsetMinutes =
       -new Date().getTimezoneOffset() -
-      Math.round(clientState.serverClockOffset / 60000);
+      Math.round((clientState.serverClockOffset || 0) / 60000);
     const res = await apiPost("/heartbeat", {
       agentVersion: AGENT_VERSION,
       tzOffsetMinutes,
       metrics: collectMetrics(),
     });
-    // The prior app is retained beside a macOS replacement until the new
-    // build successfully heartbeats. That is the authoritative health signal.
     cleanupMacUpdateBackup();
     if (res?.serverTime) {
       clientState.serverClockOffset = new Date(res.serverTime).getTime() - Date.now();
     }
+    const wasLocked = clientState.isLocked;
     if (typeof res?.isLocked === "boolean") clientState.isLocked = res.isLocked;
     if ("lockedUntil" in (res || {}))
       clientState.lockedUntil = res.lockedUntil || null;
-    // Timed-lock enforcement: if the server still says locked, re-lock now
-    // (once per poll). When isLocked flips false the server has ended the lock,
-    // so we stop re-locking — no explicit unlock needed.
+
+    // If the server just flipped the lock ON, close the current open segment
+    // so we don't leave an 'unlocked' interval open across a remote lock event.
+    if (!wasLocked && clientState.isLocked) {
+      _closeCurrentSegment(Date.now());
+    }
+
     await enforceLock();
     applyConfig(res?.config);
-    // Converge USB policy to the server's config each heartbeat (Windows-only,
-    // best-effort) so a reinstalled/offline device applies the current policy.
     await applyUsbBlockFromConfig();
     if (Array.isArray(res?.commands)) {
       for (const cmd of res.commands) await executeCommand(cmd);
@@ -1521,50 +1910,11 @@ async function syncTelemetry() {
       clientState.isOfflineSince = Date.now();
       console.warn("📉 Server unreachable. Caching activity locally...");
     }
-    // No heartbeat -> we likely can't send activity either; queue it below.
   }
 
-  // 2. Activity — wrap the interval we just observed into one log entry.
-  const now = Date.now();
-  let elapsed = Math.max(1, Math.floor((now - clientState.lastSyncTime) / 1000));
-  const startMs = clientState.lastSyncTime;
-  clientState.lastSyncTime = now;
-
-  const cap = configState.syncIntervalSeconds + 60;
-  if (elapsed > cap) elapsed = cap; // ignore sleep/hibernation gaps
-
+  // 2. Observe: update the current open segment (or open a new one).
   if (configState.monitoringEnabled) {
-    const idleSeconds = clientState.isCurrentlyIdle
-      ? Math.min(elapsed, clientState.idleSecondsCounter)
-      : 0;
-    const logItem = {
-      processName: clientState.activeApp || "System",
-      windowTitle: clientState.windowTitle || "",
-      url: clientState.activeUrl || undefined,
-      startedAt: new Date(startMs + clientState.serverClockOffset).toISOString(),
-      endedAt: new Date(now + clientState.serverClockOffset).toISOString(),
-      durationSeconds: elapsed,
-      idleSeconds,
-    };
-
-    // Drain oldest-first, at most 500 per request (server cap). Any remainder
-    // stays queued for the next cycle so nothing is dropped under backlog.
-    const combined = [...offlineQueue.logs, logItem];
-    const batch = combined.slice(0, 500);
-    try {
-      const systemInfo = await getSystemInfo();
-      await apiPost("/activity", { logs: batch, systemInfo });
-      offlineQueue.logs = combined.slice(batch.length);
-      offlineQueue.save();
-      console.log(
-        `📝 Sent ${batch.length} activity log(s): [${logItem.processName}] ${elapsed}s` +
-          (idleSeconds ? ` (idle ${idleSeconds}s)` : "") +
-          (offlineQueue.logs.length ? ` — ${offlineQueue.logs.length} still queued` : "")
-      );
-    } catch (err) {
-      offlineQueue.add(logItem);
-      console.warn(`⏸️ Activity queued offline (${offlineQueue.logs.length} pending).`);
-    }
+    _observeSegment();
   }
 }
 
@@ -1573,6 +1923,15 @@ async function runSyncCycle() {
   await syncTelemetry();
   const nextMs = Math.max(30 * 1000, configState.syncIntervalSeconds * 1000);
   syncTimer = setTimeout(runSyncCycle, nextMs);
+}
+
+async function runUploadCycle() {
+  try {
+    await drainUploadQueue();
+  } catch (err) {
+    console.error("❌ Upload cycle error:", err.message);
+  }
+  uploadTimer = setTimeout(runUploadCycle, 30_000);
 }
 
 async function runScreenshotCycle() {
@@ -1628,8 +1987,29 @@ async function main() {
     }
   }, 2000);
 
+  // Tracking loop: observe every 15s.
+  setInterval(() => {
+    if (configState.monitoringEnabled) {
+      _observeSegment();
+    }
+  }, 15_000);
+
+  // Heartbeat + config + commands: runs at syncIntervalSeconds.
   setTimeout(runSyncCycle, 1500);
+  // Upload: runs independently every 30s so network latency never stalls tracking.
+  setTimeout(runUploadCycle, 5000);
   setTimeout(runScreenshotCycle, 10000);
+
+  // Best-effort flush on clean termination.  Durability does NOT depend on
+  // these handlers: segments are checkpointed to disk every 45 s (rotation)
+  // and the offline queue is written before every upload attempt.
+  // Forced kills (SIGKILL, OOM) will bypass these; at most one 45s segment
+  // may be lost, which is acceptable.
+  const _flushBestEffort = () => {
+    try { _closeCurrentSegment(Date.now()); } catch { /* best-effort */ }
+  };
+  process.on("SIGINT", () => { _flushBestEffort(); process.exit(0); });
+  process.on("SIGTERM", () => { _flushBestEffort(); process.exit(0); });
 }
 
 main().catch((err) => {

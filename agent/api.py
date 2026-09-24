@@ -6,16 +6,47 @@ with the device id + secret issued once at enrollment.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Any, Optional
 
 import requests
 
 
+def _parse_retry_after(value: str | None) -> float | None:
+    """Parse an HTTP Retry-After header into seconds from now.
+
+    Supports both the delay-seconds form (e.g. ``"60"``) and the HTTP-date
+    form (e.g. ``"Wed, 21 Oct 2015 07:28:00 GMT"``).  Returns None if the
+    header is absent or unparseable so callers can apply their own fallback.
+    """
+    if not value:
+        return None
+    value = value.strip()
+    # Delay-seconds form: a plain non-negative integer.
+    if value.isdigit():
+        return float(value)
+    # HTTP-date form.
+    try:
+        dt = parsedate_to_datetime(value)
+        now = datetime.now(timezone.utc)
+        delta = (dt - now).total_seconds()
+        return max(0.0, delta)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 class APIError(Exception):
-    def __init__(self, message: str, status_code: Optional[int] = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        status_code: Optional[int] = None,
+        retry_after: Optional[float] = None,
+    ) -> None:
         super().__init__(message)
         self.status_code = status_code
+        # Parsed Retry-After value in seconds, when the server supplied it.
+        self.retry_after = retry_after
 
 
 class AgentAPI:
@@ -130,9 +161,11 @@ class AgentAPI:
             timeout=self.timeout,
         )
         if resp.status_code != 201:
+            retry_after = _parse_retry_after(resp.headers.get("Retry-After"))
             raise APIError(
                 f"Interval activity upload failed ({resp.status_code}): {resp.text}",
                 status_code=resp.status_code,
+                retry_after=retry_after,
             )
         return resp.json()
 

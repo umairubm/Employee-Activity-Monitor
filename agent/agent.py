@@ -7,6 +7,7 @@ Run:  python -m agent.agent      (from the repo root)
 from __future__ import annotations
 
 import getpass
+import collections
 import json
 import logging
 import logging.handlers
@@ -71,9 +72,16 @@ POLL_SECONDS = 15
 # serialized bytes well under its JSON body limit so a backlog of rich
 # interval segments (URLs, states, IDs) can never trip 413 Payload Too Large.
 ACTIVITY_BATCH_MAX = 500
-ACTIVITY_BATCH_MIN = 25
+ACTIVITY_BATCH_MIN = 1
 ACTIVITY_BATCH_MAX_BYTES = 512 * 1024
 ACTIVITY_BATCHES_PER_SYNC = 5
+# Upload/heartbeat interval — runs in a separate thread so the observation
+# loop never stalls on network I/O.
+UPLOAD_INTERVAL_SECONDS = 30
+# Minimum back-off between upload retries (e.g. after 429).
+_MIN_UPLOAD_BACKOFF = 5.0
+# Retry-After cap: honour any server value; only cap when none is provided.
+_MAX_UPLOAD_BACKOFF = 300.0
 
 
 def _win_hidden_kwargs() -> dict:
@@ -155,6 +163,7 @@ class MonitoringAgent:
         # command — possibly to a freshly restarted agent — we re-send the
         # recorded result instead of executing the action a second time.
         self._command_results: dict = self._load_command_results()
+        self._command_results: dict = self._load_command_results()
 
     # --- helpers -------------------------------------------------------------
 
@@ -209,32 +218,7 @@ class MonitoringAgent:
 
     # --- screenshots ---------------------------------------------------------
 
-    def _maybe_screenshot(self) -> None:
-        now = time.time()
-        if now - self._last_screenshot < self._next_screenshot_gap:
-            return
 
-        try:
-            img = screenshot_mod.capture_webp_bytes()
-            logger.info("Screenshot capture completed, upload started.")
-            self.api.upload_screenshot(img, _now_iso(), content_type="image/webp")
-            logger.info("Screenshot upload succeeded.")
-            
-            # Success: reset backoff and advance normal schedule
-            self._screencast_fail_count = 0
-            self._last_screenshot = now
-            self._screencast_backoff = 5.0
-            self._next_screenshot_gap = self._screenshot_gap()
-        except screenshot_mod.CaptureNotReadyError:
-            # Short wait for async startup without advancing full schedule
-            self._next_screenshot_gap = 5.0
-            self._last_screenshot = now
-        except Exception as exc:  # noqa: BLE001 — best-effort, never crash agent
-            logger.exception(f"Screenshot upload failed: {exc}")
-            # Failure: bounded exponential backoff up to 60s
-            self._last_screenshot = now
-            self._screencast_backoff = min(60.0, getattr(self, '_screencast_backoff', 5.0) * 2)
-            self._next_screenshot_gap = self._screencast_backoff
 
     # --- commands ------------------------------------------------------------
 
@@ -1051,8 +1035,61 @@ rm -rf "$(dirname "$NEW")" "$0"
 
     # --- main loops ----------------------------------------------------------
 
+    def _heartbeat_worker(self) -> None:
+        """Independent thread for heartbeat so it is never delayed by uploads."""
+        # Initial wait to let first activity batch queue up.
+        self._stop.wait(5.0)
+        while not self._stop.is_set():
+            try:
+                self._heartbeat()
+            except Exception as exc:  # noqa: BLE001
+                logger.error(f"heartbeat error: {exc}")
+            self._stop.wait(self.cfg.sync_interval_seconds)
+
+    def _screenshot_worker(self) -> None:
+        """Independent thread for screenshot capture and upload."""
+        while not self._stop.is_set():
+            now = time.time()
+            if self.is_active() and now - self._last_screenshot >= self._next_screenshot_gap:
+                self._last_screenshot = now
+                try:
+                    img = screenshot_mod.capture_webp_bytes()
+                    logger.info("Screenshot capture completed, upload started.")
+                    self.api.upload_screenshot(img, _now_iso(), content_type="image/webp")
+                    logger.info("Screenshot upload succeeded.")
+                    self._screencast_fail_count = 0
+                    self._next_screenshot_gap = self._screenshot_gap()
+                except screenshot_mod.CaptureNotReadyError:
+                    self._next_screenshot_gap = 5.0
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception(f"Screenshot capture/upload failed: {exc}")
+                    self._screencast_backoff = min(60.0, getattr(self, "_screencast_backoff", 5.0) * 2)
+                    self._next_screenshot_gap = self._screencast_backoff
+            self._stop.wait(5.0)
+
+    def _upload_worker(self) -> None:
+        """Background thread for activity uploads only."""
+        upload_backoff_until: float = 0.0
+        while not self._stop.is_set():
+            if time.time() >= upload_backoff_until:
+                try:
+                    deadline = self._drain_activity_queue()
+                    if deadline > 0.0:
+                        upload_backoff_until = deadline
+                except Exception as exc:  # noqa: BLE001
+                    logger.error(f"upload worker error: {exc}")
+            self._stop.wait(UPLOAD_INTERVAL_SECONDS)
+        try:
+            self._drain_activity_queue()
+        except Exception:
+            pass
+
     def _worker(self) -> None:
-        last_sync = 0.0
+        """Observation-only loop: no network I/O.
+
+        All outbound requests (heartbeat, uploads) run in ``_upload_worker``.
+        This loop only reads system state and writes to the in-process journal.
+        """
         was_active = False
         while not self._stop.is_set():
             try:
@@ -1061,86 +1098,113 @@ rm -rf "$(dirname "$NEW")" "$0"
                     screenshot_mod.start_wayland_screencast()
                 elif not is_active and was_active:
                     screenshot_mod.stop_wayland_screencast()
-                    
-                if is_active and sys.platform.startswith("linux") and (os.environ.get("XDG_SESSION_TYPE") == "wayland" or "WAYLAND_DISPLAY" in os.environ):
+                    # Close the current segment when monitoring goes inactive
+                    # (e.g. user paused, enforced lock).  The gap while the
+                    # agent is inactive is left unobserved.
+                    self._flush_segment()
+
+                if is_active and sys.platform.startswith("linux") and (
+                    os.environ.get("XDG_SESSION_TYPE") == "wayland"
+                    or "WAYLAND_DISPLAY" in os.environ
+                ):
                     state = screenshot_mod.get_wayland_screencast_state()
                     if state == screenshot_mod.ScreencastState.FAILED:
-                        self._screencast_fail_count = getattr(self, '_screencast_fail_count', 0) + 1
+                        self._screencast_fail_count = getattr(self, "_screencast_fail_count", 0) + 1
                         if self._screencast_fail_count > 3:
-                            logger.error(f"ScreenCast failed repeatedly ({self._screencast_fail_count} times). Pausing monitoring automatically.")
+                            logger.error(
+                                f"ScreenCast failed repeatedly ({self._screencast_fail_count} times). "
+                                "Pausing monitoring automatically."
+                            )
                             self.toggle_pause()
                             is_active = False
                         else:
-                            logger.warning(f"ScreenCast failed unexpectedly (attempt {self._screencast_fail_count}); restarting.")
+                            logger.warning(
+                                f"ScreenCast failed unexpectedly (attempt {self._screencast_fail_count}); restarting."
+                            )
                             screenshot_mod.start_wayland_screencast()
                     elif state == screenshot_mod.ScreencastState.USER_STOPPED:
                         logger.warning("ScreenCast was closed by the user. Pausing monitoring.")
                         self.toggle_pause()
                         is_active = False
-                        
+
                 was_active = is_active
-
                 self._observe()
-                if is_active:
-                    self._maybe_screenshot()
-
-                if time.time() - last_sync >= self.cfg.sync_interval_seconds:
-                    last_sync = time.time()
-                    self._sync()
             except Exception as exc:  # noqa: BLE001
                 logger.error(f"worker error: {exc}")
             self._stop.wait(POLL_SECONDS)
-        
+
         screenshot_mod.stop_wayland_screencast()
-        # Final flush on shutdown.
+        # Final flush so the last partial segment lands in SQLite before the
+        # upload worker's final drain attempt.
         self._flush_segment()
-        try:
-            self._sync()
-        except Exception:
-            pass
 
-    def _drain_activity_queue(self) -> None:
-        """Upload queued segments oldest-first, bounded by count AND bytes.
-
-        A batch is capped at ``self._activity_batch_limit`` rows and
-        ``ACTIVITY_BATCH_MAX_BYTES`` of serialized JSON. A 413 from the server
-        halves the row limit and retries next sync; success restores growth.
-        Several batches are sent per sync while a backlog exists so a device
-        that was offline for a day catches up quickly.
-        """
+    def _drain_activity_queue(self) -> float:
         for _ in range(ACTIVITY_BATCHES_PER_SYNC):
             fetched = self._activity_queue.get_batch(limit=self._activity_batch_limit)
+            logger.info(f"drain fetched {len(fetched)} rows")
             if not fetched:
-                return
+                return 0.0
             batch = _trim_batch_to_bytes(fetched, ACTIVITY_BATCH_MAX_BYTES)
             if not batch:
-                # The oldest row alone exceeds the byte budget; no batch size
-                # can ever make it fit, so quarantine it locally rather than
-                # wedge the queue behind it forever.
+                # The oldest row alone exceeds the byte budget; quarantine it.
                 bad = fetched[0]
-                print(
-                    f"[agent] discarding oversized activity segment "
-                    f"{bad.get('segmentId')}",
-                    file=sys.stderr,
+                bad_id = str(bad.get("segmentId") or "")
+                logger.warning(
+                    f"activity segment {bad_id} exceeds byte budget; quarantining"
                 )
-                self._activity_queue.acknowledge([str(bad.get("segmentId") or "")])
+                self._activity_queue.quarantine([bad_id], reason="oversized")
                 continue
+            batch_id = str(uuid.uuid4())
             try:
                 response = self.api.send_interval_activity(
-                    str(uuid.uuid4()),
+                    batch_id,
                     batch,
                     system_info_mod.get_cached(),
                 )
+                # ── Server response contract ──────────────────────────────────
+                # With batchId the server returns:
+                #   { batchId, acceptedSegmentIds: [str],
+                #     rejected: [{segmentId?, reason?}] }
+                # Remove only explicitly accepted IDs; do not assume the rest.
                 accepted = response.get("acceptedSegmentIds")
                 if not isinstance(accepted, list):
                     raise api_mod.APIError(
-                        "Interval activity response did not acknowledge segments"
+                        "Interval activity response missing acceptedSegmentIds"
                     )
-                self._activity_queue.acknowledge(
-                    [value for value in accepted if isinstance(value, str)]
+                accepted_ids = [v for v in accepted if isinstance(v, str)]
+                self._activity_queue.acknowledge(accepted_ids)
+
+                # The `rejected` array contains per-record rejection entries.
+                # Each entry may be a dict with a `segmentId` key, or a plain
+                # segment-id string (future-proofing).  Quarantine only these
+                # specific records so valid siblings still upload.
+                raw_rejected = response.get("rejected") or []
+                if raw_rejected:
+                    rejected_ids: list[str] = []
+                    for entry in raw_rejected:
+                        if isinstance(entry, dict):
+                            sid = entry.get("segmentId") or entry.get("id")
+                            if isinstance(sid, str) and sid:
+                                rejected_ids.append(sid)
+                                reason = str(entry.get("reason") or "server_rejected")[:200]
+                                logger.warning(
+                                    f"segment {sid} rejected by server: {reason}"
+                                )
+                        elif isinstance(entry, str) and entry:
+                            rejected_ids.append(entry)
+                    if rejected_ids:
+                        self._activity_queue.quarantine(
+                            rejected_ids, reason="server_rejected"
+                        )
+
+                # Diagnostic logging (no credentials, no window contents).
+                q_size = self._activity_queue.queue_size()
+                oldest = self._activity_queue.oldest_pending_started_at()
+                logger.info(
+                    f"activity upload: accepted={len(accepted_ids)} "
+                    f"rejected={len(raw_rejected)} "
+                    f"queue={q_size} oldest={oldest}"
                 )
-                # Drained only if we fetched fewer rows than we asked for AND
-                # sent every fetched row (i.e. nothing was byte-trimmed).
                 drained = (
                     len(fetched) < self._activity_batch_limit
                     and len(batch) == len(fetched)
@@ -1149,45 +1213,85 @@ rm -rf "$(dirname "$NEW")" "$0"
                     ACTIVITY_BATCH_MAX, self._activity_batch_limit * 2
                 )
                 if drained:
-                    return
+                    return 0.0
+
             except api_mod.APIError as exc:
-                if exc.status_code == 413:
-                    self._activity_batch_limit = max(
-                        ACTIVITY_BATCH_MIN, self._activity_batch_limit // 2
+                code = exc.status_code
+                if code == 413:
+                    if self._activity_batch_limit <= ACTIVITY_BATCH_MIN:
+                        # Already at minimum batch size; this individual record
+                        # cannot be sent as-is.  Quarantine it so later records
+                        # can proceed instead of retrying forever.
+                        stuck_id = str(batch[0].get("segmentId") or "")
+                        logger.error(
+                            f"Single record still 413 at minimum batch size; "
+                            f"quarantining segment {stuck_id}"
+                        )
+                        self._activity_queue.quarantine(
+                            [stuck_id], reason="oversized_413"
+                        )
+                    else:
+                        # Payload too large — split the batch.
+                        self._activity_batch_limit = max(
+                            ACTIVITY_BATCH_MIN, self._activity_batch_limit // 2
+                        )
+                        logger.warning(
+                            f"activity batch too large (413); retrying with "
+                            f"{self._activity_batch_limit} segments"
+                        )
+                        continue
+                elif code == 429:
+                    # Rate limited — retain all records and back off.
+                    # Use the server-supplied Retry-After value (parsed from
+                    # the response header as seconds or HTTP-date by APIError).
+                    # Only fall back to 60 s when no server value is present.
+                    server_delay = exc.retry_after
+                    if server_delay is not None:
+                        backoff = max(_MIN_UPLOAD_BACKOFF, server_delay)
+                    else:
+                        backoff = 60.0
+                    logger.warning(
+                        f"activity upload rate-limited (429); backing off {backoff:.0f}s"
                     )
-                    print(
-                        f"[agent] activity batch too large; retrying with "
-                        f"{self._activity_batch_limit} segments",
-                        file=sys.stderr,
+                    return time.time() + backoff
+                elif code in (401, 403):
+                    # Auth failure — records are valid, the credential is not.
+                    # Retain everything and log so the operator can fix the
+                    # device secret without losing data.
+                    logger.error(
+                        f"activity upload auth failure ({code}); retaining records. "
+                        "Check device credentials."
+                    )
+                elif code is not None:
+                    # Other HTTP error — retain records, log status for diagnosis.
+                    logger.error(
+                        f"activity sync HTTP {code}; retaining records: {exc}"
                     )
                 else:
                     logger.error(f"activity sync failed: {exc}")
-                return
+                return 0.0
             except Exception as exc:  # noqa: BLE001
-                # Rows remain in SQLite until the server explicitly
-                # acknowledges their stable segment IDs.
+                # Network error — rows remain in SQLite.
                 logger.error(f"activity sync failed: {exc}")
-                return
+                return 0.0
+        return 0.0
 
-    def _sync(self) -> None:
-        logger.debug("Starting sync cycle")
-        # Close the current state interval and send the oldest durable batch.
-        self._flush_segment()
-        self._drain_activity_queue()
-
+    def _heartbeat(self) -> None:
+        """Send heartbeat + process commands.  Never flushes or uploads activity
+        (those happen on independent schedules)."""
         # Heartbeat + commands. Include best-effort live health metrics.
         metrics = system_info_mod.collect_metrics()
         hb = self.api.heartbeat(AGENT_VERSION, metrics)
         # A successful heartbeat is the authoritative update-health signal.
-        # Until this point the detached macOS replacer leaves the prior app
         # Purge update rollback backups if we've successfully reached the server.
         self._cleanup_update_backup()
         self._locked_until = hb.get("lockedUntil")
-        # Timed-lock enforcement: the server flips isLocked to false when the
-        # admin-selected duration elapses. While it is true we RE-LOCK the
-        # screen once per poll cycle so the user can't stay logged in — even if
-        # they unlock locally, the next heartbeat re-locks within the interval.
+        was_locked = self._enforced_lock
         self._enforce_lock(bool(hb.get("isLocked")))
+        # If the server just flipped the lock ON, close the current segment so
+        # we don't leave an 'unlocked' interval open across a remote lock event.
+        if not was_locked and self._enforced_lock:
+            self._flush_segment()
         self.cfg.apply_server_config(hb.get("config", {}))
         # Idempotently converge USB blocking with the server's desired state so
         # a reinstalled/offline device catches up. Best-effort; swallow errors.
@@ -1215,6 +1319,8 @@ rm -rf "$(dirname "$NEW")" "$0"
         if self._paused.is_set():
             self._paused.clear()
         else:
+            # Close the current segment at the pause boundary so the
+            # unobserved time while paused is never labelled active.
             self._flush_segment()
             self._paused.set()
 
@@ -1234,17 +1340,27 @@ rm -rf "$(dirname "$NEW")" "$0"
             pass
 
     def quit(self) -> None:
+        # Close the current segment before signalling the stop event so the
+        # upload worker sees the final segment in SQLite.
+        self._flush_segment()
         self._stop.set()
 
     def run(self) -> None:
-        worker = threading.Thread(target=self._worker, daemon=True)
-        worker.start()
+        threads = [
+            threading.Thread(target=self._worker, daemon=True, name="Worker"),
+            threading.Thread(target=self._upload_worker, daemon=True, name="Upload"),
+            threading.Thread(target=self._screenshot_worker, daemon=True, name="Screenshot"),
+            threading.Thread(target=self._heartbeat_worker, daemon=True, name="Heartbeat"),
+        ]
+        for t in threads:
+            t.start()
         try:
             while not self._stop.is_set():
                 time.sleep(1.0)
         except KeyboardInterrupt:
             self.quit()
-        worker.join(timeout=10)
+        for t in threads:
+            t.join(timeout=10)
 
 
 def _perform_enrollment(

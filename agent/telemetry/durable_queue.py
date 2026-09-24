@@ -2,6 +2,12 @@
 
 SQLite is only an offline client queue. The agent still sends every record to
 the authenticated HTTPS sync API and never connects directly to PostgreSQL.
+
+Schema additions
+----------------
+* ``rejected_segments`` — segments the server explicitly rejected (e.g. 422).
+  A rejected record is moved here so one malformed segment cannot permanently
+  block the upload queue.  The table is retained for operator diagnosis.
 """
 
 from __future__ import annotations
@@ -16,6 +22,8 @@ from typing import Any
 class DurableActivityQueue:
     def __init__(self, path: Path) -> None:
         self.path = path
+        import logging
+        logging.getLogger(__name__).info(f"QUEUE PATH IS {self.path.absolute()}")
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._initialize()
 
@@ -39,6 +47,20 @@ class DurableActivityQueue:
                 CREATE TABLE IF NOT EXISTS activity_config (
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL
+                )
+                """
+            )
+            # Rejected segments are quarantined here so they don't block the
+            # main queue.  They are kept for operator diagnosis and never
+            # re-submitted automatically.
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS rejected_segments (
+                    segment_id TEXT PRIMARY KEY,
+                    payload TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    rejection_reason TEXT,
+                    rejected_at REAL NOT NULL
                 )
                 """
             )
@@ -78,6 +100,64 @@ class DurableActivityQueue:
                 f"DELETE FROM activity_segments WHERE segment_id IN ({placeholders})",
                 clean_ids,
             )
+
+    def quarantine(
+        self,
+        segment_ids: list[str],
+        reason: str = "",
+        *,
+        rejected_at: float | None = None,
+    ) -> None:
+        """Move segments from the upload queue to the rejected quarantine table.
+
+        This prevents a single malformed record from permanently blocking the
+        queue while preserving the data for operator diagnosis.
+        """
+        clean_ids = [value for value in segment_ids if value]
+        if not clean_ids:
+            return
+        import time as _time
+        ts = rejected_at if rejected_at is not None else _time.time()
+        placeholders = ",".join("?" for _ in clean_ids)
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT segment_id, payload, created_at FROM activity_segments "
+                f"WHERE segment_id IN ({placeholders})",
+                clean_ids,
+            ).fetchall()
+            for segment_id, payload_text, created_at in rows:
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO rejected_segments
+                        (segment_id, payload, created_at, rejection_reason, rejected_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (segment_id, payload_text, created_at, reason or "", ts),
+                )
+            conn.execute(
+                f"DELETE FROM activity_segments WHERE segment_id IN ({placeholders})",
+                clean_ids,
+            )
+
+    def queue_size(self) -> int:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM activity_segments"
+            ).fetchone()
+        return int(row[0]) if row else 0
+
+    def oldest_pending_started_at(self) -> str | None:
+        """Return the startedAt ISO string of the oldest pending segment, or None."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT payload FROM activity_segments ORDER BY created_at LIMIT 1"
+            ).fetchone()
+        if not row:
+            return None
+        try:
+            return json.loads(row[0]).get("startedAt")
+        except Exception:  # noqa: BLE001
+            return None
 
     def sequence_namespace(self) -> str:
         with self._connect() as conn:
