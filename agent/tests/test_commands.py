@@ -40,6 +40,8 @@ def make_agent(journal_dir: str | None = None) -> MonitoringAgent:
     agent.api = mock.Mock()
     agent.tray = None
     agent.cfg = mock.Mock()
+    agent._lock = __import__('threading').Lock()
+    agent._journal = mock.Mock()
     agent._handled_command_ids = set()
     # Point the durable result journal at a temp file (never the real config).
     path = Path(journal_dir or tempfile.mkdtemp()) / "command-results.json"
