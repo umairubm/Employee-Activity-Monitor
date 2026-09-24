@@ -66,7 +66,7 @@ def setup_logging():
     logging.getLogger().addHandler(handler)
 
 
-AGENT_VERSION = "1.2.89"
+AGENT_VERSION = "1.2.90"
 POLL_SECONDS = 15
 # Activity batching. The server caps a batch at 500 rows; we additionally cap
 # serialized bytes well under its JSON body limit so a backlog of rich
