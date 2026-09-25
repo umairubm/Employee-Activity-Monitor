@@ -1,0 +1,4 @@
+([('WorkforceAgent',
+   '/Users/ubmtechnologies/Desktop/Employee_monitor - '
+   'Copy/agent/packaging/dist/WorkforceAgent',
+   'EXECUTABLE')],)
