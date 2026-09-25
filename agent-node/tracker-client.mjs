@@ -44,6 +44,7 @@ import { Readable } from "stream";
 import { fileURLToPath } from "url";
 import { createCommandRunner } from "./command-runner.mjs";
 import { verifyWindowsInstaller } from "./windows-installer-verification.mjs";
+import { WindowsSessionMonitor } from "./win-session-monitor.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -163,7 +164,8 @@ const clientState = {
   lastMouseY: null,
   lastSyncTime: Date.now(),
   serverClockOffset: 0,
-  isLocked: false,
+  adminLockEnforced: false,
+  osSessionLocked: false,
   lockedUntil: null,
   isOfflineSince: null,
   // Two os.cpus() samples, one heartbeat apart, give us a real CPU% reading.
@@ -372,8 +374,8 @@ function _nowIso() {
 
 function _openSegment(wallMs) {
   const startedAt = new Date(wallMs + (clientState.serverClockOffset || 0)).toISOString();
-  const sessionState = clientState.isLocked ? "locked" : "unlocked";
-  const idleSec = clientState.idleSecondsCounter;
+  const sessionState = clientState.osSessionLocked ? "locked" : "unlocked";
+  const idleSec = clientState.osSessionLocked ? 999999999 : clientState.idleSecondsCounter;
   const passiveThr = configState.idleThresholdSeconds * 0.5;
   let engagementState;
   if (sessionState !== "unlocked" || idleSec >= configState.idleThresholdSeconds) {
@@ -403,32 +405,38 @@ function _openSegment(wallMs) {
   };
 }
 
-function _finalizeSegment(seg, endWallMs, idleSeconds) {
-  // Use the hrtime elapsed from when the segment was opened for the duration
-  // so wall-clock changes don’t produce negative or inflated durations.
-  const elapsedHr = process.hrtime.bigint() - seg._startHrtime;
+function _closeCurrentSegment(endWallMs, endHrtime) {
+  const seg = clientState._currentSegment;
+  if (!seg) return;
+  clientState._currentSegment = null;
+
+  let wallEnd = endWallMs ?? Date.now();
+  let hrEnd = endHrtime ?? process.hrtime.bigint();
+
+  // Safety rule: never extend a segment far beyond the last reliable observation
+  if (clientState._lastObserveWall && (wallEnd - clientState._lastObserveWall > SLEEP_GAP_THRESHOLD_MS)) {
+    wallEnd = clientState._lastObserveWall;
+    if (clientState._lastObserveHrtime) hrEnd = clientState._lastObserveHrtime;
+  }
+
+  const idleSec = clientState.osSessionLocked ? 999999999 : clientState.idleSecondsCounter;
+  const elapsedHr = hrEnd - seg._startHrtime;
   const elapsedMs = Math.max(0, Number(elapsedHr / 1_000_000n));
   const durationSeconds = Math.round(elapsedMs / 1000);
-  const endedAt = new Date(endWallMs + (clientState.serverClockOffset || 0)).toISOString();
-  const clampedIdle = Math.max(0, Math.min(idleSeconds ?? 0, durationSeconds));
+  const endedAt = new Date(wallEnd + (clientState.serverClockOffset || 0)).toISOString();
+  const clampedIdle = Math.max(0, Math.min(idleSec ?? 0, durationSeconds));
+  
   const { _startWallMs, _startHrtime, ...payload } = seg;
-  return {
+  const finalized = {
     ...payload,
     endedAt,
     elapsedMilliseconds: elapsedMs,
     durationSeconds,
     idleSeconds: clampedIdle,
   };
-}
 
-function _closeCurrentSegment(endWallMs) {
-  const seg = clientState._currentSegment;
-  if (!seg) return;
-  clientState._currentSegment = null;
-  const idleSec = clientState.idleSecondsCounter;
-  const payload = _finalizeSegment(seg, endWallMs, idleSec);
-  if (payload.elapsedMilliseconds > 0) {
-    offlineQueue.add(payload);
+  if (finalized.elapsedMilliseconds > 0) {
+    offlineQueue.add(finalized);
   }
 }
 
@@ -465,12 +473,14 @@ function _observeSegment() {
     const prevDelta = clientState._lastBootSecs - clientState._lastMonoSecs;
     const nowDelta = bootSecs - monoSecs;
     const suspendSecs = Math.max(0, nowDelta - prevDelta);
+    const wallGap = wallMs - clientState._lastObserveWall;
+    const monoGap = monoSecs - clientState._lastMonoSecs;
     
-    if (suspendSecs > SLEEP_GAP_THRESHOLD_MS / 1000) {
+    if (suspendSecs > SLEEP_GAP_THRESHOLD_MS / 1000 || wallGap >= SLEEP_GAP_THRESHOLD_MS || monoGap >= SLEEP_GAP_THRESHOLD_MS / 1000) {
       // The difference between suspend-inclusive (boot/wall) and suspend-exclusive (mono)
       // clocks grew by more than the threshold. The process was suspended.
       // Close the segment at the LAST known wall-clock time, not at wallMs.
-      _closeCurrentSegment(clientState._lastObserveWall);
+      _closeCurrentSegment(clientState._lastObserveWall, clientState._lastObserveHrtime);
       console.warn(
         `⚠️ Sleep/suspension detected (${Math.round(suspendSecs)}s gap). ` +
         "Segment closed at last observation time."
@@ -480,7 +490,7 @@ function _observeSegment() {
       const elapsedHr = hrNow - clientState._currentSegment._startHrtime;
       const elapsedMs = Number(elapsedHr / 1_000_000n);
       if (elapsedMs >= MAX_SEGMENT_MS) {
-        _closeCurrentSegment(wallMs);
+        _closeCurrentSegment(wallMs, hrNow);
         // Re-open a new segment immediately so observation is continuous.
       }
     }
@@ -491,9 +501,16 @@ function _observeSegment() {
   clientState._lastBootSecs = bootSecs;
   clientState._lastMonoSecs = monoSecs;
 
+  if (clientState.activeApp === null && !(clientState.isLocked || clientState.osSessionLocked)) {
+    if (clientState._currentSegment) {
+      _closeCurrentSegment(wallMs, hrNow);
+    }
+    return;
+  }
+
   // ── Session / engagement classification ───────────────────────────────
-  const sessionState = clientState.isLocked ? "locked" : "unlocked";
-  const idleSec = clientState.idleSecondsCounter;
+  const sessionState = (clientState.isLocked || clientState.osSessionLocked) ? "locked" : "unlocked";
+  const idleSec = clientState.osSessionLocked ? 999999999 : clientState.idleSecondsCounter;
   const passiveThr = configState.idleThresholdSeconds * 0.5;
   let engagementState;
   if (sessionState !== "unlocked" || idleSec >= configState.idleThresholdSeconds) {
@@ -501,7 +518,11 @@ function _observeSegment() {
   } else if (idleSec >= passiveThr) {
     engagementState = "passive";
   } else {
-    engagementState = "active";
+    if (!clientState.activeApp || clientState.activeApp.includes("System Idle Process")) {
+      engagementState = "idle";
+    } else {
+      engagementState = "active";
+    }
   }
 
   const identity = [
@@ -515,7 +536,7 @@ function _observeSegment() {
   const cur = clientState._currentSegment;
   if (!cur || cur._identity !== identity) {
     // State changed — close old segment, open a new one.
-    if (cur) _closeCurrentSegment(wallMs);
+    if (cur) _closeCurrentSegment(wallMs, hrNow);
     const seg = _openSegment(wallMs);
     seg._identity = identity;
     seg.engagementState = engagementState;
@@ -1498,15 +1519,21 @@ function startPersistentTelemetryStreamWin() {
     while ($true) {
         try {
             $hwnd = [Win32]::GetForegroundWindow();
-            $sb = New-Object System.Text.StringBuilder 256;
-            [Win32]::GetWindowText($hwnd, $sb, 256) > $null;
-            $title = $sb.ToString();
+            if ($hwnd -eq [IntPtr]::Zero) {
+                $title = $null;
+                $processName = $null;
+                $url = $null;
+            } else {
+                $sb = New-Object System.Text.StringBuilder 256;
+                [Win32]::GetWindowText($hwnd, $sb, 256) > $null;
+                $title = $sb.ToString();
 
-            $wpid = 0;
-            [Win32]::GetWindowThreadProcessId($hwnd, [ref]$wpid) > $null;
-            $process = Get-Process -Id $wpid -ErrorAction SilentlyContinue;
-            $processName = if ($process) { $process.ProcessName } else { 'System' };
-            $url = Get-BrowserUrl $hwnd $processName;
+                $wpid = 0;
+                [Win32]::GetWindowThreadProcessId($hwnd, [ref]$wpid) > $null;
+                $process = Get-Process -Id $wpid -ErrorAction SilentlyContinue;
+                $processName = if ($process) { $process.ProcessName } else { 'System' };
+                $url = Get-BrowserUrl $hwnd $processName;
+            }
 
             $pos = [System.Windows.Forms.Cursor]::Position;
 
@@ -1528,8 +1555,8 @@ function startPersistentTelemetryStreamWin() {
     try {
       const data = JSON.parse(line.trim());
       if (data && typeof data.x === "number" && typeof data.y === "number") {
-        clientState.activeApp = data.process || "System";
-        clientState.windowTitle = data.title || "Desktop";
+        clientState.activeApp = data.process === null ? null : (data.process || "System");
+        clientState.windowTitle = data.title === null ? null : (data.title || "Desktop");
         clientState.activeUrl = typeof data.url === "string" ? data.url : null;
         const { x, y } = data;
         if (clientState.lastMouseX !== null && clientState.lastMouseY !== null) {
@@ -1974,6 +2001,27 @@ async function main() {
       `(consent recorded by: ${clientState.consentName || "unknown"}). ` +
       `Screenshots show a notice each time.`
   );
+  
+  if (IS_WIN) {
+      const winSessionMonitor = new WindowsSessionMonitor();
+      winSessionMonitor.on("lock", () => {
+          if (clientState.osSessionLocked) return;
+          clientState.osSessionLocked = true;
+          _closeCurrentSegment(Date.now());
+      });
+      winSessionMonitor.on("unlock", () => {
+          if (!clientState.osSessionLocked) return;
+          clientState.osSessionLocked = false;
+          _closeCurrentSegment(Date.now());
+      });
+      winSessionMonitor.on("suspend", () => {
+          _closeCurrentSegment(Date.now());
+      });
+      winSessionMonitor.start();
+      // Wait for it to become ready
+      await new Promise(r => setTimeout(r, 500));
+      clientState.osSessionLocked = winSessionMonitor.isLocked;
+  }
 
   startPersistentTelemetryStream();
 

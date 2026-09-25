@@ -99,12 +99,7 @@ class DrainActivityQueue(unittest.TestCase):
 
         self.agent.api.send_interval_activity.side_effect = send
 
-        self.agent._drain_activity_queue()  # 300 -> 413, limit becomes 250
-        self.assertEqual(calls, [300])
-        self.assertEqual(self.agent._activity_batch_limit, 250)
-        self.assertEqual(len(self.agent._activity_queue.get_batch()), 300)
-
-        self.agent._drain_activity_queue()  # 250 ok, then 50 ok
+        self.agent._drain_activity_queue()  # 300 -> 413, limit becomes 250, immediately retries 250 ok, then 50 ok
         self.assertEqual(calls, [300, 250, 50])
         self.assertEqual(self.agent._activity_queue.get_batch(), [])
         self.assertEqual(self.agent._activity_batch_limit, agent_mod.ACTIVITY_BATCH_MAX)

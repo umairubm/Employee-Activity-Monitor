@@ -48,6 +48,13 @@ else:
     from .windows_installer_verification import verify_windows_installer
     from .telemetry.durable_queue import DurableActivityQueue
     from .telemetry.interval_journal import IntervalJournal
+    if sys.platform.startswith("win"):
+        try:
+            from .telemetry.windows_session import WindowsSessionMonitor
+        except ImportError:
+            WindowsSessionMonitor = None
+    else:
+        WindowsSessionMonitor = None
 logger = logging.getLogger("agent")
 
 def setup_logging():
@@ -66,7 +73,7 @@ def setup_logging():
     logging.getLogger().addHandler(handler)
 
 
-AGENT_VERSION = "1.2.91"
+AGENT_VERSION = "1.2.93"
 POLL_SECONDS = 15
 # Activity batching. The server caps a batch at 500 rows; we additionally cap
 # serialized bytes well under its JSON body limit so a backlog of rich
@@ -148,11 +155,21 @@ class MonitoringAgent:
         )
         self._last_screenshot = 0.0
         self._next_screenshot_gap = self._screenshot_gap()
-        # Timed-lock enforcement state. `_enforced_lock` mirrors the server's
+        # Timed-lock enforcement state. `_admin_lock_enforced` mirrors the server's
         # `isLocked`: while true we re-lock every poll cycle. `_locked_until`
         # is the server-reported ISO expiry (informational).
-        self._enforced_lock = False
+        self._admin_lock_enforced = False
         self._locked_until: str | None = None
+        self._os_session_locked = False
+        self._win_session_monitor = None
+        if WindowsSessionMonitor is not None:
+            self._win_session_monitor = WindowsSessionMonitor(
+                on_lock=lambda: self._handle_os_lock(True),
+                on_unlock=lambda: self._handle_os_lock(False),
+                on_suspend=self._flush_segment
+            )
+            self._win_session_monitor.start()
+            self._os_session_locked = self._win_session_monitor.is_locked
         # Command ids already handled this session. A heartbeat can redeliver a
         # command whose acknowledgement was lost in transit; destructive
         # actions (shutdown/restart/password reset) must never run twice.
@@ -207,18 +224,32 @@ class MonitoringAgent:
                 passive_threshold,
                 max(300, passive_threshold + 60),
             )
+            # 3. Record locked time correctly:
+            # On lock: idleSeconds = full segment duration
+            locked = self._os_session_locked
+            if locked:
+                idle = 999999999 # Will be clamped to full segment duration by IntervalJournal
+
             self._journal.observe(
                 process_name=process,
                 window_title=title,
                 url=url,
                 idle_seconds=idle,
                 monitoring_paused=monitoring_paused,
-                locked=self._enforced_lock,
+                locked=locked,
             )
 
     # --- screenshots ---------------------------------------------------------
 
 
+
+    def _handle_os_lock(self, locked: bool) -> None:
+        """Handle native OS session lock/unlock events."""
+        with self._lock:
+            if self._os_session_locked == locked:
+                return
+            self._os_session_locked = locked
+            self._flush_segment()
 
     # --- commands ------------------------------------------------------------
 
@@ -276,7 +307,7 @@ class MonitoringAgent:
             elif ctype == "unlock_screen":
                 # Stop re-locking immediately; no OS action needed. The next
                 # heartbeat should also report isLocked=false.
-                self._enforced_lock = False
+                self._admin_lock_enforced = False
                 self._locked_until = None
                 self._finish_command(cid, "completed")
 
@@ -993,9 +1024,9 @@ rm -rf "$(dirname "$NEW")" "$0"
         lock may be unsupported).
         """
         if not is_locked:
-            self._enforced_lock = False
+            self._admin_lock_enforced = False
             return
-        self._enforced_lock = True
+        self._admin_lock_enforced = True
         try:
             self._execute_os_command("lock_screen")
         except Exception as exc:  # noqa: BLE001 — never crash the poll loop
@@ -1051,6 +1082,11 @@ rm -rf "$(dirname "$NEW")" "$0"
         while not self._stop.is_set():
             now = time.time()
             if self.is_active() and now - self._last_screenshot >= self._next_screenshot_gap:
+                with self._lock:
+                    is_os_locked = getattr(self, "_os_session_locked", False)
+                if is_os_locked:
+                    self._stop.wait(5.0)
+                    continue
                 self._last_screenshot = now
                 try:
                     img = screenshot_mod.capture_webp_bytes()
@@ -1286,11 +1322,11 @@ rm -rf "$(dirname "$NEW")" "$0"
         # Purge update rollback backups if we've successfully reached the server.
         self._cleanup_update_backup()
         self._locked_until = hb.get("lockedUntil")
-        was_locked = self._enforced_lock
+        was_locked = self._admin_lock_enforced
         self._enforce_lock(bool(hb.get("isLocked")))
         # If the server just flipped the lock ON, close the current segment so
         # we don't leave an 'unlocked' interval open across a remote lock event.
-        if not was_locked and self._enforced_lock:
+        if not was_locked and self._admin_lock_enforced:
             self._flush_segment()
         self.cfg.apply_server_config(hb.get("config", {}))
         # Idempotently converge USB blocking with the server's desired state so
@@ -1342,6 +1378,8 @@ rm -rf "$(dirname "$NEW")" "$0"
     def quit(self) -> None:
         # Close the current segment before signalling the stop event so the
         # upload worker sees the final segment in SQLite.
+        if getattr(self, "_win_session_monitor", None):
+            self._win_session_monitor.stop()
         self._flush_segment()
         self._stop.set()
 

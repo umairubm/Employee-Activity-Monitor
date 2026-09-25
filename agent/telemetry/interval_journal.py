@@ -91,8 +91,14 @@ class IntervalJournal:
         # macOS/Windows it uses wall-vs-monotonic delta.
         # If a suspend is detected we close the open segment at the LAST known
         # wall time, not at wall_now, so the gap never appears as active time.
+        gap_detected = False
+        if self._last_tick_wall is not None and (wall_now - self._last_tick_wall) >= SLEEP_GAP_THRESHOLD:
+            gap_detected = True
+        if self._last_tick_monotonic is not None and (monotonic_now - self._last_tick_monotonic) >= SLEEP_GAP_THRESHOLD:
+            gap_detected = True
+
         suspend_gap = self._suspend_clock.suspend_gap_seconds()
-        if suspend_gap >= SLEEP_GAP_THRESHOLD and self.current:
+        if (suspend_gap >= SLEEP_GAP_THRESHOLD or gap_detected) and self.current:
             self.close_current(
                 wall_now=self._last_tick_wall,
                 monotonic_now=self._last_tick_monotonic,
@@ -128,7 +134,16 @@ class IntervalJournal:
         elif idle_seconds >= self.passive_threshold_seconds:
             engagement_state = "passive"
         else:
-            engagement_state = "active"
+            if not process_name or "System Idle Process" in process_name:
+                engagement_state = "idle"
+            else:
+                engagement_state = "active"
+
+        if process_name is None and session_state == "unlocked":
+            # Cannot read foreground window. Leave unobserved.
+            if self.current:
+                self.close_current(wall_now=wall_now, monotonic_now=monotonic_now)
+            return
 
         identity = (
             process_name or "System",
@@ -240,11 +255,12 @@ class IntervalJournal:
         if not self.current:
             return
         wall_end = wall_now if wall_now is not None else self._suspend_clock.wall_now()
-        monotonic_end = (
-            monotonic_now
-            if monotonic_now is not None
-            else self._suspend_clock.monotonic_now()
-        )
+        monotonic_end = monotonic_now if monotonic_now is not None else self._suspend_clock.monotonic_now()
+
+        if self._last_tick_wall is not None and (wall_end - self._last_tick_wall) > SLEEP_GAP_THRESHOLD:
+            wall_end = self._last_tick_wall
+            if self._last_tick_monotonic is not None:
+                monotonic_end = self._last_tick_monotonic
         elapsed_ms = max(
             0,
             round(
