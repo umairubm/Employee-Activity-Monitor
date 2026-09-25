@@ -169,10 +169,10 @@ class HandleCommandContract(unittest.TestCase):
 
     def test_unlock_screen_clears_lock_state(self):
         agent = make_agent()
-        agent._enforced_lock = True
+        agent._admin_lock_enforced = True
         agent._locked_until = "2026-01-01T00:00:00Z"
         agent._handle_command(command(commandType="unlock_screen"))
-        self.assertFalse(agent._enforced_lock)
+        self.assertFalse(agent._admin_lock_enforced)
         self.assertIsNone(agent._locked_until)
         last = agent.api.ack_command.call_args_list[-1]
         self.assertEqual(last.args[1], "completed")
