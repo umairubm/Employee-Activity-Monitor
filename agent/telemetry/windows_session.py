@@ -47,7 +47,7 @@ class WindowsSessionMonitor:
             return False
 
     def _message_loop(self):
-        WNDPROC = ctypes.WINFUNCTYPE(ctypes.c_long, wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM)
+        WNDPROC = ctypes.WINFUNCTYPE(wintypes.LPARAM, wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM)
         def wndproc(hwnd, msg, wparam, lparam):
             if msg == WM_WTSSESSION_CHANGE:
                 if wparam == WTS_SESSION_LOCK:
@@ -80,11 +80,16 @@ class WindowsSessionMonitor:
                         logger.error(f"Error checking lock on resume: {e}")
             elif msg == 0x0012: # WM_QUIT
                 ctypes.windll.user32.PostQuitMessage(0)
-            return ctypes.windll.user32.DefWindowProcW(hwnd, msg, wparam, lparam)
+            
+            # Ensure return value is properly cast to pointer-sized integer
+            return wintypes.LPARAM(ctypes.windll.user32.DefWindowProcW(hwnd, msg, wparam, lparam)).value
+        
+        # Keep the WNDPROC object alive as long as this object exists
+        self._wndproc = WNDPROC(wndproc)
         
         wndClass = wintypes.WNDCLASSW()
         wndClass.lpszClassName = "SessionMonitorClass"
-        wndClass.lpfnWndProc = WNDPROC(wndproc)
+        wndClass.lpfnWndProc = self._wndproc
         
         ctypes.windll.user32.RegisterClassW(ctypes.byref(wndClass))
         self._hwnd = ctypes.windll.user32.CreateWindowExW(
