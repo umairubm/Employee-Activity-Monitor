@@ -275,8 +275,16 @@ def load_config_invisible() -> config_mod.AgentConfig | None:
 def main() -> int:
     """Entry point for invisible service."""
     from agent.agent import setup_logging, logger, AGENT_VERSION
+    from agent import config as config_mod
+    import sys
     setup_logging()
     logger.info(f"=== Workforce Agent v{AGENT_VERSION} (System Service) starting up ===")
+    
+    lock = config_mod.acquire_single_instance_lock()
+    if lock is None:
+        logger.error("Another Workforce Agent is already running; exiting system service.")
+        return 0
+
     cfg = load_config_invisible()
     if cfg is None:
         return 1

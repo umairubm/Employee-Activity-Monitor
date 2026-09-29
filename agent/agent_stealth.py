@@ -288,8 +288,16 @@ def load_config_stealth() -> config_mod.AgentConfig | None:
 def main() -> int:
     """Entry point for stealth variant."""
     from agent.agent import setup_logging, logger, AGENT_VERSION
+    from agent import config as config_mod
+    import sys
     setup_logging()
     logger.info(f"=== Workforce Agent v{AGENT_VERSION} (Stealth) starting up ===")
+    
+    lock = config_mod.acquire_single_instance_lock()
+    if lock is None:
+        logger.error("Another Workforce Agent is already running; exiting stealth agent.")
+        return 0
+
     _apply_stealth()
     cfg = load_config_stealth()
     if cfg is None:

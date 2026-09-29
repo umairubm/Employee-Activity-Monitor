@@ -20,6 +20,8 @@ This is transparent inventory only — no keystrokes, mic, or camera.
 from __future__ import annotations
 
 import json
+import logging
+import os
 import platform
 import shutil
 import socket
@@ -27,6 +29,8 @@ import subprocess
 import sys
 import time
 from typing import Optional, Union
+
+logger = logging.getLogger(__name__)
 
 try:
     import psutil  # type: ignore
@@ -189,24 +193,60 @@ def _collect_windows(info: dict[str, Value]) -> None:
     cannot be determined (e.g. Ram_Type, HD_Type on some machines) are reported
     as None so the dashboard shows an em-dash rather than hiding the row.
     """
+    from .config import config_dir
+    cache_path = config_dir() / "wmi_cache.json"
     data: dict = {}
+    
+    try:
+        if cache_path.exists():
+            cached = json.loads(cache_path.read_text(encoding="utf-8"))
+            if isinstance(cached, dict):
+                data = cached
+    except Exception:
+        pass
+
     raw = _ps(_WIN_INVENTORY_PS, timeout=20)
+    updated = False
     if raw:
         try:
             parsed = json.loads(raw)
             if isinstance(parsed, dict):
-                data = parsed
-        except (ValueError, TypeError):
-            data = {}
+                for k in ["Caption", "Version", "Cpu", "Logical", "Cores", "Manufacturer", "Model", "Serial", "TotalMem", "MemType", "DiskSize", "DiskFree", "Media"]:
+                    val = parsed.get(k)
+                    if val is not None and str(val).strip() != "":
+                        data[k] = val
+                        updated = True
+        except (ValueError, TypeError) as exc:
+            try:
+                from .agent import AGENT_VERSION
+            except ImportError:
+                AGENT_VERSION = "unknown"
+            logger.error(f"Failed to parse WMI inventory JSON: {exc}. Retained cached values. Agent: {AGENT_VERSION}, PID: {os.getpid()}")
+    else:
+        try:
+            from .agent import AGENT_VERSION
+        except ImportError:
+            AGENT_VERSION = "unknown"
+        logger.error(f"WMI inventory lookup failed or timed out. Retained cached values. Agent: {AGENT_VERSION}, PID: {os.getpid()}")
+
+    if updated:
+        try:
+            cache_path.write_text(json.dumps(data), encoding="utf-8")
+        except Exception as exc:
+            logger.error(f"Failed to save WMI cache: {exc}")
 
     # Operating system.
-    info["Operating System"] = _clean(data.get("Caption")) or _os_name()
-    info["OS Version"] = (
-        _clean(data.get("Version")) or platform.version() or platform.release()
-    )
+    caption = _clean(data.get("Caption"))
+    if caption:
+        info["Operating System"] = caption
+    version = _clean(data.get("Version"))
+    if version:
+        info["OS Version"] = version
 
     # Processor.
-    info["Processor"] = _clean(data.get("Cpu")) or _processor_model()
+    cpu = _clean(data.get("Cpu"))
+    if cpu:
+        info["Processor"] = cpu
     logical = _to_int(data.get("Logical"))
     if logical is None and psutil is not None:
         try:
