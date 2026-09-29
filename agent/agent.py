@@ -204,9 +204,14 @@ class MonitoringAgent:
 
     # --- activity accumulation ----------------------------------------------
 
+    def _flush_segment_locked(self) -> None:
+        """Close current segment. Assumes caller holds self._lock."""
+        if hasattr(self, "_journal"):
+            self._journal.close_current()
+
     def _flush_segment(self) -> None:
         with self._lock:
-            self._journal.close_current()
+            self._flush_segment_locked()
 
     def _observe(self) -> None:
         monitoring_paused = not self.is_active()
@@ -253,7 +258,7 @@ class MonitoringAgent:
             if self._os_session_locked == locked:
                 return
             self._os_session_locked = locked
-            self._flush_segment()
+            self._flush_segment_locked()
 
     # --- commands ------------------------------------------------------------
 
