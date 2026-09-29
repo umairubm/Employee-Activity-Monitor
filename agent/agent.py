@@ -147,11 +147,14 @@ class MonitoringAgent:
         # can never wedge the queue behind one oversized request, then grows
         # back after successful uploads.
         self._activity_batch_limit = ACTIVITY_BATCH_MAX
-        passive_threshold = max(1, cfg.idle_threshold_seconds)
+        idle_threshold = max(10, cfg.idle_threshold_seconds)
+        # Passive zone: the last half of the idle window ("keyboard quiet but
+        # not yet idle"). Capped so it never equals or exceeds idle_threshold.
+        passive_threshold = max(1, min(idle_threshold // 2, idle_threshold - 1))
         self._journal = IntervalJournal(
             self._activity_queue,
             passive_threshold_seconds=passive_threshold,
-            idle_threshold_seconds=max(300, passive_threshold + 60),
+            idle_threshold_seconds=idle_threshold,
         )
         self._last_screenshot = 0.0
         self._next_screenshot_gap = self._screenshot_gap()
@@ -218,11 +221,12 @@ class MonitoringAgent:
                 else None
             )
             idle = monitor_mod.get_idle_seconds()
-        passive_threshold = max(1, self.cfg.idle_threshold_seconds)
+        idle_threshold = max(10, self.cfg.idle_threshold_seconds)
+        passive_threshold = max(1, min(idle_threshold // 2, idle_threshold - 1))
         with self._lock:
             self._journal.set_thresholds(
                 passive_threshold,
-                max(300, passive_threshold + 60),
+                idle_threshold,
             )
             # 3. Record locked time correctly:
             # On lock: idleSeconds = full segment duration
