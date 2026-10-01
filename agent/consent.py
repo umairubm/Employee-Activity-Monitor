@@ -224,6 +224,7 @@ def show_consent_dialog(
 
     def on_decline():
         result["value"] = None
+        root.quit()
         root.destroy()
 
     def on_accept():
@@ -243,6 +244,7 @@ def show_consent_dialog(
             error_var.set("Please tick the consent checkbox to continue.")
             return
         result["value"] = {"server_url": server, "token": token, "name": name}
+        root.quit()
         root.destroy()
 
     decline = tk.Button(
