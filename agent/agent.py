@@ -33,6 +33,7 @@ if __package__ in (None, ""):
     from agent import monitor as monitor_mod
     from agent import screenshot as screenshot_mod
     from agent import system_info as system_info_mod
+    from agent import tray as tray_mod
     from agent.windows_installer_verification import (
         verify_windows_installer,
     )
@@ -45,6 +46,7 @@ else:
     from . import monitor as monitor_mod
     from . import screenshot as screenshot_mod
     from . import system_info as system_info_mod
+    from . import tray as tray_mod
     from .windows_installer_verification import verify_windows_installer
     from .telemetry.durable_queue import DurableActivityQueue
     from .telemetry.interval_journal import IntervalJournal
@@ -73,7 +75,7 @@ def setup_logging():
     logging.getLogger().addHandler(handler)
 
 
-AGENT_VERSION = "1.2.101"
+AGENT_VERSION = "1.2.102"
 POLL_SECONDS = 15
 # Activity batching. The server caps a batch at 500 rows; we additionally cap
 # serialized bytes well under its JSON body limit so a backlog of rich
@@ -140,6 +142,7 @@ class MonitoringAgent:
         self._stop = threading.Event()
         self._paused = threading.Event()  # set => paused
         self._lock = threading.Lock()
+        self.tray: tray_mod.AgentTray | None = None
         self._activity_queue = DurableActivityQueue(
             config_mod.config_dir() / "activity_intervals.sqlite3"
         )
@@ -1099,6 +1102,8 @@ rm -rf "$(dirname "$NEW")" "$0"
                     continue
                 self._last_screenshot = now
                 try:
+                    if self.tray:
+                        self.tray.notify("Taking a screenshot now…", "Workforce Analytics")
                     img = screenshot_mod.capture_webp_bytes()
                     logger.info("Screenshot capture completed, upload started.")
                     self.api.upload_screenshot(img, _now_iso(), content_type="image/webp")
@@ -1358,6 +1363,9 @@ rm -rf "$(dirname "$NEW")" "$0"
                     self._cancel_power_command(ctype)
                 except Exception as exc:  # noqa: BLE001
                     logger.error(f"power cancellation failed: {exc}")
+        
+        if self.tray:
+            self.tray.refresh()
 
     # --- callbacks -----------------------------------------------------------
 
@@ -1371,7 +1379,12 @@ rm -rf "$(dirname "$NEW")" "$0"
             self._paused.set()
 
     def show_info(self) -> None:
-        pass
+        if self.tray:
+            self.tray.notify(
+                "Recording active app, window title, idle time, and periodic "
+                "screenshots. No keystrokes, mic, or camera.",
+                "What is being monitored",
+            )
 
     def open_config(self) -> None:
         path = str(config_mod.config_dir())
@@ -1392,6 +1405,8 @@ rm -rf "$(dirname "$NEW")" "$0"
             self._win_session_monitor.stop()
         self._flush_segment()
         self._stop.set()
+        if self.tray:
+            self.tray.stop()
 
     def run(self) -> None:
         threads = [
@@ -1402,11 +1417,26 @@ rm -rf "$(dirname "$NEW")" "$0"
         ]
         for t in threads:
             t.start()
+
+        self.tray = tray_mod.AgentTray(
+            on_toggle_pause=self.toggle_pause,
+            on_show_info=self.show_info,
+            on_open_config=self.open_config,
+            on_quit=self.quit,
+            is_active=self.is_active,
+            status_text=self.status_text,
+        )
+        self.tray.notify(
+            "Monitoring is active. This icon stays visible the whole time.",
+            "Workforce Analytics",
+        )
+        
         try:
-            while not self._stop.is_set():
-                time.sleep(1.0)
+            self.tray.run()  # blocks on the main thread until Quit
         except KeyboardInterrupt:
             self.quit()
+            
+        self._stop.set()
         for t in threads:
             t.join(timeout=10)
 
