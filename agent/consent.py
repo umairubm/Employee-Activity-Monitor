@@ -55,7 +55,8 @@ def show_consent_dialog(
     root = tk.Tk()
     root.title("Workforce Analytics — Setup & Consent")
     root.configure(bg=WHITE)
-    root.resizable(False, False)
+    root.resizable(True, True)
+    root.minsize(400, 300)
 
     # Window icon (best-effort).
     icon = _asset("icon.png")
