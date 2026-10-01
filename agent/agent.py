@@ -73,7 +73,7 @@ def setup_logging():
     logging.getLogger().addHandler(handler)
 
 
-AGENT_VERSION = "1.2.98"
+AGENT_VERSION = "1.2.99"
 POLL_SECONDS = 15
 # Activity batching. The server caps a batch at 500 rows; we additionally cap
 # serialized bytes well under its JSON body limit so a backlog of rich
@@ -237,6 +237,7 @@ class MonitoringAgent:
             # On lock: idleSeconds = full segment duration
             locked = self._os_session_locked
             if locked:
+                logger.debug(f"[Agent] Replacing real idle={idle} with 999999999 due to os_session_locked=True")
                 idle = 999999999 # Will be clamped to full segment duration by IntervalJournal
 
             self._journal.observe(

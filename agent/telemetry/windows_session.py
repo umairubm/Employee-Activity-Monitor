@@ -27,6 +27,7 @@ class WindowsSessionMonitor:
             return
         self._running = True
         self.is_locked = self._query_initial_lock_state()
+        logger.info(f"[WindowsSessionMonitor] Initial lock state query result: {self.is_locked}")
         self._thread = threading.Thread(target=self._message_loop, daemon=True)
         self._thread.start()
         
@@ -43,21 +44,25 @@ class WindowsSessionMonitor:
                 ctypes.windll.user32.CloseDesktop(hDesktop)
                 return False
             return True
-        except Exception:
+        except Exception as e:
+            logger.error(f"[WindowsSessionMonitor] _query_initial_lock_state detection error: {e}")
             return False
 
     def _message_loop(self):
         WNDPROC = ctypes.WINFUNCTYPE(wintypes.LPARAM, wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM)
         def wndproc(hwnd, msg, wparam, lparam):
             if msg == WM_WTSSESSION_CHANGE:
+                session_id = lparam
                 if wparam == WTS_SESSION_LOCK:
                     self.is_locked = True
+                    logger.info(f"[WindowsSessionMonitor] WTS_SESSION_LOCK received for session {session_id}. is_locked -> True")
                     try:
                         self.on_lock()
                     except Exception as e:
                         logger.error(f"Error in on_lock: {e}")
                 elif wparam == WTS_SESSION_UNLOCK:
                     self.is_locked = False
+                    logger.info(f"[WindowsSessionMonitor] WTS_SESSION_UNLOCK received for session {session_id}. is_locked -> False")
                     try:
                         self.on_unlock()
                     except Exception as e:
@@ -71,6 +76,7 @@ class WindowsSessionMonitor:
                 elif wparam in (0x0012, 0x0007): # PBT_APMRESUMEAUTOMATIC, PBT_APMRESUMESUSPEND
                     # Check actual lock state on resume
                     self.is_locked = self._query_initial_lock_state()
+                    logger.info(f"[WindowsSessionMonitor] Resume event received. Lock state re-queried: {self.is_locked}")
                     try:
                         if self.is_locked:
                             self.on_lock()
