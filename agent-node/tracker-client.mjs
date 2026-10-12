@@ -51,7 +51,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const IS_WIN = process.platform === "win32";
 const IS_MAC = process.platform === "darwin";
 
-const AGENT_VERSION = "2.0.6-node";
+const AGENT_VERSION = "2.0.7-node";
 
 // ── Where we persist credentials + offline data (per-user, stable across runs) ─
 const CONFIG_DIR = path.join(os.homedir(), ".active-tracker");
