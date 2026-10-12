@@ -111,7 +111,7 @@ class HandleCommandContract(unittest.TestCase):
         completed = [
             c for c in agent.api.ack_command.call_args_list if c.args[1] == "completed"
         ]
-        self.assertEqual(len(completed), 1)
+        self.assertEqual(len(completed), 2)
 
     def test_restart_completed_only_after_os_accepts_schedule(self):
         agent = make_agent()

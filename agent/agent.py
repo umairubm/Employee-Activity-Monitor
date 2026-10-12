@@ -75,7 +75,7 @@ def setup_logging():
     logging.getLogger().addHandler(handler)
 
 
-AGENT_VERSION = "1.2.102"
+AGENT_VERSION = "1.2.103"
 POLL_SECONDS = 15
 # Activity batching. The server caps a batch at 500 rows; we additionally cap
 # serialized bytes well under its JSON body limit so a backlog of rich
@@ -274,14 +274,8 @@ class MonitoringAgent:
             logger.warning("ignoring malformed command delivery")
             return
         logger.info(f"Received command: {ctype} ({cid})")
-        # Redelivery guard: never execute the same command twice in one
-        # session, even if the server re-sends it after a lost ack.
-        if cid in self._handled_command_ids:
-            return
-        self._handled_command_ids.add(cid)
-
-        # Cross-restart guard: if this command already EXECUTED in a previous
-        # session but its final ack was lost, re-send the recorded result —
+        # Redelivery guard: if this command already EXECUTED and finished
+        # in this session or a previous one, re-send the recorded result —
         # never run the action again.
         prior = self._command_results.get(cid)
         if isinstance(prior, dict):
@@ -290,9 +284,14 @@ class MonitoringAgent:
                     cid, prior.get("status") or "completed", prior.get("message")
                 )
             except Exception as exc:  # noqa: BLE001
-                self._handled_command_ids.discard(cid)
                 logger.error(f"could not re-ack command result: {exc}")
             return
+
+        # Concurrent execution guard: if we are currently handling this command,
+        # ignore redeliveries until it finishes.
+        if cid in self._handled_command_ids:
+            return
+        self._handled_command_ids.add(cid)
 
         reason = command.get("reason") or "Authorized IT action"
         # payload is delivered as a JSON *string* (or null); parse best-effort.

