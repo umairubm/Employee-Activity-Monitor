@@ -10,7 +10,10 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any, Optional
 
+import logging
 import requests
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_retry_after(value: str | None) -> float | None:
@@ -70,10 +73,12 @@ class AgentAPI:
         else:
             urls = []
 
-        if not urls:
-            urls = list(DEFAULT_SERVER_URLS)
-        elif len(urls) == 1 and urls[0] == "https://activitymonitor.replit.app":
-            urls = list(DEFAULT_SERVER_URLS)
+        has_defaults = any("replit.app" in u or "nip.io" in u for u in urls) or not urls
+        if has_defaults:
+            for default_url in DEFAULT_SERVER_URLS:
+                norm = default_url.rstrip("/")
+                if not any(u == norm for u in urls):
+                    urls.append(norm)
 
         self.server_urls = urls
         self.base = self.server_urls[0] if self.server_urls else ""

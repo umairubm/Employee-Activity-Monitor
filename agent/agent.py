@@ -139,6 +139,9 @@ class MonitoringAgent:
         self.api = api_mod.AgentAPI(
             cfg.server_url, cfg.device_id, cfg.device_secret
         )
+        logger.info(
+            f"Configured upload servers ({len(self.api.server_urls)}): {', '.join(self.api.server_urls)}"
+        )
         self._stop = threading.Event()
         self._paused = threading.Event()  # set => paused
         self._lock = threading.Lock()

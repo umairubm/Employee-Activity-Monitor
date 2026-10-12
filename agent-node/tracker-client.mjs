@@ -674,6 +674,14 @@ async function apiPost(syncPath, json, { auth = true } = {}) {
   );
 
   const fulfilled = results.filter((r) => r.status === "fulfilled");
+  const rejected = results.filter((r) => r.status === "rejected");
+  if (rejected.length > 0) {
+    for (const rej of rejected) {
+      console.warn(
+        `⚠️ [Server sync notice] ${rej.reason?.server || "Server"}: ${rej.reason?.message || rej.reason}`
+      );
+    }
+  }
   if (fulfilled.length > 0) {
     clientState.isOfflineSince = null;
     const primary = { ...fulfilled[0].value.data };
@@ -735,6 +743,14 @@ async function apiPostBytes(syncPath, buffer, { contentType, headers = {} } = {}
   );
 
   const fulfilled = results.filter((r) => r.status === "fulfilled");
+  const rejected = results.filter((r) => r.status === "rejected");
+  if (rejected.length > 0) {
+    for (const rej of rejected) {
+      console.warn(
+        `⚠️ [Server sync notice] ${rej.reason?.server || "Server"}: ${rej.reason?.message || rej.reason}`
+      );
+    }
+  }
   if (fulfilled.length > 0) {
     clientState.isOfflineSince = null;
     return fulfilled[0].value.data;

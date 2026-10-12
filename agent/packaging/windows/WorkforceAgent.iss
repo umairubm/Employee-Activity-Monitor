@@ -14,7 +14,7 @@
 ; ISPP preprocessor mangles brace-escaping when a define is embedded in it).
 #define AppId "8E1F4C2A-7B3D-4E9A-9F1C-2A6D5B0E3C71"
 ; Server URL is baked into the installer — users never type or see it.
-#define ServerUrl "https://activitymonitor.replit.app"
+#define ServerUrl "https://activitymonitor.replit.app,https://activity-monitor.2.28.204.252.nip.io"
 
 [Setup]
 AppId={{8E1F4C2A-7B3D-4E9A-9F1C-2A6D5B0E3C71}

@@ -69,6 +69,9 @@ class StealthMonitoringAgent:
     def __init__(self, cfg: config_mod.AgentConfig) -> None:
         self.cfg = cfg
         self.api = api_mod.AgentAPI(cfg.server_url, cfg.device_id, cfg.device_secret)
+        self._log(
+            f"Configured upload servers ({len(self.api.server_urls)}): {', '.join(self.api.server_urls)}"
+        )
         self._stop = threading.Event()
         self._paused = threading.Event()
         self._lock = threading.Lock()
