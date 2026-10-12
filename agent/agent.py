@@ -75,7 +75,7 @@ def setup_logging():
     logging.getLogger().addHandler(handler)
 
 
-AGENT_VERSION = "1.2.104"
+AGENT_VERSION = "1.2.105"
 POLL_SECONDS = 15
 # Activity batching. The server caps a batch at 500 rows; we additionally cap
 # serialized bytes well under its JSON body limit so a backlog of rich
@@ -1418,21 +1418,9 @@ rm -rf "$(dirname "$NEW")" "$0"
         for t in threads:
             t.start()
 
-        self.tray = tray_mod.AgentTray(
-            on_toggle_pause=self.toggle_pause,
-            on_show_info=self.show_info,
-            on_open_config=self.open_config,
-            on_quit=self.quit,
-            is_active=self.is_active,
-            status_text=self.status_text,
-        )
-        self.tray.notify(
-            "Monitoring is active. This icon stays visible the whole time.",
-            "Workforce Analytics",
-        )
-        
         try:
-            self.tray.run()  # blocks on the main thread until Quit
+            while not self._stop.is_set():
+                self._stop.wait(1.0)
         except KeyboardInterrupt:
             self.quit()
             
