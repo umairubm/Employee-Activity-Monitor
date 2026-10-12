@@ -1104,8 +1104,6 @@ rm -rf "$(dirname "$NEW")" "$0"
                     continue
                 self._last_screenshot = now
                 try:
-                    if self.tray:
-                        self.tray.notify("Taking a screenshot now…", "Workforce Analytics")
                     img = screenshot_mod.capture_webp_bytes()
                     logger.info("Screenshot capture completed, upload started.")
                     self.api.upload_screenshot(img, _now_iso(), content_type="image/webp")
