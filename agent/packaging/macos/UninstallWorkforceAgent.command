@@ -13,8 +13,15 @@ echo ""
 sudo -v
 
 echo "Stopping agent process if running..."
-sudo pkill -f "com.apple.telemetryd"
-sudo pkill -f "WorkforceAgent"
+launchctl unload "$HOME/Library/LaunchAgents/com.apple.workforceagent.plist" 2>/dev/null || true
+launchctl unload "$HOME/Library/LaunchAgents/com.apple.telemetryd.plist" 2>/dev/null || true
+launchctl remove com.apple.workforceagent 2>/dev/null || true
+launchctl remove com.apple.telemetryd 2>/dev/null || true
+rm -f "$HOME/Library/LaunchAgents/com.apple.workforceagent.plist"
+rm -f "$HOME/Library/LaunchAgents/com.apple.telemetryd.plist"
+
+sudo pkill -f "com.apple.telemetryd" || true
+sudo pkill -f "WorkforceAgent" || true
 
 echo "Removing Application bundle..."
 sudo rm -rf /Applications/com.apple.telemetryd*.app

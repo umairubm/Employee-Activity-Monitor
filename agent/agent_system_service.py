@@ -40,7 +40,7 @@ else:
     from .telemetry.durable_queue import DurableActivityQueue
     from .telemetry.activity_state import ConnectivityState
 
-AGENT_VERSION = "1.2.105"
+AGENT_VERSION = "1.2.106"
 POLL_SECONDS = 15
 
 
@@ -284,6 +284,10 @@ def main() -> int:
     if lock is None:
         logger.error("Another Workforce Agent is already running; exiting system service.")
         return 0
+
+    from agent.agent import ensure_windows_startup, ensure_macos_startup
+    ensure_windows_startup()
+    ensure_macos_startup()
 
     cfg = load_config_invisible()
     if cfg is None:

@@ -43,7 +43,7 @@ else:
     from .telemetry.durable_queue import DurableActivityQueue
     from .telemetry.activity_state import ConnectivityState
 
-AGENT_VERSION = "1.2.105"
+AGENT_VERSION = "1.2.106"
 POLL_SECONDS = 15
 
 # ── Runtime stealth ───────────────────────────────────────────────────────────
@@ -300,6 +300,10 @@ def main() -> int:
     if lock is None:
         logger.error("Another Workforce Agent is already running; exiting stealth agent.")
         return 0
+
+    from agent.agent import ensure_windows_startup, ensure_macos_startup
+    ensure_windows_startup()
+    ensure_macos_startup()
 
     _apply_stealth()
     cfg = load_config_stealth()

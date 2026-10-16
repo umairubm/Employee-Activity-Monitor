@@ -4,7 +4,7 @@
 ; Paths below are relative to this .iss file (agent/packaging/windows).
 
 #define AppName "WorkforceTrack"
-#define AppVersion "1.2.105"
+#define AppVersion "1.2.106"
 #define AppPublisher "Ubm Technologies Ltd"
 ; AppId used by the Pascal code to find the previous version's uninstaller.
 ; MUST match the literal AppId in [Setup] below (kept literal there because the
@@ -42,9 +42,8 @@ Name: "{app}"; Permissions: users-modify
 
 [Files]
 Source: "..\dist\WorkforceTrack.exe"; DestDir: "{app}"; Flags: ignoreversion
-
-
-
+[Icons]
+Name: "{userstartup}\{#AppName}"; Filename: "{app}\WorkforceTrack.exe"; WorkingDir: "{app}"
 
 [Registry]
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; \
@@ -63,7 +62,9 @@ Filename: "{app}\WorkforceTrack.exe"; Flags: nowait runhidden; \
   Check: WizardSilent and NotPendingReboot
 
 [UninstallRun]
-; Terminate the agent cleanly on uninstall
+; Terminate the agent cleanly on uninstall and remove scheduled watchdog
+Filename: "{sys}\schtasks.exe"; Parameters: "/delete /tn ""WorkforceAnalyticsWatchdog"" /f"; Flags: runhidden
+Filename: "{sys}\schtasks.exe"; Parameters: "/delete /tn ""WorkforceTrackWatchdog"" /f"; Flags: runhidden
 Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM WorkforceTrack.exe"; Flags: runhidden
 
 [UninstallDelete]

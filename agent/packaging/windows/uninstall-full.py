@@ -45,9 +45,13 @@ def main():
             run_command(f'"{uninstaller}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART')
             time.sleep(3)
 
+    # 3b. Delete watchdog scheduled tasks
+    run_command('schtasks /delete /tn "WorkforceAnalyticsWatchdog" /f')
+    run_command('schtasks /delete /tn "WorkforceTrackWatchdog" /f')
+
     # 4. Remove Registry Run keys
     print("Removing registry autostart entries...")
-    reg_keys = ["WorkforceAgent", "WorkforceTrack"]
+    reg_keys = ["Workforce Analytics Agent", "WorkforceAgent", "WorkforceTrack"]
     try:
         key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_ALL_ACCESS)
         for val_name in reg_keys:

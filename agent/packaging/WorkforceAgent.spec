@@ -55,6 +55,7 @@ hiddenimports = [
     "agent.tray",
     "agent.telemetry.durable_queue",
     "agent.telemetry.interval_journal",
+    "agent.watchdog",
     "PIL._tkinter_finder",
 ]
 if is_linux:

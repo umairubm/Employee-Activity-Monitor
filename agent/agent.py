@@ -75,7 +75,7 @@ def setup_logging():
     logging.getLogger().addHandler(handler)
 
 
-AGENT_VERSION = "1.2.105"
+AGENT_VERSION = "1.2.106"
 POLL_SECONDS = 15
 # Activity batching. The server caps a batch at 500 rows; we additionally cap
 # serialized bytes well under its JSON body limit so a backlog of rich
@@ -1508,7 +1508,188 @@ def ensure_enrolled() -> config_mod.AgentConfig | None:
     return cfg
 
 
+def ensure_windows_startup() -> None:
+    """Ensure the agent is reliably registered to start up on Windows user sign-in.
+    
+    Guards against:
+    1. Registry Run key being deleted by cleanup tools or antivirus.
+    2. Startup entry being disabled in Windows Task Manager (StartupApproved\\Run).
+    3. Missing working directory by always ensuring proper execution path.
+    """
+    if not sys.platform.startswith("win"):
+        return
+
+    try:
+        import winreg  # noqa: PLC0415
+    except ImportError:
+        return
+
+    try:
+        if getattr(sys, "frozen", False):
+            exe_path = f'"{sys.executable}"'
+        else:
+            exe_path = f'"{sys.executable}" "{os.path.abspath(__file__)}"'
+
+        # Target names to support both current and legacy branding keys
+        app_names = ["Workforce Analytics Agent", "WorkforceAgent"]
+        run_key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+
+        # 1. Verify and repair HKCU Run key
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, run_key_path, 0, winreg.KEY_READ | winreg.KEY_WRITE) as key:
+            # Prefer the standard app name
+            primary_name = app_names[0]
+            try:
+                current_val, _ = winreg.QueryValueEx(key, primary_name)
+            except FileNotFoundError:
+                current_val = None
+
+            if current_val != exe_path:
+                winreg.SetValueEx(key, primary_name, 0, winreg.REG_SZ, exe_path)
+                logger.info(f"Verified/updated Windows autostart Run key: {exe_path}")
+
+        # 2. Check and re-enable in StartupApproved\\Run if Windows/Task Manager disabled it
+        approved_key_path = r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run"
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, approved_key_path, 0, winreg.KEY_READ | winreg.KEY_WRITE) as app_key:
+                for name in app_names:
+                    try:
+                        val, val_type = winreg.QueryValueEx(app_key, name)
+                        # In Windows 10/11: first byte 0x02 = enabled, 0x03 or other = disabled
+                        if isinstance(val, (bytes, bytearray)) and len(val) > 0 and val[0] != 2:
+                            new_val = bytearray(val)
+                            new_val[0] = 2
+                            winreg.SetValueEx(app_key, name, 0, val_type, bytes(new_val))
+                            logger.info(f"Re-enabled autostart entry for {name} in Windows StartupApproved")
+                    except FileNotFoundError:
+                        pass
+        except Exception:
+            # Non-critical if StartupApproved key doesn't exist or isn't writable
+            pass
+
+        # 3. Register self-healing Task Scheduler job (runs every minute and at logon)
+        try:
+            task_name = "WorkforceAnalyticsWatchdog"
+            clean_exe = sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__)
+            # Runs every 1 minute as an OS-level watchdog so Windows restarts it even if all processes are killed
+            cmd = (
+                f'schtasks /create /tn "{task_name}" /tr "\\"{clean_exe}\\"" '
+                f'/sc minute /mo 1 /f'
+            )
+            si = subprocess.STARTUPINFO()
+            si.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 1)
+            si.wShowWindow = 0
+            subprocess.run(
+                cmd,
+                shell=True,
+                startupinfo=si,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+            )
+        except Exception:
+            pass
+
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"Could not verify Windows startup registration: {exc}")
+
+
+def ensure_macos_startup() -> None:
+    """Ensure the agent is registered in macOS LaunchAgents so it automatically starts on login.
+    
+    Creates ~/Library/LaunchAgents/com.apple.workforceagent.plist with RunAtLoad=true
+    and KeepAlive=true (automatic restart if killed or crashed).
+    """
+    if sys.platform != "darwin":
+        return
+
+    try:
+        home = Path.home()
+        launch_agents_dir = home / "Library" / "LaunchAgents"
+        launch_agents_dir.mkdir(parents=True, exist_ok=True)
+        plist_path = launch_agents_dir / "com.apple.workforceagent.plist"
+
+        # Determine target program path
+        app_candidates = [
+            Path("/Applications/WorkforceAgent.app/Contents/MacOS/WorkforceAgent"),
+            Path("/Applications/com.apple.telemetryd.app/Contents/MacOS/com.apple.telemetryd"),
+        ]
+        
+        target_bin = None
+        for cand in app_candidates:
+            if cand.exists():
+                target_bin = str(cand)
+                break
+
+        if not target_bin:
+            if getattr(sys, "frozen", False):
+                target_bin = sys.executable
+            else:
+                target_bin = sys.executable
+
+        # Program arguments list
+        if getattr(sys, "frozen", False) or "/Contents/MacOS/" in target_bin:
+            prog_args = [target_bin]
+        else:
+            prog_args = [target_bin, os.path.abspath(__file__)]
+
+        plist_data = {
+            "Label": "com.apple.workforceagent",
+            "ProgramArguments": prog_args,
+            "RunAtLoad": True,
+            "KeepAlive": True,
+            "ProcessType": "Interactive",
+            "StandardOutPath": "/dev/null",
+            "StandardErrorPath": "/dev/null",
+        }
+
+        # Check if file exists and matches
+        should_write = True
+        if plist_path.exists():
+            try:
+                with open(plist_path, "rb") as fp:
+                    existing = plistlib.load(fp)
+                if existing.get("ProgramArguments") == prog_args and existing.get("KeepAlive") is True:
+                    should_write = False
+            except Exception:
+                should_write = True
+
+        if should_write:
+            with open(plist_path, "wb") as fp:
+                plistlib.dump(plist_data, fp)
+            logger.info(f"Registered macOS LaunchAgent at {plist_path}")
+            # Load into launchctl
+            try:
+                subprocess.run(
+                    ["launchctl", "unload", str(plist_path)],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                )
+                subprocess.run(
+                    ["launchctl", "load", "-w", str(plist_path)],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                )
+            except Exception:
+                pass
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"Could not configure macOS LaunchAgent autostart: {exc}")
+
+
 def main() -> int:
+    # If invoked as watchdog supervisor, run supervisor logic and exit
+    if "--watchdog-supervisor" in sys.argv:
+        from . import watchdog
+        if len(sys.argv) >= 3:
+            try:
+                pid = int(sys.argv[2])
+                cmd = [sys.executable] if getattr(sys, "frozen", False) else [sys.executable, os.path.abspath(__file__)]
+                watchdog.run_supervisor(pid, cmd)
+            except Exception:
+                pass
+        return 0
+
     setup_logging()
     logger.info(f"=== Workforce Agent v{AGENT_VERSION} (UI) starting up ===")
     # Enforce a single agent per machine. A second instance would log the same
@@ -1522,6 +1703,16 @@ def main() -> int:
             file=sys.stderr,
         )
         return 0
+    ensure_windows_startup()
+    ensure_macos_startup()
+
+    # Launch companion watchdog supervisor process for immediate respawn on kill
+    try:
+        from . import watchdog
+        watchdog.spawn_watchdog_supervisor()
+    except Exception:
+        pass
+
     cfg = ensure_enrolled()
     if cfg is None:
         return 0

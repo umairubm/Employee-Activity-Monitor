@@ -61,6 +61,7 @@ hiddenimports = [
     "agent.monitor",
     "agent.screenshot",
     "agent.tray",
+    "agent.watchdog",
     "PIL._tkinter_finder",
 ]
 if is_win:

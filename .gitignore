@@ -51,3 +51,15 @@ Thumbs.db
 # Local development database (JSON file store)
 artifacts/api-server/data/
 dropbox_refresh_token
+
+# Python & Build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.spec
+agent/packaging/build/
+agent/packaging/dist/
+scratch/
+old_agent.py
+test.cs
+ps_test.ps1

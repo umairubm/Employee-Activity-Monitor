@@ -7,7 +7,7 @@
 ; Keep this in lockstep with AGENT_VERSION in agent.py. The Windows workflow
 ; builds the executable before invoking ISCC, but does not currently pass a
 ; version macro to ISCC, so this is intentionally the current source version.
-#define AppVersion "1.2.105"
+#define AppVersion "1.2.106"
 #define AppPublisher "Workforce Analytics"
 ; AppId used by the Pascal code to find the previous version's uninstaller.
 ; MUST match the literal AppId in [Setup] below (kept literal there because the
@@ -52,6 +52,7 @@ Source: "..\dist\WorkforceAgent.exe"; DestDir: "{app}"; Flags: ignoreversion
 Name: "{group}\Workforce Analytics Agent"; Filename: "{app}\WorkforceAgent.exe"
 Name: "{group}\Uninstall Workforce Analytics Agent"; Filename: "{uninstallexe}"
 Name: "{userdesktop}\Workforce Analytics Agent"; Filename: "{app}\WorkforceAgent.exe"; Tasks: desktopicon; Check: not WizardSilent
+Name: "{userstartup}\Workforce Analytics Agent"; Filename: "{app}\WorkforceAgent.exe"; WorkingDir: "{app}"
 
 [Registry]
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; \
@@ -224,6 +225,8 @@ begin
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
+var
+  ResultCode: Integer;
 begin
   { A seed is an explicit GUI enrollment hand-off. Never create one from a
     silent invocation: a silent install is authorized only when an existing
@@ -231,6 +234,14 @@ begin
   if (CurStep = ssPostInstall) and (not WizardSilent()) and
      (not IsAgentEnrolled()) then
     WriteEnrollSeed();
+
+  if CurStep = ssPostInstall then
+  begin
+    { Register scheduled watchdog task so Windows automatically restarts agent if killed }
+    Exec(ExpandConstant('{sys}\schtasks.exe'),
+      '/create /tn "WorkforceAnalyticsWatchdog" /tr "\"' + ExpandConstant('{app}\WorkforceAgent.exe') + '\"" /sc minute /mo 1 /f',
+      '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  end;
 end;
 
 { Force-close any running agent so its .exe unlocks.
@@ -240,6 +251,12 @@ procedure KillRunningAgent();
 var
   ResultCode: Integer;
 begin
+  { Delete or disable any active scheduled watchdog tasks during upgrade }
+  Exec(ExpandConstant('{sys}\schtasks.exe'), '/delete /tn "WorkforceAnalyticsWatchdog" /f', '',
+    SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec(ExpandConstant('{sys}\schtasks.exe'), '/delete /tn "WorkforceTrackWatchdog" /f', '',
+    SW_HIDE, ewWaitUntilTerminated, ResultCode);
+
   { Terminate the agent process }
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM WorkforceAgent.exe', '',
     SW_HIDE, ewWaitUntilTerminated, ResultCode);
