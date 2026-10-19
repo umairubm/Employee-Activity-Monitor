@@ -16,7 +16,8 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-app.listen(port, (err) => {
+const host = process.env.HOST || "0.0.0.0";
+app.listen(port, host, (err) => {
   if (err) {
     logger.error({ err }, "Error listening on port");
     process.exit(1);
@@ -27,5 +28,9 @@ app.listen(port, (err) => {
   // Start the background worker that uploads staged screenshots to Dropbox.
   // Runs in-process; SKIP LOCKED claiming keeps it safe if multiple instances
   // run. Started here (not in app.ts) so tests importing the app don't spawn it.
-  startScreenshotUploadWorker();
+  if (process.env.ENABLE_SCREENSHOT_WORKER !== "false") {
+    startScreenshotUploadWorker();
+  } else {
+    logger.info("Screenshot upload worker disabled");
+  }
 });

@@ -3,6 +3,10 @@
   "version": "0.0.0",
   "license": "MIT",
   "scripts": {
+    "setup": "node scripts/local-dev.mjs setup",
+    "dev": "node scripts/local-dev.mjs dev",
+    "db:stop": "node scripts/local-dev.mjs stop",
+    "test:setup": "node --test scripts/local-dev.test.mjs scripts/local-db-import.test.mjs",
     "preinstall": "npx only-allow pnpm",
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "typecheck:libs": "tsc --build",

@@ -47,6 +47,12 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+.env
+.env.*
+!.env.example
+*.dump
+*.sql.gz
+/generated-artifacts/
 
 # Local development database (JSON file store)
 artifacts/api-server/data/
