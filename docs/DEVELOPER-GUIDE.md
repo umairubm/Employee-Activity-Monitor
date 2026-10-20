@@ -134,6 +134,15 @@ On first run it:
 
 There is no backup-path prompt and no production database password prompt.
 An SSH password prompt is normal when key authentication is not configured.
+The terminal now shows connection/export stages and live downloaded MiB, elapsed
+time and average speed every two seconds. A percentage cannot be calculated while
+pg_dump is streaming an archive of unknown final size.
+If no data arrives for 30 seconds, setup prints a warning. Ten minutes without
+new data cancels the transfer and removes the incomplete archive.
+Ctrl+C also cancels safely; your existing local database remains selected.
+If you never see an SSH prompt or a connected message, cancel and run
+`ssh ubm@2.28.204.252` directly to diagnose login/connectivity. Do not enter your
+password unless SSH asks for it.
 Do not run npm install in this pnpm workspace.
 
 Setup never bootstraps a test admin or pushes schema changes onto imported data.

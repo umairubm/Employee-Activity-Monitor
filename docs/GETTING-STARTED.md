@@ -52,6 +52,11 @@ npm run setup
 On first run, SSH may ask for your SSH password (keys also work).
 There is no database-password or backup-path prompt. Verify the server's host key
 before trusting a new connection. No separate SSH tunnel is required.
+During export, setup prints SSH/server stages, downloaded MiB, elapsed time and
+average speed every two seconds. There is no percentage because pg_dump does not
+know the final compressed size in advance. It warns after 30 seconds without data
+and cancels after ten minutes without new data. Ctrl+C cancels safely and removes
+the incomplete download, leaving your existing local database unchanged.
 Downloads are kept under the private, Git-ignored `.local/development/backups`.
 Never share these employee-data archives or commit them. Export failures stop
 setup rather than silently creating empty data.

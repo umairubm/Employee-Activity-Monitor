@@ -95,7 +95,7 @@ async function setup() {
   let backup = args[0] === "--backup" ? args[1] : undefined;
   if (!backup && (refresh || config.source !== "production-snapshot")) {
     pgTool("pg_restore");
-    backup = fetchSnapshot(join(home, "backups"), process.env.DEV_SSH_SERVER || "ubm@2.28.204.252");
+    backup = await fetchSnapshot(join(home, "backups"), process.env.DEV_SSH_SERVER || "ubm@2.28.204.252");
   }
   if (backup) {
     backup = resolve(backup.startsWith("~/") ? join(homedir(), backup.slice(2)) : backup);
