@@ -3,12 +3,37 @@
 For the full export, transfer, setup, and troubleshooting walkthrough, see
 [Developer Setup Guide](DEVELOPER-GUIDE.md).
 
+## Windows — native PowerShell
+
+Prerequisites: Git for Windows and **x64 Node.js 24+** (including npm).
+No Ubuntu, WSL, separate PostgreSQL installation, or administrator terminal is required.
+
+```powershell
+git clone https://github.com/umairubm/Employee-Activity-Monitor.git
+cd Employee-Activity-Monitor
+npm run setup
+npm run dev
+```
+
+Setup uses installed PostgreSQL tools if available, otherwise downloads a pinned,
+SHA256-verified portable PostgreSQL 17.11 bundle (about 325 MiB) into the private
+project folder, plus checksum-verified Microsoft runtime DLLs (about 7 MiB).
+It does not install a Windows service or alter system PATH.
+SSH uses Windows OpenSSH or the SSH client included with Git for Windows.
+Use an NTFS folder owned by your account, preferably outside OneDrive/synced
+directories. Keep the folder private: it will contain employee data.
+
+For an existing checkout, protect local edits then run `git pull --ff-only origin main`.
+If Git reports a conflict or divergent history, stop instead of force-pushing.
+
+## macOS / Linux prerequisites
+
 Prerequisites: Git, Node.js 24+ (including npm), and PostgreSQL tools at least
 as new as the production server (currently PostgreSQL 17).
 On macOS with Homebrew: `brew install node@24 postgresql@17`.
 Ensure Node 24 is on PATH. PostgreSQL need not already be running.
 On Linux install PostgreSQL and set PG_BIN if needed.
-On Windows use WSL2; native PowerShell setup is not supported.
+Native Windows users can use the commands above instead.
 
 ## First setup
 

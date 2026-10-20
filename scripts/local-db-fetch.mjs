@@ -1,7 +1,8 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, openSync, closeSync, unlinkSync, statSync } from "node:fs";
+import { openSync, closeSync, unlinkSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
+import { sshExecutable, privateDirectory } from "./local-platform.mjs";
 
 // Runs on the Plesk server. Credentials stay in that server's private env file,
 // never in the SSH arguments, downloaded archive metadata, or terminal output.
@@ -39,13 +40,13 @@ export function exportArguments(server) {
 
 export function fetchSnapshot(directory, server = "ubm@2.28.204.252", execute = spawnSync) {
   const args = exportArguments(server);
-  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  privateDirectory(directory);
   const file = join(directory, `production-${Date.now()}-${randomBytes(6).toString("hex")}.dump`);
   const fd = openSync(file, "wx", 0o600);
   let succeeded = false;
   try {
     console.log(`Exporting production via SSH (${server}). Enter your SSH password if prompted.`);
-    const result = execute("ssh", args, {
+    const result = execute(sshExecutable(), args, {
       // Binary archive streams straight to disk, not a Node buffer or console.
       stdio: ["inherit", fd, "inherit"],
     });

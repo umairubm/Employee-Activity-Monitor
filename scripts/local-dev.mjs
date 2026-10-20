@@ -7,6 +7,7 @@ import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { databaseName, importSnapshot } from "./local-db-import.mjs";
 import { fetchSnapshot } from "./local-db-fetch.mjs";
+import { toolCandidates, postgresOptions, npxInvocation, privateDirectory, ensureWindowsPostgres } from "./local-platform.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const home = join(root, ".local", "development");
@@ -34,13 +35,7 @@ function run(command, args, options = {}) {
 }
 
 function pgTool(name) {
-  const candidates = [
-    process.env.PG_BIN && join(process.env.PG_BIN, name),
-    `/opt/homebrew/opt/postgresql@17/bin/${name}`,
-    `/usr/local/opt/postgresql@17/bin/${name}`,
-    `/usr/lib/postgresql/17/bin/${name}`,
-    name,
-  ].filter(Boolean);
+  const candidates = toolCandidates(name, home);
   for (const candidate of candidates) {
     if (spawnSync(candidate, ["--version"], { stdio: "ignore" }).status === 0) return candidate;
   }
@@ -49,13 +44,14 @@ function pgTool(name) {
 
 function pnpm(args, env) {
   // npm is only the entry point; the workspace still installs with pinned pnpm.
-  run("npx", ["--yes", "pnpm@10.26.1", ...args], { env });
+  const invocation = npxInvocation(["--yes", "pnpm@10.26.1", ...args]);
+  run(invocation.command, invocation.args, { env });
 }
 
 function credentials(create = false) {
   if (!existsSync(configFile)) {
     if (!create) throw new Error("Run npm run setup first.");
-    mkdirSync(home, { recursive: true, mode: 0o700 });
+    privateDirectory(home);
     writeFileSync(configFile, JSON.stringify({
       password: randomBytes(32).toString("hex"),
       secret: randomBytes(32).toString("hex"),
@@ -81,11 +77,13 @@ function startDatabase(config) {
     }
   }
   if (spawnSync(ctl, ["-D", data, "status"], { stdio: "ignore" }).status !== 0) {
-    run(ctl, ["-D", data, "-l", join(home, "postgres.log"), "-o", `-h 127.0.0.1 -p ${port} -k ''`, "-w", "start"]);
+    run(ctl, ["-D", data, "-l", join(home, "postgres.log"), "-o", postgresOptions(port), "-w", "start"]);
   }
 }
 
 async function setup() {
+  privateDirectory(home);
+  await ensureWindowsPostgres(home);
   pgTool("initdb");
   pgTool("pg_ctl");
   const config = credentials(true);
@@ -132,6 +130,7 @@ async function setup() {
 
 async function dev() {
   const config = credentials();
+  privateDirectory(home);
   if (config.source !== "production-snapshot") throw new Error("Run npm run setup to import a production snapshot first.");
   startDatabase(config);
   const env = localEnvironment(config);
@@ -162,7 +161,6 @@ async function dev() {
 
 async function main() {
   if (Number(process.versions.node.split(".")[0]) < 24) throw new Error("Use Node.js 24 or newer.");
-  if (process.platform === "win32") throw new Error("Use WSL2 on Windows. Native Windows setup is not supported.");
   const command = process.argv[2];
   if (command === "setup") await setup();
   else if (command === "dev") await dev();

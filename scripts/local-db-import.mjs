@@ -12,7 +12,11 @@ export function databaseName(config) {
 
 export async function verifyLocalCluster(client, dataDirectory) {
   const result = await client.query("SHOW data_directory");
-  if (realpathSync(result.rows[0].data_directory) !== realpathSync(dataDirectory)) {
+  const canonical = path => {
+    const value = realpathSync(path);
+    return process.platform === "win32" ? value.toLowerCase() : value;
+  };
+  if (canonical(result.rows[0].data_directory) !== canonical(dataDirectory)) {
     throw new Error("Unexpected database server; refusing to modify it.");
   }
 }
@@ -41,6 +45,8 @@ export async function importSnapshot({ Client, config, dataDirectory, backup, re
     ], {
       // Do not inherit production libpq configuration or print imported rows/errors.
       env: { PATH: process.env.PATH, HOME: process.env.HOME,
+        SystemRoot: process.env.SystemRoot, WINDIR: process.env.WINDIR,
+        TEMP: process.env.TEMP, TMP: process.env.TMP, USERPROFILE: process.env.USERPROFILE,
         PGPASSWORD: config.password, PGCONNECT_TIMEOUT: "10", PGSSLMODE: "disable" },
       stdio: "ignore",
     });

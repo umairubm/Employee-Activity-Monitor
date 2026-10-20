@@ -7,7 +7,7 @@
     "dev": "node scripts/local-dev.mjs dev",
     "db:stop": "node scripts/local-dev.mjs stop",
     "db:refresh": "node scripts/local-dev.mjs setup --refresh",
-    "test:setup": "node --test scripts/local-dev.test.mjs scripts/local-db-import.test.mjs scripts/local-db-fetch.test.mjs",
+    "test:setup": "node --test scripts/local-dev.test.mjs scripts/local-db-import.test.mjs scripts/local-db-fetch.test.mjs scripts/local-platform.test.mjs",
     "preinstall": "npx only-allow pnpm",
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "typecheck:libs": "tsc --build",

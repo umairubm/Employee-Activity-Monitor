@@ -2,12 +2,55 @@
 
 ## What this does
 
-Develop on your Mac in Antigravity using a **local copy of production data**.
+Develop on Windows or Mac in Antigravity using a **local copy of production data**.
 `npm run setup` exports and downloads the database from your dedicated Plesk
 server over SSH and restores it locally. Your local app never connects to the
 live database. Exporting reads production without changing its records.
 
-## 1. Install prerequisites on your Mac
+## 1. Windows quick start — native PowerShell
+
+Install Git for Windows and x64 Node.js 24+ first. Then run:
+
+```powershell
+git clone https://github.com/umairubm/Employee-Activity-Monitor.git
+cd Employee-Activity-Monitor
+npm run setup
+npm run dev
+```
+
+Open http://localhost:5173. Authorized SSH access to the hosting server is required.
+Enter your SSH password if asked; the database password stays on the server.
+No Ubuntu, WSL, administrator shell, or separate PostgreSQL installation is needed.
+
+Setup detects existing PostgreSQL tools or downloads a checksum-pinned PostgreSQL
+17.11 Windows x64 bundle (about 325 MiB) from EnterpriseDB. It extracts only the
+required tools and libraries into `.local/development/tools`, plus checksum-verified
+Microsoft runtime DLLs downloaded directly from Microsoft (about 7 MiB).
+It does not install a Windows service, change system PATH, or download employee
+data into the public webroot. It restricts the local data folder using Windows ACLs.
+Use a local NTFS directory owned by your account, outside synced folders.
+
+SSH is taken from Windows OpenSSH or Git for Windows. If your SSH key is not
+configured, the existing password prompt is expected. Do not share keys or passwords.
+
+Daily use:
+
+```powershell
+cd Employee-Activity-Monitor
+npm run dev
+```
+
+For fresh data, stop the app with Ctrl+C, then:
+
+```powershell
+npm run db:refresh
+npm run dev
+```
+
+Stop local PostgreSQL with `npm run db:stop`.
+Native ARM64 Node.js is not supported; use Windows x64 with x64 Node.js.
+
+## 2. macOS / Linux prerequisites
 
 With Homebrew installed:
 
@@ -24,9 +67,9 @@ version manager. You do not need to start the Homebrew PostgreSQL service.
 Setup manages its own cluster. Network access is required to download packages.
 
 On Linux, install PostgreSQL tools; set PG_BIN if they are not on PATH.
-Windows developers must use WSL2 rather than native PowerShell.
+Windows developers should use native PowerShell as shown above.
 
-## 2. Server access
+## 3. Server access
 
 Your SSH account must be authorized to export production data.
 The default destination is `ubm@2.28.204.252`.
@@ -51,7 +94,7 @@ DEV_SSH_SERVER to `user@alias` before running setup. Node and env-file paths
 remain the fixed Plesk paths above. Custom SSH ports/keys can be configured in
 your own SSH config.
 
-## 3. Get the latest code on your Mac
+## 4. Get the latest code
 
 For a new checkout:
 
@@ -71,7 +114,7 @@ The setup changes must have reached GitHub main first. A local Replit commit
 alone is not available to your Mac. Do not force-push to resolve divergence.
 Open this repository folder in Antigravity.
 
-## 4. One-command setup
+## 5. One-command setup
 
 ```bash
 npm run setup
@@ -79,7 +122,7 @@ npm run setup
 
 On first run it:
 
-1. Checks PostgreSQL tools and creates private local credentials.
+1. Prepares PostgreSQL tools (automatic download on Windows) and private local credentials.
 2. Exports a fresh production snapshot from the server via SSH.
 3. Saves the binary archive privately, removing a partial file on download failure.
 4. Installs workspace dependencies using pinned pnpm 10.26.1.
@@ -97,7 +140,7 @@ Setup never bootstraps a test admin or pushes schema changes onto imported data.
 An export failure stops setup; it does not silently create an empty database.
 A failed import preserves the previous selected local database.
 
-## 5. Run the app
+## 6. Run the app
 
 ```bash
 npm run dev
@@ -115,7 +158,7 @@ The local session secret is independent. Existing browser sessions and encrypted
 production integration credentials do not carry over. Do not copy the production
 session secret to enable integrations locally.
 
-## 6. Daily use and stopping
+## 7. Daily use and stopping
 
 Run `npm run dev` each day; it starts local PostgreSQL if needed.
 There is no need to run setup every day.
@@ -125,7 +168,7 @@ Press Ctrl+C to stop the app. Stop the database without deleting data using:
 npm run db:stop
 ```
 
-## 7. Refresh from the server
+## 8. Refresh from the server
 
 Stop the local app, then:
 
@@ -142,7 +185,7 @@ only after a successful import and basic table validation.
 Plain `npm run setup` preserves an existing imported snapshot. It does not fetch
 new data on every rerun.
 
-## 8. Optional offline backup import
+## 9. Optional offline backup import
 
 If you already have an authorized, trusted custom-format archive:
 
@@ -154,7 +197,7 @@ This skips SSH and imports that file into a new local database.
 Replace the filename with the actual path. Only restore trusted dumps: archives
 can contain executable SQL.
 
-## 9. Data protection and limitations
+## 10. Data protection and limitations
 
 Backups, local credentials, logs and database files live under
 `.local/development`, excluded from Git and deployment.
@@ -174,7 +217,7 @@ real employee devices. These worker flags are not a general network sandbox.
 A snapshot is consistent at export time; later production activity is not included.
 This is development onboarding, not a final data cutover or production deployment.
 
-## 10. Troubleshooting
+## 11. Troubleshooting
 
 - **Missing setup script:** the changes have not reached your checkout. Confirm
   they are on GitHub main before pulling. Reinstalling packages does not add scripts.
@@ -183,6 +226,12 @@ This is development onboarding, not a final data cutover or production deploymen
 - **SSH export fails:** an operator should check private env access, DATABASE_URL,
   the Plesk Node path, PostgreSQL, and pg_dump on the server. Do not print the env file.
 - **Host key changed:** stop and verify the server identity; do not blindly remove keys.
+- **Windows checksum mismatch:** the archive was changed or corrupted; setup refuses
+  to execute it. Do not bypass the checksum check.
+- **Windows access denied:** use a local NTFS directory owned by your account.
+  Do not make the employee-data folder public to work around an ACL error.
+- **Windows executable blocked:** check Windows Security protection history; do not
+  disable antivirus. Downloaded tools must pass startup checks before import proceeds.
 - **Unsupported archive version:** upgrade local PostgreSQL tools to match production.
 - **Backup import fails:** verify the trusted archive and local PostgreSQL compatibility.
   The previous selected local database is unchanged.
@@ -194,7 +243,7 @@ This is development onboarding, not a final data cutover or production deploymen
 - **Local database startup fails:** inspect `.local/development/postgres.log` privately.
   Do not delete the cluster files as a first troubleshooting step.
 
-## 11. Shipping code
+## 12. Shipping code
 
 Commit source code only, never snapshots or credentials. Never restore your laptop
 database over production to deploy code. Schema changes need reviewed migrations
@@ -203,10 +252,16 @@ shared development site, or deploy production.
 
 See docs/GETTING-STARTED.md for the shorter reference.
 
-## 12. Verification status
+## 13. Verification status
 
 The restore flow has been tested on Linux using synthetic backup data.
 SSH streaming, file permissions, failed downloads, argument validation, and safe
 remote-target rejection are covered by tests.
+Cross-platform command construction and file-integrity checks are tested locally.
+Developer setup does not require a GitHub Actions workflow or the PAT workflow
+permission. Run `npm run test:setup` locally to check the setup helpers and restore
+safety. Set `LOCAL_SETUP_SMOKE=true` only in an isolated test checkout to include
+full setup and repeat setup with synthetic data.
+Native Windows execution has not been verified from this Linux workspace.
 The automatic export against your actual server and native Mac setup have not
-been verified from this workspace. No production passwords are included here.
+been verified here. No production passwords are included in this guide.

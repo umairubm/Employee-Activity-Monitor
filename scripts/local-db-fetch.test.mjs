@@ -5,20 +5,21 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { exportArguments, fetchSnapshot, remoteExportScript } from "./local-db-fetch.mjs";
+import { sshExecutable } from "./local-platform.mjs";
 
 test("SSH export streams private binary data to a new file", () => {
   const dir = mkdtempSync(join(tmpdir(), "snapshot-fetch-"));
   try {
     const binary = Buffer.from([80, 71, 68, 77, 80, 0, 255, 128]);
     const file = fetchSnapshot(dir, "ubm@example.test", (command, args, options) => {
-      assert.equal(command, "ssh");
+      assert.equal(command, sshExecutable());
       assert.ok(args.includes("ubm@example.test"));
       assert.equal(options.stdio[0], "inherit");
       writeSync(options.stdio[1], binary);
       return { status: 0 };
     });
     assert.deepEqual(readFileSync(file), binary);
-    assert.equal(statSync(file).mode & 0o777, 0o600);
+    if (process.platform !== "win32") assert.equal(statSync(file).mode & 0o777, 0o600);
   } finally { rmSync(dir, { recursive: true }); }
 });
 
