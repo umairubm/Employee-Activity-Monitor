@@ -1,0 +1,51 @@
+name: Build macOS Agent (artifact only)
+
+# Builds the macOS agent .app + .dmg on a native Apple Silicon (arm64) runner
+# and uploads them as a downloadable Actions artifact. Deliberately does NOT
+# publish a GitHub Release and does NOT require signing secrets (produces an
+# UNSIGNED build for testing). For a signed/notarized release, use
+# build-agent-installers.yml instead.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - ci-macos-artifact
+
+permissions:
+  contents: read
+
+jobs:
+  macos-arm64:
+    runs-on: macos-14   # Apple Silicon (arm64)
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r agent/requirements.txt pyinstaller
+
+      - name: Generate icons
+        run: python agent/packaging/make_icons.py
+
+      - name: Build UNSIGNED .app and .dmg
+        run: bash agent/packaging/macos/build_dmg.sh
+
+      - name: Report built architecture
+        run: |
+          echo "runner arch: $(uname -m)"
+          file agent/packaging/dist/WorkforceAgent.app/Contents/MacOS/* || true
+          ls -la agent/packaging/dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-agent-arm64-unsigned
+          path: |
+            agent/packaging/dist/WorkforceAgent-macos.dmg
+            agent/packaging/dist/WorkforceAgent-macos-*.app.zip
+          if-no-files-found: error
