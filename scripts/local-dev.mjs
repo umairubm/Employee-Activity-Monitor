@@ -4,9 +4,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync, unlinkSy
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-import { createInterface } from "node:readline/promises";
 import { homedir } from "node:os";
 import { databaseName, importSnapshot } from "./local-db-import.mjs";
+import { fetchSnapshot } from "./local-db-fetch.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const home = join(root, ".local", "development");
@@ -90,19 +90,14 @@ async function setup() {
   pgTool("pg_ctl");
   const config = credentials(true);
   const args = process.argv.slice(3);
-  if (args.length && (args.length !== 2 || args[0] !== "--backup")) {
-    throw new Error("Usage: npm run setup [-- --backup /private/path/production.dump]");
+  const refresh = args.length === 1 && args[0] === "--refresh";
+  if (args.length && !refresh && (args.length !== 2 || args[0] !== "--backup")) {
+    throw new Error("Usage: npm run setup [-- --refresh | --backup /private/path/production.dump]");
   }
-  let backup = args[1];
-  if (!backup && config.source !== "production-snapshot") {
-    if (!process.stdin.isTTY) throw new Error("Provide a production backup: npm run setup -- --backup /private/path/production.dump");
-    const prompt = createInterface({ input: process.stdin, output: process.stdout });
-    try {
-      backup = (await prompt.question("Path to your production .dump backup (kept private): ")).trim();
-    } finally {
-      prompt.close();
-    }
-    if (!backup) throw new Error("No backup selected; setup stopped.");
+  let backup = args[0] === "--backup" ? args[1] : undefined;
+  if (!backup && (refresh || config.source !== "production-snapshot")) {
+    pgTool("pg_restore");
+    backup = fetchSnapshot(join(home, "backups"), process.env.DEV_SSH_SERVER || "ubm@2.28.204.252");
   }
   if (backup) {
     backup = resolve(backup.startsWith("~/") ? join(homedir(), backup.slice(2)) : backup);
@@ -124,7 +119,7 @@ async function setup() {
     const temporary = `${configFile}.tmp`;
     writeFileSync(temporary, JSON.stringify(config, null, 2), { mode: 0o600 });
     renameSync(temporary, configFile);
-    console.log("Production snapshot imported locally. Live production was not accessed or changed.");
+    console.log("Production snapshot imported locally. No production data was changed.");
   } else {
     console.log("Existing local production snapshot preserved; no automatic refresh or schema changes.");
   }

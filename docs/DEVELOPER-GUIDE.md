@@ -1,266 +1,212 @@
 # Activity Monitor — Developer Setup Guide
 
-## 1. Purpose and safety
+## What this does
 
-Develop on your Mac in Antigravity using a private local copy of the production
-database. The website and live PostgreSQL database stay on the dedicated Plesk
-server. Local development must not connect directly to that live database.
+Develop on your Mac in Antigravity using a **local copy of production data**.
+`npm run setup` exports and downloads the database from your dedicated Plesk
+server over SSH and restores it locally. Your local app never connects to the
+live database. Exporting reads production without changing its records.
 
-The one-command setup is `npm run setup`. On first run it asks for the path to
-a production backup already downloaded onto your computer.
+## 1. Install prerequisites on your Mac
 
-Important boundaries:
-
-- Setup does not download production data automatically or configure deployments.
-- Import only a trusted, authorized backup. Database archives can execute SQL.
-- Employee data remains sensitive even when copied locally. Use an approved,
-  encrypted computer; keep backups outside synced folders, Git, and webroots.
-- Never share database passwords, device secrets, session secrets, or dumps in chat.
-- Do not enroll real employee devices or connect live integrations to local development.
-- A database backup does not include external Dropbox screenshot files.
-
-## 2. Prerequisites — on your Mac
-
-Install Git, Node.js 24 or newer, and PostgreSQL tools at least as new as production.
-The current Plesk PostgreSQL server uses version 17.
-
-With Homebrew already installed:
+With Homebrew installed:
 
 ```bash
 brew install git node@24 postgresql@17
 export PATH="$(brew --prefix node@24)/bin:$(brew --prefix postgresql@17)/bin:$PATH"
 node --version
 pg_restore --version
-git --version
 ```
 
-Add the export line to your shell profile, such as `~/.zshrc`, if needed for future
-terminal sessions. If using a Node version manager, select Node 24 there instead.
+Use Node 24+ and PostgreSQL tools at least as new as production (currently 17).
+Add the export line to your shell profile if needed, or select Node 24 with your
+version manager. You do not need to start the Homebrew PostgreSQL service.
+Setup manages its own cluster. Network access is required to download packages.
 
-No global pnpm installation is needed: setup invokes pinned pnpm 10.26.1 through
-npx. Internet access is required for package downloads. Do not run `npm install`
-inside this pnpm workspace.
+On Linux, install PostgreSQL tools; set PG_BIN if they are not on PATH.
+Windows developers must use WSL2 rather than native PowerShell.
 
-You do not need to start the Homebrew PostgreSQL service. Setup starts a separate,
-password-protected cluster on 127.0.0.1:55432.
+## 2. Server access
 
-On Linux, install PostgreSQL tools and set PG_BIN to their binary directory if
-they are not on PATH. On Windows, use WSL2; these scripts do not support native
-PowerShell execution.
+Your SSH account must be authorized to export production data.
+The default destination is `ubm@2.28.204.252`.
+Setup uses `/opt/plesk/node/24/bin/node` and reads
+`/home/ubm/.config/activity-monitor/server.env` on that server.
 
-## 3. Clone the project — on your Mac
+The existing server env file must contain a working DATABASE_URL for the local
+`activity_monitor` database. It must be readable by the SSH user. Do not change
+its permissions to make it public. PostgreSQL and pg_dump must be available.
 
-Ensure the setup changes have been pushed to GitHub before cloning or pulling.
+SSH may ask for your SSH account password. Nothing appears while typing.
+SSH keys work too; use an approved key and your system SSH agent.
+If asked to trust the server, verify its host-key fingerprint first.
+Do not bypass host-key verification.
+
+The production database password and env file are never downloaded or printed.
+The export streams over SSH into a restricted local file; setup does not need
+an open database port or a separate SSH tunnel.
+
+For an SSH config Host alias or different account, set the non-secret
+DEV_SSH_SERVER to `user@alias` before running setup. Node and env-file paths
+remain the fixed Plesk paths above. Custom SSH ports/keys can be configured in
+your own SSH config.
+
+## 3. Get the latest code on your Mac
+
+For a new checkout:
 
 ```bash
 git clone https://github.com/umairubm/Employee-Activity-Monitor.git
 cd Employee-Activity-Monitor
 ```
 
-Open this folder in Antigravity. For a private repository, use your approved
-GitHub authentication method. Do not put a PAT into the repository URL or commit it.
-Your editor does not need a direct production database connection for this workflow.
-
-## 4. Export a current production backup — on the Plesk server
-
-An authorized operator performs this step. If a current approved custom-format
-backup already exists, skip directly to transfer.
-
-From your Mac, connect to the hosting server:
+For an existing checkout, protect local changes first, then:
 
 ```bash
-ssh ubm@2.28.204.252
+git switch main
+git pull --ff-only origin main
 ```
 
-At the server prompt, run:
+The setup changes must have reached GitHub main first. A local Replit commit
+alone is not available to your Mac. Do not force-push to resolve divergence.
+Open this repository folder in Antigravity.
 
-```bash
-umask 077
-mkdir -p "$HOME/private-backups"
-BACKUP="$HOME/private-backups/activity-monitor-production-$(date -u +%Y%m%d-%H%M%S).dump"
-```
-
-Then run the export command by itself and enter the PostgreSQL password when asked:
-
-```bash
-pg_dump -h 127.0.0.1 -p 5432 -U activity_monitor -d activity_monitor -W --format=custom --no-owner --no-privileges --file="$BACKUP"
-```
-
-This uses the Plesk database, not the old hosting database. Confirm that this is
-the current production source before running it. The password is the database
-password, not the SSH password. Nothing appears while you type it.
-
-Only if pg_dump exits successfully, validate the archive:
-
-```bash
-pg_restore --list "$BACKUP" >/dev/null && ls -lh "$BACKUP"
-```
-
-Do not use a failed or partial export. Record the exact timestamped filename.
-Archive validation checks that the table of contents can be read; the local
-restore step provides a stronger check.
-
-pg_dump takes a consistent snapshot without stopping the production application.
-Activity arriving after the snapshot is not included. This procedure creates a
-development copy, not a final production cutover.
-
-## 5. Transfer the backup — in a separate Mac terminal
-
-Leave the SSH session or open a new terminal on your Mac. Run:
-
-```bash
-mkdir -p "$HOME/private-backups"
-chmod 700 "$HOME/private-backups"
-```
-
-In the following command, replace `YYYYMMDD-HHMMSS` with the exact timestamp from
-the exported filename:
-
-```bash
-scp ubm@2.28.204.252:/home/ubm/private-backups/activity-monitor-production-YYYYMMDD-HHMMSS.dump "$HOME/private-backups/"
-```
-
-Restrict permissions on the downloaded file:
-
-```bash
-chmod 600 "$HOME/private-backups/activity-monitor-production-YYYYMMDD-HHMMSS.dump"
-```
-
-An SSH tunnel is not needed for this transfer or for local development.
-
-## 6. One-command setup — in the cloned project on your Mac
+## 4. One-command setup
 
 ```bash
 npm run setup
 ```
 
-When prompted, enter the path to the downloaded backup without surrounding quotes.
-Paths beginning with `~/` are supported.
+On first run it:
 
-For a noninteractive invocation, specify the file explicitly:
+1. Checks PostgreSQL tools and creates private local credentials.
+2. Exports a fresh production snapshot from the server via SSH.
+3. Saves the binary archive privately, removing a partial file on download failure.
+4. Installs workspace dependencies using pinned pnpm 10.26.1.
+5. Starts a password-protected local cluster on 127.0.0.1:55432.
+6. Verifies the cluster's data directory before creating a new local database.
+7. Restores transactionally, without original ownership or grants.
+8. Checks for Activity Monitor users and devices tables before selecting the copy.
+9. Builds shared libraries and the API.
 
-```bash
-npm run setup -- --backup "$HOME/private-backups/activity-monitor-production-YYYYMMDD-HHMMSS.dump"
-```
+There is no backup-path prompt and no production database password prompt.
+An SSH password prompt is normal when key authentication is not configured.
+Do not run npm install in this pnpm workspace.
 
-Setup will:
+Setup never bootstraps a test admin or pushes schema changes onto imported data.
+An export failure stops setup; it does not silently create an empty database.
+A failed import preserves the previous selected local database.
 
-1. Install workspace dependencies with pinned pnpm and the existing lockfile.
-2. Create or start its private local PostgreSQL cluster.
-3. Verify that the target is the expected local cluster before creating a database.
-4. Restore into a new database in one transaction, without original ownership or grants.
-5. Check for the expected users and devices tables.
-6. Select the imported database only after a successful restore.
-7. Build shared libraries and the API.
-
-Setup does not create a test admin or push a new schema onto the imported data.
-It never uses an inherited production DATABASE_URL as the import target.
-
-## 7. Run and sign in
+## 5. Run the app
 
 ```bash
 npm run dev
 ```
 
-Open http://localhost:5173.
+Open http://localhost:5173. Sign in using an account contained in the snapshot.
 
-- Sign in using an account included in the backup.
-- Your edits affect the local copy, not the live production database.
-- The API runs on 127.0.0.1:3000; the frontend proxies API requests to it.
-- The local database listens on 127.0.0.1:55432.
-- Frontend changes reload automatically.
-- Restart `npm run dev` after changing backend code.
+- Frontend: 127.0.0.1:5173.
+- API: 127.0.0.1:3000, accessed by the frontend's local proxy.
+- Database: private loopback cluster on port 55432.
+- Frontend edits reload automatically; restart the command after backend edits.
+- Local edits change only your local data, not production.
 
-The local session secret is separate from production. Existing browser sessions
-and encrypted production integration credentials do not carry over. Do not copy
-the production session secret to enable live integrations on your laptop.
-Historical screenshot images may be unavailable because external files are not
-contained in the database backup.
+The local session secret is independent. Existing browser sessions and encrypted
+production integration credentials do not carry over. Do not copy the production
+session secret to enable integrations locally.
 
-Screenshot upload and device-log cleanup background workers are disabled locally.
-This is not a general network sandbox: do not configure real external services.
+## 6. Daily use and stopping
 
-## 8. Stop and resume
-
-Press Ctrl+C in the development terminal to stop the frontend and API.
-
-To stop local PostgreSQL without deleting data:
+Run `npm run dev` each day; it starts local PostgreSQL if needed.
+There is no need to run setup every day.
+Press Ctrl+C to stop the app. Stop the database without deleting data using:
 
 ```bash
 npm run db:stop
 ```
 
-Next time, run `npm run dev`. It starts the private database if needed.
-There is no need to rerun setup every day.
+## 7. Refresh from the server
 
-## 9. Rerun setup or refresh the snapshot
-
-Running `npm run setup` again preserves the existing selected snapshot and local
-changes. It does not automatically download newer data or apply schema changes.
-
-To refresh, export and transfer a new backup, stop the local app, then run:
+Stop the local app, then:
 
 ```bash
-npm run setup -- --backup "$HOME/private-backups/new-production.dump"
+npm run db:refresh
 npm run dev
 ```
 
-Replace `new-production.dump` with your actual new filename.
+Refresh exports another fresh production snapshot and restores into a new
+local database. It does not merge your previous local edits into the new copy.
+The old local database remains available, not overwritten. Configuration switches
+only after a successful import and basic table validation.
 
-A refresh creates a different local database and switches configuration after
-successful validation. It does not merge changes from the previous local copy.
-The previous database is retained, not overwritten. Failed imports leave the
-previous selection intact.
+Plain `npm run setup` preserves an existing imported snapshot. It does not fetch
+new data on every rerun.
 
-Old snapshots consume disk space and retain sensitive data. Arrange deliberate
-cleanup after verifying that the copies are no longer required; setup does not
-delete them automatically.
+## 8. Optional offline backup import
 
-## 10. Private files and troubleshooting
+If you already have an authorized, trusted custom-format archive:
 
-Local data, credentials, and logs live under `.local/development/`, which is
-excluded from Git and deployment.
+```bash
+npm run setup -- --backup "$HOME/private-backups/activity-monitor-production.dump"
+```
 
-- `credentials.json`: generated local database credentials, local session secret,
-  and the selected local database name. Never share this file.
-- `postgres/`: local PostgreSQL cluster files. Never delete them to fix a login issue.
-- `postgres.log`: database startup and connection diagnostics; inspect privately.
+This skips SSH and imports that file into a new local database.
+Replace the filename with the actual path. Only restore trusted dumps: archives
+can contain executable SQL.
 
-Common issues:
+## 9. Data protection and limitations
 
-- **Missing setup script:** the clone is old. Check that the setup changes reached
-  GitHub, then pull them after protecting any local changes.
-- **Node version error:** select Node 24+ and check `node --version`.
-- **PostgreSQL tools missing:** install PostgreSQL 17, fix PATH, or set PG_BIN.
-- **Backup file not found:** use the full path; check that scp ran on your Mac.
-- **Unsupported archive version:** use pg_restore at least as new as the tool that
-  created the backup. A newer production server may require newer local PostgreSQL too.
-- **Restore failed:** do not change production settings. Check the trusted backup
-  and PostgreSQL version compatibility. The previous local database remains selected.
-- **Port already in use:** identify the process using port 55432, 3000, or 5173.
-  Do not kill unrelated services blindly or redirect setup to a production tunnel.
-- **Login fails:** use an account that existed when the backup was created.
-  Setup does not create or reset accounts. Any reset must be explicitly local-only.
-- **Screenshot images unavailable:** database records may reference external files;
-  this is not evidence that the database restore failed.
+Backups, local credentials, logs and database files live under
+`.local/development`, excluded from Git and deployment.
+Downloaded archives are under its `backups` directory and restricted to the owner.
+Never upload this directory, credentials.json, or dumps to chat or commit them.
+Use an approved, encrypted laptop and keep employee-data copies out of synced folders.
 
-## 11. Shipping code is a separate operation
+Old databases and archives consume disk and retain sensitive data. Arrange
+deliberate cleanup only after confirming they are no longer needed; setup does
+not automatically delete earlier snapshots.
 
-Commit reviewed source code changes only—never database dumps or local credentials.
-The local database must never be restored over production as a deployment step.
-Database schema changes require reviewed migrations that preserve live records.
+Screenshot upload and device-log cleanup background workers are disabled locally.
+External Dropbox screenshot files are not contained in the database backup and
+may not load locally. Do not configure live external integrations or enroll
+real employee devices. These worker flags are not a general network sandbox.
 
-See these repository documents:
+A snapshot is consistent at export time; later production activity is not included.
+This is development onboarding, not a final data cutover or production deployment.
 
-- `docs/GETTING-STARTED.md`: quick-start reference.
-- Use your server's reviewed deployment and migration runbooks separately.
+## 10. Troubleshooting
 
-Local setup does not enable GitHub Actions, configure a shared development server,
-or verify that production deployment is active.
+- **Missing setup script:** the changes have not reached your checkout. Confirm
+  they are on GitHub main before pulling. Reinstalling packages does not add scripts.
+- **SSH authentication fails:** verify your authorized SSH account/key. Enter the
+  SSH password, not the database password. No production database port needs opening.
+- **SSH export fails:** an operator should check private env access, DATABASE_URL,
+  the Plesk Node path, PostgreSQL, and pg_dump on the server. Do not print the env file.
+- **Host key changed:** stop and verify the server identity; do not blindly remove keys.
+- **Unsupported archive version:** upgrade local PostgreSQL tools to match production.
+- **Backup import fails:** verify the trusted archive and local PostgreSQL compatibility.
+  The previous selected local database is unchanged.
+- **Port conflict:** identify the process on port 55432, 3000 or 5173; do not kill
+  unrelated services blindly or redirect setup to a production tunnel.
+- **Login fails:** use an account from the snapshot. Setup does not reset passwords.
+  Any password reset for development must be explicitly local-only.
+- **Images unavailable:** external image files are not part of the database archive.
+- **Local database startup fails:** inspect `.local/development/postgres.log` privately.
+  Do not delete the cluster files as a first troubleshooting step.
+
+## 11. Shipping code
+
+Commit source code only, never snapshots or credentials. Never restore your laptop
+database over production to deploy code. Schema changes need reviewed migrations
+that preserve live records. Setup does not configure GitHub Actions, provision a
+shared development site, or deploy production.
+
+See docs/GETTING-STARTED.md for the shorter reference.
 
 ## 12. Verification status
 
-The setup/import flow has been tested on Linux with synthetic PostgreSQL backup
-data, including repeat setup, source isolation, and failed-import handling.
-Native macOS execution and a restore of your latest actual production backup have
-not been verified here. No production credentials are included in this guide.
+The restore flow has been tested on Linux using synthetic backup data.
+SSH streaming, file permissions, failed downloads, argument validation, and safe
+remote-target rejection are covered by tests.
+The automatic export against your actual server and native Mac setup have not
+been verified from this workspace. No production passwords are included here.

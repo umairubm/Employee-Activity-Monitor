@@ -12,11 +12,11 @@ On Windows use WSL2; native PowerShell setup is not supported.
 
 ## First setup
 
-Obtain an authorized, current **custom-format pg_dump backup** of production.
-Transfer it privately from the hosting server to your laptop via SSH/scp.
-Keep it outside the repository and webroot, with restricted file permissions.
-Do not upload employee data or connection strings to chat or commit them.
-The setup command does not export production automatically or ask for its credentials.
+Your Mac needs authorized SSH access to `ubm@2.28.204.252`.
+Setup exports a fresh backup on that server and streams it to a restricted local
+file. The production connection is read on the server from
+`/home/ubm/.config/activity-monitor/server.env` using Plesk Node 24;
+database credentials never leave the server.
 
 From the cloned repository:
 
@@ -24,7 +24,14 @@ From the cloned repository:
 npm run setup
 ```
 
-On first run, enter the path to your `.dump` backup when prompted. Alternatively:
+On first run, SSH may ask for your SSH password (keys also work).
+There is no database-password or backup-path prompt. Verify the server's host key
+before trusting a new connection. No separate SSH tunnel is required.
+Downloads are kept under the private, Git-ignored `.local/development/backups`.
+Never share these employee-data archives or commit them. Export failures stop
+setup rather than silently creating empty data.
+
+An existing trusted backup is still an optional offline alternative:
 
 ```bash
 npm run setup -- --backup "$HOME/private-backups/activity-monitor-production.dump"
@@ -64,7 +71,14 @@ Git and deployment. Treat the entire directory as sensitive employee data.
 `npm run setup` preserves the imported copy, including your local changes.
 It does not automatically fetch newer production data or apply schema changes.
 
-To explicitly import a newer backup:
+To fetch and import a fresh snapshot from the server, stop your local app then run:
+
+```bash
+npm run db:refresh
+npm run dev
+```
+
+To explicitly import a backup you already downloaded:
 
 ```bash
 npm run setup -- --backup "$HOME/private-backups/new-production.dump"
@@ -77,5 +91,4 @@ do not change the selected local database. Old copies consume disk space and ret
 sensitive data; remove them only after you have confirmed they are no longer needed.
 
 Do not run `npm install`; npm is only the entry point for these scripts.
-Production deployment remains a separate, reviewed server operation; this setup
-does not configure deployment or push database changes to production.
+Production deployment remains separate: see [Plesk deployment](../deploy/plesk/README.md).
