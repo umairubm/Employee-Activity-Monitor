@@ -8,6 +8,8 @@ an accessible browser address-bar URL, and how long the machine has been idle.
 
 from __future__ import annotations
 
+import logging
+import queue
 import re
 import subprocess
 import sys
@@ -17,6 +19,34 @@ from typing import Optional, Tuple
 
 from agent import env_resolver
 from urllib.parse import urlsplit
+
+logger = logging.getLogger(__name__)
+
+# Hard cap on how long the optional browser URL read (a synchronous,
+# cross-process UIAutomation COM call) may hold up the capture loop before we
+# give up on it for this cycle. A single missed URL is harmless; a permanent
+# freeze of the capture thread is not. See ``_uia_url_from_hwnd`` for why this
+# cannot truly cancel a hung COM call but still guarantees the loop proceeds.
+UIA_URL_READ_TIMEOUT_SECONDS = 3.0
+
+# All UIAutomation COM work runs on ONE persistent worker thread (see
+# ``_uia_worker_loop`` below). A UIAutomation COM object lives in the COM
+# apartment of the thread that created it; running each read on a fresh
+# short-lived thread (as a previous version did) tears that apartment down when
+# the thread exits, so the NEXT read calls a dangling COM proxy and faults
+# natively (access violation 0xc0000005 in _ctypes.pyd), killing the whole
+# process. One long-lived, COM-initialized thread owns the apartment for the
+# process lifetime, keeping every proxy valid.
+#
+# ``_uia_inflight`` bounds work to ONE outstanding read. It is acquired by the
+# caller and released BY THE WORKER when a read finishes, so while a read is
+# genuinely stuck on a hung accessibility tree no further reads are queued
+# (bounded memory) and the capture loop still proceeds (the caller times out).
+# A semaphore, not a lock, so the cross-thread acquire/release is legal.
+_uia_inflight = threading.Semaphore(1)
+_uia_requests: "queue.Queue" = queue.Queue()
+_uia_worker_thread: Optional[threading.Thread] = None
+_uia_worker_lock = threading.Lock()
 
 
 def get_active_window() -> Tuple[str, str, Optional[str]]:
@@ -86,7 +116,113 @@ def _browser_url_windows(hwnd: int, process: str) -> Optional[str]:
         return None
 
 
+def _ensure_uia_worker() -> None:
+    """Start the single persistent UIA worker thread on first use."""
+    global _uia_worker_thread
+    if _uia_worker_thread is not None and _uia_worker_thread.is_alive():
+        return
+    with _uia_worker_lock:
+        if _uia_worker_thread is not None and _uia_worker_thread.is_alive():
+            return
+        t = threading.Thread(target=_uia_worker_loop, name="UIAWorker", daemon=True)
+        t.start()
+        _uia_worker_thread = t
+
+
+def _uia_worker_loop() -> None:
+    """Own the UIAutomation COM apartment for the process lifetime and serve
+    URL reads one at a time.
+
+    COM is initialized ONCE, here, so every UIAutomation proxy created on this
+    thread stays valid for all later reads. This is the fix for the native
+    access violation (0xc0000005 in _ctypes.pyd) that happened when reads ran on
+    fresh per-call threads: those threads' COM apartments were torn down on exit,
+    leaving the next call to fault on a dangling proxy.
+    """
+    try:
+        import comtypes  # type: ignore  # noqa: PLC0415
+
+        try:
+            # MTA matches the uiautomation library's own default and needs no
+            # message pump, which suits a non-UI background worker making
+            # cross-process COM calls. If COM was already initialized on this
+            # thread (e.g. uiautomation on first use), this raises and we ignore
+            # it — all that matters is a single stable apartment on this thread.
+            comtypes.CoInitializeEx(comtypes.COINIT_MULTITHREADED)
+        except OSError:
+            pass
+    except Exception:  # noqa: BLE001
+        # comtypes unavailable: uiautomation still CoInitializes on first use on
+        # THIS persistent thread, which is what keeps the apartment stable.
+        pass
+
+    while True:
+        hwnd, resp_q = _uia_requests.get()
+        url: Optional[str] = None
+        try:
+            url = _uia_url_from_hwnd_blocking(hwnd)
+        except Exception:  # noqa: BLE001
+            url = None
+        finally:
+            try:
+                resp_q.put_nowait(url)
+            except Exception:  # noqa: BLE001
+                pass
+            # Allow the next read only now that this one has truly finished.
+            _uia_inflight.release()
+
+
 def _uia_url_from_hwnd(hwnd: int) -> Optional[str]:
+    """Read the browser address-bar URL on the persistent UIA worker, bounded by
+    a hard timeout so the capture loop can never block on it.
+
+    Why a dedicated thread (not a per-call one): the read makes synchronous,
+    cross-process UIAutomation COM calls (GetChildren/GetDescendants). Running
+    each read on its own short-lived thread destroys the COM apartment that owns
+    the UIAutomation proxy when that thread exits, so the NEXT read faults
+    natively (0xc0000005 in _ctypes.pyd) and kills the whole process. Serving
+    every read from one long-lived, COM-initialized thread keeps the apartment
+    and its proxies valid.
+
+    Honest caveat: a synchronous COM call already in flight still cannot be
+    force-cancelled. On timeout we return ``None`` (no URL this cycle) and let
+    capture continue; ``_uia_inflight`` keeps a stuck read from piling up more
+    work and bounds memory (no requests are queued while one is outstanding).
+    """
+    if not _uia_inflight.acquire(blocking=False):
+        # A previous read is still being processed (slow/hung accessibility
+        # tree); skip this cycle rather than queueing more work behind it.
+        logger.warning(
+            "UIA URL read skipped: a previous read is still in flight "
+            "(browser accessibility tree likely slow or hung)"
+        )
+        return None
+
+    try:
+        _ensure_uia_worker()
+        resp_q: "queue.Queue" = queue.Queue(maxsize=1)
+        _uia_requests.put((hwnd, resp_q))
+    except Exception:  # noqa: BLE001
+        # The worker will never process this request, so release here (the
+        # worker only releases requests it actually picked up) and skip.
+        _uia_inflight.release()
+        return None
+
+    try:
+        return resp_q.get(timeout=UIA_URL_READ_TIMEOUT_SECONDS)
+    except queue.Empty:
+        # Deliberately do NOT release _uia_inflight here: the worker still holds
+        # this read and will release when it finishes. Leaving it held means a
+        # genuinely stuck read cannot be re-triggered every cycle (bounded).
+        logger.warning(
+            "UIA URL read exceeded %.1fs; abandoning URL for this cycle "
+            "(capture continues)",
+            UIA_URL_READ_TIMEOUT_SECONDS,
+        )
+        return None
+
+
+def _uia_url_from_hwnd_blocking(hwnd: int) -> Optional[str]:
     """Use the `uiautomation` library (already a dep) to read the address-bar value.
 
     Runs entirely in-process — no subprocess, no console flash.

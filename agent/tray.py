@@ -32,6 +32,14 @@ class AgentTray:
         on_quit: Callable[[], None],
         is_active: Callable[[], bool],
         status_text: Callable[[], str],
+        active_title: str = "Workforce Analytics — monitoring active",
+        paused_title: str = "Workforce Analytics — monitoring PAUSED",
+        toggle_active_label: str = "Pause monitoring",
+        toggle_paused_label: str = "Resume monitoring",
+        quit_label: str = "Quit agent",
+        app_name: str = "Workforce Analytics",
+        include_info: bool = True,
+        include_config: bool = True,
     ) -> None:
         import pystray
 
@@ -42,42 +50,56 @@ class AgentTray:
         self._on_quit = on_quit
         self._is_active = is_active
         self._status_text = status_text
+        # Labels/titles are parameterised so the same tray serves the employee
+        # wording ("Pause/Resume monitoring") and the friendlier freelancer
+        # wording ("Start/Stop work"); defaults preserve the original strings.
+        self._active_title = active_title
+        self._paused_title = paused_title
+        self._toggle_active_label = toggle_active_label
+        self._toggle_paused_label = toggle_paused_label
+        self._quit_label = quit_label
+        self._app_name = app_name
+        # Optional menu items. Default True keeps the original employee menu; the
+        # freelancer build hides them for a minimal Start/Stop/Kill menu.
+        self._include_info = include_info
+        self._include_config = include_config
         self.icon = pystray.Icon(
             "workforce_agent",
             icon=_make_image(True),
-            title="Workforce Analytics — monitoring active",
+            title=active_title,
         )
         self.icon.menu = self._build_menu()
 
     def _build_menu(self):
-        item = self._pystray.Menu
+        Menu = self._pystray.Menu
         MenuItem = self._pystray.MenuItem
-        return item(
+        items = [
             MenuItem(lambda _: self._status_text(), None, enabled=False),
-            self._pystray.Menu.SEPARATOR,
+            Menu.SEPARATOR,
             MenuItem(
-                lambda _: "Resume monitoring" if not self._is_active() else "Pause monitoring",
+                lambda _: self._toggle_paused_label
+                if not self._is_active()
+                else self._toggle_active_label,
                 self._toggle,
             ),
-            MenuItem("What is being monitored?", self._info),
-            MenuItem("Open config folder", self._open_config),
-            self._pystray.Menu.SEPARATOR,
-            MenuItem("Quit agent", self._quit),
-        )
+        ]
+        if self._include_info:
+            items.append(MenuItem("What is being monitored?", self._info))
+        if self._include_config:
+            items.append(MenuItem("Open config folder", self._open_config))
+        items.append(Menu.SEPARATOR)
+        items.append(MenuItem(self._quit_label, self._quit))
+        return Menu(*items)
 
     def refresh(self) -> None:
         active = self._is_active()
         self.icon.icon = _make_image(active)
-        self.icon.title = (
-            "Workforce Analytics — monitoring active"
-            if active
-            else "Workforce Analytics — monitoring PAUSED"
-        )
+        self.icon.title = self._active_title if active else self._paused_title
         self.icon.update_menu()
 
-    def notify(self, message: str, title: str = "Workforce Analytics") -> None:
+    def notify(self, message: str, title: str | None = None) -> None:
         try:
-            self.icon.notify(message, title)
+            self.icon.notify(message, title or self._app_name)
         except Exception:
             pass
 

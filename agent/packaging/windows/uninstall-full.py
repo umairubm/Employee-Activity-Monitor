@@ -32,6 +32,12 @@ def main():
         run_command(f'taskkill /F /IM {proc}')
     time.sleep(2)
 
+    # 2b. Remove the autostart keepalive Scheduled Task (the supervisor that
+    # relaunches the agent). Must happen after the processes are killed, or the
+    # task could relaunch the agent during uninstall.
+    print("Removing autostart scheduled task...")
+    run_command('schtasks /Delete /TN WorkforceAgentKeepAlive /F')
+
     # 3. Run Inno Setup uninstallers if they exist
     local_app_data = os.environ.get('LOCALAPPDATA', '')
     uninstallers = [

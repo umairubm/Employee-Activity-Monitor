@@ -34,6 +34,8 @@ if __package__ in (None, ""):
     from agent import screenshot as screenshot_mod
     from agent import system_info as system_info_mod
     from agent import tray as tray_mod
+    from agent import agent_autostart as autostart_mod
+    from agent import build_profile as build_profile_mod
     from agent.windows_installer_verification import (
         verify_windows_installer,
     )
@@ -47,6 +49,8 @@ else:
     from . import screenshot as screenshot_mod
     from . import system_info as system_info_mod
     from . import tray as tray_mod
+    from . import agent_autostart as autostart_mod
+    from . import build_profile as build_profile_mod
     from .windows_installer_verification import verify_windows_installer
     from .telemetry.durable_queue import DurableActivityQueue
     from .telemetry.interval_journal import IntervalJournal
@@ -75,7 +79,14 @@ def setup_logging():
     logging.getLogger().addHandler(handler)
 
 
-AGENT_VERSION = "1.2.105"
+AGENT_VERSION = "1.2.112"
+# The freelancer build is the SAME source selected at runtime by build_profile
+# (installer marker). It reports its own version so the server/OTA can track and
+# target freelancer devices on a separate line, WITHOUT changing the employee
+# build's version. Indented (not line-anchored) so the spec's version regex,
+# which matches the first ^AGENT_VERSION assignment, still reads "1.2.112".
+if build_profile_mod.is_freelancer():
+    AGENT_VERSION = "1.2.114"
 POLL_SECONDS = 15
 # Activity batching. The server caps a batch at 500 rows; we additionally cap
 # serialized bytes well under its JSON body limit so a backlog of rich
@@ -91,6 +102,40 @@ UPLOAD_INTERVAL_SECONDS = 30
 _MIN_UPLOAD_BACKOFF = 5.0
 # Retry-After cap: honour any server value; only cap when none is provided.
 _MAX_UPLOAD_BACKOFF = 300.0
+# In-process watchdog: if the capture/Worker thread records no forward progress
+# for this long, the main thread restarts just that one worker thread. 4x the
+# poll interval (= 60 s) gives generous headroom over a normal cycle (the work
+# plus the POLL_SECONDS idle wait) so a healthy loop is never falsely restarted.
+WORKER_STALL_TIMEOUT_SECONDS = POLL_SECONDS * 4
+
+# When the whole machine is frozen by an OS sleep / modern-standby / hibernate
+# (laptop closed over lunch, overnight), EVERY thread stops — including the
+# watchdog loop in run(). On resume, time.monotonic() has jumped forward by the
+# suspended duration, which looks exactly like a multi-minute capture stall and
+# would trigger a pointless Worker restart plus an alarming "stalled 2558s" log.
+# We tell the two apart by the watchdog's OWN loop cadence: a real worker-thread
+# hang leaves this loop ticking at ~1 s while the Worker's progress marker goes
+# stale, whereas a suspend freezes this loop too. A single watchdog iteration
+# that skipped more than this many seconds means the process was suspended, not
+# that capture wedged. Reusing the stall timeout keeps the threshold well above
+# any normal scheduling jitter (the watchdog does almost nothing per tick).
+SUSPEND_RESUME_GAP_SECONDS = WORKER_STALL_TIMEOUT_SECONDS
+
+# Remote self-update relaunch safety net ------------------------------------
+# After launching the update installer, the old agent watches it this long
+# before exiting: long enough to notice an installer that fails to even start
+# (so we never quit into a dark machine with no update actually running), short
+# enough to still release our file lock within the installer's own retry window
+# so it can replace the exe in place rather than falling back to a pending
+# reboot.
+UPDATE_VERIFY_SECONDS = 3.0
+# One-shot HKCU RunOnce fallback. Windows runs a RunOnce value exactly once at
+# the next logon and deletes it first, so it is self-clearing and is NOT a
+# guardian: it never relaunches on arbitrary exit. It covers the case where the
+# installer's own immediate post-install relaunch is skipped (pending reboot /
+# locked old exe). Visible in the registry and removable by the employee.
+_UPDATE_RUNONCE_KEY = r"Software\Microsoft\Windows\CurrentVersion\RunOnce"
+_UPDATE_RUNONCE_NAME = "WorkforceAgentUpdateRelaunch"
 
 
 def _win_hidden_kwargs() -> dict:
@@ -556,6 +601,61 @@ class MonitoringAgent:
             return True, None
         return False, "requires admin"
 
+    def _register_update_runonce(self) -> None:
+        """Register a ONE-SHOT next-logon relaunch of the (updated) exe via the
+        HKCU RunOnce key, as a fallback for when the installer's immediate
+        post-install relaunch is skipped (pending reboot / locked old exe).
+
+        RunOnce is standard, visible in the registry, employee-removable, and
+        self-clearing: Windows deletes the value before running it, so it fires
+        at most once and never relaunches on arbitrary exit — it is a one-shot
+        recovery, not a guardian process. The machine-wide single-instance lock
+        makes a same-logon double-launch (this plus the always-present Run key)
+        harmless: the second process exits immediately.
+        """
+        if not sys.platform.startswith("win"):
+            return
+        # When frozen (PyInstaller), sys.executable is the installed
+        # WorkforceAgent.exe; the updated build replaces it at the same path.
+        exe = sys.executable if getattr(sys, "frozen", False) else None
+        if not exe:
+            logger.info("Update RunOnce fallback skipped (not a frozen build).")
+            return
+        try:
+            import winreg  # noqa: PLC0415
+
+            with winreg.CreateKey(
+                winreg.HKEY_CURRENT_USER, _UPDATE_RUNONCE_KEY
+            ) as key:
+                winreg.SetValueEx(
+                    key, _UPDATE_RUNONCE_NAME, 0, winreg.REG_SZ, f'"{exe}"'
+                )
+            logger.info(f"Registered one-shot update relaunch (RunOnce) -> {exe}")
+        except OSError as exc:
+            logger.error(f"Could not register update RunOnce fallback ({exc}).")
+
+    def _clear_update_runonce(self) -> None:
+        """Remove the one-shot relaunch value — used when an update did not
+        actually start, so no stale next-logon launch of the unchanged exe is
+        left behind."""
+        if not sys.platform.startswith("win"):
+            return
+        try:
+            import winreg  # noqa: PLC0415
+
+            with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                _UPDATE_RUNONCE_KEY,
+                0,
+                winreg.KEY_SET_VALUE,
+            ) as key:
+                winreg.DeleteValue(key, _UPDATE_RUNONCE_NAME)
+            logger.info("Cleared update RunOnce fallback (update did not proceed).")
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            logger.error(f"Could not clear update RunOnce fallback ({exc}).")
+
     def _update_agent(self, cid, payload: dict, reason: str) -> None:
         version = str(payload.get("version") or "").strip()
         file_name = str(payload.get("fileName") or "").strip()
@@ -635,7 +735,15 @@ class MonitoringAgent:
                 startupinfo = subprocess.STARTUPINFO()
                 startupinfo.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 1)
                 startupinfo.wShowWindow = 0
-            subprocess.Popen(
+            # Register the one-shot next-logon relaunch BEFORE launching the
+            # installer, so the fallback is already in the registry even if the
+            # installer force-closes us a moment later. This closes the gap
+            # where, on the pending-reboot / locked-exe path, the installer
+            # skips its own immediate relaunch (ShouldLaunchAgent = not
+            # gPendingReboot) and recovery would otherwise depend solely on the
+            # Run key firing at next logon.
+            self._register_update_runonce()
+            proc = subprocess.Popen(
                 [
                     temp_path,
                     "/VERYSILENT",
@@ -652,7 +760,43 @@ class MonitoringAgent:
                 creationflags=creationflags,
                 startupinfo=startupinfo,
             )
-            logger.info(f"Update installer launched ({version}). Exiting to allow installation.")
+            logger.info(
+                f"Update installer launched ({version}); verifying it starts before exit."
+            )
+            # Don't quit blindly. Watch the installer briefly: if it exits almost
+            # immediately with a non-zero code the update did NOT proceed (e.g.
+            # PrepareToInstall aborted, or an again-running/locked state), so
+            # stay running — leaving the machine monitored — and drop the
+            # one-shot so we don't launch the unchanged old exe at next logon.
+            # In the normal case the installer force-closes this process during
+            # its file-swap, so we are usually terminated here rather than
+            # returning from the wait; if it does not, we quit voluntarily below
+            # (within the installer's own retry window) to release our file lock.
+            exit_code = None
+            for _ in range(max(1, int(UPDATE_VERIFY_SECONDS / 0.25))):
+                exit_code = proc.poll()
+                if exit_code is not None:
+                    break
+                time.sleep(0.25)
+            if exit_code is not None and exit_code != 0:
+                logger.error(
+                    f"Update installer exited early with code {exit_code}; update did "
+                    "not proceed. Staying running and clearing the one-shot relaunch."
+                )
+                self._clear_update_runonce()
+                self._finish_command(
+                    cid, "failed", f"installer exited early (code {exit_code})"
+                )
+                if temp_path:
+                    try:
+                        os.unlink(temp_path)
+                    except OSError:
+                        pass
+                return
+            logger.info(
+                "Update proceeding; exiting to allow installation. Next-logon relaunch "
+                "is guaranteed via the one-shot RunOnce plus the existing Run key."
+            )
             logger.info("Update command completed.")
             self.quit()
             return
@@ -1143,6 +1287,12 @@ rm -rf "$(dirname "$NEW")" "$0"
         """
         was_active = False
         while not self._stop.is_set():
+            # Watchdog liveness marker: stamp forward progress at the top of
+            # each cycle. A freeze inside the body (e.g. a hung foreground-window
+            # or URL read) stops this advancing, which the main-thread watchdog
+            # in run() detects. Stamped even when the body raises, because a loop
+            # that errors but keeps cycling is alive and must NOT be restarted.
+            self._worker_last_progress = time.monotonic()
             try:
                 is_active = self.is_active()
                 if is_active and not was_active:
@@ -1409,8 +1559,95 @@ rm -rf "$(dirname "$NEW")" "$0"
             self.tray.stop()
 
     def run(self) -> None:
+        # Employee build (default): run headless exactly as before. Freelancer
+        # build: wrap the same agent loop in a visible tray the worker controls.
+        if build_profile_mod.is_freelancer():
+            self._run_with_tray()
+        else:
+            self._run_headless()
+
+    # --- freelancer tray wrapper --------------------------------------------
+
+    def _tray_toggle(self) -> None:
+        """Start/Stop work from the tray, with a plain-language notification."""
+        self.toggle_pause()
+        if not self.tray:
+            return
+        if self.is_active():
+            self.tray.notify(
+                "Work tracking started. Your active app, window titles, idle "
+                "time, and periodic screenshots (a notice is shown first) are "
+                "now being recorded.",
+                "Tracking ON",
+            )
+        else:
+            self.tray.notify(
+                "Work tracking stopped. Nothing is being recorded until you "
+                "click Start work again.",
+                "Tracking OFF",
+            )
+
+    def _run_with_tray(self) -> None:
+        """Freelancer path: boot OFF, show the tray, run the agent in a thread.
+
+        The tray's event loop owns the main thread (pystray requires it on
+        Windows/macOS); the real agent loop runs as a daemon thread. Clicking
+        "Kill" calls quit(), which stops the tray loop here and signals the
+        agent loop to flush and exit.
+        """
+        # Boot in the OFF (paused) state: a freelancer explicitly presses
+        # "Start work" to begin recording — launching the app records nothing.
+        self._paused.set()
+        try:
+            self.tray = tray_mod.AgentTray(
+                on_toggle_pause=self._tray_toggle,
+                on_show_info=self.show_info,
+                on_open_config=self.open_config,
+                on_quit=self.quit,
+                is_active=self.is_active,
+                status_text=self.status_text,
+                active_title="Workforce — tracking your work",
+                paused_title="Workforce — not tracking",
+                toggle_active_label="Stop work",
+                toggle_paused_label="Start work",
+                quit_label="Kill agent (stop and exit)",
+                app_name="Workforce Work Tracker",
+                include_info=False,
+                include_config=False,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                f"tray unavailable ({exc}); freelancer build falling back to "
+                "headless so monitoring still works."
+            )
+            self.tray = None
+            self._run_headless()
+            return
+
+        agent_thread = threading.Thread(
+            target=self._run_headless, daemon=True, name="AgentLoop"
+        )
+        agent_thread.start()
+        self.tray.refresh()
+        logger.info(
+            "Freelancer tray started in the OFF state; recording begins when "
+            "the worker clicks 'Start work'."
+        )
+        try:
+            self.tray.run()  # blocks on the main thread until quit()/Kill
+        finally:
+            self._stop.set()
+            agent_thread.join(timeout=12)
+
+    def _run_headless(self) -> None:
+        # Seed the Worker liveness marker before the thread starts so the
+        # watchdog never fires before the first cycle has had a chance to run.
+        self._worker_last_progress = time.monotonic()
+        self._worker_restart_count = 0
+
+        worker_thread = threading.Thread(target=self._worker, daemon=True, name="Worker")
         threads = [
-            threading.Thread(target=self._worker, daemon=True, name="Worker"),
+            worker_thread,
             threading.Thread(target=self._upload_worker, daemon=True, name="Upload"),
             threading.Thread(target=self._screenshot_worker, daemon=True, name="Screenshot"),
             threading.Thread(target=self._heartbeat_worker, daemon=True, name="Heartbeat"),
@@ -1419,11 +1656,68 @@ rm -rf "$(dirname "$NEW")" "$0"
             t.start()
 
         try:
+            last_tick = time.monotonic()
             while not self._stop.is_set():
                 self._stop.wait(1.0)
+                if self._stop.is_set():
+                    break
+                # In-process capture-thread watchdog. Strictly a thread restart
+                # within THIS process: it spawns no process, writes no OS
+                # autostart / scheduled task / RunOnce, never relaunches the app
+                # if the process exits, and dies with the process when the user
+                # closes or uninstalls the agent. It restarts ONLY the Worker
+                # thread so "alive but silent" capture self-recovers.
+                now = time.monotonic()
+                # If this watchdog loop itself skipped far more time than its
+                # ~1 s cadence, the whole process was frozen by the OS (sleep /
+                # modern standby / hibernate), NOT the capture thread. Re-seed
+                # the liveness marker and skip the stall check so a laptop waking
+                # from sleep doesn't log a phantom "stalled" and needlessly
+                # restart Worker. A genuine worker hang leaves this loop ticking
+                # at ~1 s, so tick_gap stays small and the real check below fires.
+                tick_gap = now - last_tick
+                last_tick = now
+                if tick_gap > SUSPEND_RESUME_GAP_SECONDS:
+                    logger.info(
+                        f"resumed after {tick_gap:.0f}s process freeze "
+                        "(system sleep/suspend); not a capture stall"
+                    )
+                    self._worker_last_progress = now
+                    continue
+                stalled_for = now - self._worker_last_progress
+                if not worker_thread.is_alive() or stalled_for > WORKER_STALL_TIMEOUT_SECONDS:
+                    self._worker_restart_count += 1
+                    reason = (
+                        "not alive"
+                        if not worker_thread.is_alive()
+                        else f"stalled {stalled_for:.0f}s"
+                    )
+                    logger.warning(
+                        f"capture thread {reason}; restarting "
+                        f"(restart #{self._worker_restart_count})"
+                    )
+                    if self._worker_restart_count % 5 == 0:
+                        logger.error(
+                            f"capture thread restarted {self._worker_restart_count} "
+                            "times; an underlying call is likely wedged (restarts "
+                            f"are rate-limited to once per {WORKER_STALL_TIMEOUT_SECONDS:.0f}s)"
+                        )
+                    # Reset the marker BEFORE starting the replacement so the
+                    # fresh thread gets a full timeout window: this caps restarts
+                    # to at most one per WORKER_STALL_TIMEOUT_SECONDS and prevents
+                    # spinning. An old thread truly wedged on a cross-process call
+                    # cannot be killed from Python; it stays parked as a daemon
+                    # (so it never blocks process exit) while the new thread
+                    # resumes capture.
+                    self._worker_last_progress = time.monotonic()
+                    worker_thread = threading.Thread(
+                        target=self._worker, daemon=True, name="Worker"
+                    )
+                    threads[0] = worker_thread
+                    worker_thread.start()
         except KeyboardInterrupt:
             self.quit()
-            
+
         self._stop.set()
         for t in threads:
             t.join(timeout=10)
@@ -1510,18 +1804,48 @@ def ensure_enrolled() -> config_mod.AgentConfig | None:
 
 def main() -> int:
     setup_logging()
-    logger.info(f"=== Workforce Agent v{AGENT_VERSION} (UI) starting up ===")
-    # Enforce a single agent per machine. A second instance would log the same
-    # foreground activity concurrently, producing overlapping intervals that
-    # double-count worked time across every report.
+    # Enforce a single agent per machine, BEFORE the startup banner. A second
+    # instance would log the same foreground activity concurrently, producing
+    # overlapping intervals that double-count worked time across every report.
+    # The lock check runs first so the keepalive Scheduled Task's periodic
+    # relaunch (every ~10 min) exits silently when an agent is already running,
+    # instead of writing a spurious "starting up" line to the shared log each time.
     lock = config_mod.acquire_single_instance_lock()
     if lock is None:
+        logger.debug(
+            "another Workforce Agent already holds the single-instance lock; "
+            "exiting quietly (expected for keepalive relaunches)."
+        )
         print(
             "[agent] another Workforce Agent is already running on this "
             "computer; exiting.",
             file=sys.stderr,
         )
         return 0
+    banner = f"=== Workforce Agent v{AGENT_VERSION} (UI) starting up ==="
+    freelancer = build_profile_mod.is_freelancer()
+    if freelancer:
+        # Keep the "(UI) starting up ===" substring intact (log tooling greps it)
+        # and append the profile tag so freelancer logs are self-identifying.
+        banner += "  [profile: Freelancer — manual start/stop]"
+    logger.info(banner)
+    # Ensure the autostart supervisor exists (user-level Scheduled Task that
+    # starts the agent at logon and relaunches it if it ever stops). Idempotent
+    # and non-fatal; this is how the supervisor reaches existing machines over OTA.
+    #
+    # Freelancer build: deliberately SKIP it. The freelancer controls when the
+    # agent runs; a keepalive task would silently resurrect the process within
+    # minutes of them clicking "Kill", defeating the whole manual on/off model.
+    if freelancer:
+        logger.info(
+            "Freelancer profile: keepalive scheduled task NOT registered "
+            "(agent runs only while the worker chooses to run it)."
+        )
+    else:
+        try:
+            autostart_mod.ensure_scheduled_task()
+        except Exception as exc:  # noqa: BLE001  (autostart must never block startup)
+            logger.error(f"ensure_scheduled_task failed unexpectedly ({exc}).")
     cfg = ensure_enrolled()
     if cfg is None:
         return 0

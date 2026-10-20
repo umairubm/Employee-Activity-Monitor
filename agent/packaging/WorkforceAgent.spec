@@ -47,6 +47,7 @@ if png.exists():
 
 hiddenimports = [
     "agent.api",
+    "agent.build_profile",
     "agent.config",
     "agent.consent",
     "agent.identity",
@@ -70,6 +71,63 @@ elif is_mac:
 elif is_linux:
     hiddenimports.append("pystray._xorg")
     hiddenimports.extend(["gi.repository.Gio", "gi.repository.GLib"])
+
+# ---------------------------------------------------------------------------
+# Windows version/metadata resource. The binary is currently unsigned (several
+# developers test it across machines), and an unsigned PE with EMPTY version
+# info scores worse on Defender/SmartScreen reputation heuristics than one that
+# carries proper company/product metadata. Build the resource from
+# AGENT_VERSION so it always matches the version the agent reports in
+# heartbeats. No effect on non-Windows targets (version_file stays None).
+# ---------------------------------------------------------------------------
+version_file = None
+if is_win:
+    from PyInstaller.utils.win32.versioninfo import (
+        VSVersionInfo, FixedFileInfo, StringFileInfo, StringTable,
+        StringStruct, VarFileInfo, VarStruct,
+    )
+
+    _vparts = [int(x) for x in AGENT_VERSION.split(".") if x.isdigit()][:4]
+    while len(_vparts) < 4:
+        _vparts.append(0)
+    _vtuple = tuple(_vparts)
+    _vstr = ".".join(str(x) for x in _vparts)
+
+    _vsinfo = VSVersionInfo(
+        ffi=FixedFileInfo(
+            filevers=_vtuple,
+            prodvers=_vtuple,
+            mask=0x3F,
+            flags=0x0,
+            OS=0x40004,     # VOS_NT_WINDOWS32
+            fileType=0x1,   # VFT_APP
+            subtype=0x0,
+            date=(0, 0),
+        ),
+        kids=[
+            StringFileInfo([
+                StringTable(
+                    "040904B0",  # US English (0x0409), Unicode code page (0x04B0)
+                    [
+                        StringStruct("CompanyName", "UBM Technologies"),
+                        StringStruct("FileDescription", "Workforce Analytics monitoring agent"),
+                        StringStruct("FileVersion", _vstr),
+                        StringStruct("InternalName", "WorkforceAgent"),
+                        StringStruct("LegalCopyright", "Copyright (c) 2026 UBM Technologies. All rights reserved."),
+                        StringStruct("OriginalFilename", "WorkforceAgent.exe"),
+                        StringStruct("ProductName", "WorkforceAgent"),
+                        StringStruct("ProductVersion", _vstr),
+                    ],
+                ),
+            ]),
+            VarFileInfo([VarStruct("Translation", [0x0409, 0x04B0])]),
+        ],
+    )
+    _build_dir = SPEC_DIR / "build"
+    _build_dir.mkdir(parents=True, exist_ok=True)
+    version_file = str(_build_dir / "WorkforceAgent.version.txt")
+    with open(version_file, "w", encoding="utf-8") as _vf:
+        _vf.write(str(_vsinfo))
 
 a = Analysis(
     [str(SPEC_DIR / "launcher.py")],
@@ -99,6 +157,7 @@ exe = EXE(
     runtime_tmpdir=None,
     console=False,
     icon=icon_path,
+    version=version_file,
 )
 
 if is_mac:

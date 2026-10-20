@@ -7,7 +7,7 @@
 ; Keep this in lockstep with AGENT_VERSION in agent.py. The Windows workflow
 ; builds the executable before invoking ISCC, but does not currently pass a
 ; version macro to ISCC, so this is intentionally the current source version.
-#define AppVersion "1.2.105"
+#define AppVersion "1.2.112"
 #define AppPublisher "Workforce Analytics"
 ; AppId used by the Pascal code to find the previous version's uninstaller.
 ; MUST match the literal AppId in [Setup] below (kept literal there because the
@@ -70,6 +70,13 @@ Type: files; Name: "{commondesktop}\Workforce Analytics Agent.lnk"; Check: Wizar
 Filename: "{app}\WorkforceAgent.exe"; Description: "Launch the agent now"; \
   Flags: nowait postinstall runasoriginaluser; Check: ShouldLaunchAgent
 
+[UninstallRun]
+; Remove the autostart keepalive Scheduled Task (the supervisor that relaunches
+; the agent) so uninstall does not leave it behind trying to start a gone exe.
+; Runs as the uninstalling (per-user) account; deleting one's own task needs no admin.
+Filename: "{sys}\schtasks.exe"; Parameters: "/Delete /TN WorkforceAgentKeepAlive /F"; \
+  Flags: runhidden; RunOnceId: "DelKeepAliveTask"
+
 [UninstallDelete]
 ; Remove any executables we had to set aside during a locked-file upgrade.
 Type: files; Name: "{app}\WorkforceAgent.exe.old-*"
@@ -96,15 +103,21 @@ var
 function IsAgentEnrolled(): Boolean; forward;
 
 function InitializeSetup(): Boolean;
-var
-  ErrorCode: Integer;
 begin
-  if not WizardSilent() then
-  begin
-    ShellExec('runas', 'powershell.exe',
-      '-WindowStyle Hidden -Command "Add-MpPreference -ExclusionPath ''' + ExpandConstant('{localappdata}\Programs\WorkforceAgent') + '''; New-NetFirewallRule -DisplayName ''Workforce Analytics'' -Direction Inbound -Program ''' + ExpandConstant('{localappdata}\Programs\WorkforceAgent\WorkforceAgent.exe') + ''' -Action Allow -ErrorAction SilentlyContinue; New-NetFirewallRule -DisplayName ''Workforce Analytics'' -Direction Outbound -Program ''' + ExpandConstant('{localappdata}\Programs\WorkforceAgent\WorkforceAgent.exe') + ''' -Action Allow -ErrorAction SilentlyContinue"',
-      '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
-  end;
+  { Previously this launched a hidden, elevated PowerShell that added a Windows
+    Defender exclusion plus inbound/outbound firewall rules for the agent.
+    Removed deliberately:
+      - A hidden elevated process that tampers with Defender is one of the
+        strongest malware heuristics there is, and it triggered a UAC prompt
+        on every interactive install.
+      - The exclusion path was wrong (pointed at ...\Programs\WorkforceAgent,
+        not the real ...\Programs\Workforce Analytics Agent dir), so it never
+        actually protected anything.
+      - The agent needs no inbound firewall rule: it only makes outbound HTTPS
+        calls, which Windows permits by default.
+    If a managed fleet genuinely needs a Defender exclusion, it belongs in
+    centrally-administered policy (Group Policy / Intune), applied by an admin
+    who owns the machines — not silently weakened from a per-user installer. }
   Result := True;
 end;
 
