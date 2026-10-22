@@ -672,6 +672,16 @@ router.get("/", async (req, res) => {
     // overlap-merged coverage so the four classes sum to active time.
     const sumWhen = (cls: string) =>
       sql<number>`coalesce(sum(case when ${appCategoriesTable.classification} = ${cls} then ${activityLogsTable.durationSeconds} else 0 end), 0)`;
+    // Engagement-aware "active" seconds, matching the live activity summary
+    // (lib/activitySummary.ts) and the timesheets report: unlocked + engaged
+    // interval segments only (legacy non-segment rows: duration minus idle).
+    const engagedExpr = sql<number>`coalesce(sum(case
+      when ${activityLogsTable.segmentId} is not null then
+        case when coalesce(${activityLogsTable.sessionState}::text, 'unlocked') = 'unlocked'
+              and coalesce(${activityLogsTable.engagementState}::text, 'active') = 'active'
+             then ${activityLogsTable.durationSeconds} else 0 end
+      else greatest(0, ${activityLogsTable.durationSeconds} - coalesce(${activityLogsTable.idleSeconds}, 0))
+    end), 0)`;
     const activity = await db
       .select({
         deviceId: activityLogsTable.deviceId,
@@ -679,6 +689,7 @@ router.get("/", async (req, res) => {
         lastSeen: sql<string | null>`max(${activityLogsTable.endedAt})`,
         workedSeconds: sql<number>`coalesce(sum(${activityLogsTable.durationSeconds}), 0)`,
         idleSeconds: sql<number>`coalesce(sum(${activityLogsTable.idleSeconds}), 0)`,
+        engagedSeconds: engagedExpr,
         productiveSeconds: sumWhen("productive"),
         unproductiveSeconds: sumWhen("unproductive"),
         neutralSeconds: sumWhen("neutral"),
@@ -746,6 +757,7 @@ router.get("/", async (req, res) => {
         {
           workedSeconds: a ? Number(a.workedSeconds) : 0,
           idleSeconds: a ? Number(a.idleSeconds) : 0,
+          engagedSeconds: a ? Number(a.engagedSeconds) : 0,
           productiveSeconds: a ? Number(a.productiveSeconds) : 0,
           unproductiveSeconds: a ? Number(a.unproductiveSeconds) : 0,
           neutralSeconds: a ? Number(a.neutralSeconds) : 0,

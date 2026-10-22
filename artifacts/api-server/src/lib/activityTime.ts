@@ -182,6 +182,15 @@ export interface NaiveTime {
   unproductiveSeconds: number;
   neutralSeconds: number;
   undefinedSeconds: number;
+  /**
+   * Engagement-aware worked seconds: foreground time that was BOTH unlocked and
+   * actively engaged (keyboard/mouse) — i.e. excluding passive, idle-engagement,
+   * and locked-screen segments. When supplied, this drives `activeSeconds`
+   * (scaled to overlap-corrected coverage), matching the live activity summary
+   * and TimeDoctor's "active" model. When omitted, active falls back to the
+   * legacy definition (covered foreground minus reported micro-idle).
+   */
+  engagedSeconds?: number;
 }
 
 export interface CorrectedTime {
@@ -243,11 +252,24 @@ export function correctOverlap(
       naive.undefinedSeconds * ratio,
     ]);
 
-  // Active time is the covered foreground activity minus reported micro-idle;
-  // idle absorbs the remainder of the span (between-session gaps + micro-idle),
-  // so active + idle === total.
-  const microIdle = Math.min(covered, Math.round(naive.idleSeconds * ratio));
-  const activeSeconds = Math.max(0, covered - microIdle);
+  // Active time. When the caller supplies engagement-aware `engagedSeconds`
+  // (foreground time that was unlocked AND engaged — not passive, idle, or
+  // locked), active is that figure scaled to the overlap-corrected coverage.
+  // This matches the live activity summary and TimeDoctor's "active" model.
+  // Otherwise fall back to the legacy definition: covered foreground activity
+  // minus reported micro-idle.
+  let activeSeconds: number;
+  if (naive.engagedSeconds != null) {
+    activeSeconds = Math.min(
+      covered,
+      Math.round(Math.max(0, naive.engagedSeconds) * ratio),
+    );
+  } else {
+    const microIdle = Math.min(covered, Math.round(naive.idleSeconds * ratio));
+    activeSeconds = Math.max(0, covered - microIdle);
+  }
+  // Idle absorbs the remainder of the span (micro-idle + passive/locked +
+  // between-session gaps), so active + idle === total.
   const idleSeconds = Math.max(0, total - activeSeconds);
 
   return {
