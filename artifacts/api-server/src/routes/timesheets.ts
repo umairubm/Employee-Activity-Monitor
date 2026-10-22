@@ -34,6 +34,7 @@ const router: IRouter = Router();
 interface DayActivity {
   workedSeconds: number;
   idleSeconds: number;
+  engagedSeconds: number;
   productiveSeconds: number;
   unproductiveSeconds: number;
   neutralSeconds: number;
@@ -137,6 +138,18 @@ router.get("/", async (req, res) => {
     const dayBucket = sql<string>`to_char(${activityLogsTable.startedAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD')`;
     const sumWhen = (cls: string) =>
       sql<number>`coalesce(sum(case when ${appCategoriesTable.classification} = ${cls} then ${activityLogsTable.durationSeconds} else 0 end), 0)`;
+    // Engagement-aware "active" seconds, matching the live activity summary
+    // (lib/activitySummary.ts): an interval segment counts only when it was
+    // unlocked AND engagement=active; legacy non-segment rows count their
+    // duration minus reported idle. This excludes passive / idle / locked time
+    // so Active Time tracks engaged input (TimeDoctor-style), not raw foreground.
+    const engagedExpr = sql<number>`coalesce(sum(case
+      when ${activityLogsTable.segmentId} is not null then
+        case when coalesce(${activityLogsTable.sessionState}::text, 'unlocked') = 'unlocked'
+              and coalesce(${activityLogsTable.engagementState}::text, 'active') = 'active'
+             then ${activityLogsTable.durationSeconds} else 0 end
+      else greatest(0, ${activityLogsTable.durationSeconds} - coalesce(${activityLogsTable.idleSeconds}, 0))
+    end), 0)`;
 
     const activity = await db
       .select({
@@ -144,6 +157,7 @@ router.get("/", async (req, res) => {
         day: dayBucket,
         workedSeconds: sql<number>`coalesce(sum(${activityLogsTable.durationSeconds}), 0)`,
         idleSeconds: sql<number>`coalesce(sum(${activityLogsTable.idleSeconds}), 0)`,
+        engagedSeconds: engagedExpr,
         productiveSeconds: sumWhen("productive"),
         unproductiveSeconds: sumWhen("unproductive"),
         neutralSeconds: sumWhen("neutral"),
@@ -183,6 +197,7 @@ router.get("/", async (req, res) => {
       perDay.set(a.day, {
         workedSeconds: Number(a.workedSeconds),
         idleSeconds: Number(a.idleSeconds),
+        engagedSeconds: Number(a.engagedSeconds),
         productiveSeconds: Number(a.productiveSeconds),
         unproductiveSeconds: Number(a.unproductiveSeconds),
         neutralSeconds: Number(a.neutralSeconds),
