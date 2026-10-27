@@ -69,6 +69,11 @@ rm -rf "$STAGE"
 mkdir -p "$STAGE"
 cp -R "$APP" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"
+# Ship the scripted installer/upgrader so a new .app can replace a running one
+# cleanly (stop old -> remove old -> install new, keeping enrollment). Needed
+# because the unsigned build cannot update over the air.
+cp "$HERE/install.command" "$STAGE/install.command"
+chmod +x "$STAGE/install.command"
 
 hdiutil create \
   -volname "Workforce Agent" \
