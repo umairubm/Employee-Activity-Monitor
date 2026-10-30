@@ -116,6 +116,14 @@ class AgentConfig:
     server_url: str = ""
     device_id: Optional[str] = None
     device_secret: Optional[str] = None
+    # Per-server device identity: {server_base_url: {"device_id", "device_secret"}}.
+    # Each server issues its OWN identity at enrollment and only recognizes that
+    # one, so authenticating server B with server A's identity 401s. During the
+    # Replit->nip.io migration the agent reports to two independent servers; it
+    # must therefore authenticate each with the credentials THAT server issued.
+    # Empty for pre-migration configs — the code falls back to the single
+    # device_id/device_secret above, preserving old behavior.
+    server_identities: dict = field(default_factory=dict)
     consent_name: Optional[str] = None
     enrolled_at: Optional[str] = None
     # Last config received from the server (cached so the agent has sane

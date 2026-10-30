@@ -79,14 +79,14 @@ def setup_logging():
     logging.getLogger().addHandler(handler)
 
 
-AGENT_VERSION = "1.2.112"
+AGENT_VERSION = "1.2.125"
 # The freelancer build is the SAME source selected at runtime by build_profile
 # (installer marker). It reports its own version so the server/OTA can track and
 # target freelancer devices on a separate line, WITHOUT changing the employee
 # build's version. Indented (not line-anchored) so the spec's version regex,
-# which matches the first ^AGENT_VERSION assignment, still reads "1.2.112".
+# which matches the first ^AGENT_VERSION assignment, still reads "1.2.115".
 if build_profile_mod.is_freelancer():
-    AGENT_VERSION = "1.2.114"
+    AGENT_VERSION = "1.2.116"
 POLL_SECONDS = 15
 # Activity batching. The server caps a batch at 500 rows; we additionally cap
 # serialized bytes well under its JSON body limit so a backlog of rich
@@ -182,7 +182,8 @@ class MonitoringAgent:
     def __init__(self, cfg: config_mod.AgentConfig) -> None:
         self.cfg = cfg
         self.api = api_mod.AgentAPI(
-            cfg.server_url, cfg.device_id, cfg.device_secret
+            cfg.server_url, cfg.device_id, cfg.device_secret,
+            server_identities=cfg.server_identities,
         )
         logger.info(
             f"Configured upload servers ({len(self.api.server_urls)}): {', '.join(self.api.server_urls)}"
@@ -1052,6 +1053,34 @@ rm -rf "$(dirname "$NEW")" "$0"
         with open(script_path, "w", encoding="utf-8") as fh:
             fh.write(self._LINUX_REPLACER_SCRIPT)
         os.chmod(script_path, 0o700)
+        # Scrub PyInstaller onefile parent->child handoff vars from the environment
+        # the replacer (and thus the new agent it launches) inherits. Our running
+        # onefile bootloader exports _PYI_* / LD_LIBRARY_PATH / toolkit paths all
+        # pointing at OUR /tmp/_MEI... dir; if the new binary is a PLAIN onefile at
+        # the same install path, its bootloader sees _PYI_ARCHIVE_FILE == its own
+        # path, concludes it is this process's child re-exec, skips extracting its
+        # own archive, runs from our (being-torn-down) _MEI, and crashes before
+        # Python. The Linux agent ships as a self-extracting launcher that already
+        # scrubs these, so this is belt-and-suspenders for any future plain-binary
+        # OTA. (See the Linux-OTA-brick root cause.)
+        _leak_names = {
+            "LD_LIBRARY_PATH", "LD_LIBRARY_PATH_ORIG", "_MEIPASS2",
+            "GI_TYPELIB_PATH", "GIO_MODULE_DIR",
+            "GST_PLUGIN_PATH", "GST_PLUGIN_SYSTEM_PATH", "GST_PLUGIN_SCANNER",
+            "GST_PLUGIN_SCANNER_1_0", "GST_REGISTRY", "GST_REGISTRY_1_0",
+            "GTK_PATH", "GTK_DATA_PREFIX", "GTK_EXE_PREFIX", "GTK_IM_MODULE_FILE",
+            "GDK_PIXBUF_MODULE_FILE", "GDK_PIXBUF_MODULEDIR",
+            "PANGO_LIBDIR", "PANGO_SYSCONFDIR", "TCL_LIBRARY", "TK_LIBRARY",
+            "OPENSSL_MODULES", "FONTCONFIG_FILE", "FONTCONFIG_PATH",
+            "GSETTINGS_SCHEMA_DIR",
+        }
+        clean_env = {
+            k: v for k, v in os.environ.items()
+            if k not in _leak_names and not k.startswith("_PYI_")
+        }
+        _orig_ld = os.environ.get("LD_LIBRARY_PATH_ORIG")
+        if _orig_ld:
+            clean_env["LD_LIBRARY_PATH"] = _orig_ld
         subprocess.Popen(
             ["/bin/bash", script_path, str(os.getpid()), str(new_bin), str(current_exe)],
             stdin=subprocess.DEVNULL,
@@ -1059,6 +1088,7 @@ rm -rf "$(dirname "$NEW")" "$0"
             stderr=subprocess.DEVNULL,
             close_fds=True,
             start_new_session=True,
+            env=clean_env,
         )
         try:
             os.unlink(archive_path)
@@ -1138,7 +1168,11 @@ rm -rf "$(dirname "$NEW")" "$0"
                 return
             backup = current_app.with_name(f"{current_app.name}.updating-backup")
         elif sys.platform.startswith("linux"):
-            backup = Path(f"{sys.executable}.updating-backup")
+            # One-file Linux bundles: sys.executable points at the extracted
+            # /tmp/_MEI interpreter, NOT the installed binary. The updater names
+            # the backup "<installed-exe>.updating-backup", so derive it from
+            # argv[0] (the real bootloader path) to actually find and remove it.
+            backup = Path(f"{os.path.abspath(sys.argv[0])}.updating-backup")
         else:
             return
 
@@ -1253,11 +1287,40 @@ rm -rf "$(dirname "$NEW")" "$0"
                     self.api.upload_screenshot(img, _now_iso(), content_type="image/webp")
                     logger.info("Screenshot upload succeeded.")
                     self._screencast_fail_count = 0
+                    self._screencast_stale_count = 0
+                    self._screencast_backoff = 5.0
                     self._next_screenshot_gap = self._screenshot_gap()
                 except screenshot_mod.CaptureNotReadyError:
                     self._next_screenshot_gap = 5.0
                 except Exception as exc:  # noqa: BLE001
                     logger.exception(f"Screenshot capture/upload failed: {exc}")
+                    # Wayland self-heal: a restored ScreenCast session can report
+                    # READY yet produce no frames (typical right after boot/login).
+                    # Re-reading it never recovers; only a full teardown + re-create
+                    # -- which silently replays the saved restore_token, exactly what
+                    # a process restart does -- brings frames back. Escalate after 2.
+                    _is_wayland = sys.platform.startswith("linux") and (
+                        os.environ.get("XDG_SESSION_TYPE") == "wayland"
+                        or "WAYLAND_DISPLAY" in os.environ
+                    )
+                    if _is_wayland:
+                        self._screencast_stale_count = getattr(self, "_screencast_stale_count", 0) + 1
+                        if self._screencast_stale_count >= 2:
+                            logger.warning(
+                                "ScreenCast producing no frames; rebuilding session "
+                                "(silent restore_token replay)."
+                            )
+                            try:
+                                screenshot_mod.stop_wayland_screencast()
+                                time.sleep(1.0)
+                                screenshot_mod.start_wayland_screencast()
+                            except Exception:
+                                logger.exception("ScreenCast rebuild failed")
+                            self._screencast_stale_count = 0
+                            self._screencast_backoff = 5.0
+                            self._next_screenshot_gap = 12.0
+                            self._stop.wait(5.0)
+                            continue
                     self._screencast_backoff = min(60.0, getattr(self, "_screencast_backoff", 5.0) * 2)
                     self._next_screenshot_gap = self._screencast_backoff
             self._stop.wait(5.0)
@@ -1310,23 +1373,33 @@ rm -rf "$(dirname "$NEW")" "$0"
                 ):
                     state = screenshot_mod.get_wayland_screencast_state()
                     if state == screenshot_mod.ScreencastState.FAILED:
+                        # Transient ScreenCast failure -- very common at boot before
+                        # the GNOME portal is fully ready. NEVER auto-pause monitoring
+                        # on this (that silently stopped tracking for good). Rebuild
+                        # the session instead; it replays the saved token silently and
+                        # keeps retrying until frames flow.
                         self._screencast_fail_count = getattr(self, "_screencast_fail_count", 0) + 1
-                        if self._screencast_fail_count > 3:
-                            logger.error(
-                                f"ScreenCast failed repeatedly ({self._screencast_fail_count} times). "
-                                "Pausing monitoring automatically."
-                            )
-                            self.toggle_pause()
-                            is_active = False
-                        else:
-                            logger.warning(
-                                f"ScreenCast failed unexpectedly (attempt {self._screencast_fail_count}); restarting."
-                            )
-                            screenshot_mod.start_wayland_screencast()
+                        logger.warning(
+                            f"ScreenCast FAILED (attempt {self._screencast_fail_count}); "
+                            "rebuilding session."
+                        )
+                        screenshot_mod.stop_wayland_screencast()
+                        screenshot_mod.start_wayland_screencast()
                     elif state == screenshot_mod.ScreencastState.USER_STOPPED:
-                        logger.warning("ScreenCast was closed by the user. Pausing monitoring.")
-                        self.toggle_pause()
-                        is_active = False
+                        # The user stopped the share via the top-bar screencast
+                        # indicator. Do NOT pause -- monitoring must not be
+                        # defeatable short of the uninstaller. The persistent
+                        # restore_token survives a user stop (only revoking the
+                        # permission in GNOME Settings clears it), so re-establish
+                        # the session; it replays the saved token SILENTLY (no
+                        # prompt) and capture resumes within a cycle.
+                        self._screencast_fail_count = getattr(self, "_screencast_fail_count", 0) + 1
+                        logger.warning(
+                            "ScreenCast stopped by the user; re-establishing silently "
+                            f"(attempt {self._screencast_fail_count})."
+                        )
+                        screenshot_mod.stop_wayland_screencast()
+                        screenshot_mod.start_wayland_screencast()
 
                 was_active = is_active
                 self._observe()
@@ -1483,6 +1556,24 @@ rm -rf "$(dirname "$NEW")" "$0"
         # Heartbeat + commands. Include best-effort live health metrics.
         metrics = system_info_mod.collect_metrics()
         hb = self.api.heartbeat(AGENT_VERSION, metrics)
+        # Self-heal a device whose config flipped to a peer-only (Replit)
+        # identity: if nip.io rejected this heartbeat (401) while a peer still
+        # authenticates, ask nip.io to re-adopt us and persist the new identity.
+        # Best-effort and rate-limited inside try_adopt; never blocks monitoring.
+        try:
+            if self.api.try_adopt(
+                identity_mod.hardware_hash(),
+                identity_mod.system_name(),
+                identity_mod.os_type(),
+                AGENT_VERSION,
+            ):
+                self.cfg.server_identities = dict(self.api.server_identities)
+                self.cfg.device_id = self.api.device_id
+                self.cfg.device_secret = self.api.device_secret
+                self.cfg.save()
+                logger.info("re-adopted onto primary server; identity persisted.")
+        except Exception:  # noqa: BLE001
+            pass
         # A successful heartbeat is the authoritative update-health signal.
         # Purge update rollback backups if we've successfully reached the server.
         self._cleanup_update_backup()
@@ -1728,6 +1819,16 @@ def _perform_enrollment(
 ) -> config_mod.AgentConfig:
     """Exchange a token for device credentials and persist them."""
     api = api_mod.AgentAPI(server_url)
+    # Firmware serial (survives an OS reinstall) lets the server re-adopt this
+    # machine rather than creating a duplicate device. Best-effort: if the
+    # inventory lookup fails or reports nothing, enroll without it.
+    serial_number = ""
+    try:
+        serial_number = str(
+            system_info_mod.get_cached().get("Serial_Number", "") or ""
+        ).strip()
+    except Exception:
+        serial_number = ""
     data = api.enroll(
         token=token,
         hardware_hash=identity_mod.hardware_hash(),
@@ -1735,10 +1836,15 @@ def _perform_enrollment(
         os_type=identity_mod.os_type(),
         consent_name=name,
         agent_version=AGENT_VERSION,
+        serial_number=serial_number or None,
     )
     cfg.server_url = server_url
     cfg.device_id = data["deviceId"]
     cfg.device_secret = data["deviceSecret"]
+    # Persist EACH server's issued identity so later requests authenticate every
+    # server with the credentials it issued (Replit + nip.io during migration),
+    # not just the one whose response happened to be kept.
+    cfg.server_identities = dict(api.server_identities)
     cfg.consent_name = name
     cfg.enrolled_at = _now_iso()
     cfg.apply_server_config(data.get("config", {}))
@@ -1811,6 +1917,45 @@ def main() -> int:
     # relaunch (every ~10 min) exits silently when an agent is already running,
     # instead of writing a spurious "starting up" line to the shared log each time.
     lock = config_mod.acquire_single_instance_lock()
+    if lock is None and sys.platform.startswith("linux"):
+        # OTA self-replacement handoff. The outgoing agent sets a stop flag but
+        # keeps holding the single-instance flock for several seconds while its
+        # telemetry and Wayland ScreenCast threads wind down, and the updater
+        # script launches us immediately. On Linux there is no keepalive relaunch
+        # loop (autostart is login-only, unlike the Windows Scheduled Task), so a
+        # lock still held at startup essentially always means the previous agent
+        # is on its way out -- an OTA swap, or a rare manual double-launch. Either
+        # way the right move is to WAIT (bounded) for it to release the lock, not
+        # exit. Exiting here (the old behaviour) strands the update: the updater
+        # script sees us gone and rolls back to the previous version. We do NOT
+        # gate this on a "<exe>.updating-backup" marker -- older agents' updater
+        # scripts name/place their backup differently, so the marker check can
+        # miss and drop us straight onto the rollback path (which is exactly how
+        # 1.2.94 -> newer OTAs were failing).
+        try:
+            marker = os.path.abspath(sys.argv[0]) + ".updating-backup"
+            hint = " (update handoff marker present)" if os.path.exists(marker) else ""
+            logger.info(
+                "startup: single-instance lock held by another process; "
+                "waiting up to 120s for it to exit before starting%s.",
+                hint,
+            )
+            deadline = time.time() + 120
+            while lock is None and time.time() < deadline:
+                time.sleep(2)
+                lock = config_mod.acquire_single_instance_lock()
+            if lock is not None:
+                logger.info(
+                    "startup: acquired single-instance lock after waiting; "
+                    "continuing startup."
+                )
+            else:
+                logger.warning(
+                    "startup: single-instance lock still held after 120s; "
+                    "exiting."
+                )
+        except Exception:  # noqa: BLE001
+            pass
     if lock is None:
         logger.debug(
             "another Workforce Agent already holds the single-instance lock; "

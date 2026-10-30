@@ -55,6 +55,40 @@ def _image_is_black(img) -> bool:
 from PIL import Image
 
 
+def _restore_token_path():
+    """Path where we persist the ScreenCast restore_token, or None if unavailable."""
+    try:
+        try:
+            from agent import config as _cfg  # packaged import
+        except ImportError:
+            from . import config as _cfg  # type: ignore  # relative fallback
+        return _cfg.config_dir() / "screencast-restore.token"
+    except Exception:
+        return None
+
+
+def _load_restore_token():
+    """Return the saved ScreenCast restore_token, or None."""
+    p = _restore_token_path()
+    try:
+        if p is not None and p.exists():
+            tok = p.read_text(encoding="utf-8").strip()
+            return tok or None
+    except Exception:
+        pass
+    return None
+
+
+def _save_restore_token(token):
+    """Persist the ScreenCast restore_token so later sessions restore silently."""
+    p = _restore_token_path()
+    try:
+        if p is not None and token:
+            p.write_text(token, encoding="utf-8")
+    except Exception:
+        pass
+
+
 class WaylandScreencastManager:
     _instance = None
     _lock = threading.Lock()
@@ -200,9 +234,22 @@ class WaylandScreencastManager:
         res = self._portal_request("CreateSession", {"session_handle_token": GLib.Variant("s", f"session_{int(time.time())}")}, generation=generation)
         self._session_handle = res.lookup_value("session_handle", None).get_string()
 
-        # 2. SelectSources (types=1 for Monitor)
+        # 2. SelectSources (types=1 for Monitor). Request a PERSISTENT grant
+        #    (persist_mode=2 = persist until the user explicitly revokes) and
+        #    replay any saved restore_token, so the "Share screen" dialog appears
+        #    at most once ever -- later sessions (after restarts and OTA updates)
+        #    restore the same grant silently instead of re-prompting the user.
         logger.info(f"Portal: Selecting Sources for session {self._session_handle}...")
-        self._portal_request("SelectSources", self._session_handle, {"types": GLib.Variant("u", 1), "multiple": GLib.Variant("b", False)}, generation=generation)
+        _sel_opts = {
+            "types": GLib.Variant("u", 1),
+            "multiple": GLib.Variant("b", False),
+            "persist_mode": GLib.Variant("u", 2),
+        }
+        _saved_token = _load_restore_token()
+        if _saved_token:
+            _sel_opts["restore_token"] = GLib.Variant("s", _saved_token)
+            logger.info("Portal: replaying saved restore_token (expecting no prompt).")
+        self._portal_request("SelectSources", self._session_handle, _sel_opts, generation=generation)
 
         if generation is not None and self._generation != generation:
             raise RuntimeError("ScreenCast start aborted (agent paused/stopped).")
@@ -210,6 +257,18 @@ class WaylandScreencastManager:
         # 3. Start
         logger.info("Portal: Starting Session...")
         res = self._portal_request("Start", self._session_handle, "", {}, generation=generation)
+        # Persist the restore_token the portal hands back (present only when the
+        # compositor honoured persist_mode), so the next session restores without
+        # a prompt. Absence just means this platform won't persist -- no regression.
+        try:
+            _rt = res.lookup_value("restore_token", None)
+            if _rt is not None:
+                _tok = _rt.get_string()
+                if _tok:
+                    _save_restore_token(_tok)
+                    logger.info("Portal: saved restore_token for silent future sessions.")
+        except Exception:
+            pass
         if generation is not None and self._generation != generation:
             raise RuntimeError("ScreenCast start aborted (agent paused/stopped).")
             
