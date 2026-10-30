@@ -818,8 +818,10 @@ class MonitoringAgent:
     #
     # A macOS release is a .zip archive containing the replacement
     # WorkforceAgent.app. The agent validates the archive (bundle identity +
-    # code signature), confirms it can actually replace its own install
-    # location, and only then hands over to a small detached shell helper
+    # code signature by the installed app's signer). On a guard-managed Mac
+    # it stages the app for the root guard (see _macos_stage_for_guard).
+    # Otherwise it confirms it can replace its own install location, and
+    # only then hands over to a small detached shell helper
     # that waits for this process to exit, swaps the bundles atomically
     # (keeping a backup for rollback), and relaunches the app. The first
     # heartbeat from the relaunched build reporting the target version is the
@@ -837,18 +839,32 @@ class MonitoringAgent:
         return None
 
     @classmethod
-    def _macos_signature_team_id(cls, app: Path) -> str:
+    def _macos_designated_requirement(cls, app: Path) -> str:
+        """Return the installed app's designated requirement (its signer pin).
+
+        An update must satisfy it: for a Developer ID build that pins the
+        team, for the self-signed build it pins our certificate. An ad-hoc
+        build's requirement is its own cdhash, which no other build can
+        satisfy, so it cannot be updated over the air.
+        """
         details = _hidden_run(
-            ["codesign", "-dv", "--verbose=4", str(app)],
+            ["codesign", "-d", "-r-", str(app)],
             capture_output=True,
             text=True,
             check=False,
         )
         output = f"{details.stdout}\n{details.stderr}"
         for line in output.splitlines():
-            if line.startswith("TeamIdentifier="):
-                return line.split("=", 1)[1].strip()
-        raise ValueError("app code signature has no Team ID")
+            line = line.lstrip("# ").strip()
+            if line.startswith("designated =>"):
+                requirement = line.split("=>", 1)[1].strip()
+                if requirement and "cdhash" not in requirement:
+                    return requirement
+                break
+        raise ValueError(
+            "installed agent is not signed with a stable identity; "
+            "reinstall this Mac manually once"
+        )
 
     @classmethod
     def _macos_extract_app(
@@ -856,7 +872,7 @@ class MonitoringAgent:
         archive_path: str,
         dest_dir: str,
         target_version: str,
-        expected_team_id: str,
+        requirement: str,
     ) -> Path:
         """Extract the update archive and return the validated .app inside.
 
@@ -919,16 +935,23 @@ class MonitoringAgent:
         )
         if verify.returncode != 0:
             raise ValueError("update app failed code signature verification")
-        team_id = cls._macos_signature_team_id(app)
-        if team_id != expected_team_id:
-            raise ValueError("update app was signed by an unexpected developer team")
-        gatekeeper = _hidden_run(
-            ["spctl", "--assess", "--type", "execute", str(app)],
+        pinned = _hidden_run(
+            ["codesign", "--verify", "--deep", "--strict", "-R", f"={requirement}", str(app)],
             capture_output=True,
             check=False,
         )
-        if gatekeeper.returncode != 0:
-            raise ValueError("update app failed macOS notarization assessment")
+        if pinned.returncode != 0:
+            raise ValueError("update app was not signed by the installed app's signer")
+        # Developer ID builds must also be notarized; the self-signed build
+        # is pinned to our certificate above and cannot be notarized.
+        if "anchor apple generic" in requirement:
+            gatekeeper = _hidden_run(
+                ["spctl", "--assess", "--type", "execute", str(app)],
+                capture_output=True,
+                check=False,
+            )
+            if gatekeeper.returncode != 0:
+                raise ValueError("update app failed macOS notarization assessment")
         return app
 
     # Replacement helper. Runs detached after the agent quits: waits for the
@@ -1115,7 +1138,12 @@ rm -rf "$(dirname "$NEW")" "$0"
                     "agent is not running from an installed app bundle; "
                     "update this Mac manually"
                 )
-            if not (
+            guarded = self.MACOS_GUARD_PLIST.exists()
+            if guarded:
+                prior = self._macos_update_result()
+                if prior.startswith(f"failed {target_version} "):
+                    raise ValueError(prior[len(f"failed {target_version} "):])
+            elif not (
                 os.access(current_app.parent, os.W_OK)
                 and os.access(current_app, os.W_OK)
             ):
@@ -1123,13 +1151,15 @@ rm -rf "$(dirname "$NEW")" "$0"
                     f"no permission to replace {current_app}; "
                     "an administrator must update this Mac manually"
                 )
-            expected_team_id = self._macos_signature_team_id(current_app)
+            requirement = self._macos_designated_requirement(current_app)
             new_app = self._macos_extract_app(
                 archive_path,
                 extract_dir,
                 target_version,
-                expected_team_id,
+                requirement,
             )
+            if guarded:
+                self._macos_stage_for_guard(new_app)
         except ValueError as exc:
             _cleanup()
             self._finish_command(cid, "failed", str(exc)[:200])
@@ -1137,6 +1167,17 @@ rm -rf "$(dirname "$NEW")" "$0"
         except Exception:
             _cleanup()
             raise
+
+        if guarded:
+            _cleanup()
+            self.api.ack_command(cid, "installing")
+            threading.Thread(
+                target=self._macos_await_guard,
+                args=(cid, target_version),
+                daemon=True,
+                name="UpdateWait",
+            ).start()
+            return
 
         # Same contract as Windows: let an ack failure propagate so the outer
         # handler resolves the command to "failed" instead of stranding it.
@@ -1159,6 +1200,74 @@ rm -rf "$(dirname "$NEW")" "$0"
             pass
         self.quit()
 
+    # Guard-managed Macs (install.command): the app is root-owned, so the
+    # agent cannot swap it. It stages the verified app in <config>/update/ and
+    # the root guard re-verifies it (same signer, newer version), swaps it in,
+    # restarts the agent, and rolls back unless the new build writes
+    # update/healthy after a successful heartbeat. The guard reports a
+    # rejection or rollback in update/result as "failed <version> <reason>".
+    MACOS_GUARD_PLIST = Path(
+        "/Library/LaunchDaemons/com.workforceanalytics.agent.guard.plist"
+    )
+
+    @staticmethod
+    def _macos_update_dir() -> Path:
+        return config_mod.config_dir() / "update"
+
+    @classmethod
+    def _macos_update_result(cls) -> str:
+        try:
+            return (cls._macos_update_dir() / "result").read_text(encoding="utf-8").strip()
+        except OSError:
+            return ""
+
+    @classmethod
+    def _macos_stage_for_guard(cls, new_app: Path) -> None:
+        update_dir = cls._macos_update_dir()
+        update_dir.mkdir(parents=True, exist_ok=True)
+        staged = update_dir / "WorkforceAgent.app"
+        incoming = update_dir / "WorkforceAgent.app.incoming"
+        for path in (incoming, staged):
+            shutil.rmtree(path, ignore_errors=True)
+        try:
+            (update_dir / "result").unlink()
+        except OSError:
+            pass
+        copied = _hidden_run(
+            ["ditto", str(new_app), str(incoming)], capture_output=True, check=False
+        )
+        if copied.returncode != 0:
+            shutil.rmtree(incoming, ignore_errors=True)
+            raise ValueError("could not stage the update for installation")
+        # Rename last so the guard never picks up a half-copied bundle.
+        incoming.rename(staged)
+
+    def _macos_await_guard(self, cid: str, target_version: str) -> None:
+        """Report a guard rejection. On success the guard restarts this
+        process, and the new build completes the redelivered command."""
+        prefix = f"failed {target_version} "
+        deadline = time.time() + 20 * 60
+        while time.time() < deadline:
+            result = self._macos_update_result()
+            if result.startswith(prefix):
+                self._finish_command(cid, "failed", result[len(prefix):][:200])
+                return
+            time.sleep(5)
+
+    @classmethod
+    def _macos_mark_healthy(cls, current_app: Path) -> None:
+        update_dir = cls._macos_update_dir()
+        if not update_dir.is_dir():
+            return
+        try:
+            with open(current_app / "Contents" / "Info.plist", "rb") as fh:
+                version = str(plistlib.load(fh).get("CFBundleShortVersionString") or "")
+            marker = update_dir / "healthy"
+            if version and (not marker.exists() or marker.read_text(encoding="utf-8") != version):
+                marker.write_text(version, encoding="utf-8")
+        except Exception:  # noqa: BLE001 — best-effort signal to the guard
+            pass
+
     @classmethod
     def _cleanup_update_backup(cls) -> None:
         """Drop rollback backup only after the replacement heartbeat succeeds."""
@@ -1166,6 +1275,7 @@ rm -rf "$(dirname "$NEW")" "$0"
             current_app = cls._macos_app_bundle_path(sys.executable)
             if current_app is None:
                 return
+            cls._macos_mark_healthy(current_app)
             backup = current_app.with_name(f"{current_app.name}.updating-backup")
         elif sys.platform.startswith("linux"):
             # One-file Linux bundles: sys.executable points at the extracted

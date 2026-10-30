@@ -19,8 +19,10 @@
 #   /Library/Logs/WorkforceAgent/guard.log                guard actions
 # Remove everything with UninstallWorkforceAgent.command.
 #
-# The build is not Developer-ID signed, so over-the-air updates are rejected by
-# the agent and new versions are installed by re-running this script.
+# Releases are signed with the Workforce self-signed certificate (see
+# sign_release.sh). Later versions signed with the same certificate install
+# over the air through the guard, and macOS keeps the Screen Recording and
+# Accessibility permissions across them. Re-running this script also works.
 
 set -u
 
@@ -116,9 +118,12 @@ sudo ditto "$SRC" "$DEST"
 # can launch (Gatekeeper itself stays on).
 sudo xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true
 sudo chown -R root:wheel "$DEST"
-sudo chmod -R go-w "$DEST"
+sudo chmod -R go-w,u-s,g-s "$DEST"
 
 echo "[3/5] Installing the guard and backups..."
+# A manual install supersedes any over-the-air update in progress.
+sudo rm -rf "$STATE/update.pending" "$STATE/previous.app" "$STATE/staging"
+rm -rf "$CONFIG_DIR/update"
 sudo mkdir -p "$BACKUP" "$LOGDIR"
 sudo chown root:wheel "$STATE" "$BACKUP" "$LOGDIR"
 sudo chmod 755 "$STATE" "$LOGDIR"
@@ -160,6 +165,7 @@ if [ -f "$CONFIG_DIR/config.json" ]; then
 fi
 echo ""
 echo "PERMISSIONS: open System Settings > Privacy & Security and switch Workforce"
-echo "Agent ON under Screen Recording and Accessibility. After installing a NEW"
-echo "build, switch both OFF and ON again — macOS ties them to the exact build."
+echo "Agent ON under Screen Recording and Accessibility. If this Mac previously"
+echo "had an unsigned build, switch both OFF and ON again once. Later versions"
+echo "arrive over the air and keep these permissions."
 pause_exit 0
