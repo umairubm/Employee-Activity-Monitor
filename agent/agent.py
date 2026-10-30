@@ -1140,9 +1140,12 @@ rm -rf "$(dirname "$NEW")" "$0"
                 )
             guarded = self.MACOS_GUARD_PLIST.exists()
             if guarded:
+                # A redelivery of a command the guard already rejected or rolled
+                # back must not stage it again; a newly queued command may retry.
                 prior = self._macos_update_result()
-                if prior.startswith(f"failed {target_version} "):
-                    raise ValueError(prior[len(f"failed {target_version} "):])
+                prefix = f"failed {target_version} "
+                if prior.startswith(prefix) and self._macos_staged_command() == cid:
+                    raise ValueError(prior[len(prefix):])
             elif not (
                 os.access(current_app.parent, os.W_OK)
                 and os.access(current_app, os.W_OK)
@@ -1159,7 +1162,7 @@ rm -rf "$(dirname "$NEW")" "$0"
                 requirement,
             )
             if guarded:
-                self._macos_stage_for_guard(new_app)
+                self._macos_stage_for_guard(new_app, cid)
         except ValueError as exc:
             _cleanup()
             self._finish_command(cid, "failed", str(exc)[:200])
@@ -1222,7 +1225,14 @@ rm -rf "$(dirname "$NEW")" "$0"
             return ""
 
     @classmethod
-    def _macos_stage_for_guard(cls, new_app: Path) -> None:
+    def _macos_staged_command(cls) -> str:
+        try:
+            return (cls._macos_update_dir() / "command").read_text(encoding="utf-8").strip()
+        except OSError:
+            return ""
+
+    @classmethod
+    def _macos_stage_for_guard(cls, new_app: Path, cid: str) -> None:
         update_dir = cls._macos_update_dir()
         update_dir.mkdir(parents=True, exist_ok=True)
         staged = update_dir / "WorkforceAgent.app"
@@ -1233,6 +1243,7 @@ rm -rf "$(dirname "$NEW")" "$0"
             (update_dir / "result").unlink()
         except OSError:
             pass
+        (update_dir / "command").write_text(cid, encoding="utf-8")
         copied = _hidden_run(
             ["ditto", str(new_app), str(incoming)], capture_output=True, check=False
         )
