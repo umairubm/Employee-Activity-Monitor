@@ -1,10 +1,11 @@
 name: Build macOS Agent (artifact only)
 
-# Builds the macOS agent .app + .dmg on a native Apple Silicon (arm64) runner
-# and uploads them as a downloadable Actions artifact. Deliberately does NOT
-# publish a GitHub Release and does NOT require signing secrets (produces an
-# UNSIGNED build for testing). For a signed/notarized release, use
-# build-agent-installers.yml instead.
+# Builds the macOS agent .app + .dmg natively for BOTH Apple Silicon (arm64)
+# and Intel (x86_64) — one runner per arch, since the PyInstaller bundle is
+# single-arch — and uploads each as a downloadable Actions artifact.
+# Deliberately does NOT publish a GitHub Release and does NOT require signing
+# secrets (produces UNSIGNED builds for testing). For a signed/notarized
+# release, use build-agent-installers.yml instead.
 
 on:
   workflow_dispatch:
@@ -16,8 +17,16 @@ permissions:
   contents: read
 
 jobs:
-  macos-arm64:
-    runs-on: macos-14   # Apple Silicon (arm64)
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-14        # Apple Silicon
+          - arch: x86_64
+            runner: macos-15-intel  # Intel (macos-13 was retired 2025-12)
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
 
@@ -40,11 +49,14 @@ jobs:
         run: |
           echo "runner arch: $(uname -m)"
           file agent/packaging/dist/WorkforceAgent.app/Contents/MacOS/* || true
+          # Minimum macOS the executable will load on (LC_BUILD_VERSION minos).
+          otool -l agent/packaging/dist/WorkforceAgent.app/Contents/MacOS/WorkforceAgent \
+            | grep -A4 -E 'LC_BUILD_VERSION|LC_VERSION_MIN_MACOSX' || true
           ls -la agent/packaging/dist/
 
       - uses: actions/upload-artifact@v4
         with:
-          name: macos-agent-arm64-unsigned
+          name: macos-agent-${{ matrix.arch }}-unsigned
           path: |
             agent/packaging/dist/WorkforceAgent-macos.dmg
             agent/packaging/dist/WorkforceAgent-macos-*.app.zip
