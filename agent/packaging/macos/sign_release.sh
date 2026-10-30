@@ -3,7 +3,7 @@
 # and package it for release. Runs on Linux/WSL (uses rcodesign); the private
 # key never goes to CI or GitHub.
 #
-#   bash agent/packaging/macos/sign_release.sh <ci WorkforceAgent-macos-X.app.zip> <out dir>
+#   bash agent/packaging/macos/sign_release.sh <ci WorkforceAgent-macos-X.app.zip> <out dir> [kit url]
 #
 # Key dir: $WF_SIGN_DIR (default /mnt/d/Workforce/_keys/macos-codesign) with
 # key.pem + cert.pem. Every release MUST be signed with the same certificate:
@@ -15,6 +15,8 @@
 #   WorkforceAgent-macos-<ver>.app.zip      upload in the dashboard (OTA)
 #   WorkforceAgent-macos-<ver>-kit.zip      manual install: app + install.command
 #                                           + guard + plists + uninstaller
+#   ONE-LINE-INSTALL.txt                    the Terminal one-liner for the kit,
+#                                           checksum-pinned (pass the kit url)
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -53,18 +55,19 @@ VERSION="$(python3 -I -c 'import plistlib,sys; print(plistlib.load(open(sys.argv
   --code-requirements-path "$REQ" \
   "$APP"
 
-KIT="$WORK/kit"
+KIT="$WORK/WorkforceAgent-kit"
 mkdir -p "$KIT"
 cp -R "$APP" "$KIT/"
 cp "$HERE/install.command" "$HERE/UninstallWorkforceAgent.command" "$HERE/guard.sh" \
    "$HERE/com.workforceanalytics.agent.plist" "$HERE/com.workforceanalytics.agent.guard.plist" \
    "$KIT/"
 chmod +x "$KIT/install.command" "$KIT/UninstallWorkforceAgent.command" "$KIT/guard.sh"
+chmod 644 "$KIT"/*.plist
 
 mkdir -p "$OUT"
 # Zip with Unix modes so ditto/Archive Utility restore executables.
 python3 -I - "$WORK/app" WorkforceAgent.app "$OUT/WorkforceAgent-macos-$VERSION.app.zip" \
-  "$WORK" kit "$OUT/WorkforceAgent-macos-$VERSION-kit.zip" <<'PY'
+  "$WORK" WorkforceAgent-kit "$OUT/WorkforceAgent-macos-$VERSION-kit.zip" <<'PY'
 import os, sys, zipfile
 def pack(root, top, dest):
     with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as z:
@@ -90,4 +93,13 @@ pack(a[3], a[4], a[5])
 PY
 
 (cd "$OUT" && sha256sum "WorkforceAgent-macos-$VERSION.app.zip" "WorkforceAgent-macos-$VERSION-kit.zip")
+
+# One Terminal line that installs or upgrades a Mac: download, verify the
+# pinned checksum (stops on mismatch), install. No quarantine flag is set on
+# curl downloads, so Gatekeeper does not prompt.
+KIT_SHA="$(sha256sum "$OUT/WorkforceAgent-macos-$VERSION-kit.zip" | cut -d' ' -f1)"
+KIT_URL="${3:-<KIT-URL>}"
+printf '%s\n' "curl -fsSL '$KIT_URL' -o /tmp/wf-kit.zip && echo '$KIT_SHA  /tmp/wf-kit.zip' | shasum -a 256 -c - && rm -rf /tmp/wf-kit && ditto -x -k /tmp/wf-kit.zip /tmp/wf-kit && WF_NO_PAUSE=1 bash /tmp/wf-kit/WorkforceAgent-kit/install.command; rm -rf /tmp/wf-kit /tmp/wf-kit.zip" > "$OUT/ONE-LINE-INSTALL.txt"
 echo "Signed $VERSION -> $OUT"
+echo "One-line install (also in ONE-LINE-INSTALL.txt):"
+cat "$OUT/ONE-LINE-INSTALL.txt"

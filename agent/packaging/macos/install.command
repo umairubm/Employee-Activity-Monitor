@@ -41,7 +41,12 @@ UID_NUM="$(id -u)"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 SRC="$HERE/${APP_NAME}"
 
-pause_exit() { echo ""; read -r -p "Press Return to close. "; exit "$1"; }
+pause_exit() {
+  # WF_NO_PAUSE=1 (set by the one-line installer) skips the pause that keeps
+  # a double-clicked Terminal window readable.
+  if [ "${WF_NO_PAUSE:-}" != "1" ]; then echo ""; read -r -p "Press Return to close. "; fi
+  exit "$1"
+}
 
 echo "===================================================="
 echo " Workforce Agent  —  Install / Upgrade"
@@ -95,10 +100,28 @@ if [ -n "$legacy" ]; then
   pause_exit 1
 fi
 
+TOKEN=""
 if [ -d "$CONFIG_DIR" ] && [ -f "$CONFIG_DIR/config.json" ]; then
   echo "An existing enrollment was found — it will be kept."
 else
   echo "No existing enrollment found — this looks like a fresh install."
+  echo ""
+  echo "Workforce Agent records the apps and websites used, window titles, idle"
+  echo "time and periodic screenshots on this Mac and sends them to your"
+  echo "organization's Workforce console. It is listed in Login Items and"
+  echo "Activity Monitor."
+  echo ""
+  TOKEN="${WF_ENROLL_TOKEN:-}"
+  if [ -z "$TOKEN" ] && [ -r /dev/tty ]; then
+    read -r -s -p "Enrollment token from the Workforce console (input hidden; leave blank to enter it in the app): " TOKEN < /dev/tty
+    echo ""
+  fi
+  TOKEN="$(printf '%s' "$TOKEN" | tr -d '[:space:]')"
+  case "$TOKEN" in
+    *[!A-Za-z0-9._~+/=-]*)
+      echo "ERROR: that token contains unexpected characters. Nothing was changed."
+      pause_exit 1 ;;
+  esac
 fi
 echo "You will be asked for your Mac password (admin rights are needed)."
 echo ""
@@ -135,6 +158,17 @@ sudo install -o root -g wheel -m 644 "$HERE/${LABEL}.plist" "$AGENT_PLIST"
 sudo install -o root -g wheel -m 644 "$HERE/${LABEL}.plist" "$BACKUP/${LABEL}.plist"
 sudo install -o root -g wheel -m 644 "$HERE/${GUARD_LABEL}.plist" "$GUARD_PLIST"
 
+if [ -n "$TOKEN" ]; then
+  # One-time enrollment seed, read and deleted by the agent on first start.
+  NAME="$(scutil --get ComputerName 2>/dev/null || hostname -s)"
+  NAME="$(printf '%s' "$NAME" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+  mkdir -p "$CONFIG_DIR"
+  ( umask 077
+    printf '{"token": "%s", "name": "%s", "consent_acknowledged": true}\n' \
+      "$TOKEN" "$NAME" > "$CONFIG_DIR/enroll_seed.json" )
+  TOKEN=""
+fi
+
 echo "[4/5] Starting the agent in your session..."
 sudo launchctl enable "gui/$UID_NUM/$LABEL" 2>/dev/null || true
 launchctl bootstrap "gui/$UID_NUM" "$AGENT_PLIST" 2>/dev/null \
@@ -168,4 +202,7 @@ echo "PERMISSIONS: open System Settings > Privacy & Security and switch Workforc
 echo "Agent ON under Screen Recording and Accessibility. If this Mac previously"
 echo "had an unsigned build, switch both OFF and ON again once. Later versions"
 echo "arrive over the air and keep these permissions."
+if [ ! -f "$CONFIG_DIR/config.json" ] || [ -f "$CONFIG_DIR/enroll_seed.json" ]; then
+  open "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture" 2>/dev/null || true
+fi
 pause_exit 0
