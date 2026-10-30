@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Workforce Agent — per-user LaunchAgent. Installed root-owned in
+  /Library/LaunchAgents by install.command. Runs the agent inside each logged-in
+  user's desktop (Aqua) session, where macOS grants screen capture and
+  accessibility, and restarts it if it exits. Kept loaded by the
+  com.workforceanalytics.agent.guard LaunchDaemon. Visible in launchctl,
+  Activity Monitor and System Settings > General > Login Items.
+-->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.workforceanalytics.agent</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Applications/WorkforceAgent.app/Contents/MacOS/WorkforceAgent</string>
+	</array>
+	<key>AssociatedBundleIdentifiers</key>
+	<array>
+		<string>com.workforceanalytics.agent</string>
+	</array>
+	<key>LimitLoadToSessionType</key>
+	<string>Aqua</string>
+	<key>ProcessType</key>
+	<string>Interactive</string>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>ThrottleInterval</key>
+	<integer>5</integer>
+</dict>
+</plist>

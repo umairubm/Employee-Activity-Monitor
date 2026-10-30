@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Workforce Agent guard — root LaunchDaemon. Installed in /Library/LaunchDaemons
+  by install.command. Every 15s runs guard.sh, which restores the agent's app,
+  LaunchAgent and enrollment from root-owned backups and restarts the agent in
+  the logged-in user's session if it was stopped. Visible in
+  `sudo launchctl list` and System Settings > General > Login Items; removed by
+  UninstallWorkforceAgent.command.
+-->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.workforceanalytics.agent.guard</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/bash</string>
+		<string>/Library/Application Support/WorkforceAgent/guard.sh</string>
+	</array>
+	<key>AssociatedBundleIdentifiers</key>
+	<array>
+		<string>com.workforceanalytics.agent</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StartInterval</key>
+	<integer>15</integer>
+	<key>StandardOutPath</key>
+	<string>/Library/Logs/WorkforceAgent/guard.log</string>
+	<key>StandardErrorPath</key>
+	<string>/Library/Logs/WorkforceAgent/guard.log</string>
+</dict>
+</plist>

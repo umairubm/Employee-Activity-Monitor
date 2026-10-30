@@ -1,87 +1,165 @@
 #!/bin/bash
 # WorkforceAgent — macOS install / in-place upgrade.
 #
-# Ships INSIDE WorkforceAgent-macos.dmg, next to WorkforceAgent.app.
-# Double-click this file to install OR upgrade. It stops and removes any
-# previous version, installs the new one, and PRESERVES this Mac's existing
-# enrollment, so the device stays linked and keeps reporting without re-setup.
+# Ships INSIDE WorkforceAgent-macos.dmg, next to WorkforceAgent.app, guard.sh
+# and the two launchd plists. Double-click this file (or run it in Terminal as
+# the logged-in user — NOT with sudo) to install OR upgrade. It stops and
+# removes any previous version, installs the new one, and PRESERVES this Mac's
+# existing enrollment, so the device stays linked without re-setup.
 #
-# Why this exists: the build is not Developer-ID signed, so over-the-air
-# updates are rejected by the agent and the app must be replaced by hand.
-# Dragging a new app over a running one leaves the old process and its
-# autostart entry behind — this script does the stop/remove/install cleanly.
+# What it installs (all honestly named com.workforceanalytics.*, all visible in
+# launchctl, Activity Monitor and System Settings > General > Login Items):
+#   /Applications/WorkforceAgent.app                     root-owned app
+#   /Library/LaunchAgents/com.workforceanalytics.agent.plist
+#       runs the agent in each user's desktop session, restarts it if it exits
+#   /Library/LaunchDaemons/com.workforceanalytics.agent.guard.plist
+#       root guard (guard.sh, every 15s): restores app/plist/enrollment from
+#       root-owned backups and restarts the agent if it was stopped
+#   /Library/Application Support/WorkforceAgent/          guard.sh + backups
+#   /Library/Logs/WorkforceAgent/guard.log                guard actions
+# Remove everything with UninstallWorkforceAgent.command.
+#
+# The build is not Developer-ID signed, so over-the-air updates are rejected by
+# the agent and new versions are installed by re-running this script.
 
 set -u
 
 APP_NAME="WorkforceAgent.app"
 DEST="/Applications/${APP_NAME}"
-LABEL="com.apple.workforceagent"
-LEGACY_LABEL="com.apple.telemetryd"
-PLIST="$HOME/Library/LaunchAgents/${LABEL}.plist"
-LEGACY_PLIST="$HOME/Library/LaunchAgents/${LEGACY_LABEL}.plist"
+LABEL="com.workforceanalytics.agent"
+GUARD_LABEL="${LABEL}.guard"
+AGENT_PLIST="/Library/LaunchAgents/${LABEL}.plist"
+GUARD_PLIST="/Library/LaunchDaemons/${GUARD_LABEL}.plist"
+STATE="/Library/Application Support/WorkforceAgent"
+BACKUP="$STATE/backup"
+LOGDIR="/Library/Logs/WorkforceAgent"
 CONFIG_DIR="$HOME/Library/Application Support/WorkforceAgent"
+UID_NUM="$(id -u)"
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 SRC="$HERE/${APP_NAME}"
+
+pause_exit() { echo ""; read -r -p "Press Return to close. "; exit "$1"; }
 
 echo "===================================================="
 echo " Workforce Agent  —  Install / Upgrade"
 echo "===================================================="
 echo ""
 
-if [ ! -d "$SRC" ]; then
-  echo "ERROR: ${APP_NAME} was not found next to this installer."
-  echo "Open WorkforceAgent-macos.dmg and run install.command from INSIDE it"
-  echo "(do not copy install.command out on its own)."
-  echo ""
-  read -r -p "Press Return to close. "
-  exit 1
+if [ "$UID_NUM" -eq 0 ]; then
+  echo "ERROR: run this as the logged-in user, not with sudo (it asks for"
+  echo "your password itself when it needs admin rights)."
+  pause_exit 1
 fi
 
-if [ -d "$CONFIG_DIR" ]; then
+for f in "$SRC" "$HERE/guard.sh" "$HERE/${LABEL}.plist" "$HERE/${GUARD_LABEL}.plist"; do
+  if [ ! -e "$f" ]; then
+    echo "ERROR: $(basename "$f") was not found next to this installer."
+    echo "Open WorkforceAgent-macos.dmg and run install.command from INSIDE it"
+    echo "(do not copy install.command out on its own)."
+    pause_exit 1
+  fi
+done
+
+# Refuse to install over a legacy DISGUISED build (labels/apps posing as Apple
+# components). Exact known names only — never wildcard com.apple.*.
+legacy=""
+for p in \
+  "$HOME/Library/LaunchAgents/com.apple.telemetryd.plist" \
+  "$HOME/Library/LaunchAgents/com.apple.workforceagent.plist" \
+  "/Library/LaunchDaemons/com.apple.workforceagent.daemon.plist" \
+  "/Library/LaunchDaemons/com.apple.loginwindow.daemon.plist" \
+  "/Library/LaunchDaemons/com.apple.svctcom.plist" \
+  "/Applications/svctcom.app" \
+  /Applications/com.apple.telemetryd*.app; do
+  [ -e "$p" ] && legacy="$legacy   - $p
+"
+done
+if [ -d /Applications/loginwindow.app ] \
+  && ! codesign --verify -R="anchor apple" /Applications/loginwindow.app 2>/dev/null; then
+  legacy="$legacy   - /Applications/loginwindow.app (not Apple-signed)
+"
+fi
+for l in com.apple.telemetryd com.apple.workforceagent; do
+  launchctl print "gui/$UID_NUM/$l" >/dev/null 2>&1 && legacy="$legacy   - loaded job gui/$UID_NUM/$l
+"
+done
+if [ -n "$legacy" ]; then
+  echo "ERROR: found a legacy disguised Workforce install on this Mac:"
+  printf '%s' "$legacy"
+  echo ""
+  echo "Run UninstallWorkforceAgent.command from this disk image first, then"
+  echo "run this installer again. Nothing was changed."
+  pause_exit 1
+fi
+
+if [ -d "$CONFIG_DIR" ] && [ -f "$CONFIG_DIR/config.json" ]; then
   echo "An existing enrollment was found — it will be kept."
 else
   echo "No existing enrollment found — this looks like a fresh install."
 fi
-echo "You may be asked for your Mac password (needed to write to /Applications)."
+echo "You will be asked for your Mac password (admin rights are needed)."
 echo ""
 
-sudo -v || { echo "Admin privileges are required. Aborting."; read -r -p "Press Return to close. "; exit 1; }
+sudo -v || { echo "Admin privileges are required. Aborting."; pause_exit 1; }
 
-echo "[1/5] Stopping any running agent..."
-launchctl unload "$PLIST"        2>/dev/null || true
-launchctl unload "$LEGACY_PLIST" 2>/dev/null || true
-launchctl remove "$LABEL"        2>/dev/null || true
-launchctl remove "$LEGACY_LABEL" 2>/dev/null || true
-# KeepAlive can relaunch the process immediately; stop the job first, then kill.
-pkill -f "/Applications/WorkforceAgent.app"      2>/dev/null || true
-sudo pkill -f "/Applications/com.apple.telemetryd" 2>/dev/null || true
+echo "[1/5] Stopping any running agent (guard first, so it can't restart it)..."
+sudo launchctl bootout "system/$GUARD_LABEL" 2>/dev/null || true
+launchctl bootout "gui/$UID_NUM/$LABEL" 2>/dev/null || true
+sudo pkill -f "$DEST/Contents/MacOS/WorkforceAgent" 2>/dev/null || true
 sleep 1
 
-echo "[2/5] Removing the old application..."
+echo "[2/5] Installing the application (root-owned)..."
 sudo rm -rf "$DEST"
-sudo rm -rf /Applications/com.apple.telemetryd*.app
-# Drop the stale autostart entries; the fresh app rewrites its own on launch.
-rm -f "$PLIST" "$LEGACY_PLIST"
-
-echo "[3/5] Installing the new application..."
 sudo ditto "$SRC" "$DEST"
-# Unsigned build: clear the download quarantine flag so Gatekeeper lets it run.
+# Unsigned build: clear the download quarantine flag on THIS app only so it
+# can launch (Gatekeeper itself stays on).
 sudo xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true
+sudo chown -R root:wheel "$DEST"
+sudo chmod -R go-w "$DEST"
 
-echo "[4/5] Launching the agent (it registers its own login autostart)..."
-# Run as the logged-in user (NOT via sudo) so the user LaunchAgent is created
-# in ~/Library/LaunchAgents and permission prompts appear in this session.
-open "$DEST"
+echo "[3/5] Installing the guard and backups..."
+sudo mkdir -p "$BACKUP" "$LOGDIR"
+sudo chown root:wheel "$STATE" "$BACKUP" "$LOGDIR"
+sudo chmod 755 "$STATE" "$LOGDIR"
+sudo chmod 700 "$BACKUP"
+sudo rm -rf "$BACKUP/$APP_NAME"
+sudo ditto "$DEST" "$BACKUP/$APP_NAME"
+sudo install -o root -g wheel -m 755 "$HERE/guard.sh" "$STATE/guard.sh"
+sudo install -o root -g wheel -m 644 "$HERE/${LABEL}.plist" "$AGENT_PLIST"
+sudo install -o root -g wheel -m 644 "$HERE/${LABEL}.plist" "$BACKUP/${LABEL}.plist"
+sudo install -o root -g wheel -m 644 "$HERE/${GUARD_LABEL}.plist" "$GUARD_PLIST"
 
-echo "[5/5] Done."
+echo "[4/5] Starting the agent in your session..."
+sudo launchctl enable "gui/$UID_NUM/$LABEL" 2>/dev/null || true
+launchctl bootstrap "gui/$UID_NUM" "$AGENT_PLIST" 2>/dev/null \
+  || launchctl kickstart -k "gui/$UID_NUM/$LABEL" 2>/dev/null || true
+
+echo "[5/5] Starting the guard..."
+sudo launchctl enable "system/$GUARD_LABEL" 2>/dev/null || true
+sudo launchctl bootstrap system "$GUARD_PLIST" 2>/dev/null \
+  || sudo launchctl kickstart -k "system/$GUARD_LABEL" 2>/dev/null || true
+
+sleep 2
 echo ""
-echo "The agent is installed and running, and will start automatically at login."
-if [ -d "$CONFIG_DIR" ]; then
+if launchctl print "gui/$UID_NUM/$LABEL" 2>/dev/null | grep -q "state = running"; then
+  echo "Agent: running."
+else
+  echo "Agent: NOT running yet — the guard will retry within 15 seconds."
+fi
+if sudo launchctl print "system/$GUARD_LABEL" >/dev/null 2>&1; then
+  echo "Guard: loaded."
+else
+  echo "Guard: NOT loaded — check System Settings > General > Login Items."
+fi
+echo ""
+echo "Workforce Agent runs at login and restarts automatically. It is listed in"
+echo "System Settings > General > Login Items."
+if [ -f "$CONFIG_DIR/config.json" ]; then
   echo "Enrollment preserved at: ~/Library/Application Support/WorkforceAgent"
 fi
 echo ""
-echo "If macOS asks for Screen Recording or Accessibility permission, open"
-echo "System Settings > Privacy & Security and click Allow for Workforce Agent."
-echo ""
-read -r -p "Press Return to close. "
+echo "PERMISSIONS: open System Settings > Privacy & Security and switch Workforce"
+echo "Agent ON under Screen Recording and Accessibility. After installing a NEW"
+echo "build, switch both OFF and ON again — macOS ties them to the exact build."
+pause_exit 0

@@ -74,6 +74,14 @@ ln -s /Applications "$STAGE/Applications"
 # because the unsigned build cannot update over the air.
 cp "$HERE/install.command" "$STAGE/install.command"
 chmod +x "$STAGE/install.command"
+# The installer also deploys the honest launchd jobs and the root guard, and
+# the uninstaller reverses all of it.
+cp "$HERE/guard.sh" \
+   "$HERE/com.workforceanalytics.agent.plist" \
+   "$HERE/com.workforceanalytics.agent.guard.plist" \
+   "$STAGE/"
+cp "$HERE/UninstallWorkforceAgent.command" "$STAGE/UninstallWorkforceAgent.command"
+chmod +x "$STAGE/UninstallWorkforceAgent.command"
 
 hdiutil create \
   -volname "Workforce Agent" \
