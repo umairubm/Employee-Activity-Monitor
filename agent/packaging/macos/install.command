@@ -59,6 +59,17 @@ if [ "$UID_NUM" -eq 0 ]; then
   pause_exit 1
 fi
 
+# Refuse a kit built for the wrong CPU. On Apple Silicon ship the arm64 kit,
+# on Intel the x86_64 kit; installing a build that cannot run natively would
+# leave a dead agent (an arm64 binary will not launch on Intel at all).
+if [ "$(sysctl -n hw.optional.arm64 2>/dev/null)" = "1" ]; then NATIVE=arm64; else NATIVE=x86_64; fi
+if [ -x "$SRC/Contents/MacOS/WorkforceAgent" ] \
+  && ! lipo -archs "$SRC/Contents/MacOS/WorkforceAgent" 2>/dev/null | tr ' ' '\n' | grep -qx "$NATIVE"; then
+  echo "ERROR: this kit is built for [$(lipo -archs "$SRC/Contents/MacOS/WorkforceAgent" 2>/dev/null)] but"
+  echo "this Mac is $NATIVE. Use the $NATIVE Workforce Agent kit. Nothing was changed."
+  pause_exit 1
+fi
+
 for f in "$SRC" "$HERE/guard.sh" "$HERE/${LABEL}.plist" "$HERE/${GUARD_LABEL}.plist"; do
   if [ ! -e "$f" ]; then
     echo "ERROR: $(basename "$f") was not found next to this installer."

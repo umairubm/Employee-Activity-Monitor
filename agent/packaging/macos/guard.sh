@@ -184,12 +184,15 @@ if [ -n "$HOME_U" ]; then
     NEWV="$(plist_get "$NEW" CFBundleShortVersionString)"
     CURV="$(plist_get "$APP" CFBundleShortVersionString)"
     DR="$(codesign -d -r- "$APP" 2>&1 | sed -n 's/^designated => //p')"
+    [ "$(sysctl -n hw.optional.arm64 2>/dev/null)" = "1" ] && NATIVE=arm64 || NATIVE=x86_64
     why=""
     if [ -z "$DR" ] || printf '%s' "$DR" | grep -q cdhash; then
       why="the installed app has no stable signature; reinstall this Mac manually once"
     elif [ "$(plist_get "$NEW" CFBundleIdentifier)" != "$BUNDLE_ID" ] \
       || [ ! -x "$NEW/Contents/MacOS/WorkforceAgent" ]; then
       why="the update is not a Workforce Agent app"
+    elif ! lipo -archs "$NEW/Contents/MacOS/WorkforceAgent" 2>/dev/null | tr ' ' '\n' | grep -qx "$NATIVE"; then
+      why="the update does not run natively on this $NATIVE Mac (wrong architecture)"
     elif ! codesign --verify --deep --strict -R "=$DR" "$NEW" 2>/dev/null; then
       why="the update is not signed by the installed app's signer"
     elif ! version_gt "$NEWV" "$CURV"; then

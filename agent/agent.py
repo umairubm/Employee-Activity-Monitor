@@ -79,7 +79,7 @@ def setup_logging():
     logging.getLogger().addHandler(handler)
 
 
-AGENT_VERSION = "1.2.125"
+AGENT_VERSION = "1.2.126"
 # The freelancer build is the SAME source selected at runtime by build_profile
 # (installer marker). It reports its own version so the server/OTA can track and
 # target freelancer devices on a separate line, WITHOUT changing the employee
@@ -928,6 +928,20 @@ class MonitoringAgent:
             or app.resolve() not in executable.resolve().parents
         ):
             raise ValueError("update app bundle has an unsafe executable path")
+        # Reject a build that cannot run natively on this Mac. In a mixed
+        # Intel / Apple Silicon fleet an admin can upload the wrong-arch
+        # release; without this the guard would swap it in, the agent would
+        # fail to launch, and nothing would report until the ~10-min rollback.
+        native = _macos_native_arch()
+        archs = _hidden_run(
+            ["lipo", "-archs", str(executable)],
+            capture_output=True, text=True, check=False,
+        )
+        if native not in archs.stdout.split():
+            raise ValueError(
+                f"update is built for [{archs.stdout.strip() or 'unknown'}] and "
+                f"cannot run natively on this {native} Mac"
+            )
         verify = _hidden_run(
             ["codesign", "--verify", "--deep", "--strict", str(app)],
             capture_output=True,
@@ -2029,7 +2043,70 @@ def ensure_enrolled() -> config_mod.AgentConfig | None:
     return cfg
 
 
+def _run_selftest_capture(out_path: str | None) -> int:
+    """Capture one screenshot through the agent's real code path and save it,
+    so a field tech can confirm on-device that screen capture returns window
+    content (not just the desktop wallpaper, the symptom of a missing Screen
+    Recording grant). Runs under the signed agent's own identity, so it proves
+    exactly what the monitoring captures. Must be launched inside the user's
+    desktop (Aqua) session (e.g. `launchctl asuser <uid> <app-binary>
+    selftest-capture <path>`); run from a plain ssh shell it has no window
+    server and will fail or come back black.
+
+    Prints one SELFTEST line and writes both a .webp and a .png next to it.
+    Does not enrol, take the single-instance lock, or touch the network.
+    """
+    import io
+    from PIL import Image
+
+    try:
+        data = screenshot_mod.capture_webp_bytes()
+        img = Image.open(io.BytesIO(data)).convert("RGB")
+    except Exception as exc:  # noqa: BLE001
+        print(f"SELFTEST capture FAILED: {exc}")
+        return 1
+    w, h = img.size
+    lo, hi = img.convert("L").getextrema()
+    try:
+        target = Path(out_path) if out_path else config_mod.config_dir() / "selftest-capture.webp"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+        png = target.with_suffix(".png")
+        img.save(png, "PNG")
+    except Exception as exc:  # noqa: BLE001
+        print(f"SELFTEST save FAILED: {exc}")
+        return 1
+    # An essentially flat image (hi-lo tiny) is a blank/black grab; a real
+    # desktop with windows spans a wide luma range. This is a hint, not a
+    # verdict — the human looks at the .png.
+    flat = (hi - lo) <= 8
+    print(
+        f"SELFTEST ok: {w}x{h}, webp={len(data)} bytes, luma {lo}-{hi}"
+        f"{' (WARNING: nearly flat/blank image)' if flat else ''}; "
+        f"wrote {target} and {png}"
+    )
+    return 0
+
+
+def _macos_native_arch() -> str:
+    """The Mac's native CPU arch ('arm64' on Apple Silicon, else 'x86_64'),
+    independent of Rosetta translation of the current process."""
+    try:
+        out = _hidden_run(
+            ["sysctl", "-n", "hw.optional.arm64"],
+            capture_output=True, text=True, check=False,
+        )
+        if out.stdout.strip() == "1":
+            return "arm64"
+    except Exception:  # noqa: BLE001
+        pass
+    return "x86_64"
+
+
 def main() -> int:
+    if len(sys.argv) >= 2 and sys.argv[1] == "selftest-capture":
+        setup_logging()
+        return _run_selftest_capture(sys.argv[2] if len(sys.argv) > 2 else None)
     setup_logging()
     # Enforce a single agent per machine, BEFORE the startup banner. A second
     # instance would log the same foreground activity concurrently, producing
