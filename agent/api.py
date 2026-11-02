@@ -14,6 +14,13 @@ import logging
 import time
 import requests
 
+# Tamper-resistance beacon probe (see tamper_probe.py). Guarded dual-import so
+# api.py works both inside the agent package and when run directly.
+try:
+    from agent import tamper_probe
+except ImportError:  # pragma: no cover - direct/script execution
+    from . import tamper_probe
+
 logger = logging.getLogger(__name__)
 
 
@@ -303,6 +310,7 @@ class AgentAPI:
         body: dict[str, Any] = {
             "agentVersion": agent_version,
             "tzOffsetMinutes": tz_offset_minutes,
+            "tamperResistance": tamper_probe.tamper_resistance(),
         }
         # Best-effort live health metrics (each value may be null).
         if metrics is not None:
