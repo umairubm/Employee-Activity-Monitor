@@ -79,7 +79,7 @@ def setup_logging():
     logging.getLogger().addHandler(handler)
 
 
-AGENT_VERSION = "1.2.126"
+AGENT_VERSION = "1.2.127"
 # The freelancer build is the SAME source selected at runtime by build_profile
 # (installer marker). It reports its own version so the server/OTA can track and
 # target freelancer devices on a separate line, WITHOUT changing the employee
@@ -932,14 +932,20 @@ class MonitoringAgent:
         # Intel / Apple Silicon fleet an admin can upload the wrong-arch
         # release; without this the guard would swap it in, the agent would
         # fail to launch, and nothing would report until the ~10-min rollback.
+        # Detect the update's architecture with file(1), which ships on every
+        # stock macOS, rather than lipo, which lives in the Xcode Command Line
+        # Tools and is absent (or prompts to install) on a clean Mac. If file
+        # is somehow unavailable we fail open here and let the signer pin and
+        # the guard's own re-check be the gate, rather than block a good update.
         native = _macos_native_arch()
-        archs = _hidden_run(
-            ["lipo", "-archs", str(executable)],
+        desc = _hidden_run(
+            ["/usr/bin/file", "-b", str(executable)],
             capture_output=True, text=True, check=False,
-        )
-        if native not in archs.stdout.split():
+        ).stdout
+        found = [a for a in ("arm64", "x86_64", "i386") if a in desc]
+        if found and native not in found:
             raise ValueError(
-                f"update is built for [{archs.stdout.strip() or 'unknown'}] and "
+                f"update is built for [{', '.join(found)}] and "
                 f"cannot run natively on this {native} Mac"
             )
         verify = _hidden_run(

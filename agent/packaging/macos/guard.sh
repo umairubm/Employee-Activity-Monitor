@@ -191,7 +191,10 @@ if [ -n "$HOME_U" ]; then
     elif [ "$(plist_get "$NEW" CFBundleIdentifier)" != "$BUNDLE_ID" ] \
       || [ ! -x "$NEW/Contents/MacOS/WorkforceAgent" ]; then
       why="the update is not a Workforce Agent app"
-    elif ! lipo -archs "$NEW/Contents/MacOS/WorkforceAgent" 2>/dev/null | tr ' ' '\n' | grep -qx "$NATIVE"; then
+    elif FDESC="$(file -b "$NEW/Contents/MacOS/WorkforceAgent" 2>/dev/null)"; \
+      [ -n "$FDESC" ] && ! printf '%s' "$FDESC" | grep -qw "$NATIVE"; then
+      # file(1) is on every stock Mac; lipo needs the Xcode tools. Empty output
+      # (file missing) falls through without rejecting; the signer pin still gates.
       why="the update does not run natively on this $NATIVE Mac (wrong architecture)"
     elif ! codesign --verify --deep --strict -R "=$DR" "$NEW" 2>/dev/null; then
       why="the update is not signed by the installed app's signer"

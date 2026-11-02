@@ -63,9 +63,16 @@ fi
 # on Intel the x86_64 kit; installing a build that cannot run natively would
 # leave a dead agent (an arm64 binary will not launch on Intel at all).
 if [ "$(sysctl -n hw.optional.arm64 2>/dev/null)" = "1" ]; then NATIVE=arm64; else NATIVE=x86_64; fi
-if [ -x "$SRC/Contents/MacOS/WorkforceAgent" ] \
-  && ! lipo -archs "$SRC/Contents/MacOS/WorkforceAgent" 2>/dev/null | tr ' ' '\n' | grep -qx "$NATIVE"; then
-  echo "ERROR: this kit is built for [$(lipo -archs "$SRC/Contents/MacOS/WorkforceAgent" 2>/dev/null)] but"
+# Check the kit's architecture with file(1), which ships on every stock Mac,
+# rather than lipo (part of the Xcode Command Line Tools, absent on a clean
+# machine). An empty description means file is unavailable — skip the check
+# rather than block a legitimate kit.
+KITEXE="$SRC/Contents/MacOS/WorkforceAgent"
+KITDESC="$(file -b "$KITEXE" 2>/dev/null)"
+if [ -x "$KITEXE" ] && [ -n "$KITDESC" ] \
+  && ! printf '%s' "$KITDESC" | grep -qw "$NATIVE"; then
+  KITARCH="$(printf '%s' "$KITDESC" | grep -oE 'arm64|x86_64|i386' | sort -u | tr '\n' ' ')"
+  echo "ERROR: this kit is built for [${KITARCH:-unknown}] but"
   echo "this Mac is $NATIVE. Use the $NATIVE Workforce Agent kit. Nothing was changed."
   pause_exit 1
 fi
