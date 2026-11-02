@@ -19,6 +19,7 @@ them in — they touch ONLY this file, never api.py.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import time
@@ -70,9 +71,45 @@ def _linux_tamper() -> str:
     return "none"
 
 
+# macOS install labels/paths — must match install.command, guard.sh and the
+# two launchd plists (com.workforceanalytics.agent[.guard]).
+_MACOS_APP = "/Applications/WorkforceAgent.app"
+_MACOS_GUARD_LABEL = "com.workforceanalytics.agent.guard"
+_MACOS_GUARD_PLIST = "/Library/LaunchDaemons/com.workforceanalytics.agent.guard.plist"
+_MACOS_AGENT_PLIST = "/Library/LaunchAgents/com.workforceanalytics.agent.plist"
+
+
+def _launchctl_loaded(target: str) -> bool:
+    """True iff launchd has the given domain target bootstrapped. `launchctl
+    print` is read-only and returns 0 for any user when the job is loaded (the
+    system guard daemon is readable without root — verified on-device). Any
+    failure, or a missing launchctl, yields False and never raises."""
+    cp = _run(["launchctl", "print", target])
+    return cp is not None and cp.returncode == 0
+
+
 def _macos_tamper() -> str:
-    # TODO(macos session): detect the LaunchDaemon (OS-level) -> "hardened";
-    # a per-user LaunchAgent only -> "soft".
+    # hardened: the app is ROOT-owned AND the root guard LaunchDaemon is
+    # installed and loaded — the 1.2.125 Phase-3 posture: a root-owned
+    # /Applications/WorkforceAgent.app plus com.workforceanalytics.agent.guard
+    # running guard.sh every 15s from /Library/LaunchDaemons, which a normal
+    # (non-admin) user can neither replace nor unload.
+    try:
+        root_app = os.path.exists(_MACOS_APP) and os.stat(_MACOS_APP).st_uid == 0
+    except OSError:
+        root_app = False
+    if (
+        root_app
+        and os.path.exists(_MACOS_GUARD_PLIST)
+        and _launchctl_loaded("system/" + _MACOS_GUARD_LABEL)
+    ):
+        return "hardened"
+    # soft: only the per-user LaunchAgent is present (no root guard) — it
+    # relaunches the agent in the user's session, but the user can unload it.
+    if os.path.exists(_MACOS_AGENT_PLIST) or _launchctl_loaded(
+        "gui/%d/com.workforceanalytics.agent" % os.getuid()
+    ):
+        return "soft"
     return "none"
 
 
