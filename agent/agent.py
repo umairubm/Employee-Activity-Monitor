@@ -79,7 +79,7 @@ def setup_logging():
     logging.getLogger().addHandler(handler)
 
 
-AGENT_VERSION = "1.2.132"
+AGENT_VERSION = "1.2.136"
 # The freelancer build is the SAME source selected at runtime by build_profile
 # (installer marker). It reports its own version so the server/OTA can track and
 # target freelancer devices on a separate line, WITHOUT changing the employee
