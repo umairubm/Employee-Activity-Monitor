@@ -23,7 +23,7 @@ jobs:
       matrix:
         include:
           - arch: arm64
-            runner: macos-14        # Apple Silicon
+            runner: macos-15        # Apple Silicon (macos-14 arm64 SKU became unavailable 2026-11)
           - arch: x86_64
             runner: macos-15-intel  # Intel (macos-13 was retired 2025-12)
     runs-on: ${{ matrix.runner }}
