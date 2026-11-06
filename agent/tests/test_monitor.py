@@ -55,6 +55,43 @@ class NativeIdleDetectionTests(unittest.TestCase):
                     self.assertEqual(monitor._idle_windows(), expected)
 
 
+class MacIdleProbeTests(unittest.TestCase):
+    """The in-process Quartz idle probe and its fail-SAFE carry behaviour."""
+
+    def test_reads_seconds_since_last_input_and_records_state(self) -> None:
+        with mock.patch.object(monitor, "_mac_idle_bound", True), \
+             mock.patch.object(monitor, "_mac_idle_fn", lambda *a: 42.9), \
+             mock.patch.object(monitor, "_mac_idle_args", (0, 0)), \
+             mock.patch.object(monitor, "_mac_idle_last", None), \
+             mock.patch.object(monitor, "_mac_idle_last_monotonic", None), \
+             mock.patch.object(monitor.time, "monotonic", return_value=1000.0):
+            self.assertEqual(monitor._idle_macos(), 42)
+            # Successful read is cached for the fail-safe carry.
+            self.assertEqual(monitor._mac_idle_last, 42.0)
+            self.assertEqual(monitor._mac_idle_last_monotonic, 1000.0)
+
+    def test_probe_error_carries_last_idle_forward_not_zero(self) -> None:
+        def boom(*_a):
+            raise RuntimeError("Quartz unavailable")
+
+        with mock.patch.object(monitor, "_mac_idle_bound", True), \
+             mock.patch.object(monitor, "_mac_idle_fn", boom), \
+             mock.patch.object(monitor, "_mac_idle_args", (0, 0)), \
+             mock.patch.object(monitor, "_mac_idle_last", 30.0), \
+             mock.patch.object(monitor, "_mac_idle_last_monotonic", 1000.0), \
+             mock.patch.object(monitor.time, "monotonic", return_value=1020.0):
+            # Carries 30 + 20 elapsed = 50, NOT 0 (fail-safe, not fail-open).
+            self.assertEqual(monitor._idle_macos(), 50)
+
+    def test_probe_error_before_any_success_falls_back_to_zero(self) -> None:
+        with mock.patch.object(monitor, "_mac_idle_bound", True), \
+             mock.patch.object(monitor, "_mac_idle_fn", None), \
+             mock.patch.object(monitor, "_mac_idle_last", None), \
+             mock.patch.object(monitor, "_mac_idle_last_monotonic", None), \
+             mock.patch.object(monitor.time, "monotonic", return_value=5.0):
+            self.assertEqual(monitor._idle_macos(), 0)
+
+
 class BrowserUrlNormalizationTests(unittest.TestCase):
     def test_preserves_http_and_https_urls(self) -> None:
         self.assertEqual(

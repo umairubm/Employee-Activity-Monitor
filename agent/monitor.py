@@ -364,17 +364,75 @@ def _browser_url_macos(process: str) -> Optional[str]:
     return _normalise_browser_url(result.stdout)
 
 
+# Cached PyObjC Quartz entry points for the idle probe. Bound once on first use
+# (``_mac_idle_bound`` guards against retrying a failed import every poll).
+# pyobjc-framework-Quartz is a hard macOS dependency (agent/requirements.txt)
+# and is listed in the PyInstaller spec hiddenimports — the import here is lazy,
+# so static analysis would otherwise miss it and leave it out of the bundle.
+_mac_idle_fn = None        # Quartz.CGEventSourceSecondsSinceLastEventType
+_mac_idle_args = None      # (kCGEventSourceStateHIDSystemState, kCGAnyInputEventType)
+_mac_idle_bound = False    # has the import been attempted?
+
+# Fail-SAFE carry state: the last idle value we read successfully and the
+# monotonic time at that moment. On a probe error we carry (last idle + elapsed)
+# forward rather than returning 0 — returning 0 reads as "fully active" and would
+# wrongly count genuine away-time as engaged. Carrying forward biases toward
+# idle/passive, which is the conservative direction and the whole point of the
+# switch away from the old fail-open ioreg parse.
+_mac_idle_last: Optional[float] = None
+_mac_idle_last_monotonic: Optional[float] = None
+
+
+def _bind_mac_idle() -> None:
+    global _mac_idle_fn, _mac_idle_args, _mac_idle_bound
+    _mac_idle_bound = True
+    try:
+        from Quartz import (  # type: ignore  # noqa: PLC0415
+            CGEventSourceSecondsSinceLastEventType,
+            kCGAnyInputEventType,
+            kCGEventSourceStateHIDSystemState,
+        )
+
+        _mac_idle_fn = CGEventSourceSecondsSinceLastEventType
+        _mac_idle_args = (kCGEventSourceStateHIDSystemState, kCGAnyInputEventType)
+    except Exception:  # noqa: BLE001
+        _mac_idle_fn = None
+        _mac_idle_args = None
+
+
 def _idle_macos() -> int:
-    out = subprocess.run(
-        ["ioreg", "-c", "IOHIDSystem"],
-        capture_output=True,
-        text=True,
-        timeout=5,
-    ).stdout
-    for line in out.splitlines():
-        if "HIDIdleTime" in line:
-            nanos = int(line.split("=")[-1].strip())
-            return nanos // 1_000_000_000
+    """Seconds since the last HID (keyboard/mouse/trackpad) input.
+
+    Uses the in-process Quartz API ``CGEventSourceSecondsSinceLastEventType`` on
+    the HID system state — the same user-input idle signal Windows reports via
+    ``GetLastInputInfo`` — so there is no subprocess, no 5 s timeout, and no
+    fragile text parsing (the old path shelled out to ``ioreg -c IOHIDSystem``
+    and grepped the first ``HIDIdleTime`` line, returning 0 on any hiccup).
+
+    Fails SAFE, never raises: if the probe is unavailable or errors this cycle we
+    carry the last known idle plus elapsed wall time forward instead of returning
+    0. Because this function swallows its own errors, the shared
+    ``get_idle_seconds`` wrapper's fail-open-to-0 path is never reached on macOS
+    (that wrapper is left untouched so Windows/Linux semantics do not change).
+    """
+    global _mac_idle_last, _mac_idle_last_monotonic
+    if not _mac_idle_bound:
+        _bind_mac_idle()
+    now = time.monotonic()
+    if _mac_idle_fn is not None:
+        try:
+            seconds = float(_mac_idle_fn(*_mac_idle_args))
+            if seconds >= 0:
+                idle = int(seconds)
+                _mac_idle_last = float(idle)
+                _mac_idle_last_monotonic = now
+                return idle
+        except Exception:  # noqa: BLE001
+            pass
+    # Probe unavailable or raised: carry last idle + elapsed (fail-safe). Before
+    # the first successful read we have nothing to carry, so fall back to 0.
+    if _mac_idle_last is not None and _mac_idle_last_monotonic is not None:
+        return int(_mac_idle_last + max(0.0, now - _mac_idle_last_monotonic))
     return 0
 
 

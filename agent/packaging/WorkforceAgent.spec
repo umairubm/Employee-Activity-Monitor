@@ -68,6 +68,11 @@ if is_win:
     hiddenimports.append("pystray._win32")
 elif is_mac:
     hiddenimports.append("pystray._darwin")
+    # monitor._idle_macos imports Quartz lazily for the in-process idle probe
+    # (CGEventSourceSecondsSinceLastEventType). The lazy import is invisible to
+    # PyInstaller's static analysis, so it must be declared here or it is left
+    # out of the bundle and the probe falls back to its fail-safe carry forever.
+    hiddenimports.append("Quartz")
 elif is_linux:
     hiddenimports.append("pystray._xorg")
     hiddenimports.extend(["gi.repository.Gio", "gi.repository.GLib"])
